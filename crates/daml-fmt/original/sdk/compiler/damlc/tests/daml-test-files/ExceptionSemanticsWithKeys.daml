@@ -1,0 +1,95 @@
+-- Copyright (c) 2022 Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
+-- SPDX-License-Identifier: Apache-2.0
+-- @SUPPORTS-LF-FEATURE DAML_CONTRACT_KEYS
+-- @WARN -Werror=upgrade-exceptions
+
+{-# OPTIONS_GHC -Wno-x-exceptions #-}
+
+module ExceptionSemanticsWithKeys where
+
+import Daml.Script
+import DA.Assert
+import DA.ContractKeys
+import DA.Exception
+import DA.Foldable
+
+exception E
+  where
+    message "E"
+
+exception EWithCids with
+    cids : [ContractId K]
+  where
+    message "EWithCids"
+
+template K
+  with
+    p : Party
+  where
+    signatory p
+    key p : Party
+    maintainer key
+    nonconsuming choice DoThing : ()
+      controller p
+      do pure ()
+
+template T
+  with
+    p : Party
+  where
+    signatory p
+
+    choice SameResultInRollback : ()
+      controller p
+      do
+        try do
+          cids <- fmap fst <$> lookupNByKey @K 10 p
+          throw $ EWithCids cids
+        catch
+          EWithCids cids -> do
+            cids2 <- fmap fst <$> lookupNByKey @K 10 p
+            cids === cids2
+
+    choice NonConsumingExerciseByKey : ()
+      controller p
+      do
+        try do
+          _ <- exerciseByKey @K p DoThing
+          throw E
+        catch
+          E -> pure ()
+
+    choice UseLeakedRollbackCid : ()
+      controller p
+      do
+        try do
+          cids <- fmap fst <$> lookupNByKey @K 1 p
+          throw $ EWithCids cids
+        catch
+          EWithCids [cid] -> do
+            exercise cid DoThing
+    
+    choice CatchInvalidLookupByKey : ()
+      controller p
+      do
+        try do
+          _ <- lookupNByKey @K (-1) p
+          pure ()
+        catch
+          GeneralError msg -> msg === "lookupNByKey may not be passed a negative n"
+      
+
+test = script do
+  p <- allocateParty "p"
+  submit p $ forA_ [1..15] $ const $ createCmd $ K p
+  -- ensure queryNByKey in a rollback gives same result outside
+  submit p $ createAndExerciseCmd (T p) SameResultInRollback
+  -- ensure non-consuming exercise by key in a rollback works
+  submit p $ createAndExerciseCmd (T p) NonConsumingExerciseByKey
+  -- do a query by key in a rollback then exercise the cid found, should work. I.e. use information obtained in a rollback
+  submit p $ createAndExerciseCmd (T p) UseLeakedRollbackCid
+  -- see if invalid but non-side effecting bykey action exceptions can be caught
+  --   i.e. queryNByKey -1
+  submit p $ createAndExerciseCmd (T p) CatchInvalidLookupByKey
+
+  pure ()

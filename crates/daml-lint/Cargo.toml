@@ -1,0 +1,23 @@
+[package]
+name = "daml-lint"
+version = "0.1.0"
+description = "Static analysis scanner for Daml smart contracts"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["daml", "linter", "static-analysis", "smart-contracts", "security"]
+categories = ["development-tools", "command-line-utilities"]
+# Dev-only fixtures/notes stay out of the published crate (the custom-rule
+# `examples/` are kept — users writing AST rules need them).
+exclude = ["test-fixtures/", "docs/"]
+
+[dependencies]
+daml-parser.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+clap.workspace = true
+rquickjs.workspace = true

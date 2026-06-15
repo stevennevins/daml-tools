@@ -1,0 +1,8 @@
+# Rust build output (shared workspace target dir)
+/target
+
+# rustfmt backups
+**/*.rs.bk
+
+# npm (daml-fmt differential harness uses node, no deps installed)
+node_modules/

@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = ["crates/daml-parser", "crates/daml-lint", "crates/daml-fmt"]
+
+# Shared metadata. Each crate keeps its own name/version/description/keywords so
+# they can be released and SemVer'd independently (parser stays boring; tools
+# bump faster), but the boilerplate below is written once here.
+[workspace.package]
+edition = "2021"
+# Verified workspace MSRV: rquickjs 0.12 (a daml-lint dependency) requires
+# rustc 1.87, and clap 4.6 pulls in edition-2024 crates needing 1.85. The
+# parser/formatter alone are lighter, but the workspace declares one MSRV.
+rust-version = "1.87.0"
+license = "AGPL-3.0-only"
+repository = "https://github.com/stevennevins/daml-tools"
+homepage = "https://github.com/stevennevins/daml-tools"
+authors = ["Steven Nevins"]
+
+[workspace.dependencies]
+# Inter-crate dep declared once; crates opt in with `daml-parser.workspace = true`.
+# Carries BOTH path (for local builds) and version (for crates.io publish).
+daml-parser = { path = "crates/daml-parser", version = "0.1.0" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+rquickjs = "0.12.0"

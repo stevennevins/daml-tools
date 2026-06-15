@@ -1,0 +1,180 @@
+use clap::Parser;
+use daml_lint::detector::{self, parse_severity};
+use daml_lint::reporter::{self, OutputFormat};
+use daml_lint::{detectors, parser};
+use std::path::PathBuf;
+
+#[derive(Parser)]
+#[command(name = "daml-lint")]
+#[command(about = "Static analysis scanner for DAML smart contracts")]
+#[command(version)]
+struct Cli {
+    /// DAML files or directories to scan
+    #[arg(required = true)]
+    paths: Vec<PathBuf>,
+
+    /// Output format: sarif, markdown, json
+    #[arg(short, long, default_value = "markdown")]
+    format: String,
+
+    /// Output file (default: stdout)
+    #[arg(short, long)]
+    output: Option<PathBuf>,
+
+    /// Minimum severity to cause non-zero exit: critical, high, medium, low, info
+    #[arg(long, default_value = "high")]
+    fail_on: String,
+
+    /// Custom AST rule scripts (JavaScript), repeatable. Write in TypeScript
+    /// against examples/daml-lint.d.ts and compile; see examples/
+    #[arg(long)]
+    rules: Vec<PathBuf>,
+}
+
+fn main() {
+    let cli = Cli::parse();
+
+    let format = OutputFormat::from_str(&cli.format).unwrap_or_else(|| {
+        eprintln!(
+            "Unknown format '{}'. Use sarif, markdown, or json.",
+            cli.format
+        );
+        std::process::exit(2);
+    });
+
+    let fail_on = parse_severity(&cli.fail_on).unwrap_or_else(|| {
+        eprintln!(
+            "Unknown severity '{}'. Use critical, high, medium, low, or info.",
+            cli.fail_on
+        );
+        std::process::exit(2);
+    });
+
+    // Load detectors first so rule-file errors surface before scanning
+    let mut detectors = detector::all_detectors();
+    for rules_path in &cli.rules {
+        match detectors::script::load_script(rules_path) {
+            Ok(rule) => detectors.push(rule),
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                std::process::exit(2);
+            }
+        }
+    }
+    if let Some(dup) = detector::find_duplicate_name(&detectors) {
+        eprintln!(
+            "Error: rule '{}': name collides with a built-in detector or another rule",
+            dup
+        );
+        std::process::exit(2);
+    }
+
+    // Discover .daml files
+    let files = discover_files(&cli.paths);
+    if files.is_empty() {
+        eprintln!("No .daml files found.");
+        std::process::exit(2);
+    }
+
+    eprintln!("daml-lint: scanning {} file(s)...", files.len());
+    let mut all_findings = Vec::new();
+    let mut parse_errors = Vec::new();
+
+    for file in &files {
+        let source = match std::fs::read_to_string(file) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Warning: could not read {}: {}", file.display(), e);
+                continue;
+            }
+        };
+
+        let (module, diagnostics) = parser::parse_daml_with_diagnostics(&source, file);
+        for (line, column, message) in &diagnostics {
+            eprintln!(
+                "daml-lint: parse: {}:{}:{}: {}",
+                file.display(),
+                line,
+                column,
+                message
+            );
+            parse_errors.push(reporter::ParseError {
+                file: file.display().to_string(),
+                line: *line,
+                column: *column,
+                message: message.clone(),
+            });
+        }
+
+        for det in &detectors {
+            let findings = det.detect(&module);
+            all_findings.extend(findings);
+        }
+    }
+
+    // Sort findings by severity, then file, then line
+    all_findings.sort_by(|a, b| {
+        a.severity
+            .cmp(&b.severity)
+            .then_with(|| a.file.cmp(&b.file))
+            .then_with(|| a.line.cmp(&b.line))
+    });
+
+    // Format output
+    let output = reporter::format_findings(&all_findings, &parse_errors, format);
+
+    if let Some(output_path) = &cli.output {
+        std::fs::write(output_path, &output).unwrap_or_else(|e| {
+            eprintln!("Error writing to {}: {}", output_path.display(), e);
+            std::process::exit(2);
+        });
+        eprintln!(
+            "daml-lint: {} finding(s) written to {}",
+            all_findings.len(),
+            output_path.display()
+        );
+    } else {
+        println!("{}", output);
+    }
+
+    // Parse failures mean the scan is not authoritative: signal that with a
+    // distinct exit code (3) so callers can tell it apart from a clean scan (0),
+    // a findings-over-threshold scan (1), and usage/IO errors (2). This is
+    // independent of --fail-on, which only governs findings severity.
+    let code = if parse_errors.is_empty() {
+        reporter::exit_code(&all_findings, fail_on)
+    } else {
+        3
+    };
+    std::process::exit(code);
+}
+
+fn discover_files(paths: &[PathBuf]) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for path in paths {
+        if path.is_file() {
+            if path.extension().is_some_and(|e| e == "daml") {
+                files.push(path.clone());
+            }
+        } else if path.is_dir() {
+            walk_dir(path, &mut files);
+        } else {
+            eprintln!("Warning: scan path {} does not exist.", path.display());
+        }
+    }
+    files.sort();
+    files
+}
+
+fn walk_dir(dir: &PathBuf, files: &mut Vec<PathBuf>) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk_dir(&path, files);
+            } else if path.extension().is_some_and(|e| e == "daml") {
+                files.push(path);
+            }
+        }
+    }
+}

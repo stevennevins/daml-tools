@@ -1,0 +1,60 @@
+[package]
+name = "daml-fmt"
+version = "0.1.0"
+description = "A canonical code formatter for the Daml smart-contract language, built on daml-parser"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["daml", "formatter", "fmt", "code-formatter", "smart-contracts"]
+categories = ["development-tools", "command-line-utilities"]
+# Differential-test data and dev-only tooling stay out of the published crate.
+exclude = [
+    "original/",
+    "expected/",
+    "corpus/",
+    "test/",
+    "tools/",
+    "docs/",
+    "CLAUDE.md",
+    "package.json",
+]
+
+[dependencies]
+# daml-fmt depends on the parser ONLY. It must never pull in daml-lint.
+daml-parser.workspace = true
+
+[features]
+# The corpus-harness bins below are dev tools (they read the unpublished
+# `original/` corpus). Gating them behind this off-by-default feature keeps
+# `cargo install daml-fmt` to the single public `daml-fmt` binary, while devs
+# can still `cargo run --features dev-tools --bin coverage`.
+dev-tools = []
+
+[lib]
+name = "daml_fmt"
+path = "src/lib.rs"
+
+# The one published CLI.
+[[bin]]
+name = "daml-fmt"
+path = "src/bin/daml-fmt.rs"
+
+# Dev-only corpus harnesses — not installed by `cargo install daml-fmt`.
+[[bin]]
+name = "lossless-check"
+path = "src/bin/lossless-check.rs"
+required-features = ["dev-tools"]
+
+[[bin]]
+name = "ast-check"
+path = "src/bin/ast-check.rs"
+required-features = ["dev-tools"]
+
+[[bin]]
+name = "coverage"
+path = "src/bin/coverage.rs"
+required-features = ["dev-tools"]

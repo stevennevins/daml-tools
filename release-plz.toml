@@ -1,0 +1,32 @@
+# release-plz configuration — https://release-plz.dev/docs/config
+#
+# Each crate is versioned, changelogged, tagged, and published INDEPENDENTLY
+# from its own conventional-commit history (the parser stays boring and stable;
+# the two CLIs bump faster). release-plz publishes in dependency order, so
+# daml-parser reaches crates.io before daml-lint and daml-fmt.
+
+[workspace]
+# Maintain a CHANGELOG.md per crate from conventional commits.
+changelog_update = true
+# Tag and cut a GitHub Release per crate version.
+git_tag_enable = true
+git_release_enable = true
+# Don't run `cargo update` when preparing release PRs; keep the committed
+# Cargo.lock as-is and leave external dependency bumps to dependabot.
+dependencies_update = false
+
+[[package]]
+name = "daml-parser"
+# Public library on strict SemVer: block a release that breaks its API without
+# a major bump. CI runs cargo-semver-checks as a second, independent guard.
+semver_check = true
+
+[[package]]
+name = "daml-lint"
+# CLI-first; its library surface is not a stability promise.
+semver_check = false
+
+[[package]]
+name = "daml-fmt"
+# Binary-only consumer of daml-parser; no public library API to guard.
+semver_check = false

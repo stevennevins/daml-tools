@@ -1,0 +1,262 @@
+//! Tests for the AST byte-span layer and the `render_from_ast` oracle.
+//!
+//! Tightness tests pin specific node spans to exact source substrings so the
+//! spans can't silently degrade to a useless catch-all. The corpus test runs
+//! the `render_from_ast` losslessness/nesting oracle over the vendored
+//! daml-finance corpus shared at the workspace root.
+
+#![cfg(test)]
+
+use crate::ast::*;
+use crate::ast_span::render_from_ast;
+use crate::lexer::lex_with_trivia;
+use crate::parse::parse_module;
+use std::path::{Path, PathBuf};
+
+/// Run the oracle the way daml-fmt will: AST + the lexer's trivia.
+fn render(src: &str) -> Result<String, String> {
+    let (_, trivia, _) = lex_with_trivia(src);
+    render_from_ast(src, &parse_module(src).0, &trivia)
+}
+
+fn parse(src: &str) -> Module {
+    parse_module(src).0
+}
+
+/// Substring of `src` covered by `span`.
+fn text(src: &str, span: Span) -> &str {
+    &src[span.start..span.end]
+}
+
+fn first_function<'a>(m: &'a Module, name: &str) -> &'a FunctionDecl {
+    m.decls
+        .iter()
+        .find_map(|d| match d {
+            Decl::Function(f) if f.name == name => Some(f),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("function {} not found", name))
+}
+
+#[test]
+fn leaf_and_composite_spans_are_tight() {
+    let src = "module M where\nf = g (a, b)\n";
+    let m = parse(src);
+    let f = first_function(&m, "f");
+    let body = &f.equations[0].body;
+    // `g (a, b)` is an application of g to the tuple.
+    assert_eq!(text(src, body.span()), "g (a, b)");
+    match body {
+        Expr::App { func, args, .. } => {
+            assert_eq!(text(src, func.span()), "g");
+            assert_eq!(text(src, args[0].span()), "(a, b)");
+            match &args[0] {
+                Expr::Tuple { items, .. } => {
+                    assert_eq!(text(src, items[0].span()), "a");
+                    assert_eq!(text(src, items[1].span()), "b");
+                }
+                other => panic!("expected tuple, got {:?}", other),
+            }
+        }
+        other => panic!("expected app, got {:?}", other),
+    }
+}
+
+#[test]
+fn do_block_span_covers_whole_block() {
+    let src = "module M where\nf = do\n  a\n  b\n";
+    let m = parse(src);
+    let f = first_function(&m, "f");
+    let body = &f.equations[0].body;
+    assert_eq!(text(src, body.span()), "do\n  a\n  b");
+}
+
+#[test]
+fn typedef_span_covers_whole_construct() {
+    let src = "module M where\ndata Foo = Bar | Baz\n";
+    let m = parse(src);
+    let td = m
+        .decls
+        .iter()
+        .find(|d| matches!(d, Decl::TypeDef { .. }))
+        .expect("typedef");
+    let Decl::TypeDef { span, .. } = td else {
+        unreachable!()
+    };
+    assert_eq!(text(src, *span), "data Foo = Bar | Baz");
+}
+
+#[test]
+fn template_field_and_signatory_spans() {
+    let src =
+        "module M where\ntemplate T\n  with\n    owner : Party\n  where\n    signatory owner\n";
+    let m = parse(src);
+    let Decl::Template(t) = m
+        .decls
+        .iter()
+        .find(|d| matches!(d, Decl::Template(_)))
+        .unwrap()
+    else {
+        unreachable!()
+    };
+    // A single-name field spans the whole `name : Type` so daml-fmt can slice
+    // the field type, not just the name.
+    assert_eq!(text(src, t.fields[0].span), "owner : Party");
+    let sig = t
+        .body
+        .iter()
+        .find(|b| matches!(b, TemplateBodyDecl::Signatory { .. }))
+        .unwrap();
+    let TemplateBodyDecl::Signatory { span, .. } = sig else {
+        unreachable!()
+    };
+    assert_eq!(text(src, *span), "signatory owner");
+}
+
+#[test]
+fn render_from_ast_roundtrips_small_programs() {
+    let cases = [
+        "module M where\nf = 1\n",
+        "module M where\nf x = if x then 1 else 2\n",
+        "module M where\nf = do\n  a <- step\n  pure a\n",
+        "module M where\n-- a comment\nf = g (a, b) -- trailing\n",
+        "module M where\ndata Foo = Bar with x : Int\nf = 1\n",
+        "f = 1\ng = 2\n", // no module header
+    ];
+    for src in cases {
+        match render(src) {
+            Ok(out) => assert_eq!(out, src, "roundtrip mismatch for {:?}", src),
+            Err(e) => panic!("render_from_ast failed for {:?}: {}", src, e),
+        }
+    }
+}
+
+#[test]
+fn multi_name_field_spans_are_disjoint() {
+    let src = "module M where\ntemplate T\n  with\n    a, b : Int\n  where\n    signatory a\n";
+    let m = parse(src);
+    let Decl::Template(t) = m
+        .decls
+        .iter()
+        .find(|d| matches!(d, Decl::Template(_)))
+        .unwrap()
+    else {
+        unreachable!()
+    };
+    // Earlier names stay name-only; the last carries the shared type. The two
+    // field spans must not overlap.
+    assert_eq!(text(src, t.fields[0].span), "a");
+    assert_eq!(text(src, t.fields[1].span), "b : Int");
+    assert!(t.fields[0].span.end <= t.fields[1].span.start);
+}
+
+/// Regression: a type signature separated from its body by an unrelated decl
+/// must not produce a function span that straddles that sibling (V2 nesting).
+#[test]
+fn separated_signature_does_not_straddle_sibling() {
+    let src = "module M where\nf : Int\ng = 2\nf = 1\n";
+    let m = parse(src);
+    // The oracle's containment check would Err on any sibling straddle.
+    assert_eq!(render(src).as_deref(), Ok(src));
+    let f = first_function(&m, "f");
+    let g = first_function(&m, "g");
+    // f's span is its equation `f = 1`; it must not contain sibling g.
+    assert_eq!(text(src, f.span), "f = 1");
+    assert!(!f.span.contains(&g.span));
+}
+
+/// Run the oracle over an entire corpus directory; returns (files, failures).
+fn run_corpus(root: &Path) -> (usize, Vec<String>) {
+    let mut files = Vec::new();
+    collect(root, &mut files);
+    let mut failures = Vec::new();
+    for f in &files {
+        let Ok(src) = std::fs::read_to_string(f) else {
+            continue;
+        };
+        if let Err(e) = render(&src) {
+            failures.push(format!("{}: {}", f.display(), e));
+        }
+    }
+    (files.len(), failures)
+}
+
+/// Run the `render_from_ast` losslessness/nesting oracle over the vendored
+/// daml-finance corpus (shared at the workspace root). Skips gracefully when
+/// the corpus is absent (e.g. a published crate built outside the workspace),
+/// so it runs in CI yet never panics off-machine.
+#[test]
+fn span_oracle_over_finance_corpus() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus/daml-finance/daml");
+    if !root.exists() {
+        eprintln!("corpus absent (published crate?), skipping");
+        return;
+    }
+    let (n, failures) = run_corpus(&root);
+    assert!(n > 600, "finance corpus incomplete: {} files", n);
+    if !failures.is_empty() {
+        let shown: Vec<_> = failures.iter().take(20).cloned().collect();
+        panic!(
+            "{} / {} files failed render_from_ast:\n{}",
+            failures.len(),
+            n,
+            shown.join("\n")
+        );
+    }
+}
+
+/// Token-level lossless round-trip oracle (`render_lossless`) over the vendored
+/// daml-finance corpus, so daml-parser self-verifies its OWN byte-identical
+/// reconstruction guarantee (the one daml-fmt relies on) rather than leaving it
+/// only to the downstream daml-lint corpus test. Skips gracefully off-workspace
+/// (published crate), but fails loud under CI so a missing/forgotten vendored
+/// corpus can never pass green.
+#[test]
+fn render_lossless_over_finance_corpus() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus/daml-finance/daml");
+    if !root.exists() {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "vendored corpus missing under CI (was it committed?): {}",
+            root.display()
+        );
+        eprintln!("corpus absent (published crate?), skipping");
+        return;
+    }
+    let mut files = Vec::new();
+    collect(&root, &mut files);
+    assert!(
+        files.len() > 600,
+        "corpus incomplete: {} files",
+        files.len()
+    );
+    let mut checked = 0usize;
+    for f in &files {
+        let Ok(src) = std::fs::read_to_string(f) else {
+            continue;
+        };
+        let (tokens, trivia, errors) = lex_with_trivia(&src);
+        if !errors.is_empty() {
+            continue; // lex errors drop bytes by design; losslessness is exempt
+        }
+        checked += 1;
+        if let Err(e) = crate::lexer::render_lossless(&src, &tokens, &trivia) {
+            panic!("round trip failed for {}: {}", f.display(), e);
+        }
+    }
+    assert!(checked > 600, "too few files round-tripped: {}", checked);
+}
+
+fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            collect(&p, out);
+        } else if p.extension().is_some_and(|e| e == "daml") {
+            out.push(p);
+        }
+    }
+}

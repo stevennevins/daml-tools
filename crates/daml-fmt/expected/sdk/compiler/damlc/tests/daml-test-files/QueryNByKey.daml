@@ -1,0 +1,49 @@
+-- Copyright (c) 2026, Digital Asset (Switzerland) GmbH and/or its affiliates.
+-- All rights reserved.
+
+-- @SUPPORTS-LF-FEATURE DAML_NUCK
+
+module QueryNByKey where
+
+import Daml.Script
+import DA.Assert
+import DA.List
+
+template Box
+  with
+    p: Party
+  where
+    signatory p
+    key p: Party
+    maintainer key
+
+queryNByKeyTest: Script ()
+queryNByKeyTest = do
+  alice <- allocateParty "alice"
+  cids <- alice `submit` forA [1..10: Int] (const $ createCmd $ Box alice)
+
+  -- Check most recently created in single submission is first
+  contracts <- queryNByKey alice 10 alice
+  let expectedContracts = reverse cids
+  (fst <$> contracts) === expectedContracts
+
+  -- Check limit works
+  contractsLimited <- queryNByKey alice 5 alice
+  (fst <$> contractsLimited) === take 5 expectedContracts
+
+  debug $ show (maxBound : Int)
+
+  -- Check unlimited works
+  contractsAll <- queryAllByKey alice alice
+  (fst <$> contractsAll) === expectedContracts
+
+  -- Check order is maintained when one is removed
+  alice `submit` archiveCmd (cids !! 4)
+  contractsAfterArchive <- queryNByKey alice 10 alice
+  let expectedContractsAfterArchive = reverse (take 4 cids <> drop 5 cids)
+  (fst <$> contractsAfterArchive) === expectedContractsAfterArchive
+
+  -- Check new submission is before old submission
+  newCid <- alice `submit` createCmd (Box alice)
+  contractsAfterCreate <- queryNByKey alice 10 alice
+  (fst <$> contractsAfterCreate) === newCid :: expectedContractsAfterArchive

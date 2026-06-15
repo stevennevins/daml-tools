@@ -1,0 +1,13 @@
+{
+  "name": "daml-fmt",
+  "version": "0.1.0",
+  "description": "Code formatter for Daml 3.x (Rust, on the daml-parser pipeline), differential-tested against a compiler-verified corpus.",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "test": "node test/diff.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

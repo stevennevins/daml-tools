@@ -1,0 +1,18 @@
+[package]
+name = "daml-parser"
+version = "0.1.0"
+description = "Lossless lexer, layout resolver, and parser for the Daml smart-contract language"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["daml", "parser", "lexer", "syntax-tree", "lossless"]
+categories = ["parser-implementations", "development-tools"]
+
+# Foundation crate: deliberately ZERO external dependencies. Both daml-lint and
+# daml-fmt sit on top of this; it must not drag rules, diagnostics, or CLI deps
+# into a consumer that only wants the parse tree.
+[dependencies]

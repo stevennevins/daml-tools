@@ -1,0 +1,55 @@
+-- Copyright (c) 2023 Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
+-- SPDX-License-Identifier: Apache-2.0
+
+{-# OPTIONS_GHC -Wno-x-exceptions #-}
+
+module LfStableExceptionAuth where
+
+import Daml.Script
+import DA.Exception
+
+template T
+  with
+    ps : [Party]
+  where
+    signatory ps
+    nonconsuming choice DoThing : ()
+      controller ps
+      do pure ()
+
+template Tester
+  with
+    a : Party
+    b : Party
+    tcid : ContractId T
+  where
+    signatory a
+    observer b
+    nonconsuming choice NonConsumingExerciseInTry : ()
+      controller b
+      do try do
+           exercise tcid DoThing
+           abort ""
+         catch
+           GeneralError _ -> pure ()
+
+    nonconsuming choice NonConsumingExerciseInNestedTry : ()
+      controller b
+      do try try do exercise tcid DoThing
+                    abort ""
+             catch
+               GeneralError _ -> pure ()
+         catch
+           GeneralError _ -> pure ()
+
+-- @LEDGER run LfStableExceptionAuth.EXPECTED.ledger
+run = script do
+  a <- allocateParty "a"
+  b <- allocateParty "b"
+  tcid <- submit [a, b] $ createCmd (T [a, b])
+  cid <- submit a $ createCmd (Tester a b tcid)
+  -- Tests that we have the authorization from the parent exercise.
+  submit b $ exerciseCmd cid NonConsumingExerciseInTry
+  -- Tests that we have the authorization from the parent exercise
+  -- even if there is another rollback in between.
+  submit b $ exerciseCmd cid NonConsumingExerciseInNestedTry
