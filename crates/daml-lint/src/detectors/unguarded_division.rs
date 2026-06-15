@@ -46,7 +46,8 @@ impl UnguardedDivision {
             let denominator = extract_denominator(trimmed);
 
             // Check if there's a prior guard in the statements
-            let has_guard = self.has_prior_guard(&denominator, statements, body_raw, line_idx);
+            let has_guard =
+                self.has_prior_guard(&denominator, statements, body_raw, base_line, line_idx);
 
             if !has_guard {
                 findings.push(Finding {
@@ -72,36 +73,46 @@ impl UnguardedDivision {
         denominator: &str,
         statements: &[Statement],
         body_raw: &str,
-        _division_line: usize,
+        base_line: usize,
+        division_line: usize,
     ) -> bool {
         if denominator.is_empty() {
             return false;
         }
+        // A guard only counts if it runs BEFORE the division. `division_abs` is
+        // the division's real source line (base_line + its body-relative line).
+        let division_abs = base_line + division_line;
 
-        // Check if any assert or ensure references the denominator with a > 0 check
+        // `>= 0` is intentionally NOT accepted: y == 0 satisfies it yet still
+        // divides by zero. Only strict-positive (`> 0`) or explicit non-zero
+        // (`/= 0`, the Daml idiom) checks guard a division.
+        let is_positivity = |s: &str| s.contains("> 0") || s.contains("/= 0") || s.contains("!= 0");
+
+        // Structured asserts that appear strictly before the division.
         for stmt in statements {
-            if let Statement::Assert { condition, .. } = stmt {
-                if condition.contains(denominator)
-                    && (condition.contains("> 0")
-                        || condition.contains(">= 0")
-                        || condition.contains("/= 0")
-                        || condition.contains("!= 0"))
+            if let Statement::Assert {
+                condition, span, ..
+            } = stmt
+            {
+                if span.line < division_abs
+                    && condition.contains(denominator)
+                    && is_positivity(condition)
                 {
                     return true;
                 }
             }
         }
 
-        // Also check the raw body for guard patterns
+        // Raw body lines strictly before the division line.
         let lines: Vec<&str> = body_raw.lines().collect();
-        for line in &lines {
+        for (i, line) in lines.iter().enumerate() {
+            if i >= division_line {
+                break;
+            }
             let trimmed = line.trim();
             if (trimmed.contains("assertMsg") || trimmed.contains("assert "))
                 && trimmed.contains(denominator)
-                && (trimmed.contains("> 0")
-                    || trimmed.contains(">= 0")
-                    || trimmed.contains("/= 0")
-                    || trimmed.contains("!= 0"))
+                && is_positivity(trimmed)
             {
                 return true;
             }
@@ -265,6 +276,42 @@ dayCount total n = do
             findings.is_empty(),
             "guard on real denominator should suppress: {:?}",
             findings
+        );
+    }
+
+    // Regression (audit F3): a guard placed AFTER the division does not prevent
+    // division by zero — the check runs too late. Must still be flagged.
+    #[test]
+    fn test_guard_after_division_is_flagged() {
+        let source = r#"module Test where
+
+unsafeDivide x y = do
+  pure (x / y)
+  assertMsg "denominator must be positive" (y > 0)
+"#;
+        let module = parse_daml(source, Path::new("Late.daml"));
+        let findings = UnguardedDivision.detect(&module);
+        assert!(
+            !findings.is_empty(),
+            "a guard after the division must NOT suppress the finding"
+        );
+    }
+
+    // Regression (audit F4): `y >= 0` is not a division guard — y == 0 still
+    // passes the check and divides. Only `> 0` / `/= 0` count.
+    #[test]
+    fn test_ge_zero_is_not_a_guard() {
+        let source = r#"module Test where
+
+divCheck x y = do
+  assertMsg "non-negative" (y >= 0)
+  pure (x / y)
+"#;
+        let module = parse_daml(source, Path::new("GeZero.daml"));
+        let findings = UnguardedDivision.detect(&module);
+        assert!(
+            !findings.is_empty(),
+            "`>= 0` allows zero, so it must not suppress the division finding"
         );
     }
 }

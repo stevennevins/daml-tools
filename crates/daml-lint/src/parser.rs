@@ -343,9 +343,12 @@ fn lower_choice(c: &ast::ChoiceDecl, file: &Path, lines: &[&str]) -> Choice {
         })
         .collect();
 
-    // body_raw is the original source slice (line-faithful: built-in
-    // detectors scan it by line offset from the choice span).
-    let first = c.pos.line; // 1-based header line
+    // body_raw is the original source slice (line-faithful: built-in detectors
+    // scan it by line offset from the choice span). Include the header line so
+    // that body_raw[0] corresponds to choice.span.line (the base_line detectors
+    // add their line offset to) — matching lower_function and keeping reported
+    // line numbers aligned with the real source.
+    let first = c.pos.line.saturating_sub(1);
     let last = c.end_line.min(lines.len());
     let body_raw = if first < last {
         lines[first..last].join("\n")
@@ -360,7 +363,10 @@ fn lower_choice(c: &ast::ChoiceDecl, file: &Path, lines: &[&str]) -> Choice {
 
     Choice {
         name: c.name.clone(),
-        consuming: c.consuming == Consuming::Consuming,
+        // pre/postconsuming choices archive the contract just like the default
+        // consuming form; only NonConsuming leaves it live. The boolean means
+        // "archives the contract".
+        consuming: c.consuming != Consuming::NonConsuming,
         controllers: party_names(&c.controllers),
         controller_exprs: c.controllers.iter().map(lower_expr).collect(),
         observer_exprs: c.observers.iter().map(lower_expr).collect(),
@@ -804,6 +810,53 @@ template Foo
         let module = parse_daml(source, Path::new("Foo.daml"));
         assert_eq!(module.templates[0].choices.len(), 1);
         assert!(!module.templates[0].choices[0].consuming);
+    }
+
+    // Regression (audit F2): preconsuming and postconsuming choices DO archive
+    // the contract, so the IR `consuming` flag must be true for them — only
+    // nonconsuming is false. Rules that branch on `consuming` depend on this.
+    #[test]
+    fn test_pre_and_post_consuming_choices_are_consuming() {
+        let source = r#"module Test where
+
+template Foo
+  with
+    owner : Party
+  where
+    signatory owner
+
+    preconsuming choice Drain : ()
+      controller owner
+      do
+        pure ()
+
+    postconsuming choice Close : ()
+      controller owner
+      do
+        pure ()
+
+    nonconsuming choice Peek : ()
+      controller owner
+      do
+        pure ()
+
+    choice Normal : ()
+      controller owner
+      do
+        pure ()
+"#;
+        let module = parse_daml(source, Path::new("Foo.daml"));
+        let by = |n: &str| {
+            module.templates[0]
+                .choices
+                .iter()
+                .find(|c| c.name == n)
+                .unwrap_or_else(|| panic!("choice {} not found", n))
+        };
+        assert!(by("Drain").consuming, "preconsuming archives -> consuming");
+        assert!(by("Close").consuming, "postconsuming archives -> consuming");
+        assert!(by("Normal").consuming, "default choice is consuming");
+        assert!(!by("Peek").consuming, "nonconsuming is not consuming");
     }
 
     #[test]

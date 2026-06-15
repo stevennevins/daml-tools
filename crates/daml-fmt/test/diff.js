@@ -26,13 +26,14 @@ const targetDir = JSON.parse(
 ).target_directory;
 const bin = path.join(targetDir, "release", "daml-fmt");
 
-if (!fs.existsSync(bin)) {
-  console.error("building release binary (cargo build --release)...");
-  execFileSync("cargo", ["build", "--release", "--bin", "daml-fmt"], {
-    cwd: repoRoot,
-    stdio: "inherit",
-  });
-}
+// Always rebuild before testing — Cargo no-ops when sources are unchanged, but
+// an existing or cache-restored binary must never silently shadow local edits
+// (otherwise the differential can pass against a stale formatter).
+console.error("building release binary (cargo build --release --bin daml-fmt)...");
+execFileSync("cargo", ["build", "--release", "--bin", "daml-fmt"], {
+  cwd: repoRoot,
+  stdio: "inherit",
+});
 
 // Format `src` text through the Rust binary's stdin path.
 const format = (src) =>

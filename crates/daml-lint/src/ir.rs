@@ -32,7 +32,36 @@ impl DamlType {
     // fit std::str::FromStr's `Result` signature.
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> DamlType {
-        let s = s.trim();
+        // Strip a single matched outer pair of grouping parens, so
+        // `Optional (ContractId Foo)` recurses into `ContractId Foo` instead of
+        // collapsing to Unknown. Never strips the unit type `()`.
+        fn strip_grouping_parens(s: &str) -> &str {
+            let t = s.trim();
+            if t.len() < 2 || !t.starts_with('(') || !t.ends_with(')') {
+                return s;
+            }
+            let mut depth = 0usize;
+            for (i, c) in t.char_indices() {
+                match c {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            // The opening paren must match the LAST char; `(a)(b)`
+                            // is not a single grouping pair.
+                            if i != t.len() - 1 {
+                                return s;
+                            }
+                            let inner = t[1..t.len() - 1].trim();
+                            return if inner.is_empty() { s } else { inner };
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            s
+        }
+        let s = strip_grouping_parens(s.trim());
         if s == "Party" {
             DamlType::Party
         } else if s == "Text" {
@@ -407,4 +436,33 @@ pub struct DamlModule {
     pub templates: Vec<Template>,
     pub interfaces: Vec<Interface>,
     pub functions: Vec<Function>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Regression (audit F7): `Optional (ContractId Foo)` — the only valid way to
+    // spell that type — must preserve the nested ContractId, not collapse the
+    // parenthesized argument to Unknown. Rules that recurse for ContractIds
+    // depend on it.
+    #[test]
+    fn parenthesized_type_argument_is_parsed() {
+        match DamlType::from_str("Optional (ContractId Foo)") {
+            DamlType::Optional(inner) => match *inner {
+                DamlType::ContractId(c) => {
+                    assert!(matches!(*c, DamlType::Named(ref n) if n == "Foo"))
+                }
+                other => panic!("expected ContractId inside Optional, got {:?}", other),
+            },
+            other => panic!("expected Optional, got {:?}", other),
+        }
+        // `[ContractId Foo]` and bare grouping also resolve.
+        assert!(matches!(
+            DamlType::from_str("(ContractId Foo)"),
+            DamlType::ContractId(_)
+        ));
+        // The unit type must survive paren-stripping.
+        assert!(matches!(DamlType::from_str("()"), DamlType::Unit));
+    }
 }
