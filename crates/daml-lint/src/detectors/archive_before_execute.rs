@@ -20,9 +20,10 @@ impl ArchiveBeforeExecute {
         _choice_name: &str,
     ) -> Vec<Finding> {
         let mut findings = Vec::new();
-        let mut archive_seen = false;
-        let mut archive_line = 0usize;
-        let mut archive_evidence = String::new();
+        // Archives seen since the last try, as (line, evidence). Every one of
+        // them is reported when a try is hit — multiple archives before one try
+        // each consume a contract.
+        let mut pending: Vec<(usize, String)> = Vec::new();
 
         let lines: Vec<&str> = body_raw.lines().collect();
 
@@ -38,33 +39,32 @@ impl ArchiveBeforeExecute {
             };
 
             if trimmed.contains("fetchAndArchive") || trimmed.starts_with("archive ") {
-                archive_seen = true;
-                archive_line = base_line + line_idx;
-                archive_evidence = trimmed.to_string();
+                pending.push((base_line + line_idx, trimmed.to_string()));
             }
 
-            if archive_seen && (trimmed.starts_with("try") || trimmed == "try") {
-                findings.push(Finding {
-                    detector: self.name().to_string(),
-                    severity: self.severity(),
-                    file: file.to_path_buf(),
-                    line: archive_line,
-                    column: 1,
-                    message: format!(
-                        "Contract archived via '{}' at line {} before try/catch block at line {}. \
-                         If execution fails, the archived contract is permanently consumed.",
-                        if archive_evidence.contains("fetchAndArchive") {
-                            "fetchAndArchive"
-                        } else {
-                            "archive"
-                        },
-                        archive_line,
-                        base_line + line_idx,
-                    ),
-                    evidence: format!("{}\n  ...\n  try do ...", archive_evidence),
-                });
-                // Only report once per archive-then-try sequence
-                archive_seen = false;
+            if !pending.is_empty() && (trimmed.starts_with("try") || trimmed == "try") {
+                let try_line = base_line + line_idx;
+                for (archive_line, evidence) in pending.drain(..) {
+                    findings.push(Finding {
+                        detector: self.name().to_string(),
+                        severity: self.severity(),
+                        file: file.to_path_buf(),
+                        line: archive_line,
+                        column: 1,
+                        message: format!(
+                            "Contract archived via '{}' at line {} before try/catch block at line {}. \
+                             If execution fails, the archived contract is permanently consumed.",
+                            if evidence.contains("fetchAndArchive") {
+                                "fetchAndArchive"
+                            } else {
+                                "archive"
+                            },
+                            archive_line,
+                            try_line,
+                        ),
+                        evidence: format!("{}\n  ...\n  try do ...", evidence),
+                    });
+                }
             }
         }
 
@@ -78,6 +78,16 @@ impl ArchiveBeforeExecute {
         for stmt in statements {
             match stmt {
                 Statement::Archive { span, cid_expr, .. } => {
+                    last_archive = Some((span.line, cid_expr.clone()));
+                }
+                // `exercise cid Archive` (the built-in Archive choice) also
+                // consumes the contract — the canonical H3 pattern.
+                Statement::Exercise {
+                    span,
+                    cid_expr,
+                    choice_name,
+                    ..
+                } if choice_name == "Archive" || choice_name.ends_with(".Archive") => {
                     last_archive = Some((span.line, cid_expr.clone()));
                 }
                 Statement::TryCatch { span, .. } => {
@@ -299,6 +309,72 @@ template T
         assert!(
             !findings.is_empty(),
             "multiline archive before try must be caught by the structured fallback"
+        );
+    }
+
+    // Regression (sweep F3/F4): archival via `exercise cid Archive` before a try
+    // is the canonical H3 pattern and must be flagged.
+    #[test]
+    fn test_exercise_archive_before_try_is_flagged() {
+        let source = r#"module Test where
+
+template VoteManager
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice CloseVoteRequest : ()
+      with
+        requestCid : ContractId VoteRequest
+      controller admin
+      do
+        exercise requestCid Archive
+        try do
+          executeAction admin
+        catch
+          e -> pure ()
+"#;
+        let module = parse_daml(source, Path::new("Test.daml"));
+        let findings = ArchiveBeforeExecute.detect(&module);
+        assert!(
+            !findings.is_empty(),
+            "exercise Archive before try must be flagged"
+        );
+    }
+
+    // Regression (sweep F33): each archive before one try is reported, not only
+    // the last.
+    #[test]
+    fn test_multiple_archives_each_reported() {
+        let source = r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      with
+        a : ContractId Foo
+        b : ContractId Foo
+      controller admin
+      do
+        archive a
+        archive b
+        try do
+          executeAction admin
+        catch
+          e -> pure ()
+"#;
+        let module = parse_daml(source, Path::new("Test.daml"));
+        let findings = ArchiveBeforeExecute.detect(&module);
+        assert_eq!(
+            findings.len(),
+            2,
+            "both archives must be reported: {:?}",
+            findings
         );
     }
 }

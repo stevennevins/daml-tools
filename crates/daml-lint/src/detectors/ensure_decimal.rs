@@ -20,7 +20,7 @@ impl Detector for MissingEnsureDecimal {
     }
 
     fn description(&self) -> &str {
-        "Template has Decimal field with no ensure clause bounding it to > 0"
+        "Template has Decimal field with no positivity bound in its ensure clause"
     }
 
     fn detect(&self, module: &DamlModule) -> Vec<Finding> {
@@ -60,8 +60,8 @@ impl Detector for MissingEnsureDecimal {
                         line: template.span.line,
                         column: template.span.column,
                         message: format!(
-                            "Template '{}' has Decimal field '{}' with no ensure clause bounding it to > 0.",
-                            template.name, field.name
+                            "Template '{}' has Decimal field '{}' with no positivity bound (e.g. `{} > 0`) in its ensure clause.",
+                            template.name, field.name, field.name
                         ),
                         evidence,
                     });
@@ -132,5 +132,52 @@ template RoundWithPartialEnsure
         let findings = MissingEnsureDecimal.detect(&module);
         assert_eq!(findings.len(), 1);
         assert!(findings[0].message.contains("amuletPrice"));
+    }
+
+    // Regression (sweep F6/F27): a Numeric field is the modern money type and
+    // must be checked like Decimal.
+    #[test]
+    fn test_numeric_field_is_flagged() {
+        let source = r#"module Test where
+
+template Round
+  with
+    admin : Party
+    price : Numeric 10
+  where
+    signatory admin
+"#;
+        let module = parse_daml(source, Path::new("Round.daml"));
+        let findings = MissingEnsureDecimal.detect(&module);
+        assert!(findings.iter().any(|f| f.message.contains("'price'")));
+    }
+
+    // Regression (sweep F29): `count` is not bounded by a `discount > 0` ensure
+    // on a different field.
+    #[test]
+    fn test_substring_field_not_considered_bounded() {
+        let source = r#"module Test where
+
+template T
+  with
+    admin : Party
+    count : Decimal
+    discount : Decimal
+  where
+    signatory admin
+    ensure discount > 0.0
+"#;
+        let module = parse_daml(source, Path::new("T.daml"));
+        let findings = MissingEnsureDecimal.detect(&module);
+        assert!(
+            findings.iter().any(|f| f.message.contains("'count'")),
+            "count must be flagged: {:?}",
+            findings
+        );
+        assert!(
+            !findings.iter().any(|f| f.message.contains("'discount'")),
+            "discount IS bounded: {:?}",
+            findings
+        );
     }
 }

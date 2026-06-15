@@ -53,7 +53,13 @@ impl DamlType {
                                 return s;
                             }
                             let inner = t[1..t.len() - 1].trim();
-                            return if inner.is_empty() { s } else { inner };
+                            // Keep `()` (unit) and tuples `(a, b)` intact — only
+                            // strip a genuine grouping paren around one type.
+                            return if inner.is_empty() || has_top_level_comma(inner) {
+                                s
+                            } else {
+                                inner
+                            };
                         }
                     }
                     _ => {}
@@ -86,6 +92,28 @@ impl DamlType {
             DamlType::Optional(Box::new(DamlType::from_str(inner)))
         } else if let Some(inner) = s.strip_prefix("TextMap ") {
             DamlType::TextMap(Box::new(DamlType::from_str(inner)))
+        } else if s == "Numeric" || s.starts_with("Numeric ") {
+            // Decimal is exactly Numeric 10; the whole fixed-point family is the
+            // money type the monetary detectors care about.
+            DamlType::Decimal
+        } else if let Some(rest) = s
+            .strip_prefix("GenMap ")
+            .or_else(|| s.strip_prefix("Map "))
+            .or_else(|| s.strip_prefix("DA.Map.Map "))
+            .or_else(|| s.strip_prefix("DA.Map.GenMap "))
+        {
+            let (k, v) = split_top_level_ws(rest);
+            DamlType::Map(
+                Box::new(DamlType::from_str(k)),
+                Box::new(DamlType::from_str(v)),
+            )
+        } else if let Some(inner) = s
+            .strip_prefix("Set ")
+            .or_else(|| s.strip_prefix("DA.Set.Set "))
+        {
+            // No dedicated Set variant; model as an unbounded collection (List)
+            // so unbounded-fields flags it.
+            DamlType::List(Box::new(DamlType::from_str(inner)))
         } else if s.starts_with(char::is_uppercase) {
             DamlType::Named(s.to_string())
         } else {
@@ -109,9 +137,160 @@ impl DamlType {
         matches!(self, DamlType::List(_))
     }
 
-    pub fn is_unbounded(&self) -> bool {
-        self.is_text() || self.is_textmap() || self.is_list()
+    pub fn is_map(&self) -> bool {
+        matches!(self, DamlType::Map(_, _))
     }
+
+    pub fn is_unbounded(&self) -> bool {
+        self.is_text() || self.is_textmap() || self.is_list() || self.is_map()
+    }
+}
+
+fn is_ident_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_' || b == b'\''
+}
+
+/// True if `pattern` occurs in `text` with a non-identifier char (or string
+/// start) immediately before it. Use when `pattern` BEGINS with the identifier
+/// you care about, so `"count > 0"` is not matched inside `"discount > 0"`.
+pub(crate) fn contains_left_anchored(text: &str, pattern: &str) -> bool {
+    let b = text.as_bytes();
+    let mut from = 0;
+    while let Some(rel) = text[from..].find(pattern) {
+        let i = from + rel;
+        if i == 0 || !is_ident_byte(b[i - 1]) {
+            return true;
+        }
+        from = i + 1;
+    }
+    false
+}
+
+/// True if `pattern` occurs in `text` with a non-identifier char (or string
+/// end) immediately after it. Use when `pattern` ENDS with the identifier you
+/// care about, so `"0 < amount"` is not matched inside `"0 < amountDue"`.
+pub(crate) fn contains_right_anchored(text: &str, pattern: &str) -> bool {
+    let b = text.as_bytes();
+    let mut from = 0;
+    while let Some(rel) = text[from..].find(pattern) {
+        let i = from + rel;
+        let j = i + pattern.len();
+        if j == text.len() || !is_ident_byte(b[j]) {
+            return true;
+        }
+        from = i + 1;
+    }
+    false
+}
+
+/// True if `ident` appears in `text` as a whole identifier token (bounded on
+/// both sides), so `"q"` does not match inside `"quantity"`.
+pub(crate) fn mentions_ident(text: &str, ident: &str) -> bool {
+    if ident.is_empty() {
+        return false;
+    }
+    let b = text.as_bytes();
+    let mut from = 0;
+    while let Some(rel) = text[from..].find(ident) {
+        let i = from + rel;
+        let j = i + ident.len();
+        let left = i == 0 || !is_ident_byte(b[i - 1]);
+        let right = j == text.len() || !is_ident_byte(b[j]);
+        if left && right {
+            return true;
+        }
+        from = i + 1;
+    }
+    false
+}
+
+/// Split `s` at its first top-level (not inside `()`/`[]`) space into
+/// (head, rest). Used to peel one type argument off `Map k v`.
+fn split_top_level_ws(s: &str) -> (&str, &str) {
+    let mut depth = 0i32;
+    for (i, b) in s.bytes().enumerate() {
+        match b {
+            b'(' | b'[' => depth += 1,
+            b')' | b']' => depth -= 1,
+            b' ' if depth == 0 => return (s[..i].trim(), s[i + 1..].trim()),
+            _ => {}
+        }
+    }
+    (s.trim(), "")
+}
+
+/// Blank out line comments (`-- … EOL`), block comments (`{- … -}`), and the
+/// contents of double-quoted string literals, so a substring scan doesn't match
+/// inside lexical noise (a `> 0` in a comment is not a real guard). Lengths and
+/// newlines are preserved so line indexing stays valid.
+pub(crate) fn code_only(src: &str) -> String {
+    let b = src.as_bytes();
+    let n = b.len();
+    let mut out = String::with_capacity(n);
+    let mut i = 0;
+    while i < n {
+        // line comment
+        if b[i] == b'-' && b.get(i + 1) == Some(&b'-') {
+            while i < n && b[i] != b'\n' {
+                out.push(' ');
+                i += 1;
+            }
+            continue;
+        }
+        // block comment
+        if b[i] == b'{' && b.get(i + 1) == Some(&b'-') {
+            out.push_str("  ");
+            i += 2;
+            while i < n && !(b[i] == b'-' && b.get(i + 1) == Some(&b'}')) {
+                out.push(if b[i] == b'\n' { '\n' } else { ' ' });
+                i += 1;
+            }
+            if i < n {
+                out.push_str("  ");
+                i += 2;
+            }
+            continue;
+        }
+        // string literal
+        if b[i] == b'"' {
+            out.push('"');
+            i += 1;
+            while i < n && b[i] != b'"' {
+                if b[i] == b'\\' && i + 1 < n {
+                    out.push_str("  ");
+                    i += 2;
+                    continue;
+                }
+                out.push(' ');
+                i += 1;
+            }
+            if i < n {
+                out.push('"');
+                i += 1;
+            }
+            continue;
+        }
+        // ordinary char (copy whole UTF-8 char; i is at a boundary here)
+        let ch = src[i..].chars().next().unwrap();
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
+}
+
+/// True if `s` has a top-level (depth-0) comma — i.e. it is a tuple body, not a
+/// single grouped type.
+fn has_top_level_comma(s: &str) -> bool {
+    let mut depth = 0i32;
+    for b in s.bytes() {
+        match b {
+            b'(' | b'[' => depth += 1,
+            b')' | b']' => depth -= 1,
+            b',' if depth == 0 => return true,
+            _ => {}
+        }
+    }
+    false
 }
 
 /// Lightweight source position for expression-level nodes (1-based). The
@@ -285,33 +464,30 @@ impl EnsureClause {
         self.raw_text.contains(field_name)
     }
 
+    /// Whether the ensure clause bounds `field_name` to be non-negative. The
+    /// field sits at the identifier end of each pattern, so anchor on it: this
+    /// stops `count` from matching inside `discount > 0`. (Non-strict `>= 0` is
+    /// accepted on purpose — a field may legitimately allow a zero balance.)
     pub fn has_positive_bound(&self, field_name: &str) -> bool {
         let text = &self.raw_text;
-        if !text.contains(field_name) {
-            return false;
-        }
-        // Check for common positive bound patterns
-        text.contains(&format!("{} > 0", field_name))
-            || text.contains(&format!("{} > 0.0", field_name))
-            || text.contains(&format!("{} >= 0", field_name))
-            || text.contains(&format!("{} >= 0.0", field_name))
-            || text.contains(&format!("0 < {}", field_name))
-            || text.contains(&format!("0.0 < {}", field_name))
-            || text.contains(&format!("0 <= {}", field_name))
-            || text.contains(&format!("0.0 <= {}", field_name))
+        contains_left_anchored(text, &format!("{} > 0", field_name))
+            || contains_left_anchored(text, &format!("{} >= 0", field_name))
+            || contains_right_anchored(text, &format!("0 < {}", field_name))
+            || contains_right_anchored(text, &format!("0 <= {}", field_name))
+            || contains_right_anchored(text, &format!("0.0 < {}", field_name))
+            || contains_right_anchored(text, &format!("0.0 <= {}", field_name))
     }
 
     pub fn has_size_bound(&self, field_name: &str) -> bool {
         let text = &self.raw_text;
-        if !text.contains(field_name) {
-            return false;
-        }
-        text.contains(&format!("T.length {}", field_name))
-            || text.contains(&format!("Text.length {}", field_name))
-            || text.contains(&format!("length {}", field_name))
-            || text.contains(&format!("Map.size {}", field_name))
-            || text.contains(&format!("size {}", field_name))
-            || text.contains(&format!("DA.Text.length {}", field_name))
+        // The field is the argument at the end of each pattern, so right-anchor
+        // it so `reason` is not matched inside `reasons`.
+        contains_right_anchored(text, &format!("T.length {}", field_name))
+            || contains_right_anchored(text, &format!("Text.length {}", field_name))
+            || contains_right_anchored(text, &format!("DA.Text.length {}", field_name))
+            || contains_right_anchored(text, &format!("length {}", field_name))
+            || contains_right_anchored(text, &format!("Map.size {}", field_name))
+            || contains_right_anchored(text, &format!("size {}", field_name))
     }
 }
 
@@ -464,5 +640,54 @@ mod tests {
         ));
         // The unit type must survive paren-stripping.
         assert!(matches!(DamlType::from_str("()"), DamlType::Unit));
+    }
+
+    // Regression (sweep F5/F6/F9/F27): `Numeric n` is the modern money type and
+    // must be treated as Decimal so the monetary detectors see it.
+    #[test]
+    fn numeric_is_decimal() {
+        assert!(DamlType::from_str("Numeric 10").is_decimal());
+        assert!(DamlType::from_str("Numeric 6").is_decimal());
+        assert!(DamlType::from_str("Numeric").is_decimal());
+        assert!(DamlType::from_str("Decimal").is_decimal());
+        // Not a false match on a Named type that merely starts with "Numeric".
+        assert!(!DamlType::from_str("NumericThing").is_decimal());
+    }
+
+    // Regression (sweep F25): Map/Set/GenMap are unbounded collections.
+    #[test]
+    fn map_and_set_are_unbounded() {
+        assert!(DamlType::from_str("Map Text Int").is_unbounded());
+        assert!(DamlType::from_str("GenMap Party Int").is_unbounded());
+        assert!(DamlType::from_str("Set Party").is_unbounded());
+        assert!(DamlType::from_str("DA.Map.Map Text Int").is_unbounded());
+        // A Named type starting with Map/Set is not a collection.
+        assert!(!DamlType::from_str("MapView").is_unbounded());
+    }
+
+    // Regression (sweep F34): a tuple `(A, B)` is not a grouping paren and must
+    // not be mis-parsed as Named("A, B").
+    #[test]
+    fn tuple_type_is_unknown_not_named() {
+        assert!(matches!(
+            DamlType::from_str("(Int, Text)"),
+            DamlType::Unknown
+        ));
+        assert!(matches!(DamlType::from_str("(a, b, c)"), DamlType::Unknown));
+    }
+
+    // Regression (sweep F1/F7/F12/F29): whole-identifier matching, so `q` is not
+    // found inside `quantity` and `count` not inside `discount`.
+    #[test]
+    fn identifier_matchers_respect_token_boundaries() {
+        assert!(mentions_ident("(q > 0)", "q"));
+        assert!(!mentions_ident("(quantity > 0)", "q"));
+        assert!(mentions_ident("r.amount > 0", "r.amount"));
+
+        assert!(contains_left_anchored("count > 0", "count > 0"));
+        assert!(!contains_left_anchored("discount > 0", "count > 0"));
+
+        assert!(contains_right_anchored("length reason", "length reason"));
+        assert!(!contains_right_anchored("length reasons", "length reason"));
     }
 }

@@ -41,11 +41,22 @@ impl Detector for MissingPositiveAmount {
                     })
                     .collect();
 
+                // Comment/string-free view so a `> 0` in a comment or string
+                // literal is not mistaken for a real guard.
+                let code = crate::ir::code_only(&choice.body_raw);
                 for param in &amount_params {
-                    let has_check = choice.body_raw.contains(&format!("{} > 0", param.name))
-                        || choice.body_raw.contains(&format!("{} > 0.0", param.name))
-                        || choice.body_raw.contains(&format!("{} >= 0", param.name))
-                        || choice.body_raw.contains(&format!("{} >= 0.0", param.name));
+                    let name = &param.name;
+                    // Only STRICT positivity counts — `amount >= 0` permits a
+                    // zero-amount exercise (the H2 vuln). Accept the idiomatic
+                    // flipped form too, and match the param as a whole token so
+                    // `xamount > 0` does not guard `amount`.
+                    let has_check =
+                        crate::ir::contains_left_anchored(&code, &format!("{} > 0", name))
+                            || crate::ir::contains_right_anchored(&code, &format!("0 < {}", name))
+                            || crate::ir::contains_right_anchored(
+                                &code,
+                                &format!("0.0 < {}", name),
+                            );
 
                     if !has_check {
                         findings.push(Finding {
@@ -194,5 +205,63 @@ template Token
         let module = parse_daml(source, Path::new("Token.daml"));
         let findings = MissingPositiveAmount.detect(&module);
         assert!(findings.is_empty());
+    }
+
+    fn choice_with_amount_guard(guard_line: &str, ty: &str) -> Vec<Finding> {
+        let source = format!(
+            r#"module Test where
+
+template Token
+  with
+    owner : Party
+  where
+    signatory owner
+
+    choice Transfer : ()
+      with
+        amount : {ty}
+      controller owner
+      do
+        {guard_line}
+        pure ()
+"#
+        );
+        let module = parse_daml(&source, Path::new("Token.daml"));
+        MissingPositiveAmount.detect(&module)
+    }
+
+    // Regression (sweep F10): `amount >= 0` permits zero (the H2 vuln) — must flag.
+    #[test]
+    fn test_ge_zero_amount_is_flagged() {
+        assert!(
+            !choice_with_amount_guard("assertMsg \"nn\" (amount >= 0.0)", "Decimal").is_empty()
+        );
+    }
+
+    // Regression (sweep F13): the idiomatic flipped guard `0.0 < amount` is valid.
+    #[test]
+    fn test_flipped_positive_guard_passes() {
+        assert!(choice_with_amount_guard("assertMsg \"pos\" (0.0 < amount)", "Decimal").is_empty());
+    }
+
+    // Regression (sweep F12): a guard on `xamount` must not be read as a guard on `amount`.
+    #[test]
+    fn test_substring_param_guard_does_not_suppress() {
+        assert!(!choice_with_amount_guard("assertMsg \"x\" (xamount > 0.0)", "Decimal").is_empty());
+    }
+
+    // Regression (sweep F11/F28): a `> 0` mention in a comment is not a guard.
+    #[test]
+    fn test_comment_guard_does_not_suppress() {
+        assert!(
+            !choice_with_amount_guard("-- amount > 0 is checked elsewhere", "Decimal").is_empty()
+        );
+    }
+
+    // Regression (sweep F9): a Numeric n amount param is the modern money type
+    // and must be checked.
+    #[test]
+    fn test_numeric_amount_is_checked() {
+        assert!(!choice_with_amount_guard("pure ()", "Numeric 10").is_empty());
     }
 }

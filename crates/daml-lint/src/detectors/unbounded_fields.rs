@@ -155,4 +155,48 @@ template SafeRequest
         let findings = UnboundedFields.detect(&module);
         assert!(findings.is_empty());
     }
+
+    // Regression (sweep F25): Map/Set/GenMap are unbounded collections.
+    #[test]
+    fn test_map_field_is_flagged() {
+        let source = r#"module Test where
+
+template Meta
+  with
+    owner : Party
+    ctx : Map Text Text
+  where
+    signatory owner
+"#;
+        let module = parse_daml(source, Path::new("Meta.daml"));
+        let findings = UnboundedFields.detect(&module);
+        assert!(
+            findings.iter().any(|f| f.message.contains("ctx")),
+            "{:?}",
+            findings
+        );
+    }
+
+    // Regression (sweep F15): bounding `reasons` must not suppress `reason`.
+    #[test]
+    fn test_prefix_sibling_field_still_flagged() {
+        let source = r#"module Test where
+
+template T
+  with
+    admin : Party
+    reason : Text
+    reasons : Text
+  where
+    signatory admin
+    ensure T.length reasons < 280
+"#;
+        let module = parse_daml(source, Path::new("T.daml"));
+        let findings = UnboundedFields.detect(&module);
+        assert!(
+            findings.iter().any(|f| f.message.contains("'reason'")),
+            "reason (no bound) must be flagged: {:?}",
+            findings
+        );
+    }
 }
