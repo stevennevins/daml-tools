@@ -517,11 +517,49 @@ pub struct Module {
     pub decls: Vec<Decl>,
 }
 
+/// Why a [`ParseDiagnostic`] fired. Lets a consumer separate syntax the parser
+/// deliberately does not model (still safe, just unanalyzed) from a genuine
+/// malformation, a recursion-limit degradation, or a lexical error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiagnosticCategory {
+    /// A whole declaration could not be parsed and was skipped to the next item.
+    SkippedDecl,
+    /// A malformed expression, pattern, or expected-token error inside an
+    /// otherwise-recognized construct.
+    Malformed,
+    /// A construct the parser intentionally does not support, e.g. legacy
+    /// `controller ... can` choice syntax.
+    UnsupportedSyntax,
+    /// Expression/pattern nesting exceeded the recursion bound and was degraded
+    /// to raw text.
+    RecursionLimit,
+    /// A lexical error (unterminated string/comment, stray character).
+    Lex,
+}
+
+impl DiagnosticCategory {
+    /// Stable kebab-case tag for machine-readable output (JSON/SARIF) and logs.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DiagnosticCategory::SkippedDecl => "skipped-declaration",
+            DiagnosticCategory::Malformed => "malformed",
+            DiagnosticCategory::UnsupportedSyntax => "unsupported-syntax",
+            DiagnosticCategory::RecursionLimit => "recursion-limit",
+            DiagnosticCategory::Lex => "lexical-error",
+        }
+    }
+}
+
 /// Parse diagnostic — never fatal; the scan continues.
 #[derive(Debug, Clone)]
 pub struct ParseDiagnostic {
     pub message: String,
     pub pos: Pos,
+    /// Byte span of the offending region. The end is the actionable addition
+    /// over `pos`-alone; zero-width when only a point is known (lex errors,
+    /// EOF).
+    pub span: Span,
+    pub category: DiagnosticCategory,
 }
 
 impl Expr {

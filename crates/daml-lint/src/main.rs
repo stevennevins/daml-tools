@@ -90,19 +90,22 @@ fn main() {
         };
 
         let (module, diagnostics) = parser::parse_daml_with_diagnostics(&source, file);
-        for (line, column, message) in &diagnostics {
+        for d in &diagnostics {
             eprintln!(
-                "daml-lint: parse: {}:{}:{}: {}",
+                "daml-lint: parse [{}]: {}:{}:{}: {}",
+                d.category,
                 file.display(),
-                line,
-                column,
-                message
+                d.line,
+                d.column,
+                d.message
             );
             parse_errors.push(reporter::ParseError {
                 file: file.display().to_string(),
-                line: *line,
-                column: *column,
-                message: message.clone(),
+                line: d.line,
+                column: d.column,
+                end_column: d.end_column,
+                message: d.message.clone(),
+                category: d.category,
             });
         }
 

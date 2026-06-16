@@ -29,7 +29,11 @@ pub struct ParseError {
     pub file: String,
     pub line: usize,
     pub column: usize,
+    /// End column when the diagnostic span sits on one line; `None` otherwise.
+    pub end_column: Option<usize>,
     pub message: String,
+    /// Recovery category tag (e.g. `skipped-declaration`, `unsupported-syntax`).
+    pub category: &'static str,
 }
 
 pub fn format_findings(
@@ -97,13 +101,18 @@ fn format_sarif(findings: &[Finding], parse_errors: &[ParseError]) -> String {
     let notifications: Vec<serde_json::Value> = parse_errors
         .iter()
         .map(|e| {
+            let mut region = json!({ "startLine": e.line, "startColumn": e.column });
+            if let Some(end) = e.end_column {
+                region["endColumn"] = json!(end);
+            }
             json!({
                 "level": "error",
                 "message": { "text": e.message },
+                "properties": { "category": e.category },
                 "locations": [{
                     "physicalLocation": {
                         "artifactLocation": { "uri": e.file },
-                        "region": { "startLine": e.line, "startColumn": e.column }
+                        "region": region
                     }
                 }]
             })
@@ -149,8 +158,8 @@ fn format_markdown(findings: &[Finding], parse_errors: &[ParseError]) -> String 
         out.push_str(&format!("## Parse Errors ({})\n\n", parse_errors.len()));
         for e in parse_errors {
             out.push_str(&format!(
-                "- `{}:{}:{}` {}\n",
-                e.file, e.line, e.column, e.message
+                "- `{}:{}:{}` [{}] {}\n",
+                e.file, e.line, e.column, e.category, e.message
             ));
         }
         out.push('\n');
@@ -224,7 +233,10 @@ fn format_json(findings: &[Finding], parse_errors: &[ParseError]) -> String {
         file: String,
         line: usize,
         column: usize,
+        #[serde(rename = "endColumn", skip_serializing_if = "Option::is_none")]
+        end_column: Option<usize>,
         message: String,
+        category: &'static str,
     }
 
     #[derive(Serialize)]
@@ -273,7 +285,9 @@ fn format_json(findings: &[Finding], parse_errors: &[ParseError]) -> String {
                 file: e.file.clone(),
                 line: e.line,
                 column: e.column,
+                end_column: e.end_column,
                 message: e.message.clone(),
+                category: e.category,
             })
             .collect(),
         summary: Summary {
@@ -332,7 +346,9 @@ mod tests {
             file: "Bad.daml".to_string(),
             line: 3,
             column: 5,
+            end_column: Some(11),
             message: "unterminated string literal".to_string(),
+            category: "lexical-error",
         }
     }
 
@@ -367,6 +383,29 @@ mod tests {
         assert_eq!(json["parseErrors"].as_array().unwrap().len(), 1);
         assert_eq!(json["parseErrors"][0]["line"], 3);
         assert_eq!(json["summary"]["parseErrors"], 1);
+    }
+
+    // The recovery category and end column must reach machine-readable output
+    // so consumers can distinguish unsupported syntax from a real malformation
+    // and highlight the offending range.
+    #[test]
+    fn json_carries_category_and_end_column() {
+        let json: serde_json::Value =
+            serde_json::from_str(&format_json(&[], &[parse_err()])).unwrap();
+        assert_eq!(json["parseErrors"][0]["category"], "lexical-error");
+        assert_eq!(json["parseErrors"][0]["endColumn"], 11);
+    }
+
+    #[test]
+    fn sarif_notification_carries_category_and_end_column() {
+        let sarif: serde_json::Value =
+            serde_json::from_str(&format_sarif(&[], &[parse_err()])).unwrap();
+        let note = &sarif["runs"][0]["invocations"][0]["toolExecutionNotifications"][0];
+        assert_eq!(note["properties"]["category"], "lexical-error");
+        assert_eq!(
+            note["locations"][0]["physicalLocation"]["region"]["endColumn"],
+            11
+        );
     }
 
     #[test]

@@ -18,15 +18,43 @@ pub fn parse_module(source: &str) -> (Module, Vec<ParseDiagnostic>) {
         depth: 0,
         diags: lex_errors
             .into_iter()
-            .map(|e| ParseDiagnostic {
-                message: e.message,
-                pos: e.pos,
+            .map(|e| {
+                let b = byte_of_pos(source, e.pos);
+                ParseDiagnostic {
+                    message: e.message,
+                    pos: e.pos,
+                    span: crate::ast::Span::new(b, b),
+                    category: DiagnosticCategory::Lex,
+                }
             })
             .collect(),
     };
     let mut module = p.module();
     module.span = crate::ast::Span::new(0, source.len());
     (module, p.diags)
+}
+
+/// Byte offset of a 1-based (line, column) position, for mapping a lexer error
+/// (which carries only line/column) to a byte span. Replays the lexer's own
+/// column accounting, including tab stops, so the byte is exact even on lines
+/// with leading tabs.
+fn byte_of_pos(source: &str, pos: Pos) -> usize {
+    let mut line = 1usize;
+    let mut col = 1usize;
+    for (idx, ch) in source.char_indices() {
+        if line == pos.line && col == pos.column {
+            return idx;
+        }
+        match ch {
+            '\n' => {
+                line += 1;
+                col = 1;
+            }
+            '\t' => col = ((col - 1) / crate::lexer::TAB_STOP + 1) * crate::lexer::TAB_STOP + 1,
+            _ => col += 1,
+        }
+    }
+    source.len()
 }
 
 struct Parser {
@@ -162,12 +190,36 @@ impl Parser {
         }
     }
 
+    /// Emit a `Malformed` diagnostic at the current token (the common case).
     fn diag(&mut self, message: impl Into<String>) {
+        self.diag_cat(DiagnosticCategory::Malformed, message);
+    }
+
+    /// Emit a diagnostic with an explicit recovery category. The span is the
+    /// current token's byte extent (the offending token), so consumers get an
+    /// end position, not just a start.
+    fn diag_cat(&mut self, category: DiagnosticCategory, message: impl Into<String>) {
         let pos = self.pos();
+        let span = self.cur_span();
         self.diags.push(ParseDiagnostic {
             message: message.into(),
             pos,
+            span,
+            category,
         });
+    }
+
+    /// Byte span of the next real (non-virtual) token, or a zero-width span at
+    /// end-of-input. Used to anchor a diagnostic to the offending token.
+    fn cur_span(&self) -> crate::ast::Span {
+        let mut j = self.i;
+        while self.toks.get(j).is_some_and(|t| t.is_virtual()) {
+            j += 1;
+        }
+        match self.toks.get(j) {
+            Some(t) => crate::ast::Span::new(t.start, t.end),
+            None => crate::ast::Span::new(self.src_len, self.src_len),
+        }
     }
 
     /// Skip tokens until the end of the current block item: a VSemi or
@@ -485,7 +537,10 @@ impl Parser {
             // Top-level pattern binding: `[a, b, c] = ...`, `(x, y) = ...`.
             Some(Tok::LParen) | Some(Tok::LBracket) => {
                 if self.binding().is_none() {
-                    self.diag("unparseable top-level pattern binding");
+                    self.diag_cat(
+                        DiagnosticCategory::SkippedDecl,
+                        "unparseable top-level pattern binding",
+                    );
                 }
                 self.skip_to_item_end();
                 decls.push(Decl::Unknown {
@@ -495,7 +550,10 @@ impl Parser {
                 });
             }
             _ => {
-                self.diag(format!("unrecognized declaration: {:?}", self.peek()));
+                self.diag_cat(
+                    DiagnosticCategory::SkippedDecl,
+                    format!("unrecognized declaration: {:?}", self.peek()),
+                );
                 self.skip_to_item_end();
                 decls.push(Decl::Unknown {
                     raw: self.slice_text(start),
@@ -1018,7 +1076,8 @@ impl Parser {
                 // Legacy Daml 1.x `controller <party> can` choice blocks are
                 // not analyzed — fail loud instead of silently dropping the
                 // choices inside.
-                self.diag(
+                self.diag_cat(
+                    DiagnosticCategory::UnsupportedSyntax,
                     "legacy 'controller ... can' syntax is not supported; \
                      choices inside this block are not analyzed",
                 );
@@ -1918,7 +1977,14 @@ impl Parser {
         let pos = self.pos();
         let start_i = self.i;
         if self.depth >= MAX_DEPTH {
-            // Hostile nesting: degrade to raw text instead of recursing.
+            // Hostile nesting: degrade to raw text instead of recursing, and
+            // report it so the degraded region is not silently mistaken for
+            // unsupported syntax. `skip_to_item_end` below consumes the rest of
+            // the item, so this trips about once per affected declaration.
+            self.diag_cat(
+                DiagnosticCategory::RecursionLimit,
+                "expression nesting too deep; truncated to raw text",
+            );
             let start = self.i;
             self.skip_to_item_end();
             if self.i == start {

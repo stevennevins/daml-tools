@@ -20,8 +20,18 @@ pub fn parse_daml(source: &str, file: &Path) -> DamlModule {
     parse_daml_with_diagnostics(source, file).0
 }
 
-/// (line, column, message) diagnostics for the caller to report.
-pub type Diagnostic = (usize, usize, String);
+/// A parse diagnostic for the caller to report. `end_column` is present when
+/// the offending span sits on a single line (most tokens); `category` is the
+/// parser's recovery classification (`skipped-declaration`, `malformed`,
+/// `unsupported-syntax`, `recursion-limit`, `lexical-error`).
+#[derive(Debug)]
+pub struct Diagnostic {
+    pub line: usize,
+    pub column: usize,
+    pub end_column: Option<usize>,
+    pub message: String,
+    pub category: &'static str,
+}
 
 pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> (DamlModule, Vec<Diagnostic>) {
     let (module, diags) = parse_module(source);
@@ -67,7 +77,21 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> (DamlModule, Ve
     };
     let diags = diags
         .into_iter()
-        .map(|d| (d.pos.line, d.pos.column, d.message))
+        .map(|d| {
+            // Derive an end column from the byte span when it stays on one line
+            // (the slice has no newline): columns advance one per character.
+            let end_column = source
+                .get(d.span.start..d.span.end)
+                .filter(|s| !s.is_empty() && !s.contains('\n'))
+                .map(|s| d.pos.column + s.chars().count());
+            Diagnostic {
+                line: d.pos.line,
+                column: d.pos.column,
+                end_column,
+                message: d.message,
+                category: d.category.as_str(),
+            }
+        })
         .collect();
     (ir, diags)
 }

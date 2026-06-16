@@ -132,7 +132,7 @@ fn is_ident_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_' || c == '\''
 }
 
-const TAB_STOP: usize = 8;
+pub(crate) const TAB_STOP: usize = 8;
 
 struct Lexer<'a> {
     chars: Vec<char>,
