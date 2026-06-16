@@ -1,0 +1,11 @@
+#!/bin/sh
+# Tracked Git shim for prek. Hook behavior lives in prek.toml.
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+
+if command -v prek >/dev/null 2>&1; then
+    exec prek hook-impl --hook-dir "$HERE" --script-version 4 --hook-type=commit-msg -- "$@"
+fi
+
+echo "`prek` not found. Install it with: uv tool install prek" >&2
+exit 1

@@ -43,16 +43,20 @@ cargo build --workspace
 cargo test  --workspace
 ```
 
-## Commit messages
+## Developer hooks
 
-This repo uses Conventional Commits so release-plz can derive changelogs and
-version bumps. Enable the versioned commit hook in new checkouts with
-`pre-commit`:
+This repo tracks Git hook shims in `.githooks` and manages hook behavior with
+`prek.toml`. Enable the hooks in new checkouts with `prek`:
 
 ```sh
-uv tool install pre-commit
-pre-commit install --install-hooks --hook-type commit-msg
+uv tool install prek
+git config core.hooksPath .githooks
+prek prepare-hooks
 ```
+
+The pre-commit hook runs `cargo fmt --all --check`. The commit message hook
+enforces Conventional Commits so release-plz can derive changelogs and version
+bumps.
 
 The parser/layout integration tests use a vendored
 [daml-finance](https://github.com/digital-asset/daml-finance) corpus under
