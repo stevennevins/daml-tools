@@ -15,10 +15,11 @@
 //!      `con_col + 2`. The anchor line itself is never moved, which makes each
 //!      rule a fixpoint: a second pass computes delta 0. Children shift by one
 //!      uniform delta, so the block's internal structure (and any nested blocks)
-//!      ride along. A `template` body is the one STRUCTURED rule: its
-//!      `with`/`where` keywords go to `template_col + 2` and the field /
-//!      signatory-choice-decl blocks to `template_col + 4` (two different
-//!      deltas), so a 4-space ladder collapses to the canonical 2-space one.
+//!      ride along. A `template`/`interface` body is the one STRUCTURED rule: a
+//!      template's `with`/`where` keywords go to `head_col + 2` and the field /
+//!      signatory-choice-decl blocks to `head_col + 4` (two different deltas),
+//!      so a 4-space ladder collapses to the canonical 2-space one; an
+//!      interface's inline-`where` body sits at `head_col + 2`.
 //!   3. Comments are sacred: comment lines are never measured-from and never
 //!      shifted (CLAUDE.md). Block-comment interiors are trivia, untouched.
 //!   4. Gate the whole candidate on `same_tokens` = identical LAID-OUT token
@@ -26,9 +27,8 @@
 //!      desugar. Any accepted reindent is desugar-safe BY CONSTRUCTION.
 //!   5. Fall back to the input (verbatim) when the gate rejects or a node is
 //!      not modeled. Unmodeled constructs (guards, record UPDATES (`expr with`),
-//!      `interface` bodies, `data` declarations, TypeDef, expression
-//!      continuations) pass through verbatim — desugar-safe and lets us land one
-//!      construct at a time.
+//!      `data` declarations, TypeDef, expression continuations) pass through
+//!      verbatim — desugar-safe and lets us land one construct at a time.
 //!
 //! On top of the structural pass we compose the proven, token-gated
 //! whitespace + colon-spacing normalization (`crate::normalize_gaps`).
@@ -1006,59 +1006,140 @@ fn body_decl_span(d: &TemplateBodyDecl) -> Span {
 /// deltas turn a 4-space ladder into the canonical 2-space one; choice bodies
 /// (and any nested do-blocks) ride the decl-block shift and are then
 /// canonicalized by the do-pass. `same_tokens` gates the whole candidate.
+/// Reindent one keyword-introduced block (`with …` / `where …`): move the
+/// keyword line to `kw_target` when it is on its OWN line (inline keywords like
+/// `template X with` / `interface X where` stay put), and shift the block to
+/// `body_target`. The two targets are passed in, not derived — a template is a
+/// 2-level ladder (keywords at head + 2, contents at head + 4 even when the
+/// keyword is inline, since the sibling block's keyword closes it), whereas an
+/// interface's lone `where`-block sits at head + 2.
+#[allow(clippy::too_many_arguments)]
+fn reindent_keyword_block(
+    edits: &mut Vec<Edit>,
+    ls: &[usize],
+    src: &str,
+    comments: &[(usize, usize)],
+    head_line: usize,
+    kw_target: i64,
+    body_target: i64,
+    kw: &str,
+    kw_from: usize,
+    block_first: usize,
+    block_last_end: usize,
+) {
+    if let Some(w) = find_keyword(src, kw_from, block_first, kw, comments) {
+        if line_of(ls, w) > head_line {
+            push_line_edit(edits, ls, src, line_of(ls, w), kw_target);
+        }
+    }
+    push_block_edit(
+        edits,
+        ls,
+        src,
+        block_first,
+        block_last_end,
+        body_target,
+        head_line,
+    );
+}
+
 fn template_edits(src: &str, module: &Module) -> Vec<Edit> {
     let line_starts = line_start_table(src);
     let comments = comment_spans(src);
     let mut edits = Vec::new();
     for d in &module.decls {
-        let Decl::Template(t) = d else { continue };
-        let head_line = line_of(&line_starts, t.span.start);
+        let head_byte = match d {
+            Decl::Template(t) => t.span.start,
+            Decl::Interface(i) => i.span.start,
+            _ => continue,
+        };
+        let head_line = line_of(&line_starts, head_byte);
         if leading_has_tab(src, line_starts[head_line]) {
             continue;
         }
         let head_indent = indent_of(src, &line_starts, head_line);
         let kw_target = head_indent + INDENT;
-        let body_target = head_indent + 2 * INDENT;
 
-        // with-block: the `with` keyword line + the field block.
-        if let (Some(f0), Some(fl)) = (t.fields.first(), t.fields.last()) {
-            if let Some(w) = find_keyword(src, t.span.start, f0.span.start, "with", &comments) {
-                let wl = line_of(&line_starts, w);
-                if wl > head_line {
-                    push_line_edit(&mut edits, &line_starts, src, wl, kw_target);
+        match d {
+            Decl::Template(t) => {
+                // A template is a 2-level ladder: with/where at head + 2, their
+                // contents at head + 4 (even an inline `template X with`, since
+                // the `where` keyword at + 2 must close the with-block).
+                let body_target = head_indent + 2 * INDENT;
+                // with-block: field block, anchored on the `with` keyword.
+                if let (Some(f0), Some(fl)) = (t.fields.first(), t.fields.last()) {
+                    reindent_keyword_block(
+                        &mut edits,
+                        &line_starts,
+                        src,
+                        &comments,
+                        head_line,
+                        kw_target,
+                        body_target,
+                        "with",
+                        t.span.start,
+                        f0.span.start,
+                        fl.span.end,
+                    );
+                }
+                // where-block: signatory/choice decls, anchored on `where`.
+                if let (Some(b0), Some(bl)) = (t.body.first(), t.body.last()) {
+                    let b0_start = body_decl_span(b0).start;
+                    let bl_end = body_decl_span(bl).end;
+                    let where_from = t.fields.last().map(|f| f.span.end).unwrap_or(t.span.start);
+                    reindent_keyword_block(
+                        &mut edits,
+                        &line_starts,
+                        src,
+                        &comments,
+                        head_line,
+                        kw_target,
+                        body_target,
+                        "where",
+                        where_from,
+                        b0_start,
+                        bl_end,
+                    );
                 }
             }
-            push_block_edit(
-                &mut edits,
-                &line_starts,
-                src,
-                f0.span.start,
-                fl.span.end,
-                body_target,
-                head_line,
-            );
-        }
-
-        // where-block: the `where` keyword line + the body-decl block.
-        if let (Some(b0), Some(bl)) = (t.body.first(), t.body.last()) {
-            let b0_start = body_decl_span(b0).start;
-            let bl_end = body_decl_span(bl).end;
-            let where_from = t.fields.last().map(|f| f.span.end).unwrap_or(t.span.start);
-            if let Some(wh) = find_keyword(src, where_from, b0_start, "where", &comments) {
-                let whl = line_of(&line_starts, wh);
-                if whl > head_line {
-                    push_line_edit(&mut edits, &line_starts, src, whl, kw_target);
+            Decl::Interface(i) => {
+                // Interface body = viewtype + methods + choices. `viewtype`
+                // carries no span and sits first, so anchor the block on the
+                // first CODE LINE after the head (which includes it) rather than
+                // on the first method/choice — otherwise the viewtype would be
+                // left behind and break the offside (the gate would just reject).
+                let mut last_end = None;
+                for s in i
+                    .methods
+                    .iter()
+                    .map(|m| m.span)
+                    .chain(i.choices.iter().map(|c| c.span))
+                {
+                    last_end = Some(last_end.map_or(s.end, |e: usize| e.max(s.end)));
+                }
+                if let Some(last_end) = last_end {
+                    if let Some(fbl) =
+                        first_code_line_after(src, &line_starts, &comments, head_line, last_end)
+                    {
+                        // An interface's lone `where`-block (where is inline on
+                        // the head line) sits at head + 2.
+                        reindent_keyword_block(
+                            &mut edits,
+                            &line_starts,
+                            src,
+                            &comments,
+                            head_line,
+                            kw_target,
+                            head_indent + INDENT,
+                            "where",
+                            i.span.start,
+                            line_starts[fbl],
+                            last_end,
+                        );
+                    }
                 }
             }
-            push_block_edit(
-                &mut edits,
-                &line_starts,
-                src,
-                b0_start,
-                bl_end,
-                body_target,
-                head_line,
-            );
+            _ => {}
         }
     }
     edits
@@ -1306,6 +1387,28 @@ mod tests {
         let want = "template Coin\n  with\n    issuer: Party\n  where\n    signatory issuer\n    choice Burn: ()\n      controller issuer\n      do pure ()\n";
         assert_eq!(out, want);
         assert_eq!(format_ast(&out), out); // idempotent
+    }
+
+    #[test]
+    fn interface_body_canonicalized_to_two() {
+        // `interface X where` has `where` inline, so the body (viewtype +
+        // methods + choices) sits at head + 2, and a choice's internals ride to
+        // head + 4.
+        let src = "interface Asset where\n    viewtype V\n    getOwner : Party\n    choice Xfer : ()\n      controller getOwner this\n      do pure ()\n";
+        let out = format_ast(src);
+        let want = "interface Asset where\n  viewtype V\n  getOwner: Party\n  choice Xfer: ()\n    controller getOwner this\n    do pure ()\n";
+        assert_eq!(out, want);
+        assert_eq!(format_ast(&out), out); // idempotent
+    }
+
+    #[test]
+    fn inline_with_template_keeps_fields_at_head_plus_four() {
+        // Regression: `template T with` (with inline on the head line) is still
+        // a 2-level ladder — fields at head + 4, NOT head + 2, because the
+        // `where` at + 2 must close the with-block. (Sending them to + 2 made
+        // the SDK reject the output.)
+        let src = "template T with\n    p: Party\n  where\n    signatory p\n";
+        assert_eq!(format_ast(src), src);
     }
 
     #[test]

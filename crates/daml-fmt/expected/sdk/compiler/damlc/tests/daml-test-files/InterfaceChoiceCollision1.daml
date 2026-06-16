@@ -6,9 +6,9 @@ module InterfaceChoiceCollision1 where
 data EmptyInterfaceView = EmptyInterfaceView {}
 
 interface Interface where
-    viewtype EmptyInterfaceView
-    getOwner: Party
+  viewtype EmptyInterfaceView
+  getOwner: Party
 
-    choice MyArchive: ()
-        controller getOwner this
-        do pure ()
+  choice MyArchive: ()
+      controller getOwner this
+      do pure ()
