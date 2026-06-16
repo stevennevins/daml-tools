@@ -132,15 +132,8 @@ pub trait Detector {
     }
 }
 
-use crate::detectors::archive_before_execute::ArchiveBeforeExecute;
-use crate::detectors::ensure_decimal::MissingEnsureDecimal;
-use crate::detectors::head_of_list::HeadOfListQuery;
-use crate::detectors::positive_amount::MissingPositiveAmount;
-use crate::detectors::unbounded_fields::UnboundedFields;
-use crate::detectors::unguarded_division::UnguardedDivision;
-
 /// Returns the first detector name that appears more than once, if any.
-pub fn find_duplicate_name(detectors: &[Box<dyn Detector>]) -> Option<String> {
+pub fn find_duplicate_detector_name(detectors: &[Box<dyn Detector>]) -> Option<String> {
     let mut seen = std::collections::HashSet::new();
     for det in detectors {
         if !seen.insert(det.name()) {
@@ -150,31 +143,22 @@ pub fn find_duplicate_name(detectors: &[Box<dyn Detector>]) -> Option<String> {
     None
 }
 
-/// Built-in detectors shipped with `daml-lint`.
-pub fn all_detectors() -> Vec<Box<dyn Detector>> {
-    vec![
-        Box::new(MissingEnsureDecimal),
-        Box::new(UnguardedDivision),
-        Box::new(HeadOfListQuery),
-        Box::new(UnboundedFields),
-        Box::new(MissingPositiveAmount),
-        Box::new(ArchiveBeforeExecute),
-    ]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn returns_none_when_detector_names_are_unique() {
-        assert_eq!(find_duplicate_name(&all_detectors()), None);
+        assert_eq!(
+            find_duplicate_detector_name(&crate::detectors::create_builtin_detectors()),
+            None
+        );
     }
 
     #[test]
     fn returns_duplicate_detector_name() {
-        let mut doubled = all_detectors();
-        doubled.extend(all_detectors());
-        assert!(find_duplicate_name(&doubled).is_some());
+        let mut doubled = crate::detectors::create_builtin_detectors();
+        doubled.extend(crate::detectors::create_builtin_detectors());
+        assert!(find_duplicate_detector_name(&doubled).is_some());
     }
 }

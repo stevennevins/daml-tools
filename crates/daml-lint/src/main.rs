@@ -51,7 +51,7 @@ fn main() {
     });
 
     // Load detectors first so rule-file errors surface before scanning
-    let mut detectors = detector::all_detectors();
+    let mut detectors = detectors::create_builtin_detectors();
     for rules_path in &cli.rules {
         match detectors::script::load_script(rules_path) {
             Ok(rule) => detectors.push(rule),
@@ -61,7 +61,7 @@ fn main() {
             }
         }
     }
-    if let Some(duplicate_detector_name) = detector::find_duplicate_name(&detectors) {
+    if let Some(duplicate_detector_name) = detector::find_duplicate_detector_name(&detectors) {
         eprintln!(
             "Error: rule '{}': name collides with a built-in detector or another rule",
             duplicate_detector_name

@@ -10,7 +10,7 @@
 //!
 //! Usage: `coverage [--list] <dir-or-file>...`
 
-use daml_fmt::layout_ast::coverage;
+use daml_fmt::coverage;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 

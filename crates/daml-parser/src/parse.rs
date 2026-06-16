@@ -246,7 +246,7 @@ impl Parser {
 
     /// Raw text of tokens from `start` to the current position.
     fn slice_text(&self, start: usize) -> String {
-        render_tokens(&self.toks[start..self.i])
+        render_token_slice(&self.toks[start..self.i])
     }
 
     // ----- module ------------------------------------------------------
@@ -453,55 +453,10 @@ impl Parser {
                     }
                     _ => String::new(),
                 };
-                // Parse the structured body for the forms we model; everything
-                // else (class/instance/exception, or an unparseable body) stays
-                // opaque. The trailing skip_to_item_end below guarantees the
-                // cursor — and therefore the node span — ends exactly where the
-                // old opaque path left it, so the span/render oracles are
-                // unaffected.
-                let mut constructors = Vec::new();
-                let mut synonym = None;
-                let mut deriving = Vec::new();
-                match keyword.as_str() {
-                    "data" | "newtype" => {
-                        self.skip_type_params();
-                        if self.eat_op("=") {
-                            let body_start = self.i;
-                            let (
-                                parsed_constructors,
-                                parsed_deriving_classes,
-                                parsed_structured_body,
-                            ) = self.parse_data_constructors();
-                            if parsed_structured_body {
-                                constructors = parsed_constructors;
-                                deriving = parsed_deriving_classes;
-                            } else {
-                                // A constructor hit an empty `with` block (its
-                                // fields are all commented out), which leaves an
-                                // unbalanced layout brace. Abandon the structured
-                                // parse and let the opaque path below re-skip the
-                                // body with correct depth, keeping the span exact.
-                                self.i = body_start;
-                            }
-                        }
-                    }
-                    "type" => {
-                        self.skip_type_params();
-                        if self.eat_op("=") {
-                            let ty_start = self.i;
-                            self.skip_to_item_end();
-                            synonym = parse_type_tokens(&self.toks[ty_start..self.i]);
-                        }
-                    }
-                    _ => {}
-                }
                 self.skip_to_item_end();
                 decls.push(Decl::TypeDef {
                     keyword,
                     name,
-                    constructors,
-                    synonym,
-                    deriving,
                     pos,
                     span: self.node_span(start),
                 });
@@ -727,7 +682,7 @@ impl Parser {
             }
             let ty_start = self.i;
             self.skip_to_item_end();
-            let ty = parse_type_tokens(&self.toks[ty_start..self.i]);
+            let ty = parse_type_from_tokens(&self.toks[ty_start..self.i]);
             // The type is shared by all names but sits after the last one, so
             // only the last field can span `name : Type` without overlapping a
             // sibling; earlier names of `x, y : T` stay name-only. daml-fmt
@@ -751,185 +706,7 @@ impl Parser {
         (fields, false)
     }
 
-    // ----- data / newtype / type declarations --------------------------
-
-    /// Skip LHS type parameters between a type name and `=`
-    /// (`data Box a b = ...`). Only bare lowercase variables are skipped;
-    /// anything fancier (a parenthesised kind signature) is left for the caller,
-    /// which then declines to parse a body and keeps the decl opaque.
-    fn skip_type_params(&mut self) {
-        while matches!(
-            self.peek(),
-            Some(Tok::LowerId {
-                qualifier: None,
-                ..
-            })
-        ) {
-            self.bump();
-        }
-    }
-
-    /// Parse the right-hand side of a `data`/`newtype` declaration:
-    /// `Ctor [payload] | Ctor [payload] | ...` followed by an optional
-    /// `deriving (...)`. Returns the constructors, the flattened deriving class
-    /// names, and a parsed-body flag — `false` means a constructor hit an empty `with`
-    /// block (an unbalanced layout brace) and the caller must abandon the
-    /// structured parse. Stops at the first token that cannot continue the list;
-    /// the caller's `skip_to_item_end` then consumes any unmodeled remainder.
-    fn parse_data_constructors(&mut self) -> (Vec<DataConstructor>, Vec<String>, bool) {
-        let mut constructors = Vec::new();
-        loop {
-            if self.at_keyword("deriving") {
-                break;
-            }
-            match self.peek() {
-                Some(Tok::UpperId { .. }) => match self.data_constructor() {
-                    Ok(Some(constructor)) => constructors.push(constructor),
-                    Ok(None) => break,
-                    // Dangling empty `with` block — bail to the opaque path.
-                    Err(()) => return (Vec::new(), Vec::new(), false),
-                },
-                _ => break,
-            }
-            if !self.eat_op("|") {
-                break;
-            }
-        }
-        // A type may carry several `deriving` clauses (`deriving (Show)
-        // deriving (Eq)`); collect them all.
-        let mut deriving = Vec::new();
-        while self.at_keyword("deriving") {
-            deriving.extend(self.parse_deriving());
-        }
-        (constructors, deriving, true)
-    }
-
-    /// Parse one constructor alternative: a name, then either record fields
-    /// (`with`/`{}`) or positional argument types. `Err(())` signals a dangling
-    /// empty `with` block, which the caller turns into an opaque-decl bail.
-    fn data_constructor(&mut self) -> Result<Option<DataConstructor>, ()> {
-        let start = self.i;
-        let pos = self.pos();
-        let name = match self.peek() {
-            Some(Tok::UpperId { qualifier, name }) => qualifier
-                .as_ref()
-                .map_or_else(|| name.clone(), |q| format!("{}.{}", q, name)),
-            _ => return Ok(None),
-        };
-        self.bump();
-        // Record syntax: `Ctor with f : T` (a `with` layout block) or
-        // `Ctor { f : T }` (explicit braces). Reuse the template field parser.
-        if self.at_keyword("with") || self.at(&Tok::LBrace) || self.at(&Tok::VLBrace) {
-            let _ = self.eat_keyword("with");
-            let (fields, dangling) = self.field_block();
-            if dangling {
-                return Err(());
-            }
-            return Ok(Some(DataConstructor {
-                name,
-                fields,
-                arg_types: Vec::new(),
-                pos,
-                span: self.node_span(start),
-            }));
-        }
-        // Positional / nullary: consume the argument atoms, then parse the whole
-        // `Ctor arg arg` slice as a type application — its head is the
-        // constructor and its arguments are the positional field types. A bare
-        // `Con` is a nullary constructor (no args). Anything that does NOT parse
-        // as a clean `Con`/`App` (an infix constructor like `Int :+: Int`, a
-        // strictness bang `T !Int`, or other unmodeled syntax) would force a
-        // guess at the name or arity, so we bail the whole decl to opaque rather
-        // than record a half-truth a detector would trust.
-        self.skip_constructor_args();
-        let arg_types = match parse_type_tokens(&self.toks[start..self.i]) {
-            Some(Type::App(_, args, _)) => args,
-            Some(Type::Con { .. }) => Vec::new(),
-            _ => return Err(()),
-        };
-        Ok(Some(DataConstructor {
-            name,
-            fields: Vec::new(),
-            arg_types,
-            pos,
-            span: self.node_span(start),
-        }))
-    }
-
-    /// Advance over a positional constructor's argument types, stopping (without
-    /// consuming) at the next top-level `|`, a `deriving` clause, or the end of
-    /// the item. Bracket depth is tracked so a `|`/`deriving` nested inside an
-    /// argument type cannot end the scan early.
-    fn skip_constructor_args(&mut self) {
-        let mut depth = 0usize;
-        while let Some(t) = self.peek() {
-            if depth == 0 && (t.is_op("|") || t.is_keyword("deriving") || matches!(t, Tok::VSemi)) {
-                return;
-            }
-            match t {
-                Tok::LParen | Tok::LBracket | Tok::LBrace | Tok::VLBrace => depth += 1,
-                Tok::RParen | Tok::RBracket | Tok::RBrace | Tok::VRBrace => {
-                    if depth == 0 {
-                        // An unmatched closer ends the enclosing block.
-                        return;
-                    }
-                    depth -= 1;
-                }
-                _ => {}
-            }
-            self.i += 1;
-        }
-    }
-
-    /// Parse a `deriving (Show, Eq)` or `deriving Show` clause into its class
-    /// names. Leaves the cursor after the clause; any extra `deriving` clauses
-    /// or strategies are mopped up by the caller's `skip_to_item_end`.
-    fn parse_deriving(&mut self) -> Vec<String> {
-        let mut names = Vec::new();
-        if !self.eat_keyword("deriving") {
-            return names;
-        }
-        // Optional deriving strategy: `deriving stock (..)`, `deriving newtype
-        // (..)`, `deriving anyclass (..)`. Skip the strategy word so the class
-        // list behind it is still captured.
-        if matches!(
-            self.peek(),
-            Some(Tok::LowerId { qualifier: None, name }) if name == "stock" || name == "newtype" || name == "anyclass"
-        ) {
-            self.bump();
-        }
-        if self.eat(&Tok::LParen) {
-            loop {
-                match self.peek() {
-                    Some(Tok::UpperId { qualifier, name }) => {
-                        names.push(
-                            qualifier
-                                .as_ref()
-                                .map_or_else(|| name.clone(), |q| format!("{}.{}", q, name)),
-                        );
-                        self.bump();
-                    }
-                    Some(Tok::RParen) => {
-                        self.bump();
-                        break;
-                    }
-                    None => break,
-                    // Commas and any stray tokens between names.
-                    _ => {
-                        self.bump();
-                    }
-                }
-            }
-        } else if let Some(Tok::UpperId { qualifier, name }) = self.peek() {
-            names.push(
-                qualifier
-                    .as_ref()
-                    .map_or_else(|| name.clone(), |q| format!("{}.{}", q, name)),
-            );
-            self.bump();
-        }
-        names
-    }
+    // ----- template body ------------------------------------------------
 
     fn template_body(&mut self) -> Vec<TemplateBodyDecl> {
         let mut body = Vec::new();
@@ -1001,7 +778,7 @@ impl Parser {
                 let ty = if self.eat_op(":") {
                     let ty_start = self.i;
                     self.skip_to_item_end();
-                    parse_type_tokens(&self.toks[ty_start..self.i])
+                    parse_type_from_tokens(&self.toks[ty_start..self.i])
                 } else {
                     // The expression parser consumes `: Type` annotations;
                     // recover the key type from the last top-level colon.
@@ -1015,7 +792,7 @@ impl Parser {
                             _ => {}
                         }
                     }
-                    let ty = colon.and_then(|j| parse_type_tokens(&self.toks[j + 1..self.i]));
+                    let ty = colon.and_then(|j| parse_type_from_tokens(&self.toks[j + 1..self.i]));
                     self.skip_to_item_end();
                     ty
                 };
@@ -1113,7 +890,7 @@ impl Parser {
         let return_ty = if self.eat_op(":") {
             let ty_start = self.i;
             self.skip_type_tokens();
-            parse_type_tokens(&self.toks[ty_start..self.i])
+            parse_type_from_tokens(&self.toks[ty_start..self.i])
         } else {
             None
         };
@@ -1287,7 +1064,7 @@ impl Parser {
                             // Single name: span the whole `name : Type`.
                             methods.push(FieldDecl {
                                 name: mname,
-                                ty: parse_type_tokens(&self.toks[ty_start..self.i]),
+                                ty: parse_type_from_tokens(&self.toks[ty_start..self.i]),
                                 pos: mpos,
                                 span: Span::new(mstart, self.end_byte().max(mstart)),
                             });
@@ -1406,7 +1183,7 @@ impl Parser {
             self.eat_op(":");
             let ty_start = self.i;
             self.skip_to_item_end();
-            let ty = parse_type_tokens(&self.toks[ty_start..self.i]);
+            let ty = parse_type_from_tokens(&self.toks[ty_start..self.i]);
             return Some(Decl::Function(FunctionDecl {
                 name,
                 ty,
@@ -3001,54 +2778,55 @@ fn merge_functions(decls: &mut Vec<Decl>) {
     *decls = out;
 }
 
-/// Render a token slice back to compact source-like text.
 /// Parse a type from a slice of the type's tokens (e.g. the tokens between a
 /// field's `:` and the item end). PURE: it never touches the main parser cursor
 /// and never affects any span, so it is invisible to daml-fmt. Returns `None`
-/// when the whole slice does not parse cleanly as a type — analysis then treats
-/// the type as unknown, exactly as the old string matcher's fallthrough did.
+/// when the whole slice does not parse cleanly as a type.
 ///
 /// Grammar (precedence low → high): constraint `C => T`, function `a -> b`
 /// (right-assoc), application `head arg...` (left-assoc), then atoms (`Con`,
 /// `Var`, `[T]`, `()`, `(T)`, `(a, b)`).
-pub(crate) fn parse_type_tokens(toks: &[Token]) -> Option<Type> {
+pub(crate) fn parse_type_from_tokens(tokens: &[Token]) -> Option<Type> {
     // Virtual layout tokens carry no type meaning; drop them so a stray VSemi
     // in the slice can't sink an otherwise-clean parse.
-    let real: Vec<&Token> = toks.iter().filter(|t| !t.is_virtual()).collect();
-    if real.is_empty() {
+    let real_tokens: Vec<&Token> = tokens.iter().filter(|t| !t.is_virtual()).collect();
+    if real_tokens.is_empty() {
         return None;
     }
-    let mut p = TypeParser { toks: &real, i: 0 };
-    let ty = p.parse_type()?;
+    let mut parser = TypeTokenParser {
+        tokens: &real_tokens,
+        cursor: 0,
+    };
+    let ty = parser.parse_type()?;
     // Require the whole slice to be consumed: a partial parse means the type
     // had a shape we don't model, so report unknown rather than a half-truth.
-    if p.i == real.len() {
+    if parser.cursor == real_tokens.len() {
         Some(ty)
     } else {
         None
     }
 }
 
-struct TypeParser<'a> {
-    toks: &'a [&'a Token],
-    i: usize,
+struct TypeTokenParser<'a> {
+    tokens: &'a [&'a Token],
+    cursor: usize,
 }
 
 /// Result of parsing one atom: a real type, or a dropped type-level nat literal
 /// (`Numeric 10` — not a type, so it never enters the App arg list).
-enum Atom {
-    Ty(Type),
-    DroppedLit(Span),
+enum TypeAtom {
+    ParsedType(Type),
+    DroppedLiteral(Span),
 }
 
-impl<'a> TypeParser<'a> {
+impl<'a> TypeTokenParser<'a> {
     fn peek(&self) -> Option<&'a Token> {
-        self.toks.get(self.i).copied()
+        self.tokens.get(self.cursor).copied()
     }
 
     fn eat_op(&mut self, op: &str) -> bool {
         if self.peek().is_some_and(|t| t.tok.is_op(op)) {
-            self.i += 1;
+            self.cursor += 1;
             true
         } else {
             false
@@ -3058,7 +2836,7 @@ impl<'a> TypeParser<'a> {
     /// Full type: a constraint context `=> body`, or a function `a -> b`, or a
     /// bare application.
     fn parse_type(&mut self) -> Option<Type> {
-        let lhs = self.parse_btype()?;
+        let lhs = self.parse_application_type()?;
         if self.eat_op("=>") {
             // `lhs` was the constraint context; drop it, keep the body.
             let body = self.parse_type()?;
@@ -3074,11 +2852,11 @@ impl<'a> TypeParser<'a> {
     }
 
     /// Application spine: one head atom applied to zero or more argument atoms.
-    fn parse_btype(&mut self) -> Option<Type> {
+    fn parse_application_type(&mut self) -> Option<Type> {
         let head = match self.parse_atom()? {
-            Atom::Ty(t) => t,
+            TypeAtom::ParsedType(t) => t,
             // A bare nat literal is not a type.
-            Atom::DroppedLit(_) => return None,
+            TypeAtom::DroppedLiteral(_) => return None,
         };
         let mut args = Vec::new();
         let start = head.span().start;
@@ -3086,15 +2864,15 @@ impl<'a> TypeParser<'a> {
         loop {
             // Only continue the spine if the next token can START an atom; an
             // operator (`->`, `=>`) or closer ends it.
-            if !self.at_atom_start() {
+            if !self.is_at_type_atom_start() {
                 break;
             }
             match self.parse_atom()? {
-                Atom::Ty(t) => {
+                TypeAtom::ParsedType(t) => {
                     end = t.span().end;
                     args.push(t);
                 }
-                Atom::DroppedLit(span) => {
+                TypeAtom::DroppedLiteral(span) => {
                     // `Numeric 10` — drop the `10` as structure but keep it in
                     // the enclosing type span.
                     end = span.end;
@@ -3111,7 +2889,7 @@ impl<'a> TypeParser<'a> {
 
     /// True if the current token can begin an atom (so the application spine
     /// should keep going).
-    fn at_atom_start(&self) -> bool {
+    fn is_at_type_atom_start(&self) -> bool {
         matches!(
             self.peek().map(|t| &t.tok),
             Some(Tok::UpperId { .. })
@@ -3123,7 +2901,7 @@ impl<'a> TypeParser<'a> {
         )
     }
 
-    fn parse_atom(&mut self) -> Option<Atom> {
+    fn parse_atom(&mut self) -> Option<TypeAtom> {
         let tok = self.peek()?;
         match &tok.tok {
             Tok::UpperId { qualifier, name } => {
@@ -3132,47 +2910,49 @@ impl<'a> TypeParser<'a> {
                     name: name.clone(),
                     span: Span::new(tok.start, tok.end),
                 };
-                self.i += 1;
-                Some(Atom::Ty(con))
+                self.cursor += 1;
+                Some(TypeAtom::ParsedType(con))
             }
             Tok::LowerId { name, .. } => {
                 // Type variable (`a`, `n`). Qualified lowercase never appears in
                 // a real type position; treat the name as the variable.
                 let var = Type::Var(name.clone(), Span::new(tok.start, tok.end));
-                self.i += 1;
-                Some(Atom::Ty(var))
+                self.cursor += 1;
+                Some(TypeAtom::ParsedType(var))
             }
             Tok::IntLit(_) | Tok::DecimalLit(_) => {
                 // Type-level nat literal (`Numeric 10`): consumed, but dropped.
-                self.i += 1;
-                Some(Atom::DroppedLit(Span::new(tok.start, tok.end)))
+                self.cursor += 1;
+                Some(TypeAtom::DroppedLiteral(Span::new(tok.start, tok.end)))
             }
             Tok::LBracket => {
                 let start = tok.start;
-                self.i += 1;
+                self.cursor += 1;
                 let inner = self.parse_type()?;
-                self.eat_bracket(Tok::RBracket)
-                    .map(|end| Atom::Ty(Type::List(Box::new(inner), Span::new(start, end.end))))
+                self.eat_token(Tok::RBracket).map(|end| {
+                    TypeAtom::ParsedType(Type::List(Box::new(inner), Span::new(start, end.end)))
+                })
             }
             Tok::LParen => {
                 let start = tok.start;
-                self.i += 1;
-                if let Some(end) = self.eat_bracket(Tok::RParen) {
+                self.cursor += 1;
+                if let Some(end) = self.eat_token(Tok::RParen) {
                     // ()
-                    return Some(Atom::Ty(Type::Unit(Span::new(start, end.end))));
+                    return Some(TypeAtom::ParsedType(Type::Unit(Span::new(start, end.end))));
                 }
                 let first = self.parse_type()?;
                 if self.peek().map(|t| &t.tok) == Some(&Tok::Comma) {
                     let mut items = vec![first];
-                    while self.eat_bracket(Tok::Comma).is_some() {
+                    while self.eat_token(Tok::Comma).is_some() {
                         items.push(self.parse_type()?);
                     }
-                    self.eat_bracket(Tok::RParen)
-                        .map(|end| Atom::Ty(Type::Tuple(items, Span::new(start, end.end))))
+                    self.eat_token(Tok::RParen).map(|end| {
+                        TypeAtom::ParsedType(Type::Tuple(items, Span::new(start, end.end)))
+                    })
                 } else {
-                    self.eat_bracket(Tok::RParen).map(|end| {
+                    self.eat_token(Tok::RParen).map(|end| {
                         // Grouping parens.
-                        Atom::Ty(first.with_span(Span::new(start, end.end)))
+                        TypeAtom::ParsedType(first.with_span(Span::new(start, end.end)))
                     })
                 }
             }
@@ -3180,10 +2960,10 @@ impl<'a> TypeParser<'a> {
         }
     }
 
-    fn eat_bracket(&mut self, tok: Tok) -> Option<&'a Token> {
+    fn eat_token(&mut self, tok: Tok) -> Option<&'a Token> {
         if self.peek().is_some_and(|t| t.tok == tok) {
             let t = self.peek();
-            self.i += 1;
+            self.cursor += 1;
             t
         } else {
             None
@@ -3191,10 +2971,10 @@ impl<'a> TypeParser<'a> {
     }
 }
 
-pub fn render_tokens(toks: &[Token]) -> String {
+fn render_token_slice(tokens: &[Token]) -> String {
     let mut s = String::new();
     let mut prev_no_space_after = true;
-    for t in toks {
+    for t in tokens {
         let (text, no_space_before, no_space_after): (String, bool, bool) = match &t.tok {
             Tok::LowerId { qualifier, name } | Tok::UpperId { qualifier, name } => (
                 qualifier
@@ -3238,7 +3018,7 @@ mod type_tests {
     fn ty(s: &str) -> Option<Type> {
         let (toks, errs) = lex(s);
         assert!(errs.is_empty(), "lex errors for {s:?}: {errs:?}");
-        parse_type_tokens(&toks)
+        parse_type_from_tokens(&toks)
     }
 
     fn con(name: &str) -> Type {
