@@ -43,6 +43,30 @@ cargo build --workspace
 cargo test  --workspace
 ```
 
+## Developer hooks
+
+This repo tracks Git hook shims in `.githooks` and manages hook behavior with
+`prek.toml`. Enable the hooks in new checkouts with `prek`:
+
+```sh
+uv tool install prek
+git config core.hooksPath .githooks
+prek prepare-hooks
+```
+
+Developers also need the Rust `rustfmt` and `clippy` components and Node.js 18+
+or newer, matching CI.
+
+The pre-commit hook runs the local lint gates from CI: `cargo fmt --all --check`,
+`cargo clippy --workspace --all-targets --all-features --locked`, and
+`RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked`.
+The commit message hook enforces Conventional Commits so release-plz can derive
+changelogs and version bumps.
+
+The pre-push hook runs the heavier test gates: `cargo test --workspace
+--all-features --locked` and the formatter's 924-file differential test
+(`cd crates/daml-fmt && node test/diff.js`).
+
 The parser/layout integration tests use a vendored
 [daml-finance](https://github.com/digital-asset/daml-finance) corpus under
 [`corpus/daml-finance/`](corpus/daml-finance/) (634 real `.daml` files), shared
