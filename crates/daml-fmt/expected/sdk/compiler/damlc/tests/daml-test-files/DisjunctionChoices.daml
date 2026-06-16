@@ -41,9 +41,9 @@ test = script do
 
   suggestion <- submit drWho do
       createCmd FeatureSuggestion with
-          employee = drWho
-          description = "Implement Splitwise on DaaS"
-          founders
+        employee = drWho
+        description = "Implement Splitwise on DaaS"
+        founders
 
     -- Despite being the CEO, Yuval can't exerciseCmd on Shaul's behalf
     -- due to a missing authorization.

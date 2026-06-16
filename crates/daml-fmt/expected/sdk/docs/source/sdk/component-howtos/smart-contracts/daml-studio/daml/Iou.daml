@@ -27,10 +27,10 @@ run = script do
   bob <- allocateParty "Bob"
   cid <- submit bank do
     createCmd Iou with
-     issuer = bank
-     owner = alice
-     amount = 10
-     currency = "USD"
+      issuer = bank
+      owner = alice
+      amount = 10
+      currency = "USD"
   submit alice do
     exerciseCmd cid Transfer with
-     newOwner = bob
+      newOwner = bob

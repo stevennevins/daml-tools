@@ -42,11 +42,11 @@ test_issuance = do
 
   Some asset <- queryContractId bank assetCid
   assert (asset == Asset with
-      issuer = bank
-      owner = alice
-      symbol = "USD"
-      quantity = 100.0
-      observers = []
+    issuer = bank
+    owner = alice
+    symbol = "USD"
+    quantity = 100.0
+    observers = []
         )
 
   return (setupResult, assetCid)

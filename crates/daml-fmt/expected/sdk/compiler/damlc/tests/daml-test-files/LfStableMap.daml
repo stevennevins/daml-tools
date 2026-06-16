@@ -18,5 +18,5 @@ run = script do
   alice <- allocateParty "Alice"
   submit alice do
      createCmd MapTemplate with
-        party = alice
-        value = fromList [(2, "a"), (5, "b"), (1, "c")]
+       party = alice
+       value = fromList [(2, "a"), (5, "b"), (1, "c")]

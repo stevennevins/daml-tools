@@ -39,12 +39,12 @@ template Wolpertinger
             do
               mate <- fetch mateId
               create Wolpertinger with
-                  owner = owner
-                  wings = this.wings + mate.wings
-                  age = 0.0
-                  name = this.name <> "-" <> mate.name
-                  alive = True
-                  dayOfBirth = toDateUTC tob
-                  timeOfBirth = tob
-                  parents = [self, mateId]
-                  colors = dedup (this.colors ++ mate.colors)
+                owner = owner
+                wings = this.wings + mate.wings
+                age = 0.0
+                name = this.name <> "-" <> mate.name
+                alive = True
+                dayOfBirth = toDateUTC tob
+                timeOfBirth = tob
+                parents = [self, mateId]
+                colors = dedup (this.colors ++ mate.colors)

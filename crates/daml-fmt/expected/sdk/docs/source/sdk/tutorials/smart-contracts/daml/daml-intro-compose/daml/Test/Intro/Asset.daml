@@ -22,11 +22,11 @@ test_asset = do
 
   Some asset <- queryContractId bank assetCid
   assert (asset == Asset with
-      issuer = bank
-      owner = bob
-      symbol = "USD"
-      quantity = 100.0
-      observers = []
+    issuer = bank
+    owner = bob
+    symbol = "USD"
+    quantity = 100.0
+    observers = []
         )
 
 test_split = do

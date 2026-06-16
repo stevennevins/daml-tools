@@ -45,10 +45,10 @@ choice_test = do
 
   contactCid <- submit owner do
      createCmd Contact with
-      owner
-      party
-      address = "1 Bobstreet"
-      telephone = "012 345 6789"
+       owner
+       party
+       address = "1 Bobstreet"
+       telephone = "012 345 6789"
 
   -- Bob can't change his own telephone number as Alice controls
   -- that choice.

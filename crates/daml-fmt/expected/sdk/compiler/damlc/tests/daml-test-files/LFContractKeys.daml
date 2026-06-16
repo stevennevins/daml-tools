@@ -152,8 +152,8 @@ lookupTest = script do
   -- Divulgee can't lookup with stakeholder authority
   submitMustFail divulgee do
     exerciseCmd obsDelegationCid LookupKeyed with
-        delegee = divulgee
-        lookupKey = sig
+      delegee = divulgee
+      lookupKey = sig
   -- Divulgee can't do positive lookup with maintainer authority.
   submitMustFail divulgee do
     exerciseCmd sigDelegationCid LookupKeyed with

@@ -35,10 +35,10 @@ contract_manipulation_test = do
 
   accountCid <- submit accountant do
      createCmd Account with
-      accountant
-      owner
-      bank
-      number = "ABC123"
+       accountant
+       owner
+       bank
+       number = "ABC123"
 
   -- Now the accountant updates the telephone number for the bank on the account
   Some account <- queryContractId accountant accountCid
@@ -82,10 +82,10 @@ stale_contract_id_test = do
 
   accountCid <- submit accountant do
      createCmd Account with
-      accountant
-      owner
-      bank
-      number = "ABC123"
+       accountant
+       owner
+       bank
+       number = "ABC123"
 
   balanceCid <- submit accountant do
     createCmd CashBalance with

@@ -10,20 +10,22 @@
 //!      construct lands at `anchor_col + 2`: a `do`-block's statements to
 //!      `do_col + 2` (including a `do` that opens with `let`), an
 //!      `if`/`then`/`else`'s `then`/`else` clauses to `if_col + 2`, and a
-//!      `case … of`'s alternatives to `case_col + 2`, and a `let … in`
-//!      expression's bindings to `let_col + 2`. The anchor line itself is never
-//!      moved, which makes each rule a fixpoint: a second pass computes delta 0.
-//!      Children shift by one uniform delta, so the block's internal structure
-//!      (and any nested blocks) ride along.
+//!      `case … of`'s alternatives to `case_col + 2`, a `let … in` expression's
+//!      bindings to `let_col + 2`, and a `Con with` construction's fields to
+//!      `con_col + 2`. The anchor line itself is never moved, which makes each
+//!      rule a fixpoint: a second pass computes delta 0. Children shift by one
+//!      uniform delta, so the block's internal structure (and any nested blocks)
+//!      ride along.
 //!   3. Comments are sacred: comment lines are never measured-from and never
 //!      shifted (CLAUDE.md). Block-comment interiors are trivia, untouched.
 //!   4. Gate the whole candidate on `same_tokens` = identical LAID-OUT token
 //!      stream (offside virtuals included) ⇒ identical parse ⇒ identical
 //!      desugar. Any accepted reindent is desugar-safe BY CONSTRUCTION.
 //!   5. Fall back to the input (verbatim) when the gate rejects or a node is
-//!      not modeled. Unmodeled constructs (`with` construction, `where`, guards,
-//!      record updates, TypeDef, expression continuations) pass through verbatim
-//!      — desugar-safe and lets us land one construct at a time.
+//!      not modeled. Unmodeled constructs (`where`, guards, record UPDATES
+//!      (`expr with`), template/data declarations, TypeDef, expression
+//!      continuations) pass through verbatim — desugar-safe and lets us land one
+//!      construct at a time.
 //!
 //! On top of the structural pass we compose the proven, token-gated
 //! whitespace + colon-spacing normalization (`crate::normalize_gaps`).
@@ -50,7 +52,9 @@ pub fn format_ast(src: &str) -> String {
     // one's gate still converges within a single call (idempotence).
     let mut base = src.to_string();
     for _ in 0..MAX_STRUCTURAL_PASSES {
-        let next = gated_letin_pass(&gated_case_pass(&gated_if_pass(&gated_do_pass(&base))));
+        let next = gated_con_with_pass(&gated_letin_pass(&gated_case_pass(&gated_if_pass(
+            &gated_do_pass(&base),
+        ))));
         if next == base {
             break;
         }
@@ -110,6 +114,17 @@ fn gated_case_pass(src: &str) -> String {
 fn gated_letin_pass(src: &str) -> String {
     let (module, _) = parse_module(src);
     let r = reindent_letins(src, &module);
+    if r != src && same_tokens(src, &r) {
+        r
+    } else {
+        src.to_string()
+    }
+}
+
+/// `Con with` construction field-block reindent of `src`, gated like the do-pass.
+fn gated_con_with_pass(src: &str) -> String {
+    let (module, _) = parse_module(src);
+    let r = reindent_con_with(src, &module);
     if r != src && same_tokens(src, &r) {
         r
     } else {
@@ -827,6 +842,86 @@ fn reindent_letins(src: &str, module: &Module) -> String {
     apply_shifts(src, &edits)
 }
 
+/// Reindent the field block of a `Con with …` record CONSTRUCTION so the fields
+/// land at `construction_line_indent + 2`. Only constructions (base is a bare
+/// constructor `Con`) are touched — record UPDATES (`expr with …`) hang-align
+/// inconsistently in the corpus and are left verbatim, as are inline and
+/// tab-indented blocks. The field block shifts by ONE uniform delta (so nested
+/// values ride along) and `same_tokens` gates it. Mirrors the case rule.
+fn con_with_edits(src: &str, module: &Module) -> Vec<Edit> {
+    let line_starts = line_start_table(src);
+    let comments = comment_spans(src);
+
+    // (record_span, base_end, first_field_start, last_field_end), outermost first.
+    let mut recs: Vec<(Span, usize, usize, usize)> = Vec::new();
+    walk_module_exprs(module, &mut |e| {
+        if let Expr::Record {
+            span, base, fields, ..
+        } = e
+        {
+            // Construction only: base is a bare constructor.
+            if !matches!(base.as_ref(), Expr::Con { .. }) {
+                return;
+            }
+            if let (Some(first), Some(last)) = (fields.first(), fields.last()) {
+                recs.push((*span, base.span().end, first.span.start, last.span.end));
+            }
+        }
+    });
+    recs.sort_by(|a, b| a.0.start.cmp(&b.0.start).then(b.0.end.cmp(&a.0.end)));
+
+    let mut edits: Vec<Edit> = Vec::new();
+    let mut accepted: Vec<Span> = Vec::new();
+    for (rec_span, base_end, first_field, last_field_end) in recs {
+        if accepted
+            .iter()
+            .any(|a| a.start <= rec_span.start && rec_span.end <= a.end && *a != rec_span)
+        {
+            continue;
+        }
+        accepted.push(rec_span);
+
+        let rec_line = line_of(&line_starts, rec_span.start);
+        let field_line = line_of(&line_starts, first_field);
+        // Inline `Con with a = 1` (first field shares the line): leave verbatim.
+        if field_line <= rec_line {
+            continue;
+        }
+        // Only when `with` sits on the base (`Con`) line — then anchoring the
+        // fields at base_line_indent + 2 lines them up under the construction.
+        // A split `Con\n  with\n    fields` (with on its own line) would put the
+        // fields left of `with`, so leave it verbatim.
+        match find_keyword(src, base_end, first_field, "with", &comments) {
+            Some(w) if line_of(&line_starts, w) == rec_line => {}
+            _ => continue,
+        }
+        if leading_has_tab(src, line_starts[rec_line])
+            || leading_has_tab(src, line_starts[field_line])
+        {
+            continue;
+        }
+        let rec_indent = indent_of(src, &line_starts, rec_line);
+        let cur = indent_of(src, &line_starts, field_line);
+        let delta = (rec_indent + INDENT) - cur;
+        if delta != 0 {
+            edits.push(Edit {
+                child_start: line_starts[field_line],
+                block_end: last_field_end,
+                delta,
+            });
+        }
+    }
+    edits
+}
+
+fn reindent_con_with(src: &str, module: &Module) -> String {
+    let edits = con_with_edits(src, module);
+    if edits.is_empty() {
+        return src.to_string();
+    }
+    apply_shifts(src, &edits)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1015,6 +1110,38 @@ mod tests {
     fn inline_letin_is_untouched() {
         // binding shares the `let` line — left verbatim.
         let src = "f = let x = 1 in x\n";
+        assert_eq!(format_ast(src), src);
+    }
+
+    #[test]
+    fn con_with_fields_reindented_to_indent_plus_two() {
+        // `create Asset with` at line indent 0; fields at col 6 move to col 2.
+        let src = "f = create Asset with\n      issuer = a\n      owner = b\n";
+        let out = format_ast(src);
+        assert_eq!(out, "f = create Asset with\n  issuer = a\n  owner = b\n");
+        assert_eq!(format_ast(&out), out); // idempotent
+    }
+
+    #[test]
+    fn record_update_stays_verbatim() {
+        // base is an expression (`this`), not a bare constructor: an update,
+        // which hangs-aligns inconsistently in the corpus — leave it alone.
+        let src = "f this p = this with\n      owner = p\n";
+        assert_eq!(format_ast(src), src);
+    }
+
+    #[test]
+    fn split_with_on_own_line_stays_verbatim() {
+        // `with` is on its own line, not the `Con` line: reindenting the fields
+        // to the Con line's indent + 2 would put them left of `with`, so the
+        // rule leaves it verbatim.
+        let src = "f = WithField\n    with\n        f1 = 10\n";
+        assert_eq!(format_ast(src), src);
+    }
+
+    #[test]
+    fn inline_con_with_is_untouched() {
+        let src = "f = Asset with issuer = a; owner = b\n";
         assert_eq!(format_ast(src), src);
     }
 

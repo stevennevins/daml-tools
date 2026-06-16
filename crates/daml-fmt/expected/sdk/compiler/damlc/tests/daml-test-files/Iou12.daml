@@ -108,11 +108,11 @@ main = script do
   -- Assert things are as they should be
   oAliceIou <- queryContractId alice rest
   oAliceIou === Some Iou with
-      issuer   = bank
-      owner    = alice
-      currency = "USD"
-      amount   = 60.0
-      regulators = [sec]
+    issuer   = bank
+    owner    = alice
+    currency = "USD"
+    amount   = 60.0
+    regulators = [sec]
 
   oBobIou <- queryContractId bob iouTotalCid
   oBobIou === Some Iou with

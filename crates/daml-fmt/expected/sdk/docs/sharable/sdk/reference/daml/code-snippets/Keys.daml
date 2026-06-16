@@ -223,8 +223,8 @@ lookupTest = script do
   -- Divulgee can't fetch the contract directly
   submitMustFail divulgee do
     exerciseCmd obsDelegationCid UnkeyedFetch with
-        delegee = divulgee
-        cid = keyedCid
+      delegee = divulgee
+      cid = keyedCid
   -- Divulgee can't fetch through the key
   submitMustFail divulgee do
     Helper divulgee `createAndExerciseCmd` FetchByKey sig
@@ -234,16 +234,16 @@ lookupTest = script do
   -- Divulgee can't see with stakeholder authority
   submitMustFail divulgee do
     exerciseCmd obsDelegationCid VisibleKeyed with
-        delegee = divulgee
-        key = sig
+      delegee = divulgee
+      key = sig
   -- Divulgee can't lookup
   submitMustFail divulgee do
     Helper divulgee `createAndExerciseCmd` LookupByKey sig
   -- Divulgee can't lookup with stakeholder authority
   submitMustFail divulgee do
     exerciseCmd obsDelegationCid LookupKeyed with
-        delegee = divulgee
-        lookupKey = sig
+      delegee = divulgee
+      lookupKey = sig
   -- Divulgee can't do positive lookup with maintainer authority.
   submit divulgee do
     Helper divulgee `createAndExerciseCmd` AssertNotVisibleKeyed with

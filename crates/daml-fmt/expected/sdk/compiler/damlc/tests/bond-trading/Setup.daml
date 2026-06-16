@@ -55,15 +55,15 @@ template MarketSetupJob
 
          bondCids <- forA mse.bondEntries $ \be ->
              create BondTransferRequest with
-                 issuer; newOwner = mse.party; owner = issuer
-                 isin = be.isin; amount = be.amount
+               issuer; newOwner = mse.party; owner = issuer
+               isin = be.isin; amount = be.amount
 
          cashCids <- forA mse.cashEntries $ \ce ->
              create CashTransferRequest with
-                 issuer; receiver = mse.party
-                 owner = issuer
-                 currency = ce.currency; amount = ce.amount
-                 locker = issuer; lockMaturity = None
+               issuer; receiver = mse.party
+               owner = issuer
+               currency = ce.currency; amount = ce.amount
+               locker = issuer; lockMaturity = None
 
          return MarketSetupResult with party = mse.party; helperCid; bondCids; cashCids
 
