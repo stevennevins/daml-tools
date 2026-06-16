@@ -11,13 +11,9 @@
 //! Start at [`parse::parse_module`]. For byte-faithful reconstruction from the
 //! parse tree, see [`ast_span::render_from_ast`] and [`lexer::render_lossless`].
 
-// The AST keeps positions and payloads on every node for completeness; not
-// every field is read inside this crate (consumers like daml-fmt read the rest).
-#[allow(dead_code)]
 pub mod ast;
 /// AST byte-span losslessness oracle (`render_from_ast`): reconstruct source
 /// from the parse tree to prove the tree lost nothing.
-#[allow(dead_code)]
 pub mod ast_span;
 pub mod layout;
 pub mod lexer;
