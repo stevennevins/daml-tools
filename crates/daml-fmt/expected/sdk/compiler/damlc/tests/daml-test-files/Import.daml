@@ -9,5 +9,5 @@ import Good qualified
 import Bad qualified
 
 -- this checks that qualified names show up in error messages
-a: Good.T
+a : Good.T
 a = Bad.T

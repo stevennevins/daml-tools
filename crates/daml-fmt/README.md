@@ -83,6 +83,14 @@ tools/verify-rust.sh               # needs Daml SDK 3.4.11 on PATH for desugar
 tools/verify-rust.sh --desugar     # full-corpus desugar sweep
 ```
 
+Review-oriented full-corpus audit packets:
+
+```sh
+npm run audit                       # writes target/daml-fmt-audit
+```
+
+See `docs/audit-workflow.md` for the 25-sample subagent review workflow.
+
 The structural candidate metric (edit candidates over modeled constructs):
 
 ```sh

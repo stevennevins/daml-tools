@@ -8,10 +8,10 @@ module ActionFail where
 import Daml.Script
 import DA.Assert
 
-catOptionalsComp: [Optional a] -> [a]
+catOptionalsComp : [Optional a] -> [a]
 catOptionalsComp l = [x | Some x <- l]
 
-catOptionalsMonad: [Optional a] -> [a]
+catOptionalsMonad : [Optional a] -> [a]
 catOptionalsMonad l = do
   Some x <- l
   return x

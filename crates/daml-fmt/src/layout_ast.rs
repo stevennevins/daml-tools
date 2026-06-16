@@ -52,6 +52,10 @@ const MAX_STRUCTURAL_PASSES: usize = 6;
 /// Format with the AST-driven structural reindents, then the gap normalization;
 /// every step is gated for desugar-safety.
 pub fn format_ast(src: &str) -> String {
+    if has_source_range_expectation(src) {
+        return src.to_string();
+    }
+
     // Step 1: structural reindent (do-blocks, then if/then/else), each its own
     // gated pass. Iterate to a fixpoint so a later pass that unblocks an earlier
     // one's gate still converges within a single call (idempotence).
@@ -192,6 +196,12 @@ fn same_tokens(a: &str, b: &str) -> bool {
     let la = resolve_layout(lex_with_trivia(a).0);
     let lb = resolve_layout(lex_with_trivia(b).0);
     la.len() == lb.len() && la.iter().zip(&lb).all(|(x, y)| x.tok == y.tok)
+}
+
+fn has_source_range_expectation(src: &str) -> bool {
+    src.lines()
+        .filter(|line| line.trim_start().starts_with("-- @"))
+        .any(|line| line.contains("range="))
 }
 
 /// One reindent: shift every child line in `[child_start, block_end)` by `delta`.
@@ -420,6 +430,38 @@ fn first_code_line_after(
             return Some(l);
         }
         l += 1;
+    }
+    None
+}
+
+fn next_code_line_starts_with_keyword(
+    src: &str,
+    line_starts: &[usize],
+    comments: &[(usize, usize)],
+    after_line: usize,
+    keyword: &str,
+) -> Option<usize> {
+    let mut l = after_line + 1;
+    while l < line_starts.len() {
+        let ls = line_starts[l];
+        let le = *line_starts.get(l + 1).unwrap_or(&src.len());
+        let line = &src[ls..le];
+        let cur = line.len() - line.trim_start_matches(' ').len();
+        let trimmed = line[cur..].trim_end();
+        if line.trim().is_empty() || is_comment_line(comments, ls + cur) {
+            l += 1;
+            continue;
+        }
+        return trimmed
+            .strip_prefix(keyword)
+            .is_some_and(|rest| {
+                rest.is_empty()
+                    || rest
+                        .chars()
+                        .next()
+                        .is_some_and(|c| !c.is_ascii_alphanumeric() && c != '_')
+            })
+            .then_some(l);
     }
     None
 }
@@ -859,7 +901,19 @@ fn con_with_edits(src: &str, module: &Module) -> Vec<Edit> {
         }
         let rec_indent = indent_of(src, &line_starts, rec_line);
         let cur = indent_of(src, &line_starts, field_line);
-        let delta = (rec_indent + INDENT) - cur;
+        let target = rec_indent + INDENT;
+        if next_code_line_starts_with_keyword(
+            src,
+            &line_starts,
+            &comments,
+            line_of(&line_starts, last_field_end.saturating_sub(1)),
+            "where",
+        )
+        .is_some_and(|next_line| indent_of(src, &line_starts, next_line) <= target)
+        {
+            continue;
+        }
+        let delta = target - cur;
         if delta != 0 {
             edits.push(Edit {
                 child_start: line_starts[field_line],
@@ -1129,6 +1183,12 @@ mod tests {
     }
 
     #[test]
+    fn source_range_expectation_files_stay_byte_exact() {
+        let src = "module M where\n-- @ WARN range=3:8-3:9; x\nfoo : Int\nfoo = 1\n";
+        assert_eq!(format_ast(src), src);
+    }
+
+    #[test]
     fn idempotent_on_reindent() {
         let src = "f = do\n      pure ()\n";
         let once = format_ast(src);
@@ -1317,6 +1377,16 @@ mod tests {
     fn inline_con_with_is_untouched() {
         let src = "f = Asset with issuer = a; owner = b\n";
         assert_eq!(format_ast(src), src);
+    }
+
+    #[test]
+    fn con_with_before_where_keeps_fields_inside_expression() {
+        let src = "module M where\nquery : T\nquery = lift $ QueryACS with\n    parties = p\n    tplId = t\n  where\n    convert = x\n";
+        let out = format_ast(src);
+        assert_eq!(
+            out,
+            "module M where\nquery: T\nquery = lift $ QueryACS with\n    parties = p\n    tplId = t\n  where\n    convert = x\n"
+        );
     }
 
     #[test]

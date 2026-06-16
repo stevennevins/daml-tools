@@ -7,5 +7,5 @@ module RelTimeDetailsHidden2 where
 
 import DA.Time
 
-foo: RelTime -> Int
+foo : RelTime -> Int
 foo (RelTime rt) = rt

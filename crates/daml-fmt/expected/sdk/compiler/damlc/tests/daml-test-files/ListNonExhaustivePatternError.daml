@@ -6,5 +6,5 @@ module ListNonExhaustivePatternError where
 
 -- @WARN range=10:1-10:11;warning: Pattern match(es) are non-exhaustive In an equation for ‘f’: Patterns not matched: [] (_::_::_)
 
-f: [a] -> ()
+f : [a] -> ()
 f [_] = ()

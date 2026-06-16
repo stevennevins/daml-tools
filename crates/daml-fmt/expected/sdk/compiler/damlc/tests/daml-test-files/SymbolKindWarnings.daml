@@ -33,8 +33,8 @@ class C5 (x: Symbol) where
 -- of GetField/SetField classes.
 
 data R = R with
-    foo: Int
-    bar: Int
+    foo : Int
+    bar : Int
 
 data T = T Int
 
@@ -44,20 +44,20 @@ instance GetField "foo" T Int where
 instance SetField "foo" T Int where
     setField n (T _) = T n
 
-getFoo: GetField "foo" a b => a -> b
+getFoo : GetField "foo" a b => a -> b
 getFoo = getField @"foo"
 
-getRFoo: R -> Int
+getRFoo : R -> Int
 getRFoo = getFoo
 
-getTFoo: T -> Int
+getTFoo : T -> Int
 getTFoo = getFoo
 
-setFoo: SetField "foo" a b => b -> a -> a
+setFoo : SetField "foo" a b => b -> a -> a
 setFoo = setField @"foo"
 
-setRFoo: Int -> R -> R
+setRFoo : Int -> R -> R
 setRFoo = setFoo
 
-setTFoo: Int -> T -> T
+setTFoo : Int -> T -> T
 setTFoo = setFoo

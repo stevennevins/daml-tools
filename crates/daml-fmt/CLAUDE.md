@@ -17,6 +17,11 @@ consistent decisions; it does not target any other formatter's output. The
 `expected/` tree is a snapshot of *this* formatter's output, used as the
 regression baseline.
 
+Compiler diagnostic fixtures with `-- @ ... range=LINE:COL-LINE:COL`
+comments are left byte-for-byte unchanged. Those comments are exact source
+location expectations, so even desugar-safe spacing edits can make the fixture
+wrong.
+
 `corpus/SCOREBOARD.md` is the tracked board; update it on any re-measure.
 
 ## How it works (architecture)
@@ -103,6 +108,8 @@ re-run the sweeps, update `SCOREBOARD.md` + the corpus manifests, commit.
 - **Comments are sacred:** never move or re-indent a comment; never measure a
   block's indentation from a comment line; block-comment interiors pass through
   byte-for-byte.
+- **Source-location expectations are sacred:** files containing compiler
+  diagnostic `-- @ ... range=...` comments stay byte-for-byte unchanged.
 - **Never dedent an originally-indented line to column 0** — column 0 closes
   every layout block.
 - **Content comes from spans, never re-assembled AST fields** (dotted updates,

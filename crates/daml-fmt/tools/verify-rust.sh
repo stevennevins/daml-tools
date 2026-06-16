@@ -57,6 +57,7 @@ total=$(wc -l < "$list" | tr -d ' ')
 
 nonidem="$tmp/nonidem.txt"; : > "$nonidem"
 neq="$tmp/neq.txt"; : > "$neq"
+desugar_warnings="$tmp/desugar-warnings.txt"; : > "$desugar_warnings"
 desugar_list="$tmp/desugar-list.txt"; : > "$desugar_list"
 
 if [ "$desugar_mode" = full ]; then
@@ -98,20 +99,52 @@ if [ "$desugar_mode" != none ] && command -v daml >/dev/null 2>&1; then
   while IFS= read -r f; do
     checked_desugar=$((checked_desugar + 1))
     "$FMT" "$f" > "$one"
-    base=$(basename "$f")
-    d="$tmp/desugar"; rm -rf "$d"; mkdir -p "$d"; cp "$one" "$d/$base"
-    a=$(cd "$(dirname "$f")" && daml --no-legacy-assistant-warning damlc desugar "$base" -o - 2>/dev/null || true)
-    b=$(cd "$d" && daml --no-legacy-assistant-warning damlc desugar "$base" -o - 2>/dev/null || true)
-    if [ -z "$a" ] || [ -z "$b" ]; then
-      echo "$f (desugar failed)" >> "$neq"
-    elif [ "$a" != "$b" ]; then
+    rel=${f#"$root/original/"}
+    module=$(sed -n "s/^[[:space:]]*module[[:space:]][[:space:]]*\\([A-Za-z_][A-Za-z0-9_'.]*\\).*/\\1/p" "$f" | head -n 1)
+    if [ -n "$module" ]; then
+      module_path=$(printf '%s\n' "$module" | tr . /).daml
+      case "$rel" in
+        "$module_path")
+          source_root="$root/original"
+          file_arg="$module_path"
+          ;;
+        *"/$module_path")
+          source_prefix=${rel%"$module_path"}
+          source_prefix=${source_prefix%/}
+          source_root="$root/original/$source_prefix"
+          file_arg="$module_path"
+          ;;
+        *)
+          source_root=$(dirname "$f")
+          file_arg=$(basename "$f")
+          ;;
+      esac
+    else
+      source_root=$(dirname "$f")
+      file_arg=$(basename "$f")
+    fi
+
+    d="$tmp/desugar"; rm -rf "$d"; mkdir -p "$d/$(dirname "$file_arg")"
+    cp "$one" "$d/$file_arg"
+    a_file="$tmp/original.desugar"; b_file="$tmp/formatted.desugar"
+    rm -f "$a_file" "$b_file"
+    a_status=0
+    b_status=0
+    (cd "$source_root" && daml --no-legacy-assistant-warning damlc desugar "$file_arg" -o "$a_file" 2>/dev/null) || a_status=$?
+    (cd "$d" && daml --no-legacy-assistant-warning damlc desugar "$file_arg" -o "$b_file" 2>/dev/null) || b_status=$?
+    if [ ! -f "$a_file" ] || [ ! -f "$b_file" ]; then
+      echo "$f (desugar produced no output)" >> "$neq"
+    elif ! cmp -s "$a_file" "$b_file"; then
       echo "$f" >> "$neq"
+    elif [ "$a_status" -ne 0 ] || [ "$b_status" -ne 0 ]; then
+      echo "$f (compiler exit $a_status/$b_status; output byte-identical)" >> "$desugar_warnings"
     fi
   done < "$desugar_list"
 fi
 
 n_nonidem=$(wc -l < "$nonidem" | tr -d ' ')
 n_neq=$(wc -l < "$neq" | tr -d ' ')
+n_desugar_warnings=$(wc -l < "$desugar_warnings" | tr -d ' ')
 
 echo "files:          $total"
 echo "non-idempotent: $n_nonidem"
@@ -121,9 +154,11 @@ elif command -v daml >/dev/null 2>&1; then
   echo "desugar-mode:   $desugar_mode"
   echo "desugar-files:  $checked_desugar"
   echo "desugar-not-equivalent: $n_neq"
+  echo "desugar-compiler-warnings: $n_desugar_warnings"
 else
   echo "desugar: SKIPPED (Daml SDK not on PATH)"
 fi
 [ "$n_nonidem" -gt 0 ] && { echo "--- non-idempotent ---"; cat "$nonidem"; }
 [ "$n_neq" -gt 0 ] && { echo "--- desugar-not-equivalent ---"; cat "$neq"; }
+[ "$n_desugar_warnings" -gt 0 ] && { echo "--- desugar-compiler-warnings ---"; cat "$desugar_warnings"; }
 [ "$n_nonidem" -eq 0 ] && [ "$n_neq" -eq 0 ]
