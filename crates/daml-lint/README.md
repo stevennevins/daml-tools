@@ -142,6 +142,30 @@ but are deprecated; new rules should match on structure, not substrings.
 [examples/unguarded-division-ast.ts](examples/unguarded-division-ast.ts)
 shows a denominator-guard check written entirely on typed nodes.
 
+Migration — deprecated raw-text field → structured replacement:
+
+| Deprecated (raw text) | Use instead (structured) | Notes |
+|---|---|---|
+| `choice.body_raw`, `function.body_raw` | `body` (`Statement[]`) | structured ledger actions. `body_raw` is the only source of verbatim line text/comments/`where` — a rule that needs those should read `m.source`, not `body`. |
+| `template.ensure_clause.raw_text` | `ensure_clause.expr` (`Expr`) | like-for-like (`raw_text` is `"ensure " + ` the rendered condition). |
+| `stmt.Let.expr` | `stmt.Let.value` (`Expr`) | like-for-like. |
+| `stmt.Assert.condition` | `stmt.Assert.condition_expr` (`Expr`) | the condition only — `condition` is the whole `assert`/`assertMsg` call text (it includes the `assertMsg` message). |
+| `stmt.Fetch.cid_expr`, `stmt.Archive.cid_expr`, `stmt.Exercise.cid_expr` | `.cid` (`Expr`) | like-for-like (the contract-id expression). |
+| `stmt.Create.raw` | `template_name` + `argument` (`Expr`) | `raw` is the whole `create ...` call; `argument` is only the payload record. |
+| `stmt.Exercise.raw` | `cid` + `choice_name` + `argument` (`Expr`) | `raw` is the whole `exercise ...` call; `argument` is only the choice argument. |
+
+`stmt.Other.raw` and the `Unknown` expression's `raw` are NOT deprecated:
+they are the deliberate raw-source escape hatch for constructs with no
+structured form (e.g. [examples/no-trace.ts](examples/no-trace.ts) matches
+source text). The rendered party-name lists `choice.controllers`,
+`template.signatories`, and `template.observers` (`string[]`) likewise have
+structured siblings (`controller_exprs`, `signatory_exprs`, `observer_exprs`)
+that new rules should prefer, but they are NOT formally deprecated yet because a
+shipped example
+([consuming-choice-signatory-controller.ts](examples/consuming-choice-signatory-controller.ts))
+still matches on the text. The deprecated fields above remain through the
+current minor line; a future breaking release may remove or feature-gate them.
+
 Heads up: visitors must be `function` declarations — arrow functions assigned
 to `const` are not discovered. If a script fails at runtime the scan aborts
 with exit code 2; rule errors are never swallowed. A runaway loop is

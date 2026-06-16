@@ -123,21 +123,58 @@ interface EnsureClause {
 /** Statements are single-key objects tagged by kind. Use the tag as a
  *  discriminant: `if ("Create" in stmt) { stmt.Create.template_name ... }`.
  *
- *  Raw-text payloads (`expr`, `condition`, `raw`) are deprecated; the
- *  structured fields (`value`, `condition_expr`, `argument`, `cid`) carry
- *  the parse tree. `binder` is the pattern text bound by `x <- ...`, when
+ *  The per-field `@deprecated` raw-text payloads (`Let.expr`,
+ *  `Assert.condition`, the `cid_expr`s, `Create`/`Exercise` `raw`) have
+ *  structured replacements (`value`, `condition_expr`, `cid`, `argument`)
+ *  that carry the parse tree. `Other.raw` is NOT deprecated — it is the
+ *  deliberate raw-source form for statements with no structured encoding.
+ *  `binder` is the pattern text bound by `x <- ...`, when
  *  present. Ledger actions under `$`/lambdas are surfaced as their own
  *  statements, in source order. An `if`/`case` is surfaced as a `Branch`
  *  whose `arms` are each their own statement scope (exactly one runs), so a
  *  rule must descend into `arms` to see effects inside a branch. */
 type Statement =
-  | { Let: { name: string; expr: string; value: Expr; span: SrcPos } }
-  | { Assert: { condition: string; condition_expr: Expr; span: SrcPos } }
-  | { Fetch: { cid_expr: string; cid: Expr; binder: string | null; span: SrcPos } }
-  | { Archive: { cid_expr: string; cid: Expr; span: SrcPos } }
+  | {
+      Let: {
+        name: string;
+        /** @deprecated prefer `value` (structured `Expr`). */
+        expr: string;
+        value: Expr;
+        span: SrcPos;
+      };
+    }
+  | {
+      Assert: {
+        /** @deprecated whole `assert`/`assertMsg` call text; prefer
+         *  `condition_expr` (the structured condition only — drops the
+         *  `assertMsg` message). */
+        condition: string;
+        condition_expr: Expr;
+        span: SrcPos;
+      };
+    }
+  | {
+      Fetch: {
+        /** @deprecated prefer `cid` (structured `Expr`). */
+        cid_expr: string;
+        cid: Expr;
+        binder: string | null;
+        span: SrcPos;
+      };
+    }
+  | {
+      Archive: {
+        /** @deprecated prefer `cid` (structured `Expr`). */
+        cid_expr: string;
+        cid: Expr;
+        span: SrcPos;
+      };
+    }
   | {
       Create: {
         template_name: string;
+        /** @deprecated whole `create ...` call text; reconstruct from
+         *  `template_name` + `argument` (which is only the payload record). */
         raw: string;
         /** The created payload, usually a Record expression. */
         argument: Expr;
@@ -147,8 +184,11 @@ type Statement =
     }
   | {
       Exercise: {
+        /** @deprecated prefer `cid` (structured `Expr`). */
         cid_expr: string;
         choice_name: string;
+        /** @deprecated whole `exercise ...` call text; reconstruct from
+         *  `cid` + `choice_name` + `argument` (only the choice argument). */
         raw: string;
         cid: Expr;
         /** The choice argument (usually a Record expression), if present. */
@@ -184,7 +224,8 @@ interface Choice {
   parameters: Field[];
   return_type: DamlType;
   body: Statement[];
-  /** @deprecated original source lines of the choice body; prefer `body`. */
+  /** @deprecated original source lines of the choice body; prefer `body`
+   *  (structured statements). For verbatim line text/comments use `m.source`. */
   body_raw: string;
   span: Span;
 }
@@ -238,7 +279,8 @@ interface DamlFunction {
   /** Declared type signature text, if present. */
   type_signature: string | null;
   body: Statement[];
-  /** @deprecated original source lines of the function; prefer `body`. */
+  /** @deprecated original source lines of the function; prefer `body`
+   *  (structured statements). For verbatim line text/comments use `m.source`. */
   body_raw: string;
   span: Span;
 }

@@ -859,6 +859,8 @@ pub struct InterfaceInstance {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct EnsureClause {
+    /// DEPRECATED for custom rules (`"ensure " + rendered condition`); prefer
+    /// the structured `expr`.
     pub raw_text: String,
     /// Structured ensure condition.
     pub expr: Expr,
@@ -909,13 +911,19 @@ pub struct Choice {
     pub parameters: Vec<Field>,
     pub return_type: DamlType,
     pub body: Vec<Statement>,
+    /// DEPRECATED for custom rules (original source lines of the choice body);
+    /// prefer the structured `body`.
     pub body_raw: String,
     pub span: Span,
 }
 
-/// Do-statement classification. Raw-text fields (`expr`, `condition`,
-/// `raw`) are kept for compatibility; the structured payloads (`value`,
-/// `cid`, `argument`, ...) are the real parse tree.
+/// Do-statement classification. The raw-text fields (`Let.expr`,
+/// `Assert.condition`, the `cid_expr`s, `Create`/`Exercise.raw`) are
+/// DEPRECATED for custom rules — kept for compatibility through the current
+/// minor line; the structured payloads (`value`, `condition_expr`, `cid`,
+/// `argument`) are the real parse tree. `Other.raw` is NOT deprecated: it is
+/// the deliberate raw-source form for statements with no structured encoding.
+/// See the migration table in `README.md` and `examples/daml-lint.d.ts`.
 #[derive(Debug, Clone, Serialize)]
 pub enum Statement {
     Let {
@@ -1002,6 +1010,8 @@ pub struct Function {
     /// Declared type signature text, if present.
     pub type_signature: Option<String>,
     pub body: Vec<Statement>,
+    /// DEPRECATED for custom rules (original source lines of the function);
+    /// prefer the structured `body`.
     pub body_raw: String,
     pub span: Span,
 }
