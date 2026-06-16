@@ -2030,7 +2030,8 @@ impl Parser {
     fn application(&mut self, allow_do: bool) -> Option<Expr> {
         let pos = self.pos();
         let start_i = self.i;
-        let mut head = self.atom(allow_do)?;
+        let head0 = self.atom(allow_do)?;
+        let mut head = self.projection_tail(head0);
         let mut args = Vec::new();
         loop {
             // Record syntax binds tighter than application:
@@ -2098,7 +2099,7 @@ impl Parser {
                 continue;
             }
             match self.try_atom(allow_do) {
-                Some(a) => args.push(a),
+                Some(a) => args.push(self.projection_tail(a)),
                 None => break,
             }
         }
@@ -2212,6 +2213,75 @@ impl Parser {
             // Bare trailing lambda argument: `forA xs \x -> ...`.
             Some(Tok::Op(o)) if o == "\\" => self.atom(allow_do),
             _ => None,
+        }
+    }
+
+    /// Fold tight (whitespace-free) `.field` record projections onto `base`.
+    /// Projection binds tighter than application, so `length this.note` is
+    /// `length (this.note)` not `(length this).note`, and a chain `a.b.c`
+    /// left-nests. A *spaced* dot (`f . g`, composition) is not tight and is
+    /// left to the binary-operator layer untouched. Qualified names
+    /// (`Map.lookup`) are already a single token and never reach here.
+    fn projection_tail(&mut self, mut base: Expr) -> Expr {
+        while self.at_tight_projection() {
+            let start = base.span().start;
+            let pos = base.pos();
+            self.bump(); // '.'
+            let field_tok = self.bump().expect("tight projection guarantees a field");
+            let (qualifier, name) = match field_tok.tok {
+                Tok::LowerId { qualifier, name } => (qualifier, name),
+                other => unreachable!("at_tight_projection guarantees LowerId, got {other:?}"),
+            };
+            let field = Expr::Var {
+                qualifier,
+                name,
+                pos: field_tok.pos,
+                span: Span::new(field_tok.start, field_tok.end),
+            };
+            base = Expr::BinOp {
+                op: ".".to_string(),
+                lhs: Box::new(base),
+                rhs: Box::new(field),
+                pos,
+                span: Span::new(start, self.end_byte()),
+            };
+        }
+        base
+    }
+
+    /// True when the cursor sits on a `.` that abuts a real token on its left
+    /// and an unqualified lowercase field on its right with no whitespace on
+    /// either side — i.e. a record projection, not function composition.
+    fn at_tight_projection(&self) -> bool {
+        if self.i == 0 {
+            return false;
+        }
+        let dot = match self.toks.get(self.i) {
+            Some(t) => t,
+            None => return false,
+        };
+        if !matches!(&dot.tok, Tok::Op(o) if o == ".") {
+            return false;
+        }
+        // Tight on the left: the dot abuts the base's last byte. The previous
+        // token must be real — a virtual layout token here means a newline or
+        // dedent sat between base and dot, which can never be a tight dot.
+        let prev = &self.toks[self.i - 1];
+        if prev.is_virtual() || prev.end != dot.start {
+            return false;
+        }
+        // Tight on the right: an unqualified lowercase field abuts the dot.
+        match self.toks.get(self.i + 1) {
+            Some(t) => {
+                matches!(
+                    &t.tok,
+                    Tok::LowerId {
+                        qualifier: None,
+                        ..
+                    }
+                ) && t.start == dot.end
+            }
+            None => false,
         }
     }
 
