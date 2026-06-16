@@ -24,4 +24,6 @@ pub mod lexer;
 pub mod parse;
 
 #[cfg(test)]
+mod data_tests;
+#[cfg(test)]
 mod span_tests;

@@ -400,16 +400,61 @@ impl Parser {
                 let keyword = t.keyword().unwrap().to_string();
                 self.bump();
                 let name = match self.peek() {
-                    Some(Tok::UpperId { qualifier, name }) => match qualifier {
-                        Some(q) => format!("{}.{}", q, name),
-                        None => name.clone(),
-                    },
+                    Some(Tok::UpperId { qualifier, name }) => {
+                        let n = match qualifier {
+                            Some(q) => format!("{}.{}", q, name),
+                            None => name.clone(),
+                        };
+                        self.bump();
+                        n
+                    }
                     _ => String::new(),
                 };
+                // Parse the structured body for the forms we model; everything
+                // else (class/instance/exception, or an unparseable body) stays
+                // opaque. The trailing skip_to_item_end below guarantees the
+                // cursor — and therefore the node span — ends exactly where the
+                // old opaque path left it, so the span/render oracles are
+                // unaffected.
+                let mut constructors = Vec::new();
+                let mut synonym = None;
+                let mut deriving = Vec::new();
+                match keyword.as_str() {
+                    "data" | "newtype" => {
+                        self.skip_type_params();
+                        if self.eat_op("=") {
+                            let body_start = self.i;
+                            let (c, d, ok) = self.data_constructors();
+                            if ok {
+                                constructors = c;
+                                deriving = d;
+                            } else {
+                                // A constructor hit an empty `with` block (its
+                                // fields are all commented out), which leaves an
+                                // unbalanced layout brace. Abandon the structured
+                                // parse and let the opaque path below re-skip the
+                                // body with correct depth, keeping the span exact.
+                                self.i = body_start;
+                            }
+                        }
+                    }
+                    "type" => {
+                        self.skip_type_params();
+                        if self.eat_op("=") {
+                            let ty_start = self.i;
+                            self.skip_to_item_end();
+                            synonym = parse_type_tokens(&self.toks[ty_start..self.i]);
+                        }
+                    }
+                    _ => {}
+                }
                 self.skip_to_item_end();
                 decls.push(Decl::TypeDef {
                     keyword,
                     name,
+                    constructors,
+                    synonym,
+                    deriving,
                     pos,
                     span: self.node_span(start),
                 });
@@ -652,6 +697,185 @@ impl Parser {
             }
         }
         (fields, false)
+    }
+
+    // ----- data / newtype / type declarations --------------------------
+
+    /// Skip LHS type parameters between a type name and `=`
+    /// (`data Box a b = ...`). Only bare lowercase variables are skipped;
+    /// anything fancier (a parenthesised kind signature) is left for the caller,
+    /// which then declines to parse a body and keeps the decl opaque.
+    fn skip_type_params(&mut self) {
+        while matches!(
+            self.peek(),
+            Some(Tok::LowerId {
+                qualifier: None,
+                ..
+            })
+        ) {
+            self.bump();
+        }
+    }
+
+    /// Parse the right-hand side of a `data`/`newtype` declaration:
+    /// `Ctor [payload] | Ctor [payload] | ...` followed by an optional
+    /// `deriving (...)`. Returns the constructors, the flattened deriving class
+    /// names, and an `ok` flag — `false` means a constructor hit an empty `with`
+    /// block (an unbalanced layout brace) and the caller must abandon the
+    /// structured parse. Stops at the first token that cannot continue the list;
+    /// the caller's `skip_to_item_end` then consumes any unmodeled remainder.
+    fn data_constructors(&mut self) -> (Vec<DataConstructor>, Vec<String>, bool) {
+        let mut ctors = Vec::new();
+        loop {
+            if self.at_keyword("deriving") {
+                break;
+            }
+            match self.peek() {
+                Some(Tok::UpperId { .. }) => match self.data_constructor() {
+                    Ok(Some(c)) => ctors.push(c),
+                    Ok(None) => break,
+                    // Dangling empty `with` block — bail to the opaque path.
+                    Err(()) => return (Vec::new(), Vec::new(), false),
+                },
+                _ => break,
+            }
+            if !self.eat_op("|") {
+                break;
+            }
+        }
+        // A type may carry several `deriving` clauses (`deriving (Show)
+        // deriving (Eq)`); collect them all.
+        let mut deriving = Vec::new();
+        while self.at_keyword("deriving") {
+            deriving.extend(self.parse_deriving());
+        }
+        (ctors, deriving, true)
+    }
+
+    /// Parse one constructor alternative: a name, then either record fields
+    /// (`with`/`{}`) or positional argument types. `Err(())` signals a dangling
+    /// empty `with` block, which the caller turns into an opaque-decl bail.
+    fn data_constructor(&mut self) -> Result<Option<DataConstructor>, ()> {
+        let start = self.i;
+        let pos = self.pos();
+        let name = match self.peek() {
+            Some(Tok::UpperId { qualifier, name }) => match qualifier {
+                Some(q) => format!("{}.{}", q, name),
+                None => name.clone(),
+            },
+            _ => return Ok(None),
+        };
+        self.bump();
+        // Record syntax: `Ctor with f : T` (a `with` layout block) or
+        // `Ctor { f : T }` (explicit braces). Reuse the template field parser.
+        if self.at_keyword("with") || self.at(&Tok::LBrace) || self.at(&Tok::VLBrace) {
+            let _ = self.eat_keyword("with");
+            let (fields, dangling) = self.field_block();
+            if dangling {
+                return Err(());
+            }
+            return Ok(Some(DataConstructor {
+                name,
+                fields,
+                arg_types: Vec::new(),
+                pos,
+                span: self.node_span(start),
+            }));
+        }
+        // Positional / nullary: consume the argument atoms, then parse the whole
+        // `Ctor arg arg` slice as a type application — its head is the
+        // constructor and its arguments are the positional field types. A bare
+        // `Con` is a nullary constructor (no args). Anything that does NOT parse
+        // as a clean `Con`/`App` (an infix constructor like `Int :+: Int`, a
+        // strictness bang `T !Int`, or other unmodeled syntax) would force a
+        // guess at the name or arity, so we bail the whole decl to opaque rather
+        // than record a half-truth a detector would trust.
+        self.skip_constructor_args();
+        let arg_types = match parse_type_tokens(&self.toks[start..self.i]) {
+            Some(Type::App(_, args)) => args,
+            Some(Type::Con { .. }) => Vec::new(),
+            _ => return Err(()),
+        };
+        Ok(Some(DataConstructor {
+            name,
+            fields: Vec::new(),
+            arg_types,
+            pos,
+            span: self.node_span(start),
+        }))
+    }
+
+    /// Advance over a positional constructor's argument types, stopping (without
+    /// consuming) at the next top-level `|`, a `deriving` clause, or the end of
+    /// the item. Bracket depth is tracked so a `|`/`deriving` nested inside an
+    /// argument type cannot end the scan early.
+    fn skip_constructor_args(&mut self) {
+        let mut depth = 0usize;
+        while let Some(t) = self.peek() {
+            if depth == 0 && (t.is_op("|") || t.is_keyword("deriving") || matches!(t, Tok::VSemi)) {
+                return;
+            }
+            match t {
+                Tok::LParen | Tok::LBracket | Tok::LBrace | Tok::VLBrace => depth += 1,
+                Tok::RParen | Tok::RBracket | Tok::RBrace | Tok::VRBrace => {
+                    if depth == 0 {
+                        // An unmatched closer ends the enclosing block.
+                        return;
+                    }
+                    depth -= 1;
+                }
+                _ => {}
+            }
+            self.i += 1;
+        }
+    }
+
+    /// Parse a `deriving (Show, Eq)` or `deriving Show` clause into its class
+    /// names. Leaves the cursor after the clause; any extra `deriving` clauses
+    /// or strategies are mopped up by the caller's `skip_to_item_end`.
+    fn parse_deriving(&mut self) -> Vec<String> {
+        let mut names = Vec::new();
+        if !self.eat_keyword("deriving") {
+            return names;
+        }
+        // Optional deriving strategy: `deriving stock (..)`, `deriving newtype
+        // (..)`, `deriving anyclass (..)`. Skip the strategy word so the class
+        // list behind it is still captured.
+        if matches!(
+            self.peek(),
+            Some(Tok::LowerId { qualifier: None, name }) if name == "stock" || name == "newtype" || name == "anyclass"
+        ) {
+            self.bump();
+        }
+        if self.eat(&Tok::LParen) {
+            loop {
+                match self.peek() {
+                    Some(Tok::UpperId { qualifier, name }) => {
+                        names.push(match qualifier {
+                            Some(q) => format!("{}.{}", q, name),
+                            None => name.clone(),
+                        });
+                        self.bump();
+                    }
+                    Some(Tok::RParen) => {
+                        self.bump();
+                        break;
+                    }
+                    None => break,
+                    // Commas and any stray tokens between names.
+                    _ => {
+                        self.bump();
+                    }
+                }
+            }
+        } else if let Some(Tok::UpperId { qualifier, name }) = self.peek() {
+            names.push(match qualifier {
+                Some(q) => format!("{}.{}", q, name),
+                None => name.clone(),
+            });
+            self.bump();
+        }
+        names
     }
 
     fn template_body(&mut self) -> Vec<TemplateBodyDecl> {
