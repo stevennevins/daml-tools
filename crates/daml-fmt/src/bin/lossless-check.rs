@@ -2,8 +2,7 @@
 //! file byte-for-byte. No formatting yet — just prove the pipeline is lossless
 //! before we re-lay-out anything.
 //!
-//! Usage:
-//!     lossless-check <dir-or-file>...
+//! Usage: `lossless-check <dir-or-file>...`
 //! Default dir is `original/` (the 924-file corpus). Exit 0 iff every file
 //! round-trips byte-identical through lex_with_trivia -> render_lossless.
 

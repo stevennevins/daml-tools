@@ -58,10 +58,14 @@ cargo install daml-fmt
 
 ## Versioning & release
 
-Each crate is versioned independently — `daml-parser` stays boring and stable
-(strict SemVer, guarded by `cargo-semver-checks`); the two CLIs bump faster.
-Releases are driven by [release-plz](release-plz.toml) in dependency order
-(parser first, then lint + fmt).
+Each crate is versioned independently. All published library targets are
+guarded by `cargo-semver-checks`; `daml-parser` is the stable foundation, while
+`daml-lint` and `daml-fmt` are CLI-first and may bump faster as their public
+surfaces settle. Releases are driven by [release-plz](release-plz.toml) in
+dependency order (parser first, then lint + fmt).
+
+CI builds the CLIs on Linux x64, macOS ARM64, and Windows x64. Other targets are
+best effort until a dedicated release-binary workflow is added.
 
 ## License
 

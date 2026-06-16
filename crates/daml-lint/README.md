@@ -50,6 +50,26 @@ cd daml-tools
 cargo install --path crates/daml-lint
 ```
 
+## Library features
+
+The default features build the published CLI and custom-rule engine:
+
+```toml
+[dependencies]
+daml-lint = "0.1"
+```
+
+Library consumers that only need the built-in detectors and rule-facing IR can
+avoid the CLI parser and QuickJS runtime:
+
+```toml
+[dependencies]
+daml-lint = { version = "0.1", default-features = false }
+```
+
+Enable `custom-rules` only when you need JavaScript AST rules from library code.
+The `cli` feature exists for the `daml-lint` binary.
+
 ## Usage
 
 Scan a single file:

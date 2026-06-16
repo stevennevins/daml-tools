@@ -17,16 +17,19 @@ dependencies_update = false
 
 [[package]]
 name = "daml-parser"
-# Public library on strict SemVer: block a release that breaks its API without
-# a major bump. CI runs cargo-semver-checks as a second, independent guard.
+# Public library on strict SemVer. release-plz uses cargo-semver-checks to
+# classify API compatibility and choose the right version bump once a crates.io
+# baseline exists; CI runs the same check as a second signal.
 semver_check = true
 
 [[package]]
 name = "daml-lint"
-# CLI-first; its library surface is not a stability promise.
-semver_check = false
+# Publishes both a CLI and a library surface for detector/IR integrations; check
+# that public API so release-plz can pick the right version bump.
+semver_check = true
 
 [[package]]
 name = "daml-fmt"
-# Binary-only consumer of daml-parser; no public library API to guard.
-semver_check = false
+# Publishes both the CLI and the `daml_fmt` library entry points used by
+# integrations; check that public API too.
+semver_check = true

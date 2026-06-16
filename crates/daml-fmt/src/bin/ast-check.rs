@@ -6,7 +6,7 @@
 //! structural formatter: if it passes 924/924, the AST is faithful enough to
 //! format from.
 //!
-//! Usage: ast-check <dir-or-file>...   (default: original/)
+//! Usage: `ast-check <dir-or-file>...` (default: `original/`)
 
 use daml_parser::ast_span::render_from_ast;
 use daml_parser::lexer::lex_with_trivia;

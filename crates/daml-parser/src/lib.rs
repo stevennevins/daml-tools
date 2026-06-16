@@ -10,6 +10,16 @@
 //!
 //! Start at [`parse::parse_module`]. For byte-faithful reconstruction from the
 //! parse tree, see [`ast_span::render_from_ast`] and [`lexer::render_lossless`].
+//!
+//! # Example
+//!
+//! ```
+//! let (module, diagnostics) =
+//!     daml_parser::parse::parse_module("module M where\nfoo : Int\nfoo = 1\n");
+//!
+//! assert!(diagnostics.is_empty());
+//! assert_eq!(module.name, "M");
+//! ```
 
 pub mod ast;
 /// AST byte-span losslessness oracle (`render_from_ast`): reconstruct source

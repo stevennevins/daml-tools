@@ -28,6 +28,8 @@ jobs:
         # no `-- -D warnings` here. --all-features so the feature-gated dev-tool
         # bins are linted too.
         run: cargo clippy --workspace --all-targets --all-features --locked
+      - name: rustdoc warnings
+        run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked
       - name: test
         run: cargo test --workspace --all-features --locked
       - name: daml-fmt differential (924 corpus files, no SDK)
@@ -52,19 +54,22 @@ jobs:
         with:
           command: check
 
-  # Guard daml-parser's public API: a breaking change without a major bump
-  # fails here. It needs a crates.io baseline to diff against, so it is a SOFT
-  # gate (continue-on-error) until daml-parser 0.1.0 is published — the
-  # name-reservation step. Without that it would be red on the very first PR.
-  # Once 0.1.0 is on crates.io, drop `continue-on-error` to make it a hard gate.
+  # Report public API compatibility for every published library target. The
+  # crates need crates.io baselines to diff against, so this is a SOFT signal
+  # (continue-on-error) until each 0.1.0 is published. Once those baselines
+  # exist, drop `continue-on-error` to make it a hard gate.
   semver:
     runs-on: ubuntu-latest
     continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [daml-parser, daml-lint, daml-fmt]
     steps:
       - uses: actions/checkout@v4
       - uses: obi1kenobi/cargo-semver-checks-action@v2
         with:
-          package: daml-parser
+          package: ${{ matrix.package }}
 
   # Native release binaries per OS — the per-PR "it still builds a runnable CLI"
   # gate. The full cross-target matrix (aarch64-linux, musl, x86_64-darwin) and

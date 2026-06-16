@@ -11,7 +11,9 @@ authors.workspace = true
 readme = "README.md"
 keywords = ["daml", "formatter", "fmt", "code-formatter", "smart-contracts"]
 categories = ["development-tools", "command-line-utilities"]
-# Differential-test data and dev-only tooling stay out of the published crate.
+# Differential-test data and dev-only scripts stay out of the published crate.
+# Feature-gated dev-tool bin sources stay packaged because Cargo compiles bin
+# targets from `src/bin`, but they are not installed unless `dev-tools` is on.
 exclude = [
     "original/",
     "expected/",

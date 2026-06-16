@@ -19,6 +19,15 @@
 //! - trailing-whitespace: strip spaces/tabs before a newline; one final newline.
 //! - colon-spacing: `name : Type` -> `name: Type` (drop same-line spaces before a
 //!   lone `:` type-annotation colon; never `::`, never a line-leading colon).
+//!
+//! # Example
+//!
+//! ```
+//! let src = "module M where\nfoo : Int\nfoo = 1\n";
+//! let formatted = daml_fmt::format_source(src);
+//!
+//! assert_eq!(formatted, "module M where\nfoo: Int\nfoo = 1\n");
+//! ```
 
 // AST-driven layout (our own pattern, NO LimeChain derivative). This is the
 // shipping backend. See src/layout_ast.rs.

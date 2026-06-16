@@ -3,7 +3,7 @@ use crate::ir::DamlModule;
 
 /// Detector #4: unbounded-fields
 ///
-/// For each template, identify fields of type Text, TextMap a, or [a] (list).
+/// For each template, identify fields of type `Text`, `TextMap a`, or `[a]` (list).
 /// Check that the ensure clause includes a size bound on these fields. Flag
 /// fields with no corresponding bound.
 ///
