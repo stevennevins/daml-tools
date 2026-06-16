@@ -1,5 +1,5 @@
 use crate::detector::{Detector, Finding, Severity};
-use crate::ir::{DamlModule, Expr, Statement};
+use crate::ir::{DamlModule, Statement};
 
 /// Detector #6: archive-before-execute
 ///
@@ -41,7 +41,7 @@ impl ArchiveBeforeExecute {
                     pending.push(Archived {
                         line: span.line,
                         kind,
-                        cid: expr_text(cid),
+                        cid: cid.render_text(),
                     });
                 }
                 // `exercise cid Archive` (the built-in Archive choice) also
@@ -55,7 +55,7 @@ impl ArchiveBeforeExecute {
                     pending.push(Archived {
                         line: span.line,
                         kind: "archive",
-                        cid: expr_text(cid),
+                        cid: cid.render_text(),
                     });
                 }
                 Statement::TryCatch {
@@ -117,31 +117,6 @@ fn is_fetch_and_archive(statements: &[Statement], i: usize) -> bool {
         Some(Statement::Fetch { span: fspan, cid: fcid, .. })
             if fspan.line == span.line && fcid == cid
     )
-}
-
-fn expr_text(expr: &Expr) -> String {
-    match expr {
-        Expr::Var {
-            qualifier, name, ..
-        }
-        | Expr::Con {
-            qualifier, name, ..
-        } => qualifier
-            .as_ref()
-            .map_or_else(|| name.clone(), |q| format!("{q}.{name}")),
-        Expr::Lit { value, .. } => value.clone(),
-        Expr::App { func, args, .. } => {
-            let mut parts = Vec::with_capacity(args.len() + 1);
-            parts.push(expr_text(func));
-            parts.extend(args.iter().map(expr_text));
-            parts.join(" ")
-        }
-        Expr::BinOp { op, lhs, rhs, .. } if op == "." => {
-            format!("{}.{}", expr_text(lhs), expr_text(rhs))
-        }
-        Expr::Unknown { raw, .. } => raw.clone(),
-        other => format!("{other:?}"),
-    }
 }
 
 impl Detector for ArchiveBeforeExecute {

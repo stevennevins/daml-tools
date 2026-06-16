@@ -23,69 +23,73 @@ pub struct SourceSpan {
     pub byte_end: usize,
 }
 
-pub(crate) struct SourceMap<'a> {
+pub(crate) struct SourceTextMap<'a> {
     file: &'a Path,
     source: &'a str,
-    line_starts: Vec<usize>,
-    byte_to_utf16: Vec<usize>,
+    line_start_bytes: Vec<usize>,
+    utf16_offset_by_byte: Vec<usize>,
 }
 
-impl<'a> SourceMap<'a> {
+impl<'a> SourceTextMap<'a> {
     pub(crate) fn new(file: &'a Path, source: &'a str) -> Self {
-        let mut line_starts = vec![0];
+        let mut line_start_bytes = vec![0];
         for (idx, byte) in source.bytes().enumerate() {
             if byte == b'\n' {
-                line_starts.push(idx + 1);
+                line_start_bytes.push(idx + 1);
             }
         }
-        let mut byte_to_utf16 = vec![0; source.len() + 1];
+        let mut utf16_offset_by_byte = vec![0; source.len() + 1];
         let mut utf16 = 0usize;
         let mut prev = 0usize;
         for (idx, ch) in source.char_indices() {
-            for slot in byte_to_utf16.iter_mut().take(idx).skip(prev) {
+            for slot in utf16_offset_by_byte.iter_mut().take(idx).skip(prev) {
                 *slot = utf16;
             }
             let char_end = idx + ch.len_utf8();
-            for slot in byte_to_utf16.iter_mut().take(char_end).skip(idx) {
+            for slot in utf16_offset_by_byte.iter_mut().take(char_end).skip(idx) {
                 *slot = utf16;
             }
             utf16 += ch.len_utf16();
             prev = char_end;
         }
-        for slot in byte_to_utf16.iter_mut().take(source.len() + 1).skip(prev) {
+        for slot in utf16_offset_by_byte
+            .iter_mut()
+            .take(source.len() + 1)
+            .skip(prev)
+        {
             *slot = utf16;
         }
         Self {
             file,
             source,
-            line_starts,
-            byte_to_utf16,
+            line_start_bytes,
+            utf16_offset_by_byte,
         }
     }
 
-    fn line_column_at_byte(&self, byte: usize) -> (usize, usize) {
+    fn line_column_for_byte(&self, byte: usize) -> (usize, usize) {
         let byte = byte.min(self.source.len());
-        let line_idx = match self.line_starts.binary_search(&byte) {
+        let line_idx = match self.line_start_bytes.binary_search(&byte) {
             Ok(idx) => idx,
             Err(idx) => idx.saturating_sub(1),
         };
-        let line_start = self.line_starts[line_idx];
+        let line_start = self.line_start_bytes[line_idx];
         (
             line_idx + 1,
             self.source[line_start..byte].chars().count() + 1,
         )
     }
 
-    fn source_span(&self, span: ParserSpan) -> SourceSpan {
+    fn source_span_for_parser_span(&self, span: ParserSpan) -> SourceSpan {
         let byte_start = span.start.min(self.source.len());
         let byte_end = span.end.min(self.source.len()).max(byte_start);
-        let (line, column) = self.line_column_at_byte(byte_start);
+        let (line, column) = self.line_column_for_byte(byte_start);
         SourceSpan {
             file: self.file.to_path_buf(),
             line,
             column,
-            start: self.byte_to_utf16[byte_start],
-            end: self.byte_to_utf16[byte_end],
+            start: self.utf16_offset_by_byte[byte_start],
+            end: self.utf16_offset_by_byte[byte_end],
             byte_start,
             byte_end,
         }
@@ -131,15 +135,15 @@ pub enum TypeNode {
 }
 
 impl TypeNode {
-    pub(crate) fn from_type(t: &Type, source_map: &SourceMap<'_>) -> Self {
-        let span = || source_map.source_span(t.span());
+    pub(crate) fn from_type(t: &Type, source_map: &SourceTextMap<'_>) -> Self {
+        let source_span = || source_map.source_span_for_parser_span(t.span());
         match t {
             Type::Con {
                 qualifier, name, ..
             } => Self::Con {
                 qualifier: qualifier.clone(),
                 name: name.clone(),
-                span: span(),
+                span: source_span(),
             },
             Type::App(head, args, _) => Self::App {
                 head: Box::new(Self::from_type(head, source_map)),
@@ -147,39 +151,41 @@ impl TypeNode {
                     .iter()
                     .map(|arg| Self::from_type(arg, source_map))
                     .collect(),
-                span: span(),
+                span: source_span(),
             },
             Type::List(inner, _) => Self::List {
                 inner: Box::new(Self::from_type(inner, source_map)),
-                span: span(),
+                span: source_span(),
             },
             Type::Tuple(items, _) => Self::Tuple {
                 items: items
                     .iter()
                     .map(|item| Self::from_type(item, source_map))
                     .collect(),
-                span: span(),
+                span: source_span(),
             },
             Type::Fun(param, result, _) => Self::Fun {
                 param: Box::new(Self::from_type(param, source_map)),
                 result: Box::new(Self::from_type(result, source_map)),
-                span: span(),
+                span: source_span(),
             },
             Type::Var(name, _) => Self::Var {
                 name: name.clone(),
-                span: span(),
+                span: source_span(),
             },
-            Type::Unit(_) => Self::Unit { span: span() },
+            Type::Unit(_) => Self::Unit {
+                span: source_span(),
+            },
             Type::Constrained(body, _) => Self::Constrained {
                 body: Box::new(Self::from_type(body, source_map)),
-                span: span(),
+                span: source_span(),
             },
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
-pub enum DamlType {
+pub(crate) enum DamlType {
     Party,
     Text,
     Decimal,
@@ -204,7 +210,7 @@ impl DamlType {
     /// (application vs arrow vs atom), so unlike the old string reparse it can
     /// never confuse `Script ()` (an application) or `Int -> Int` (a function)
     /// for one opaque `Named`.
-    pub fn from_type(t: &Type) -> Self {
+    pub(crate) fn from_type(t: &Type) -> Self {
         match t {
             Type::Con {
                 qualifier, name, ..
@@ -291,27 +297,27 @@ impl DamlType {
         }
     }
 
-    pub const fn is_decimal(&self) -> bool {
+    pub(crate) const fn is_decimal(&self) -> bool {
         matches!(self, Self::Decimal)
     }
 
-    pub const fn is_text(&self) -> bool {
+    pub(crate) const fn is_text(&self) -> bool {
         matches!(self, Self::Text)
     }
 
-    pub const fn is_textmap(&self) -> bool {
+    pub(crate) const fn is_textmap(&self) -> bool {
         matches!(self, Self::TextMap(_))
     }
 
-    pub const fn is_list(&self) -> bool {
+    pub(crate) const fn is_list(&self) -> bool {
         matches!(self, Self::List(_))
     }
 
-    pub const fn is_map(&self) -> bool {
+    pub(crate) const fn is_map(&self) -> bool {
         matches!(self, Self::Map(_, _))
     }
 
-    pub fn is_unbounded(&self) -> bool {
+    pub(crate) fn is_unbounded(&self) -> bool {
         match self {
             // An `Optional Text` / `Optional [a]` is still unbounded when present.
             Self::Optional(inner) => inner.is_unbounded(),
@@ -561,9 +567,9 @@ impl Expr {
     }
 
     /// The head of an application spine: `f a b` → `f`, `query @T x` → `query`.
-    pub(crate) fn app_head(&self) -> &Self {
+    pub(crate) fn application_head(&self) -> &Self {
         match self {
-            Self::App { func, .. } => func.app_head(),
+            Self::App { func, .. } => func.application_head(),
             other => other,
         }
     }
@@ -888,7 +894,7 @@ pub(crate) fn child_exprs(e: &Expr) -> Vec<&Expr> {
 pub(crate) fn walk_body_exprs<'a>(stmts: &'a [Statement], f: &mut impl FnMut(&'a Expr)) {
     for s in stmts {
         for e in statement_exprs(s) {
-            walk_expr(e, f);
+            walk_expression(e, f);
         }
         match s {
             Statement::TryCatch {
@@ -911,16 +917,16 @@ pub(crate) fn walk_body_exprs<'a>(stmts: &'a [Statement], f: &mut impl FnMut(&'a
 
 /// Visit `e` and, recursively, every sub-expression within it.
 pub(crate) fn for_each_subexpr<'a>(e: &'a Expr, f: &mut impl FnMut(&'a Expr)) {
-    walk_expr(e, f);
+    walk_expression(e, f);
 }
 
-fn walk_expr<'a>(e: &'a Expr, f: &mut impl FnMut(&'a Expr)) {
-    f(e);
-    if let Expr::DoBlock { statements, .. } = e {
+fn walk_expression<'a>(expr: &'a Expr, f: &mut impl FnMut(&'a Expr)) {
+    f(expr);
+    if let Expr::DoBlock { statements, .. } = expr {
         walk_body_exprs(statements, f);
     }
-    for c in child_exprs(e) {
-        walk_expr(c, f);
+    for child_expr in child_exprs(expr) {
+        walk_expression(child_expr, f);
     }
 }
 
@@ -988,7 +994,7 @@ pub struct Field {
     pub name: String,
     pub type_: Option<TypeNode>,
     #[serde(skip_serializing)]
-    pub daml_type: DamlType,
+    pub(crate) daml_type: DamlType,
     pub span: Span,
 }
 

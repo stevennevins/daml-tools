@@ -8,6 +8,7 @@ hooks = [
   { id = "cargo-doc", name = "cargo doc", entry = "bash -c 'RUSTDOCFLAGS=\"-D warnings\" cargo doc --workspace --all-features --no-deps --locked'", language = "system", pass_filenames = false, stages = ["pre-commit"] },
   { id = "cargo-test", name = "cargo test", entry = "cargo test --workspace --all-features --locked", language = "system", pass_filenames = false, stages = ["pre-push"] },
   { id = "daml-fmt-diff", name = "daml-fmt differential", entry = "bash -c 'cd crates/daml-fmt && node test/diff.js'", language = "system", pass_filenames = false, stages = ["pre-push"] },
+  { id = "cargo-semver-checks", name = "cargo semver-checks", entry = "bash -c 'command -v cargo-semver-checks >/dev/null || { echo cargo-semver-checks is required: cargo install cargo-semver-checks --locked; exit 1; }; for package in daml-parser daml-lint daml-fmt; do cargo semver-checks check-release --package $package; done'", language = "system", pass_filenames = false, stages = ["pre-push"] },
 ]
 
 [[repos]]

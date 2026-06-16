@@ -32,7 +32,7 @@ pub struct Diagnostic {
 
 pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> (DamlModule, Vec<Diagnostic>) {
     let (module, diags) = parse_module(source);
-    let source_map = SourceMap::new(file, source);
+    let source_map = SourceTextMap::new(file, source);
     let imports = module
         .imports
         .iter()
@@ -245,7 +245,7 @@ fn binding_name(b: &ast::Binding) -> String {
 
 // ----- declarations ------------------------------------------------------
 
-fn lower_template(t: &ast::TemplateDecl, file: &Path, source_map: &SourceMap<'_>) -> Template {
+fn lower_template(t: &ast::TemplateDecl, file: &Path, source_map: &SourceTextMap<'_>) -> Template {
     let fields = t
         .fields
         .iter()
@@ -314,7 +314,11 @@ fn lower_template(t: &ast::TemplateDecl, file: &Path, source_map: &SourceMap<'_>
     }
 }
 
-fn lower_interface(i: &ast::InterfaceDecl, file: &Path, source_map: &SourceMap<'_>) -> Interface {
+fn lower_interface(
+    i: &ast::InterfaceDecl,
+    file: &Path,
+    source_map: &SourceTextMap<'_>,
+) -> Interface {
     Interface {
         name: i.name.clone(),
         requires: i.requires.clone(),
@@ -337,7 +341,7 @@ fn lower_interface(i: &ast::InterfaceDecl, file: &Path, source_map: &SourceMap<'
     }
 }
 
-fn lower_choice(c: &ast::ChoiceDecl, file: &Path, source_map: &SourceMap<'_>) -> Choice {
+fn lower_choice(c: &ast::ChoiceDecl, file: &Path, source_map: &SourceTextMap<'_>) -> Choice {
     let parameters = c
         .params
         .iter()
@@ -369,7 +373,7 @@ fn lower_choice(c: &ast::ChoiceDecl, file: &Path, source_map: &SourceMap<'_>) ->
     }
 }
 
-fn lower_function(f: &ast::FunctionDecl, file: &Path, source_map: &SourceMap<'_>) -> Function {
+fn lower_function(f: &ast::FunctionDecl, file: &Path, source_map: &SourceTextMap<'_>) -> Function {
     let mut body = Vec::new();
     for eq in &f.equations {
         if eq.guards.is_empty() {
@@ -789,7 +793,8 @@ fn collect_actions_inner(
                 // `when c act` / `forA_ xs f` run their action argument only on
                 // some paths or zero-or-more times: an assert lifted from inside
                 // is conditional, not a guard.
-                let arg_conditional = conditional || is_conditional_combinator(expr.app_head());
+                let arg_conditional =
+                    conditional || is_conditional_combinator(expr.application_head());
                 for a in args {
                     collect_actions_inner(a, None, out, false, arg_conditional);
                 }
@@ -864,11 +869,11 @@ fn classify_app(
     out: &mut Vec<Statement>,
     conditional: bool,
 ) -> bool {
-    let args = expr.app_args();
+    let args = expr.application_args();
     if args.is_empty() {
         return false;
     }
-    let (head_name, qualified) = match expr.app_head() {
+    let (head_name, qualified) = match expr.application_head() {
         ast::Expr::Var {
             qualifier, name, ..
         } => (name.as_str(), qualifier.is_some()),

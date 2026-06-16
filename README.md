@@ -54,8 +54,8 @@ git config core.hooksPath .githooks
 prek prepare-hooks
 ```
 
-Developers also need the Rust `rustfmt` and `clippy` components and Node.js 18+
-or newer, matching CI.
+Developers also need the Rust `rustfmt` and `clippy` components, Node.js 18+
+or newer, and `cargo-semver-checks`, matching CI.
 
 The pre-commit hook runs the local lint gates from CI: `cargo fmt --all --check`,
 `cargo clippy --workspace --all-targets --all-features --locked`, and
@@ -65,7 +65,9 @@ changelogs and version bumps.
 
 The pre-push hook runs the heavier test gates: `cargo test --workspace
 --all-features --locked` and the formatter's 924-file differential test
-(`cd crates/daml-fmt && node test/diff.js`).
+(`cd crates/daml-fmt && node test/diff.js`). It also runs
+`cargo semver-checks check-release` for each published crate so breaking
+library API changes require the matching version bump before push.
 
 The parser/layout integration tests use a vendored
 [daml-finance](https://github.com/digital-asset/daml-finance) corpus under
@@ -83,9 +85,9 @@ cargo install daml-fmt
 ## Versioning & release
 
 Each crate is versioned independently. Before the first crates.io baseline,
-`cargo-semver-checks` is a soft CI signal; after 0.1.0 is published it should be
-made a hard gate. While the crates are pre-1.0, breaking public API changes use
-0.x minor bumps and patch releases stay compatible.
+`cargo-semver-checks` runs in CI and pre-push hooks. While the crates are
+pre-1.0, breaking public API changes use 0.x minor bumps and patch releases
+stay compatible.
 
 Releases are driven by [release-plz](release-plz.toml) in dependency order
 (parser first, then lint + fmt). The GitHub workflow expects a crates.io
