@@ -81,28 +81,28 @@ template ListUtil
 
 rangeOfIntsToListTest: Script ()
 rangeOfIntsToListTest = script do
-  p <- allocateParty "Dummy"
-  cid <- submit p do
-    createCmd RangeOfInts with
-      party = p
-      start = 0
-      step = 10
-      size = 5
-  lst <- submit p do exerciseCmd cid ToList
-  lst === [0, 10, 20, 30, 40]
+    p <- allocateParty "Dummy"
+    cid <- submit p do
+      createCmd RangeOfInts with
+        party = p
+        start = 0
+        step = 10
+        size = 5
+    lst <- submit p do exerciseCmd cid ToList
+    lst === [0, 10, 20, 30, 40]
 
 rangeOfIntsToListContainerTest: Script ()
 rangeOfIntsToListContainerTest = script do
-  p <- allocateParty "Dummy"
-  cid <- submit p do
-    createCmd RangeOfInts with
-      party = p
-      start = 0
-      step = 10
-      size = 5
-  listContainerCid <- submit p (exerciseCmd cid ToListContainer)
-  listContainer <- submit p do createAndExerciseCmd (ListFetchHelper p) (ListFetchExe listContainerCid)
-  listContainer.list === [0, 10, 20, 30, 40]
+    p <- allocateParty "Dummy"
+    cid <- submit p do
+      createCmd RangeOfInts with
+        party = p
+        start = 0
+        step = 10
+        size = 5
+    listContainerCid <- submit p (exerciseCmd cid ToListContainer)
+    listContainer <- submit p do createAndExerciseCmd (ListFetchHelper p) (ListFetchExe listContainerCid)
+    listContainer.list === [0, 10, 20, 30, 40]
 
 listSizeTest: Script ()
 listSizeTest = script do

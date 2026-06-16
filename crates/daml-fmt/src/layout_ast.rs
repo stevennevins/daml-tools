@@ -151,19 +151,28 @@ fn do_block_edits(src: &str, module: &Module) -> Vec<Edit> {
 /// Is this do-block one of the shapes we deliberately leave verbatim?
 /// - try/catch body (`do ... try ... catch ...`): handler layout is its own
 ///   problem; the plan keeps it verbatim. (`code-snippets-dev/Exceptions.daml`)
-/// - `do let ...` (first statement a `let` binding block): let layout unmodeled.
+///
+/// A `do` whose first statement is a `let` is NOT verbatim: the uniform-delta
+/// reindent shifts the whole block (the `let` line and its continuation
+/// bindings alike) by one amount, so the let-block's internal offside alignment
+/// rides along unchanged — exactly as nested do-blocks do. The `same_tokens`
+/// gate still rejects anything that would alter the laid-out token stream, and
+/// the full desugar sweep confirms no new non-equivalence. (Corpus citation:
+/// `sdk/compiler/damlc/tests/daml-test-files/ApplicativeDo.daml`.)
 fn do_block_is_verbatim(do_span: Span, module: &Module) -> bool {
     let mut found = false;
     let mut verbatim = false;
     visit_do(module, &mut |span, stmts| {
         if span == do_span && !found {
             found = true;
-            let first_is_let = matches!(stmts.first(), Some(DoStmt::Let { .. }));
             let has_try = stmts.iter().any(|s| match s {
                 DoStmt::Bind { expr, .. } | DoStmt::Expr { expr, .. } => expr_contains_try(expr),
-                DoStmt::Let { .. } => false,
+                // A `try` buried in a let-binding RHS counts too, so the
+                // "try/catch stays verbatim" rule holds uniformly rather than
+                // resting on the gate to catch it after the fact.
+                DoStmt::Let { bindings, .. } => bindings.iter().any(|b| expr_contains_try(&b.expr)),
             });
-            verbatim = first_is_let || has_try;
+            verbatim = has_try;
         }
     });
     verbatim
@@ -459,6 +468,26 @@ mod tests {
         let src = "f = do\n\t\tpure ()\n";
         assert_eq!(format_ast(src), src);
         assert_eq!(format_ast(&format_ast(src)), format_ast(src));
+    }
+
+    #[test]
+    fn do_block_starting_with_let_is_reindented() {
+        // A `do` whose first statement is a `let` is no longer verbatim. The
+        // whole block shifts by ONE uniform delta to land the first stmt at
+        // do_col + 2, so the `let` line, its continuation binding, and the
+        // following statement all move together — the bindings stay aligned
+        // (x and y both end at col 6) without a separate let-internal rule.
+        let src = "f = do\n      let x = 1\n          y = 2\n      pure (x + y)\n";
+        let out = format_ast(src);
+        assert_eq!(out, "f = do\n  let x = 1\n      y = 2\n  pure (x + y)\n");
+        assert_eq!(format_ast(&out), out); // idempotent
+    }
+
+    #[test]
+    fn do_block_with_try_stays_verbatim() {
+        // try/catch handler layout is still deliberately left verbatim.
+        let src = "f = do\n      _ <- try foo catch _ -> bar\n      pure ()\n";
+        assert_eq!(format_ast(src), src);
     }
 
     #[test]

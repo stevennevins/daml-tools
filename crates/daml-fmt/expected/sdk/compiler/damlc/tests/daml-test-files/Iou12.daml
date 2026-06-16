@@ -41,10 +41,10 @@ template Iou
         splitAmount: Decimal -- ^ must be between zero and original amount
       controller owner
       do -- Split the IOU by dividing the amount.
-         let restAmount = amount - splitAmount
-         splitCid <- updateAmount this splitAmount
-         restCid  <- updateAmount this restAmount
-         return (splitCid, restCid)
+        let restAmount = amount - splitAmount
+        splitCid <- updateAmount this splitAmount
+        restCid  <- updateAmount this restAmount
+        return (splitCid, restCid)
 
     choice Merge: ContractId Iou
       -- ^ merges two "compatible" `Iou`s
