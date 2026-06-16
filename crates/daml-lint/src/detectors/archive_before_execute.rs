@@ -1,5 +1,5 @@
 use crate::detector::{Detector, Finding, Severity};
-use crate::ir::{DamlModule, Statement};
+use crate::ir::{DamlModule, Expr, Statement};
 
 /// Detector #6: archive-before-execute
 ///
@@ -30,7 +30,7 @@ impl ArchiveBeforeExecute {
 
         for (i, stmt) in statements.iter().enumerate() {
             match stmt {
-                Statement::Archive { span, cid_expr, .. } => {
+                Statement::Archive { span, cid, .. } => {
                     // `fetchAndArchive` lowers to an Archive immediately followed
                     // by a Fetch of the same cid; recognize it for the message.
                     let kind = if is_fetch_and_archive(statements, i) {
@@ -41,21 +41,21 @@ impl ArchiveBeforeExecute {
                     pending.push(Archived {
                         line: span.line,
                         kind,
-                        cid: cid_expr.clone(),
+                        cid: expr_text(cid),
                     });
                 }
                 // `exercise cid Archive` (the built-in Archive choice) also
                 // consumes the contract — the canonical H3 pattern.
                 Statement::Exercise {
                     span,
-                    cid_expr,
+                    cid,
                     choice_name,
                     ..
                 } if choice_name == "Archive" || choice_name.ends_with(".Archive") => {
                     pending.push(Archived {
                         line: span.line,
                         kind: "archive",
-                        cid: cid_expr.clone(),
+                        cid: expr_text(cid),
                     });
                 }
                 Statement::TryCatch {
@@ -109,14 +109,40 @@ impl ArchiveBeforeExecute {
 /// parser lowers that to an Archive directly followed by a Fetch of the same
 /// contract at the same source line.
 fn is_fetch_and_archive(statements: &[Statement], i: usize) -> bool {
-    let Statement::Archive { span, cid_expr, .. } = &statements[i] else {
+    let Statement::Archive { span, cid, .. } = &statements[i] else {
         return false;
     };
     matches!(
         statements.get(i + 1),
-        Some(Statement::Fetch { span: fspan, cid_expr: fcid, .. })
-            if fspan.line == span.line && fcid == cid_expr
+        Some(Statement::Fetch { span: fspan, cid: fcid, .. })
+            if fspan.line == span.line && fcid == cid
     )
+}
+
+fn expr_text(expr: &Expr) -> String {
+    match expr {
+        Expr::Var {
+            qualifier, name, ..
+        }
+        | Expr::Con {
+            qualifier, name, ..
+        } => match qualifier {
+            Some(q) => format!("{q}.{name}"),
+            None => name.clone(),
+        },
+        Expr::Lit { value, .. } => value.clone(),
+        Expr::App { func, args, .. } => {
+            let mut parts = Vec::with_capacity(args.len() + 1);
+            parts.push(expr_text(func));
+            parts.extend(args.iter().map(expr_text));
+            parts.join(" ")
+        }
+        Expr::BinOp { op, lhs, rhs, .. } if op == "." => {
+            format!("{}.{}", expr_text(lhs), expr_text(rhs))
+        }
+        Expr::Unknown { raw, .. } => raw.clone(),
+        other => format!("{other:?}"),
+    }
 }
 
 impl Detector for ArchiveBeforeExecute {

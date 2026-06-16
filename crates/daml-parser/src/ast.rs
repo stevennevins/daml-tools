@@ -252,49 +252,100 @@ pub enum DoStmt {
     Expr { expr: Expr, pos: Pos, span: Span },
 }
 
-/// Structured Daml type, parsed from the real token stream (not from
-/// `type_text`). Scoped to the forms the corpus actually contains; it exists so
-/// downstream analysis can tell a type *application* from a *function arrow*
-/// from an atomic constructor — a distinction a string matcher structurally
-/// cannot make. It carries no span and is never rendered, so it is invisible to
-/// daml-fmt (which slices layout from `type_text` and the byte spans).
-#[derive(Debug, Clone, PartialEq)]
+/// Structured Daml type, parsed from the real token stream. Scoped to the forms
+/// the corpus actually contains; it exists so downstream analysis can tell a
+/// type *application* from a *function arrow* from an atomic constructor — a
+/// distinction a string matcher structurally cannot make. Every node carries a
+/// byte span so consumers can render exact source text from `(source, span)`.
+#[derive(Debug, Clone)]
 pub enum Type {
     /// Type constructor, possibly qualified: `Party`, `DA.Map.Map`.
     Con {
         qualifier: Option<String>,
         name: String,
+        span: Span,
     },
     /// Type application, head applied to one or more args: `ContractId Foo`,
     /// `Map Text Int`, `Script ()`. Type-level nat literals (the `10` in
     /// `Numeric 10`) are NOT types, so they are dropped from the arg list — a
     /// `Numeric 10` collapses to the bare head `Con "Numeric"`.
-    App(Box<Type>, Vec<Type>),
+    App(Box<Type>, Vec<Type>, Span),
     /// List type `[T]`.
-    List(Box<Type>),
+    List(Box<Type>, Span),
     /// Tuple type `(a, b, ...)`.
-    Tuple(Vec<Type>),
+    Tuple(Vec<Type>, Span),
     /// Function type `a -> b` (right-associative).
-    Fun(Box<Type>, Box<Type>),
+    Fun(Box<Type>, Box<Type>, Span),
     /// Lowercase type variable: `a`, `n`.
-    Var(String),
+    Var(String, Span),
     /// The unit type `()`.
-    Unit,
+    Unit(Span),
     /// A constrained type `C a => T`: the context is dropped (no detector
     /// reasons about constraints), the body `T` is kept.
-    Constrained(Box<Type>),
+    Constrained(Box<Type>, Span),
+}
+
+impl Type {
+    pub fn span(&self) -> Span {
+        match self {
+            Type::Con { span, .. }
+            | Type::App(_, _, span)
+            | Type::List(_, span)
+            | Type::Tuple(_, span)
+            | Type::Fun(_, _, span)
+            | Type::Var(_, span)
+            | Type::Unit(span)
+            | Type::Constrained(_, span) => *span,
+        }
+    }
+
+    pub(crate) fn with_span(mut self, span: Span) -> Type {
+        match &mut self {
+            Type::Con { span: s, .. }
+            | Type::App(_, _, s)
+            | Type::List(_, s)
+            | Type::Tuple(_, s)
+            | Type::Fun(_, _, s)
+            | Type::Var(_, s)
+            | Type::Unit(s)
+            | Type::Constrained(_, s) => *s = span,
+        }
+        self
+    }
+}
+
+impl PartialEq for Type {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                Type::Con {
+                    qualifier: aq,
+                    name: an,
+                    ..
+                },
+                Type::Con {
+                    qualifier: bq,
+                    name: bn,
+                    ..
+                },
+            ) => aq == bq && an == bn,
+            (Type::App(ah, aa, _), Type::App(bh, ba, _)) => ah == bh && aa == ba,
+            (Type::List(a, _), Type::List(b, _)) => a == b,
+            (Type::Tuple(a, _), Type::Tuple(b, _)) => a == b,
+            (Type::Fun(al, ar, _), Type::Fun(bl, br, _)) => al == bl && ar == br,
+            (Type::Var(a, _), Type::Var(b, _)) => a == b,
+            (Type::Unit(_), Type::Unit(_)) => true,
+            (Type::Constrained(a, _), Type::Constrained(b, _)) => a == b,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct FieldDecl {
     pub name: String,
-    /// Type rendered back to source-ish text (`ContractId Foo`, `[Text]`).
-    /// This is the slice daml-fmt and the lossless oracle rely on; it is NOT
-    /// repurposed. The structured `ty` below is the analysis truth.
-    pub type_text: String,
-    /// Structured form of `type_text`, parsed from the token stream. `None`
-    /// when the type could not be parsed cleanly (analysis treats it as
-    /// unknown). Additive and span-free — see [`Type`].
+    /// Structured field type parsed from the token stream. `None` when the type
+    /// could not be parsed cleanly (analysis treats it as unknown).
     pub ty: Option<Type>,
     pub pos: Pos,
     pub span: Span,
@@ -312,9 +363,8 @@ pub enum Consuming {
 pub struct ChoiceDecl {
     pub name: String,
     pub consuming: Consuming,
-    pub return_type_text: String,
-    /// Structured form of `return_type_text` (see [`Type`]); `None` if it could
-    /// not be parsed cleanly or the choice declared no return type.
+    /// Structured return type. `None` if it could not be parsed cleanly or the
+    /// choice declared no return type.
     pub return_ty: Option<Type>,
     pub params: Vec<FieldDecl>,
     /// Comma-separated controller expressions.
@@ -324,8 +374,6 @@ pub struct ChoiceDecl {
     pub body: Option<Expr>,
     pub pos: Pos,
     pub span: Span,
-    /// Line of the last token of the choice (body_raw slicing).
-    pub end_line: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -347,9 +395,7 @@ pub enum TemplateBodyDecl {
     },
     Key {
         expr: Expr,
-        type_text: String,
-        /// Structured form of `type_text` (see [`Type`]); `None` if absent or
-        /// not cleanly parseable.
+        /// Structured key type. `None` if absent or not cleanly parseable.
         ty: Option<Type>,
         pos: Pos,
         span: Span,
@@ -420,7 +466,7 @@ pub struct Equation {
 #[derive(Debug, Clone)]
 pub struct FunctionDecl {
     pub name: String,
-    pub type_text: Option<String>,
+    pub ty: Option<Type>,
     pub equations: Vec<Equation>,
     pub pos: Pos,
     /// Span of the function's first appearance (signature or first equation).
@@ -429,8 +475,6 @@ pub struct FunctionDecl {
     pub span: Span,
     /// Span of the standalone type signature `name : Type`, if one was seen.
     pub sig_span: Option<Span>,
-    /// Line of the last token of the last equation (body_raw slicing).
-    pub end_line: usize,
 }
 
 #[derive(Debug, Clone)]

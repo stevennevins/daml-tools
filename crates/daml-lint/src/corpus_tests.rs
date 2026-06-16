@@ -65,6 +65,46 @@ fn interface<'a>(m: &'a DamlModule, name: &str) -> &'a Interface {
         .unwrap_or_else(|| panic!("interface {} not found", name))
 }
 
+fn expr_text(expr: &Expr) -> String {
+    match expr {
+        Expr::Var {
+            qualifier, name, ..
+        }
+        | Expr::Con {
+            qualifier, name, ..
+        } => match qualifier {
+            Some(q) => format!("{q}.{name}"),
+            None => name.clone(),
+        },
+        Expr::App { func, args, .. } => {
+            let mut parts = Vec::with_capacity(args.len() + 1);
+            parts.push(expr_text(func));
+            parts.extend(args.iter().map(expr_text));
+            parts.join(" ")
+        }
+        Expr::List { items, .. } => {
+            let parts: Vec<String> = items.iter().map(expr_text).collect();
+            format!("[{}]", parts.join(", "))
+        }
+        Expr::BinOp { op, lhs, rhs, .. } if op == "." => {
+            format!("{}.{}", expr_text(lhs), expr_text(rhs))
+        }
+        Expr::Unknown { raw, .. } => raw.clone(),
+        other => format!("{other:?}"),
+    }
+}
+
+fn expr_texts(exprs: &[Expr]) -> Vec<String> {
+    exprs.iter().map(expr_text).collect()
+}
+
+fn con_name(ty: &Option<TypeNode>) -> Option<&str> {
+    match ty {
+        Some(TypeNode::Con { name, .. }) => Some(name.as_str()),
+        _ => None,
+    }
+}
+
 #[test]
 fn settlement_instruction_template() {
     let Some(m) = load("Settlement/V4/Instruction.daml") else {
@@ -81,7 +121,7 @@ fn settlement_instruction_template() {
     let t = template(&m, "Instruction");
     assert_eq!(t.fields.len(), 12);
     assert_eq!(
-        t.signatories,
+        expr_texts(&t.signatory_exprs),
         vec![
             "instructor",
             "consenters",
@@ -89,7 +129,7 @@ fn settlement_instruction_template() {
             "signedReceivers"
         ]
     );
-    assert_eq!(t.key_type.as_deref(), Some("InstructionKey"));
+    assert_eq!(con_name(&t.key_type), Some("InstructionKey"));
     assert!(t.key_expr.is_some());
     let instances: Vec<&str> = t
         .interface_instances
@@ -157,7 +197,7 @@ fn account_template_with_ensure() {
     let t = template(&m, "Account");
     assert_eq!(t.fields.len(), 8);
     assert_eq!(
-        t.signatories,
+        expr_texts(&t.signatory_exprs),
         vec!["custodian", "owner", "Lockable.getLockers this"]
     );
     let ensure = t.ensure_clause.as_ref().expect("Account has ensure");
@@ -183,17 +223,26 @@ fn interface_account_reference_template() {
     let names: Vec<&str> = i.choices.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(names, vec!["GetView", "Credit", "Debit", "Remove"]);
     let remove = i.choices.iter().find(|c| c.name == "Remove").unwrap();
-    assert_eq!(remove.controllers, vec!["signatory this"]);
+    assert_eq!(expr_texts(&remove.controller_exprs), vec!["signatory this"]);
 
     // The Reference helper template: choices controlled by `signatory this`.
     let r = template(&m, "Reference");
     assert_eq!(r.fields.len(), 3);
-    assert_eq!(r.key_type.as_deref(), Some("AccountKey"));
+    assert_eq!(con_name(&r.key_type), Some("AccountKey"));
     let by_name = |n: &str| r.choices.iter().find(|c| c.name == n).unwrap();
     assert!(!by_name("GetCid").consuming);
-    assert_eq!(by_name("GetCid").controllers, vec!["viewer"]);
-    assert_eq!(by_name("SetCid").controllers, vec!["signatory this"]);
-    assert_eq!(by_name("SetObservers").controllers, vec!["signatory this"]);
+    assert_eq!(
+        expr_texts(&by_name("GetCid").controller_exprs),
+        vec!["viewer"]
+    );
+    assert_eq!(
+        expr_texts(&by_name("SetCid").controller_exprs),
+        vec!["signatory this"]
+    );
+    assert_eq!(
+        expr_texts(&by_name("SetObservers").controller_exprs),
+        vec!["signatory this"]
+    );
     // Structured controller expression: App of Var "signatory" to "this".
     match &by_name("SetCid").controller_exprs[0] {
         Expr::App { func, args, .. } => {
@@ -213,7 +262,7 @@ fn holding_fungible_template() {
     assert_eq!(t.fields.len(), 5);
     assert!(t.ensure_clause.is_some());
     assert_eq!(
-        t.signatories,
+        expr_texts(&t.signatory_exprs),
         vec![
             "account.custodian",
             "account.owner",
@@ -240,7 +289,10 @@ fn settlement_batch_module() {
     };
     let t = template(&m, "Batch");
     assert_eq!(t.fields.len(), 8);
-    assert_eq!(t.signatories, vec!["instructor", "consenters"]);
+    assert_eq!(
+        expr_texts(&t.signatory_exprs),
+        vec!["instructor", "consenters"]
+    );
     let fns: Vec<&str> = m.functions.iter().map(|f| f.name.as_str()).collect();
     for expected in ["routedSteps", "instructionIds", "buildKey"] {
         assert!(fns.contains(&expected), "function {} missing", expected);
@@ -274,7 +326,7 @@ fn token_instrument_template() {
     };
     let t = template(&m, "Instrument");
     assert_eq!(t.fields.len(), 8);
-    assert_eq!(t.signatories, vec!["depository", "issuer"]);
+    assert_eq!(expr_texts(&t.signatory_exprs), vec!["depository", "issuer"]);
     assert_eq!(t.interface_instances.len(), 3);
 }
 
@@ -285,7 +337,7 @@ fn lifecycle_distribution_rule_template() {
     };
     let t = template(&m, "Rule");
     assert_eq!(t.fields.len(), 5);
-    assert_eq!(t.signatories, vec!["providers"]);
+    assert_eq!(expr_texts(&t.signatory_exprs), vec!["providers"]);
     let instances: Vec<&str> = t
         .interface_instances
         .iter()

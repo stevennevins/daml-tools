@@ -1,12 +1,181 @@
-use daml_parser::ast::Type;
+use daml_parser::ast::{Span as ParserSpan, Type};
 use serde::Serialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct Span {
     pub file: PathBuf,
     pub line: usize,
     pub column: usize,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct SourceSpan {
+    pub file: PathBuf,
+    pub line: usize,
+    pub column: usize,
+    /// UTF-16 code-unit offset into `DamlModule.source`, suitable for
+    /// JavaScript's `module.source.slice(start, end)`.
+    pub start: usize,
+    pub end: usize,
+    /// Parser byte offsets into the UTF-8 source.
+    pub byte_start: usize,
+    pub byte_end: usize,
+}
+
+pub(crate) struct SourceMap<'a> {
+    file: &'a Path,
+    source: &'a str,
+    line_starts: Vec<usize>,
+    byte_to_utf16: Vec<usize>,
+}
+
+impl<'a> SourceMap<'a> {
+    pub(crate) fn new(file: &'a Path, source: &'a str) -> Self {
+        let mut line_starts = vec![0];
+        for (idx, byte) in source.bytes().enumerate() {
+            if byte == b'\n' {
+                line_starts.push(idx + 1);
+            }
+        }
+        let mut byte_to_utf16 = vec![0; source.len() + 1];
+        let mut utf16 = 0usize;
+        let mut prev = 0usize;
+        for (idx, ch) in source.char_indices() {
+            for slot in byte_to_utf16.iter_mut().take(idx).skip(prev) {
+                *slot = utf16;
+            }
+            let char_end = idx + ch.len_utf8();
+            for slot in byte_to_utf16.iter_mut().take(char_end).skip(idx) {
+                *slot = utf16;
+            }
+            utf16 += ch.len_utf16();
+            prev = char_end;
+        }
+        for slot in byte_to_utf16.iter_mut().take(source.len() + 1).skip(prev) {
+            *slot = utf16;
+        }
+        Self {
+            file,
+            source,
+            line_starts,
+            byte_to_utf16,
+        }
+    }
+
+    fn line_column_at_byte(&self, byte: usize) -> (usize, usize) {
+        let byte = byte.min(self.source.len());
+        let line_idx = match self.line_starts.binary_search(&byte) {
+            Ok(idx) => idx,
+            Err(idx) => idx.saturating_sub(1),
+        };
+        let line_start = self.line_starts[line_idx];
+        (
+            line_idx + 1,
+            self.source[line_start..byte].chars().count() + 1,
+        )
+    }
+
+    fn source_span(&self, span: ParserSpan) -> SourceSpan {
+        let byte_start = span.start.min(self.source.len());
+        let byte_end = span.end.min(self.source.len()).max(byte_start);
+        let (line, column) = self.line_column_at_byte(byte_start);
+        SourceSpan {
+            file: self.file.to_path_buf(),
+            line,
+            column,
+            start: self.byte_to_utf16[byte_start],
+            end: self.byte_to_utf16[byte_end],
+            byte_start,
+            byte_end,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub enum TypeNode {
+    Con {
+        qualifier: Option<String>,
+        name: String,
+        span: SourceSpan,
+    },
+    App {
+        head: Box<TypeNode>,
+        args: Vec<TypeNode>,
+        span: SourceSpan,
+    },
+    List {
+        inner: Box<TypeNode>,
+        span: SourceSpan,
+    },
+    Tuple {
+        items: Vec<TypeNode>,
+        span: SourceSpan,
+    },
+    Fun {
+        param: Box<TypeNode>,
+        result: Box<TypeNode>,
+        span: SourceSpan,
+    },
+    Var {
+        name: String,
+        span: SourceSpan,
+    },
+    Unit {
+        span: SourceSpan,
+    },
+    Constrained {
+        body: Box<TypeNode>,
+        span: SourceSpan,
+    },
+}
+
+impl TypeNode {
+    pub(crate) fn from_type(t: &Type, source_map: &SourceMap<'_>) -> TypeNode {
+        let span = || source_map.source_span(t.span());
+        match t {
+            Type::Con {
+                qualifier, name, ..
+            } => TypeNode::Con {
+                qualifier: qualifier.clone(),
+                name: name.clone(),
+                span: span(),
+            },
+            Type::App(head, args, _) => TypeNode::App {
+                head: Box::new(TypeNode::from_type(head, source_map)),
+                args: args
+                    .iter()
+                    .map(|arg| TypeNode::from_type(arg, source_map))
+                    .collect(),
+                span: span(),
+            },
+            Type::List(inner, _) => TypeNode::List {
+                inner: Box::new(TypeNode::from_type(inner, source_map)),
+                span: span(),
+            },
+            Type::Tuple(items, _) => TypeNode::Tuple {
+                items: items
+                    .iter()
+                    .map(|item| TypeNode::from_type(item, source_map))
+                    .collect(),
+                span: span(),
+            },
+            Type::Fun(param, result, _) => TypeNode::Fun {
+                param: Box::new(TypeNode::from_type(param, source_map)),
+                result: Box::new(TypeNode::from_type(result, source_map)),
+                span: span(),
+            },
+            Type::Var(name, _) => TypeNode::Var {
+                name: name.clone(),
+                span: span(),
+            },
+            Type::Unit(_) => TypeNode::Unit { span: span() },
+            Type::Constrained(body, _) => TypeNode::Constrained {
+                body: Box::new(TypeNode::from_type(body, source_map)),
+                span: span(),
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -37,22 +206,26 @@ impl DamlType {
     /// for one opaque `Named`.
     pub fn from_type(t: &Type) -> DamlType {
         match t {
-            Type::Con { qualifier, name } => DamlType::con(qualifier.as_deref(), name),
-            Type::App(head, args) => match head.as_ref() {
-                Type::Con { qualifier, name } => DamlType::apply(qualifier.as_deref(), name, args),
+            Type::Con {
+                qualifier, name, ..
+            } => DamlType::con(qualifier.as_deref(), name),
+            Type::App(head, args, _) => match head.as_ref() {
+                Type::Con {
+                    qualifier, name, ..
+                } => DamlType::apply(qualifier.as_deref(), name, args),
                 // Application with a non-constructor head (a type variable, a
                 // function): nothing classifies these — opaque.
                 _ => DamlType::Unknown,
             },
-            Type::List(inner) => DamlType::List(Box::new(DamlType::from_type(inner))),
-            Type::Unit => DamlType::Unit,
+            Type::List(inner, _) => DamlType::List(Box::new(DamlType::from_type(inner))),
+            Type::Unit(_) => DamlType::Unit,
             // A constraint context carries nothing a detector reasons about;
             // classify by the body.
-            Type::Constrained(body) => DamlType::from_type(body),
+            Type::Constrained(body, _) => DamlType::from_type(body),
             // Tuples, arrows and bare type variables carry no money/collection
             // meaning — the buckets the old matcher lumped into Unknown or a
             // misleading Named. Now they are *known* to be these shapes.
-            Type::Tuple(_) | Type::Fun(_, _) | Type::Var(_) => DamlType::Unknown,
+            Type::Tuple(_, _) | Type::Fun(_, _, _) | Type::Var(_, _) => DamlType::Unknown,
         }
     }
 
@@ -160,7 +333,7 @@ impl DamlType {
 /// Lightweight source position for expression-level nodes (1-based). The
 /// enclosing module fixes the file; repeating the path on every node would
 /// bloat the JSON handed to rule scripts.
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, PartialEq)]
 pub struct SrcPos {
     pub line: usize,
     pub column: usize,
@@ -168,7 +341,7 @@ pub struct SrcPos {
 
 /// Expression AST exposed to rule scripts. Serialized as tagged unions:
 /// `{ "App": {...} }`, `{ "Lit": {...} }`, ... mirrored by daml-lint.d.ts.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub enum Expr {
     /// Variable reference: `amount`, `Map.lookup` (qualifier "Map").
     Var {
@@ -255,20 +428,20 @@ pub enum Expr {
     },
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct CaseAlt {
     /// Pattern rendered to source text (`Some x`, `[]`, `_`).
     pub pattern: String,
     pub body: Expr,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct LetBinding {
     pub name: String,
     pub value: Expr,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct RecordField {
     pub name: String,
     /// None for punned fields (`Foo with owner`) and `..` spreads.
@@ -277,7 +450,7 @@ pub struct RecordField {
 
 // ----- Expr analysis ------------------------------------------------------
 //
-// Detectors decide on the structured `Expr` tree, not on `raw_text`. Walking
+// Detectors decide on the structured `Expr` tree, not on rendered text. Walking
 // the tree makes a whole class of lexical bugs vanish: `not (...)`, `a || b`,
 // operator direction, and `> 0` mentions hiding in comments / string literals
 // all stop mattering, because the tree carries the real meaning.
@@ -822,10 +995,12 @@ fn walk_nested_do_stmts<'a>(e: &'a Expr, g: &mut impl FnMut(&'a Statement)) {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct Field {
     pub name: String,
-    pub type_: DamlType,
+    pub type_: Option<TypeNode>,
+    #[serde(skip_serializing)]
+    pub daml_type: DamlType,
     pub span: Span,
 }
 
@@ -833,15 +1008,12 @@ pub struct Field {
 pub struct Template {
     pub name: String,
     pub fields: Vec<Field>,
-    pub signatories: Vec<String>,
-    pub observers: Vec<String>,
-    /// Structured party expressions behind `signatories`/`observers`.
     pub signatory_exprs: Vec<Expr>,
     pub observer_exprs: Vec<Expr>,
     pub ensure_clause: Option<EnsureClause>,
-    /// `key <expr> : <Type>` — expression and type text, if declared.
+    /// `key <expr> : <Type>` — expression and structured type, if declared.
     pub key_expr: Option<Expr>,
-    pub key_type: Option<String>,
+    pub key_type: Option<TypeNode>,
     pub maintainer_exprs: Vec<Expr>,
     pub choices: Vec<Choice>,
     /// Interfaces this template implements (`interface instance I for T`).
@@ -859,10 +1031,6 @@ pub struct InterfaceInstance {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct EnsureClause {
-    /// DEPRECATED for custom rules (`"ensure " + rendered condition`); prefer
-    /// the structured `expr`.
-    pub raw_text: String,
-    /// Structured ensure condition.
     pub expr: Expr,
     pub span: Span,
 }
@@ -903,64 +1071,49 @@ impl EnsureClause {
 pub struct Choice {
     pub name: String,
     pub consuming: bool,
-    pub controllers: Vec<String>,
-    /// Structured controller expressions behind `controllers`.
     pub controller_exprs: Vec<Expr>,
     /// Choice observers, if declared.
     pub observer_exprs: Vec<Expr>,
     pub parameters: Vec<Field>,
-    pub return_type: DamlType,
+    pub return_type: Option<TypeNode>,
     pub body: Vec<Statement>,
-    /// DEPRECATED for custom rules (original source lines of the choice body);
-    /// prefer the structured `body`.
-    pub body_raw: String,
     pub span: Span,
 }
 
-/// Do-statement classification. The raw-text fields (`Let.expr`,
-/// `Assert.condition`, the `cid_expr`s, `Create`/`Exercise.raw`) are
-/// DEPRECATED for custom rules — kept for compatibility through the current
-/// minor line; the structured payloads (`value`, `condition_expr`, `cid`,
-/// `argument`) are the real parse tree. `Other.raw` is NOT deprecated: it is
-/// the deliberate raw-source form for statements with no structured encoding.
-/// See the migration table in `README.md` and `examples/daml-lint.d.ts`.
-#[derive(Debug, Clone, Serialize)]
+/// Do-statement classification. Structured payloads (`value`,
+/// `condition_expr`, `cid`, `argument`) are the rule-facing parse tree.
+/// `Other.raw` is the deliberate raw-source form for statements with no
+/// structured encoding.
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub enum Statement {
     Let {
         name: String,
-        expr: String,
         value: Expr,
         span: SrcPos,
     },
     Assert {
-        condition: String,
         condition_expr: Expr,
         span: SrcPos,
     },
     Fetch {
-        cid_expr: String,
         cid: Expr,
         /// Pattern bound by `x <- fetch cid`, if any.
         binder: Option<String>,
         span: SrcPos,
     },
     Archive {
-        cid_expr: String,
         cid: Expr,
         span: SrcPos,
     },
     Create {
         template_name: String,
-        raw: String,
         /// The created payload (usually a Record expression).
         argument: Expr,
         binder: Option<String>,
         span: SrcPos,
     },
     Exercise {
-        cid_expr: String,
         choice_name: String,
-        raw: String,
         cid: Expr,
         /// The choice argument (usually a Record expression), if present.
         argument: Option<Expr>,
@@ -998,7 +1151,7 @@ pub enum Statement {
 
 /// One arm of a `Statement::Branch`. `pattern` is the rendered case alt pattern
 /// (`x :: _`, `[a]`, `_`); None for the then/else arms of an `if`.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct BranchArm {
     pub pattern: Option<String>,
     pub body: Vec<Statement>,
@@ -1007,12 +1160,9 @@ pub struct BranchArm {
 #[derive(Debug, Clone, Serialize)]
 pub struct Function {
     pub name: String,
-    /// Declared type signature text, if present.
-    pub type_signature: Option<String>,
+    /// Declared type signature, if present.
+    pub type_signature: Option<TypeNode>,
     pub body: Vec<Statement>,
-    /// DEPRECATED for custom rules (original source lines of the function);
-    /// prefer the structured `body`.
-    pub body_raw: String,
     pub span: Span,
 }
 
@@ -1027,7 +1177,7 @@ pub struct Import {
 #[derive(Debug, Clone, Serialize)]
 pub struct InterfaceMethod {
     pub name: String,
-    pub type_text: String,
+    pub type_: Option<TypeNode>,
     pub span: Span,
 }
 
@@ -1044,6 +1194,7 @@ pub struct Interface {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DamlModule {
+    pub ir_version: u32,
     pub name: String,
     pub file: PathBuf,
     pub source: String,
@@ -1056,6 +1207,7 @@ pub struct DamlModule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use daml_parser::ast::Span as AstSpan;
 
     // These exercise the `Type` -> `DamlType` mapping (`from_type`), which
     // replaced the old `from_str` string reparse. The *parsing* of a source
@@ -1066,10 +1218,30 @@ mod tests {
         Type::Con {
             qualifier: None,
             name: name.to_string(),
+            span: AstSpan::default(),
         }
     }
     fn app(head: Type, args: Vec<Type>) -> Type {
-        Type::App(Box::new(head), args)
+        Type::App(Box::new(head), args, AstSpan::default())
+    }
+    fn var(name: &str) -> Type {
+        Type::Var(name.to_string(), AstSpan::default())
+    }
+    fn unit() -> Type {
+        Type::Unit(AstSpan::default())
+    }
+    fn tuple(items: Vec<Type>) -> Type {
+        Type::Tuple(items, AstSpan::default())
+    }
+    fn fun(param: Type, result: Type) -> Type {
+        Type::Fun(Box::new(param), Box::new(result), AstSpan::default())
+    }
+    fn qualified_con(qualifier: &str, name: &str) -> Type {
+        Type::Con {
+            qualifier: Some(qualifier.into()),
+            name: name.into(),
+            span: AstSpan::default(),
+        }
     }
 
     // Regression (audit F7): `Optional (ContractId Foo)` must preserve the nested
@@ -1096,7 +1268,7 @@ mod tests {
             DamlType::ContractId(_)
         ));
         // The unit type classifies as Unit.
-        assert!(matches!(DamlType::from_type(&Type::Unit), DamlType::Unit));
+        assert!(matches!(DamlType::from_type(&unit()), DamlType::Unit));
     }
 
     // Regression (sweep F5/F6/F9/F27): the whole `Numeric` fixed-point family is
@@ -1106,9 +1278,7 @@ mod tests {
     #[test]
     fn numeric_family_is_decimal() {
         assert!(DamlType::from_type(&con("Numeric")).is_decimal());
-        assert!(
-            DamlType::from_type(&app(con("Numeric"), vec![Type::Var("n".into())])).is_decimal()
-        );
+        assert!(DamlType::from_type(&app(con("Numeric"), vec![var("n")])).is_decimal());
         assert!(DamlType::from_type(&con("Decimal")).is_decimal());
         // A Named type that merely starts with "Numeric" is not money.
         assert!(!DamlType::from_type(&con("NumericThing")).is_decimal());
@@ -1125,12 +1295,8 @@ mod tests {
             DamlType::from_type(&app(con("GenMap"), vec![con("Party"), con("Int")])).is_unbounded()
         );
         assert!(DamlType::from_type(&app(con("Set"), vec![con("Party")])).is_unbounded());
-        let qualified = |q: &str, n: &str| Type::Con {
-            qualifier: Some(q.into()),
-            name: n.into(),
-        };
         assert!(DamlType::from_type(&app(
-            qualified("DA.Map", "Map"),
+            qualified_con("DA.Map", "Map"),
             vec![con("Text"), con("Int")]
         ))
         .is_unbounded());
@@ -1139,12 +1305,13 @@ mod tests {
         // collections) are recognized too — the old matcher only knew `Map `,
         // `DA.Map.Map `, `Set `, `DA.Set.Set ` and missed these. This is the
         // single corpus finding the swap changed (`seriSet : Set.Set Int`).
+        assert!(DamlType::from_type(&app(
+            qualified_con("Map", "Map"),
+            vec![con("Text"), con("Int")]
+        ))
+        .is_unbounded());
         assert!(
-            DamlType::from_type(&app(qualified("Map", "Map"), vec![con("Text"), con("Int")]))
-                .is_unbounded()
-        );
-        assert!(
-            DamlType::from_type(&app(qualified("Set", "Set"), vec![con("Int")])).is_unbounded()
+            DamlType::from_type(&app(qualified_con("Set", "Set"), vec![con("Int")])).is_unbounded()
         );
         // A Named type starting with Map/Set is not a collection.
         assert!(!DamlType::from_type(&con("MapView")).is_unbounded());
@@ -1155,10 +1322,7 @@ mod tests {
     // tail (which would alias two distinct module-qualified types).
     #[test]
     fn named_keeps_qualifier() {
-        let qualified = Type::Con {
-            qualifier: Some("Lib.Mod".into()),
-            name: "Asset".into(),
-        };
+        let qualified = qualified_con("Lib.Mod", "Asset");
         assert_eq!(
             DamlType::from_type(&qualified),
             DamlType::Named("Lib.Mod.Asset".to_string())
@@ -1174,7 +1338,7 @@ mod tests {
     #[test]
     fn tuple_type_is_unknown() {
         assert!(matches!(
-            DamlType::from_type(&Type::Tuple(vec![con("Int"), con("Text")])),
+            DamlType::from_type(&tuple(vec![con("Int"), con("Text")])),
             DamlType::Unknown
         ));
     }
@@ -1184,7 +1348,7 @@ mod tests {
     // starting uppercase (`Int -> Int` was `Named("Int -> Int")`).
     #[test]
     fn function_type_is_unknown_not_named() {
-        let arrow = Type::Fun(Box::new(con("Int")), Box::new(con("Int")));
+        let arrow = fun(con("Int"), con("Int"));
         assert!(matches!(DamlType::from_type(&arrow), DamlType::Unknown));
     }
 

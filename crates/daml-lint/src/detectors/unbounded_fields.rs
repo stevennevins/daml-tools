@@ -30,7 +30,7 @@ impl Detector for UnboundedFields {
             let unbounded_fields: Vec<_> = template
                 .fields
                 .iter()
-                .filter(|f| f.type_.is_unbounded())
+                .filter(|f| f.daml_type.is_unbounded())
                 .collect();
 
             if unbounded_fields.is_empty() {
@@ -60,7 +60,7 @@ impl Detector for UnboundedFields {
                         .iter()
                         .find(|f| f.name == unguarded_names[0])
                         .unwrap();
-                    format!("{} field", type_display(&f.type_))
+                    format!("{} field", type_display(&f.daml_type))
                 } else {
                     "fields".to_string()
                 };

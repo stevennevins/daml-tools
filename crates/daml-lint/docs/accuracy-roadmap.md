@@ -53,8 +53,9 @@ args: { auditFile, clusters: [...] } })` — see `.claude/workflows/`.
 
 The parser already produces a typed `ir::Expr` (BinOp, App, Lit, Var, …) on
 every ensure clause, assert condition, and statement. Walking that tree is
-strictly more correct than substring-matching the raw text. `raw_text` should
-remain only for *display* (evidence strings), never for *decisions*.
+strictly more correct than substring-matching rendered text. `Statement.Other.raw`
+and `Expr.Unknown.raw` remain only as explicit escape hatches for unmodeled
+syntax, never as the primary decision surface for modeled constructs.
 
 When a decision is made on `Expr` instead of text, a whole class of bugs
 disappears at once: inverted conditions (`not (x > 0)`), disjunction
@@ -141,11 +142,12 @@ and the full gauntlet is green.
 
 ## Round 4 — DONE (AST-based types)
 
-The type model is no longer a string round-trip. `daml-parser` now populates an
-additive `Type` AST next to the lossless `type_text`, and `daml-lint` classifies
-types from that structured node through `DamlType::from_type`. The old
-`DamlType::from_str` string matcher and its helpers are deleted. The design and
-landing evidence live in [`typed-type-ast.md`](typed-type-ast.md).
+The type model is no longer a string round-trip. `daml-parser` now exposes
+span-bearing `Type` nodes as the type source of truth, and `daml-lint` serializes
+those nodes as `TypeNode` for custom rules while retaining `DamlType::from_type`
+as an internal coarse classifier for built-in detectors. The old duplicate type
+strings and string matcher are deleted. The current state lives in
+[`typed-type-ast.md`](typed-type-ast.md).
 
 ## Known limitations (accepted — design choice)
 
@@ -158,10 +160,9 @@ small set of deliberate scoping decisions:
   helper invoked solely inside a nested `do`/`try` is not expanded. This never
   adds a false positive (it can only under-report), and matches the audit's
   narrowest-correct guidance.
-- **parser `.` precedence** — record projection `.` lexes as an operator looser
-  than application, so `length this.note` parses as `(length this).note`. The
-  detectors compensate for the common `this.`/`self.` case; the general fix is a
-  parser-precedence change, deferred to keep the formatter's 924/924 differential
-  stable.
+- **parser-owned projection precedence** — record projection now binds tighter
+  than application for tight forms such as `this.note`, while spaced/newline `.`
+  remains composition. Formatter/linter behavior should rely on the parser
+  shape instead of detector-local compensation.
 - **`unqualified-da-import.js`** (example) flags an empty import list
   `import DA.Map ()` — a teaching template, not a core detector. (low)

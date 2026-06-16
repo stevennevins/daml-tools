@@ -206,7 +206,7 @@ impl Detector for MissingPositiveAmount {
                     .parameters
                     .iter()
                     .filter(|p| {
-                        p.type_.is_decimal()
+                        p.daml_type.is_decimal()
                             && (p.name.to_lowercase().contains("amount")
                                 || p.name.to_lowercase() == "quantity"
                                 || p.name.to_lowercase() == "price")
@@ -245,7 +245,7 @@ impl Detector for MissingPositiveAmount {
                     .parameters
                     .iter()
                     .filter(|p| {
-                        p.type_.is_list()
+                        p.daml_type.is_list()
                             && (p.name.to_lowercase().contains("input")
                                 || p.name.to_lowercase().contains("holding")
                                 || p.name.to_lowercase().contains("cids"))

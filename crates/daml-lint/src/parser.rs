@@ -2,20 +2,16 @@
 //! (src/ir.rs).
 //!
 //! This replaces the old line-based keyword shim. The IR shapes are the
-//! stable contract with rule scripts; raw-text fields (`body_raw`,
-//! `raw_text`, statement `raw`) are reconstructed from real parse trees so
-//! existing rules keep working, while structured `Expr` payloads carry the
-//! actual parse tree.
+//! stable contract with rule scripts; structured `Expr` and `TypeNode`
+//! payloads carry the actual parse tree.
 
 use crate::ir::*;
 use daml_parser::ast::{self, Consuming, Decl, DoStmt, TemplateBodyDecl};
 use daml_parser::parse::parse_module;
 use std::path::Path;
 
-/// Parse a DAML source file into a DamlModule IR. Never panics; parse
-/// problems degrade to partial structure. (Diagnostics-free entry point,
-/// used by tests and kept as the stable API.)
-pub fn parse_daml(source: &str, file: &Path) -> DamlModule {
+#[cfg(test)]
+pub(crate) fn parse_daml(source: &str, file: &Path) -> DamlModule {
     parse_daml_with_diagnostics(source, file).0
 }
 
@@ -34,8 +30,7 @@ pub struct Diagnostic {
 
 pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> (DamlModule, Vec<Diagnostic>) {
     let (module, diags) = parse_module(source);
-    let lines: Vec<&str> = source.lines().collect();
-
+    let source_map = SourceMap::new(file, source);
     let imports = module
         .imports
         .iter()
@@ -53,19 +48,20 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> (DamlModule, Ve
 
     for decl in &module.decls {
         match decl {
-            Decl::Template(t) => templates.push(lower_template(t, file, &lines)),
-            Decl::Interface(i) => interfaces.push(lower_interface(i, file, &lines)),
+            Decl::Template(t) => templates.push(lower_template(t, file, &source_map)),
+            Decl::Interface(i) => interfaces.push(lower_interface(i, file, &source_map)),
             Decl::Function(f) => {
                 if f.equations.is_empty() {
                     continue; // type signature without a body
                 }
-                functions.push(lower_function(f, file, &lines));
+                functions.push(lower_function(f, file, &source_map));
             }
             _ => {}
         }
     }
 
     let ir = DamlModule {
+        ir_version: 3,
         name: module.name,
         file: file.to_path_buf(),
         source: source.to_string(),
@@ -250,19 +246,18 @@ fn binding_name(b: &ast::Binding) -> String {
 
 // ----- declarations ------------------------------------------------------
 
-fn lower_template(t: &ast::TemplateDecl, file: &Path, lines: &[&str]) -> Template {
+fn lower_template(t: &ast::TemplateDecl, file: &Path, source_map: &SourceMap<'_>) -> Template {
     let fields = t
         .fields
         .iter()
         .map(|f| Field {
             name: f.name.clone(),
-            type_: lower_type(f.ty.as_ref()),
+            type_: f.ty.as_ref().map(|ty| TypeNode::from_type(ty, source_map)),
+            daml_type: lower_type(f.ty.as_ref()),
             span: span_at(file, f.pos),
         })
         .collect();
 
-    let mut signatories = Vec::new();
-    let mut observers = Vec::new();
     let mut signatory_exprs = Vec::new();
     let mut observer_exprs = Vec::new();
     let mut ensure_clause = None;
@@ -275,32 +270,25 @@ fn lower_template(t: &ast::TemplateDecl, file: &Path, lines: &[&str]) -> Templat
     for item in &t.body {
         match item {
             TemplateBodyDecl::Signatory { parties, .. } => {
-                signatories.extend(party_names(parties));
                 signatory_exprs.extend(parties.iter().map(lower_expr));
             }
             TemplateBodyDecl::Observer { parties, .. } => {
-                observers.extend(party_names(parties));
                 observer_exprs.extend(parties.iter().map(lower_expr));
             }
             TemplateBodyDecl::Ensure { expr, pos, .. } => {
                 ensure_clause = Some(EnsureClause {
-                    raw_text: format!("ensure {}", expr.render()),
                     expr: lower_expr(expr),
                     span: span_at(file, *pos),
                 });
             }
-            TemplateBodyDecl::Key {
-                expr, type_text, ..
-            } => {
+            TemplateBodyDecl::Key { expr, ty, .. } => {
                 key_expr = Some(lower_expr(expr));
-                if !type_text.is_empty() {
-                    key_type = Some(type_text.clone());
-                }
+                key_type = ty.as_ref().map(|ty| TypeNode::from_type(ty, source_map));
             }
             TemplateBodyDecl::Maintainer { expr, .. } => {
                 maintainer_exprs.push(lower_expr(expr));
             }
-            TemplateBodyDecl::Choice(c) => choices.push(lower_choice(c, file, lines)),
+            TemplateBodyDecl::Choice(c) => choices.push(lower_choice(c, file, source_map)),
             TemplateBodyDecl::InterfaceInstance(ii) => {
                 interface_instances.push(InterfaceInstance {
                     interface_name: ii.interface_name.clone(),
@@ -315,8 +303,6 @@ fn lower_template(t: &ast::TemplateDecl, file: &Path, lines: &[&str]) -> Templat
     Template {
         name: t.name.clone(),
         fields,
-        signatories,
-        observers,
         signatory_exprs,
         observer_exprs,
         ensure_clause,
@@ -329,7 +315,7 @@ fn lower_template(t: &ast::TemplateDecl, file: &Path, lines: &[&str]) -> Templat
     }
 }
 
-fn lower_interface(i: &ast::InterfaceDecl, file: &Path, lines: &[&str]) -> Interface {
+fn lower_interface(i: &ast::InterfaceDecl, file: &Path, source_map: &SourceMap<'_>) -> Interface {
     Interface {
         name: i.name.clone(),
         requires: i.requires.clone(),
@@ -339,55 +325,30 @@ fn lower_interface(i: &ast::InterfaceDecl, file: &Path, lines: &[&str]) -> Inter
             .iter()
             .map(|m| InterfaceMethod {
                 name: m.name.clone(),
-                type_text: m.type_text.clone(),
+                type_: m.ty.as_ref().map(|ty| TypeNode::from_type(ty, source_map)),
                 span: span_at(file, m.pos),
             })
             .collect(),
         choices: i
             .choices
             .iter()
-            .map(|c| lower_choice(c, file, lines))
+            .map(|c| lower_choice(c, file, source_map))
             .collect(),
         span: span_at(file, i.pos),
     }
 }
 
-/// Flatten party expressions into comparable strings: a list literal
-/// contributes one entry per element (`signatory [a, b]` → "a", "b").
-fn party_names(exprs: &[ast::Expr]) -> Vec<String> {
-    let mut out = Vec::new();
-    for e in exprs {
-        match e {
-            ast::Expr::List { items, .. } => out.extend(items.iter().map(|i| i.render())),
-            other => out.push(other.render()),
-        }
-    }
-    out
-}
-
-fn lower_choice(c: &ast::ChoiceDecl, file: &Path, lines: &[&str]) -> Choice {
+fn lower_choice(c: &ast::ChoiceDecl, file: &Path, source_map: &SourceMap<'_>) -> Choice {
     let parameters = c
         .params
         .iter()
         .map(|f| Field {
             name: f.name.clone(),
-            type_: lower_type(f.ty.as_ref()),
+            type_: f.ty.as_ref().map(|ty| TypeNode::from_type(ty, source_map)),
+            daml_type: lower_type(f.ty.as_ref()),
             span: span_at(file, f.pos),
         })
         .collect();
-
-    // body_raw is the original source slice (line-faithful: built-in detectors
-    // scan it by line offset from the choice span). Include the header line so
-    // that body_raw[0] corresponds to choice.span.line (the base_line detectors
-    // add their line offset to) — matching lower_function and keeping reported
-    // line numbers aligned with the real source.
-    let first = c.pos.line.saturating_sub(1);
-    let last = c.end_line.min(lines.len());
-    let body_raw = if first < last {
-        lines[first..last].join("\n")
-    } else {
-        String::new()
-    };
 
     let body = match &c.body {
         Some(expr) => statements_of_expr(expr),
@@ -400,26 +361,19 @@ fn lower_choice(c: &ast::ChoiceDecl, file: &Path, lines: &[&str]) -> Choice {
         // consuming form; only NonConsuming leaves it live. The boolean means
         // "archives the contract".
         consuming: c.consuming != Consuming::NonConsuming,
-        controllers: party_names(&c.controllers),
         controller_exprs: c.controllers.iter().map(lower_expr).collect(),
         observer_exprs: c.observers.iter().map(lower_expr).collect(),
         parameters,
-        return_type: lower_type(c.return_ty.as_ref()),
+        return_type: c
+            .return_ty
+            .as_ref()
+            .map(|ty| TypeNode::from_type(ty, source_map)),
         body,
-        body_raw,
         span: span_at(file, c.pos),
     }
 }
 
-fn lower_function(f: &ast::FunctionDecl, file: &Path, lines: &[&str]) -> Function {
-    let first = f.pos.line.saturating_sub(1);
-    let last = f.end_line.min(lines.len());
-    let body_raw = if first < last {
-        lines[first..last].join("\n")
-    } else {
-        String::new()
-    };
-
+fn lower_function(f: &ast::FunctionDecl, file: &Path, source_map: &SourceMap<'_>) -> Function {
     let mut body = Vec::new();
     for eq in &f.equations {
         if eq.guards.is_empty() {
@@ -440,9 +394,8 @@ fn lower_function(f: &ast::FunctionDecl, file: &Path, lines: &[&str]) -> Functio
 
     Function {
         name: f.name.clone(),
-        type_signature: f.type_text.clone(),
+        type_signature: f.ty.as_ref().map(|ty| TypeNode::from_type(ty, source_map)),
         body,
-        body_raw,
         span: span_at(file, f.pos),
     }
 }
@@ -489,7 +442,6 @@ fn lower_do(stmts: &[DoStmt]) -> Vec<Statement> {
                     let name = binding_name(b);
                     out.push(Statement::Let {
                         name: name.clone(),
-                        expr: b.expr.render(),
                         value: lower_expr(&b.expr),
                         span: src_pos(b.pos),
                     });
@@ -932,7 +884,6 @@ fn classify_app(
     if qualified && head_name != "assert" && head_name != "assertMsg" {
         return false;
     }
-    let arg_text = |i: usize| args.get(i).map(|a| a.render()).unwrap_or_default();
     let arg_expr = |i: usize| {
         args.get(i).map(lower_expr).unwrap_or(Expr::Unknown {
             raw: String::new(),
@@ -945,7 +896,6 @@ fn classify_app(
         "create" | "createCmd" => {
             out.push(Statement::Create {
                 template_name: template_name_of(args.first()),
-                raw: expr.render(),
                 argument: arg_expr(0),
                 binder: binder_name,
                 span,
@@ -954,11 +904,9 @@ fn classify_app(
         }
         "exercise" | "exerciseByKey" | "exerciseCmd" | "exerciseByKeyCmd" => {
             out.push(Statement::Exercise {
-                cid_expr: arg_text(0),
                 choice_name: choice_name_of(args.get(1)),
-                raw: expr.render(),
                 cid: arg_expr(0),
-                argument: args.get(1).map(lower_expr),
+                argument: choice_argument_of(args.get(1)),
                 binder: binder_name,
                 span,
             });
@@ -967,17 +915,14 @@ fn classify_app(
         "createAndExerciseCmd" => {
             out.push(Statement::Create {
                 template_name: template_name_of(args.first()),
-                raw: expr.render(),
                 argument: arg_expr(0),
                 binder: binder_name.clone(),
                 span,
             });
             out.push(Statement::Exercise {
-                cid_expr: arg_text(0),
                 choice_name: choice_name_of(args.get(1)),
-                raw: expr.render(),
                 cid: arg_expr(0),
-                argument: args.get(1).map(lower_expr),
+                argument: choice_argument_of(args.get(1)),
                 binder: binder_name,
                 span,
             });
@@ -985,7 +930,6 @@ fn classify_app(
         }
         "fetch" => {
             out.push(Statement::Fetch {
-                cid_expr: arg_text(0),
                 cid: arg_expr(0),
                 binder: binder_name,
                 span,
@@ -994,12 +938,10 @@ fn classify_app(
         }
         "fetchAndArchive" => {
             out.push(Statement::Archive {
-                cid_expr: arg_text(0),
                 cid: arg_expr(0),
                 span,
             });
             out.push(Statement::Fetch {
-                cid_expr: arg_text(0),
                 cid: arg_expr(0),
                 binder: binder_name,
                 span,
@@ -1008,7 +950,6 @@ fn classify_app(
         }
         "archive" => {
             out.push(Statement::Archive {
-                cid_expr: arg_text(0),
                 cid: arg_expr(0),
                 span,
             });
@@ -1034,7 +975,6 @@ fn classify_app(
                     .map(lower_expr)
                     .unwrap_or_else(|| lower_expr(expr));
                 out.push(Statement::Assert {
-                    condition: expr.render(),
                     condition_expr,
                     span,
                 });
@@ -1072,6 +1012,13 @@ fn choice_name_of(arg: Option<&ast::Expr>) -> String {
         _ => String::new(),
     }
 }
+
+fn choice_argument_of(arg: Option<&ast::Expr>) -> Option<Expr> {
+    match arg {
+        Some(expr @ ast::Expr::Record { .. }) => Some(lower_expr(expr)),
+        _ => None,
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1104,21 +1051,23 @@ template SimpleHolding
         assert_eq!(t.name, "SimpleHolding");
         assert_eq!(t.fields.len(), 2);
         assert_eq!(t.fields[0].name, "admin");
-        assert!(matches!(t.fields[0].type_, DamlType::Party));
+        assert!(matches!(t.fields[0].daml_type, DamlType::Party));
         assert_eq!(t.fields[1].name, "amount");
-        assert!(t.fields[1].type_.is_decimal());
+        assert!(t.fields[1].daml_type.is_decimal());
         assert!(t.ensure_clause.is_some());
-        assert!(t
-            .ensure_clause
-            .as_ref()
-            .unwrap()
-            .raw_text
-            .contains("amount > 0.0"));
+        assert!(matches!(
+            &t.ensure_clause.as_ref().unwrap().expr,
+            Expr::BinOp { op, .. } if op == ">"
+        ));
         assert_eq!(t.choices.len(), 1);
         assert_eq!(t.choices[0].name, "Transfer");
         assert_eq!(t.choices[0].parameters.len(), 1);
         // The real parser extracts structure the shim could not:
-        assert!(matches!(t.choices[0].return_type, DamlType::ContractId(_)));
+        assert!(matches!(
+            &t.choices[0].return_type,
+            Some(TypeNode::App { head, .. })
+                if matches!(&**head, TypeNode::Con { name, .. } if name == "ContractId")
+        ));
         assert!(t.choices[0].body.iter().any(
             |s| matches!(s, Statement::Create { template_name, .. } if template_name == "this")
         ));
@@ -1142,7 +1091,7 @@ template OpenMiningRound
         assert_eq!(t.name, "OpenMiningRound");
         assert!(t.ensure_clause.is_none());
         assert_eq!(t.fields.len(), 3);
-        assert!(t.fields[1].type_.is_decimal());
+        assert!(t.fields[1].daml_type.is_decimal());
     }
 
     #[test]
@@ -1259,15 +1208,58 @@ template Foo
             .iter()
             .find_map(|s| match s {
                 Statement::Exercise {
-                    cid_expr,
+                    cid,
                     choice_name,
+                    argument,
                     ..
-                } => Some((cid_expr.clone(), choice_name.clone())),
+                } => Some((cid.clone(), choice_name.clone(), argument.clone())),
                 _ => None,
             })
             .expect("exercise statement");
-        assert_eq!(ex.0, "optionCid");
+        assert!(matches!(ex.0, Expr::Var { name, .. } if name == "optionCid"));
         assert_eq!(ex.1, "Elect");
+        assert!(matches!(
+            ex.2,
+            Some(Expr::Record { base, fields, .. })
+                if matches!(base.as_ref(), Expr::Con { name, .. } if name == "Elect")
+                    && fields.len() == 1
+                    && fields[0].name == "electorParty"
+        ));
+    }
+
+    #[test]
+    fn test_exercise_without_payload_has_no_argument() {
+        let source = r#"module Test where
+
+template Foo
+  with
+    owner : Party
+  where
+    signatory owner
+
+    choice Go : ()
+      controller owner
+      do
+        result <- exercise optionCid Elect
+        pure ()
+"#;
+        let module = parse_daml(source, Path::new("Foo.daml"));
+        let body = &module.templates[0].choices[0].body;
+        let ex = body
+            .iter()
+            .find_map(|s| match s {
+                Statement::Exercise {
+                    cid,
+                    choice_name,
+                    argument,
+                    ..
+                } => Some((cid, choice_name, argument)),
+                _ => None,
+            })
+            .expect("exercise statement");
+        assert!(matches!(ex.0, Expr::Var { name, .. } if name == "optionCid"));
+        assert_eq!(ex.1, "Elect");
+        assert!(ex.2.is_none());
     }
 
     #[test]
@@ -1282,7 +1274,12 @@ template Foo
     signatory [a, b]
 "#;
         let module = parse_daml(source, Path::new("Foo.daml"));
-        assert_eq!(module.templates[0].signatories, vec!["a", "b"]);
+        assert!(matches!(
+            &module.templates[0].signatory_exprs[0],
+            Expr::List { items, .. }
+                if matches!(&items[0], Expr::Var { name, .. } if name == "a")
+                    && matches!(&items[1], Expr::Var { name, .. } if name == "b")
+        ));
     }
 
     #[test]

@@ -31,7 +31,16 @@ fn con(name: &str) -> Type {
     Type::Con {
         qualifier: None,
         name: name.to_string(),
+        span: Span::default(),
     }
+}
+
+fn app(head: Type, args: Vec<Type>) -> Type {
+    Type::App(Box::new(head), args, Span::default())
+}
+
+fn var(name: &str) -> Type {
+    Type::Var(name.to_string(), Span::default())
 }
 
 #[test]
@@ -162,10 +171,7 @@ fn type_synonym_application() {
     };
     assert_eq!(
         *synonym,
-        Some(Type::App(
-            Box::new(con("Map")),
-            vec![con("Party"), con("Decimal")],
-        ))
+        Some(app(con("Map"), vec![con("Party"), con("Decimal")]))
     );
 }
 
@@ -180,10 +186,7 @@ fn type_parameters_are_skipped() {
     assert_eq!(constructors[0].name, "Box");
     assert_eq!(constructors[0].fields.len(), 1);
     assert_eq!(constructors[0].fields[0].name, "value");
-    assert_eq!(
-        constructors[0].fields[0].ty,
-        Some(Type::Var("a".to_string()))
-    );
+    assert_eq!(constructors[0].fields[0].ty, Some(var("a")));
 }
 
 #[test]

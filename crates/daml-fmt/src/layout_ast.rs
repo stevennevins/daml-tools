@@ -146,15 +146,41 @@ fn gated_template_pass(src: &str) -> String {
     }
 }
 
-/// Count of do-blocks reindented vs total do-blocks — the coverage metric
-/// (`bin/coverage`). Reports how much of a file our rules canonically lay out.
+/// Count structural edit candidates over modeled AST constructs. This powers
+/// `bin/coverage`; unlike the original do-only metric, it covers every current
+/// AST layout family: do, if, case, let-in, constructor `with`, and
+/// template/interface bodies. This is not a normalized coverage ratio: one
+/// construct can produce multiple edits.
 pub fn coverage(src: &str) -> (usize, usize) {
     let (module, _diags) = parse_module(src);
-    let mut dos: Vec<Span> = Vec::new();
-    collect_do_spans(&module, &mut dos);
-    let total = dos.len();
-    let edits = do_block_edits(src, &module);
-    (edits.len(), total)
+    let candidates = do_block_edits(src, &module).len()
+        + if_edits(src, &module).len()
+        + case_edits(src, &module).len()
+        + letin_edits(src, &module).len()
+        + con_with_edits(src, &module).len()
+        + template_edits(src, &module).len();
+    (candidates, modeled_construct_count(&module))
+}
+
+fn modeled_construct_count(module: &Module) -> usize {
+    let mut count = 0usize;
+    walk_module_exprs(module, &mut |e| match e {
+        Expr::Do { .. } | Expr::If { .. } | Expr::Case { .. } | Expr::LetIn { .. } => count += 1,
+        Expr::Record { base, fields, .. }
+            if matches!(base.as_ref(), Expr::Con { .. }) && !fields.is_empty() =>
+        {
+            count += 1
+        }
+        _ => {}
+    });
+    for d in &module.decls {
+        match d {
+            Decl::Template(t) if !t.fields.is_empty() || !t.body.is_empty() => count += 1,
+            Decl::Interface(i) if !i.methods.is_empty() || !i.choices.is_empty() => count += 1,
+            _ => {}
+        }
+    }
+    count
 }
 
 /// True iff `a` and `b` share the same LAID-OUT token stream (offside virtuals

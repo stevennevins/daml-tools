@@ -117,13 +117,13 @@ Visitors (define any subset, at least one):
 
 | Function | Called for | Node fields |
 |---|---|---|
-| `on_template(template)` | each template | `name`, `fields`, `signatories`/`signatory_exprs`, `observers`/`observer_exprs`, `ensure_clause` (`null` if absent), `key_expr`, `key_type`, `maintainer_exprs`, `choices`, `interface_instances`, `span` |
-| `on_choice(choice, template)` | each choice | `name`, `consuming`, `controllers`/`controller_exprs`, `observer_exprs`, `parameters`, `return_type`, `body`, `body_raw`, `span` |
+| `on_template(template)` | each template | `name`, `fields`, `signatory_exprs`, `observer_exprs`, `ensure_clause` (`null` if absent), `key_expr`, `key_type`, `maintainer_exprs`, `choices`, `interface_instances`, `span` |
+| `on_choice(choice, template)` | each choice | `name`, `consuming`, `controller_exprs`, `observer_exprs`, `parameters`, `return_type`, `body`, `span` |
 | `on_field(field, template)` | each template field | `name`, `type_`, `span` |
-| `on_function(function)` | each top-level function | `name`, `type_signature`, `body`, `body_raw`, `span` |
+| `on_function(function)` | each top-level function | `name`, `type_signature`, `body`, `span` |
 | `on_import(import)` | each import | `module_name`, `qualified`, `alias` |
 | `on_interface(interface)` | each interface | `name`, `requires`, `viewtype`, `methods`, `choices`, `span` |
-| `check(m)` | once per module | `name`, `file`, `imports`, `templates`, `interfaces`, `functions`, `source` |
+| `check(m)` | once per module | `ir_version`, `name`, `file`, `imports`, `templates`, `interfaces`, `functions`, `source` |
 
 Report findings with `report(node, message)` (location taken from the node's
 `span`) or `report(line, message)`. The rule's `SEVERITY` applies to all its
@@ -136,35 +136,34 @@ Statements carry a typed expression AST: `stmt.Let.value`,
 `stmt.Assert.condition_expr`, `stmt.Exercise.cid`/`.argument`, and
 `stmt.Other.expr` are `Expr` nodes — tagged unions like
 `{ BinOp: { op: "/", lhs, rhs, span } }` with a 1-based `span` on every
-node (see the `Expr` type in the .d.ts). The v1 raw-text fields
-(`body_raw`, `raw_text`, statement `expr`/`condition`/`raw`) still work
-but are deprecated; new rules should match on structure, not substrings.
+node (see the `Expr` type in the .d.ts). Type-bearing fields carry `TypeNode`
+trees such as `{ Con: { name: "Party", qualifier: null, span } }` and
+`{ App: { head, args, span } }`; type spans include `line`/`column`,
+JavaScript string offsets (`start`/`end`, suitable for
+`m.source.slice(start, end)`), and parser byte offsets
+(`byte_start`/`byte_end`). Compatibility-only raw-text fields and rendered
+party-name lists were removed in the breaking custom-rule surface, so rules
+should match on structure, not substrings.
 [examples/unguarded-division-ast.ts](examples/unguarded-division-ast.ts)
 shows a denominator-guard check written entirely on typed nodes.
 
-Migration — deprecated raw-text field → structured replacement:
+Removed v1/v2 compatibility fields and their structured replacements:
 
-| Deprecated (raw text) | Use instead (structured) | Notes |
+| Removed field | Use instead | Notes |
 |---|---|---|
-| `choice.body_raw`, `function.body_raw` | `body` (`Statement[]`) | structured ledger actions. `body_raw` is the only source of verbatim line text/comments/`where` — a rule that needs those should read `m.source`, not `body`. |
-| `template.ensure_clause.raw_text` | `ensure_clause.expr` (`Expr`) | like-for-like (`raw_text` is `"ensure " + ` the rendered condition). |
-| `stmt.Let.expr` | `stmt.Let.value` (`Expr`) | like-for-like. |
-| `stmt.Assert.condition` | `stmt.Assert.condition_expr` (`Expr`) | the condition only — `condition` is the whole `assert`/`assertMsg` call text (it includes the `assertMsg` message). |
-| `stmt.Fetch.cid_expr`, `stmt.Archive.cid_expr`, `stmt.Exercise.cid_expr` | `.cid` (`Expr`) | like-for-like (the contract-id expression). |
-| `stmt.Create.raw` | `template_name` + `argument` (`Expr`) | `raw` is the whole `create ...` call; `argument` is only the payload record. |
-| `stmt.Exercise.raw` | `cid` + `choice_name` + `argument` (`Expr`) | `raw` is the whole `exercise ...` call; `argument` is only the choice argument. |
+| `choice.body_raw`, `function.body_raw` | `body` (`Statement[]`) | Match statements structurally; only `stmt.Other.raw` / `Expr.Unknown.raw` preserve unsupported source text. |
+| `template.ensure_clause.raw_text` | `ensure_clause.expr` (`Expr`) | Match the condition structurally. |
+| `stmt.Let.expr` | `stmt.Let.value` (`Expr`) | The bound expression. |
+| `stmt.Assert.condition` | `stmt.Assert.condition_expr` (`Expr`) | The condition expression only. |
+| `stmt.Fetch.cid_expr`, `stmt.Archive.cid_expr`, `stmt.Exercise.cid_expr` | `.cid` (`Expr`) | The contract-id expression. |
+| `stmt.Create.raw` | `template_name` + `argument` (`Expr`) | `argument` is the created payload. |
+| `stmt.Exercise.raw` | `cid` + `choice_name` + `argument` (`Expr`) | `argument` is the choice argument, if present. |
+| `choice.controllers` | `controller_exprs` (`Expr[]`) | Flatten list expressions in the rule if you want list-literal party semantics. |
+| `template.signatories`, `template.observers` | `signatory_exprs`, `observer_exprs` (`Expr[]`) | Structured party expressions only. |
 
-`stmt.Other.raw` and the `Unknown` expression's `raw` are NOT deprecated:
-they are the deliberate raw-source escape hatch for constructs with no
-structured form (e.g. [examples/no-trace.ts](examples/no-trace.ts) matches
-source text). The rendered party-name lists `choice.controllers`,
-`template.signatories`, and `template.observers` (`string[]`) likewise have
-structured siblings (`controller_exprs`, `signatory_exprs`, `observer_exprs`)
-that new rules should prefer, but they are NOT formally deprecated yet because a
-shipped example
-([consuming-choice-signatory-controller.ts](examples/consuming-choice-signatory-controller.ts))
-still matches on the text. The deprecated fields above remain through the
-current minor line; a future breaking release may remove or feature-gate them.
+`stmt.Other.raw` and the `Unknown` expression's `raw` are deliberate raw-source
+escape hatches for constructs with no structured form (e.g.
+[examples/no-trace.ts](examples/no-trace.ts) matches source text).
 
 Heads up: visitors must be `function` declarations — arrow functions assigned
 to `const` are not discovered. If a script fails at runtime the scan aborts
@@ -234,4 +233,3 @@ provenance and licensing.
 ## License
 
 AGPL-3.0-only. See [LICENSE](LICENSE).
-

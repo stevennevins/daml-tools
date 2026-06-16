@@ -37,9 +37,12 @@ bindings (line-leading `let`) → `let_col + 2`; `Con with` construction fields 
 `head + 2`). On top runs the token-gated whitespace + colon-spacing
 normalization. Still verbatim by design: record UPDATES (`expr with`),
 `try`/`catch` bodies, guards, `data`/TypeDef declarations, and expression
-continuations. Do-block coverage metric: 178 / 2841 reindented across the
-924-file corpus (was 165; `cargo run --bin coverage` — it counts do-blocks
-only, not the other constructs).
+continuations. Structural candidate metric:
+`cd crates/daml-fmt && cargo run --features dev-tools --bin coverage` reports
+635 structural edit candidates / 5605 modeled constructs across the 924-file
+corpus (201 files with candidates). The metric covers do-blocks, if/case/let-in,
+constructor `with`, and template/interface bodies. This is not a percentage:
+one construct can produce multiple edits, and canonical constructs produce none.
 
 Note: byte-match to a reference baseline is RETIRED as the metric. The
 formatter makes its own consistent
@@ -50,10 +53,16 @@ colon like any other type-annotation colon (`default modify: T`); the old
 token-only heuristic kept that space as an undecidable edge case. The desugar
 oracle vouches it is meaning-preserving.
 
-Measure with `cargo run --bin coverage` (modeled-construct coverage; replaces
-the retired `score` bin) + `tools/verify-rust.sh` (default desugar subset and
-idempotence; `--desugar` for the full oracle) + `npm test` (SDK-free expected/
-+ idempotence over the Rust binary).
+Measure coverage with:
+
+```sh
+cd crates/daml-fmt && cargo run --features dev-tools --bin coverage
+```
+
+This reports structural edit candidates over modeled constructs and replaces the
+retired `score` bin. Also run `tools/verify-rust.sh` (default desugar subset and
+idempotence; `--desugar` for the full oracle) +
+`npm test` (SDK-free expected/ + idempotence over the Rust binary).
 
 Reproduce: pristine vsix → /tmp dir (marketplace vspackage endpoint, gunzip,
 unzip), generate outputs with the corpus inputs, then run the parse +

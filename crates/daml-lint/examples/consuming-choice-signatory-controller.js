@@ -8,17 +8,34 @@ function on_choice(choice, template) {
   if (!choice.consuming) {
     return;
   }
-  // `controller signatory this` is signatory-controlled by definition; it
-  // serializes as exactly "signatory this" (also the leading element of a
-  // multi-controller `signatory this, obs`). Match the `signatory <expr>` form
-  // by its trailing space so an ordinary party field named e.g. `signatoryParty`
-  // is NOT mistaken for the flexible-controller keyword.
-  if (
-    choice.controllers.some(
-      (c) => c === "signatory this" || c.startsWith("signatory ") || template.signatories.includes(c),
-    )
-  ) {
+  const signatories = partyExprs(template.signatory_exprs).map(exprText);
+  if (partyExprs(choice.controller_exprs).some((c) => {
+    const text = exprText(c);
+    return text === "signatory this" || text.startsWith("signatory ") || signatories.includes(text);
+  })) {
     return;
   }
   report(choice, `Consuming choice '${choice.name}' has no signatory among its controllers`);
+}
+
+function partyExprs(exprs) {
+  return exprs.flatMap((e) => "List" in e ? e.List.items : [e]);
+}
+
+function exprText(e) {
+  if ("Var" in e) {
+    const v = e.Var;
+    return v.qualifier === null ? v.name : `${v.qualifier}.${v.name}`;
+  }
+  if ("Con" in e) {
+    const c = e.Con;
+    return c.qualifier === null ? c.name : `${c.qualifier}.${c.name}`;
+  }
+  if ("App" in e) {
+    return [exprText(e.App.func), ...e.App.args.map(exprText)].join(" ");
+  }
+  if ("Unknown" in e) {
+    return e.Unknown.raw;
+  }
+  return "";
 }

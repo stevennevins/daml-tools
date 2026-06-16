@@ -11,9 +11,9 @@ Date: 2026-06-16
   `daml-lint`, and future static analyzers.
 - Formatter changes must remain byte-safe for comments/trivia and semantically
   safe under the offside-rule token gate plus desugar oracle.
-- Linter decisions should use structured parser-derived IR. Raw text may remain
-  only as documented compatibility/display data until a deliberate breaking
-  release.
+- Linter decisions should use structured parser-derived IR. Raw text should
+  remain only as an intentional escape hatch for unmodeled syntax, not as a
+  compatibility alias for structured nodes.
 - Parser tests should be the first regression layer for syntax shape, span
   losslessness, diagnostics, recovery, and corpus edge cases.
 - Dead-code suppressions and backward-compatibility shims should be justified by
@@ -60,8 +60,8 @@ Evidence:
   `render_lossless` over the vendored finance corpus.
 - `crates/daml-lint/docs/typed-type-ast.md` records the implemented type-AST
   migration and deletion of the old string reparse helpers.
-- `crates/daml-lint/docs/raw-field-removal-plan.md` documents the raw-field
-  compatibility window.
+- `crates/daml-lint/docs/raw-field-removal-plan.md` documents the completed
+  raw-field compatibility removal.
 
 ## Lossless Oracle Finding
 
@@ -106,9 +106,17 @@ Keep this layering:
 
 Removed in this audit pass:
 
-- The stale `#[allow(dead_code)]` on the public `parse_daml` helper was removed.
-  The helper remains a stable diagnostics-free API and is used extensively by
-  tests.
+- The non-test public `parse_daml` helper was removed from the linter API;
+  tests keep a `pub(crate)` diagnostics-free helper.
+- Deprecated custom-rule raw aliases were removed:
+  `Choice.body_raw`, `Function.body_raw`, `EnsureClause.raw_text`,
+  `Statement.Let.expr`, `Statement.Assert.condition`,
+  `Statement.Fetch/Archive/Exercise.cid_expr`, `Statement.Create.raw`, and
+  `Statement.Exercise.raw`.
+- Rendered party-name compatibility lists were removed from custom-rule IR:
+  `choice.controllers`, `template.signatories`, and `template.observers`.
+- Duplicate parser type text fields were removed after `ast::Type` gained byte
+  spans.
 
 Already removed before this pass:
 
@@ -117,26 +125,11 @@ Already removed before this pass:
 - The broad parser module-level `dead_code` allow is absent from
   `crates/daml-parser/src/lib.rs`.
 
-Keep for compatibility, do not remove yet:
+Kept intentionally, not for compatibility:
 
-- `Choice.body_raw`, `DamlFunction.body_raw`, `EnsureClause.raw_text`, and
-  deprecated statement raw fields are public custom-rule IR. They are marked
-  deprecated in `examples/daml-lint.d.ts` and mapped to structured
-  replacements in the README.
 - `Statement.Other.raw` and `Expr::Unknown.raw` are not compatibility debt;
   they are the deliberate escape hatch for constructs the parser does not
   model structurally.
-- Rendered party-name lists (`choice.controllers`, `template.signatories`,
-  `template.observers`) have structured siblings but still support existing
-  examples. Treat removal as a versioned API break.
-
-Recommended removal path:
-
-1. Keep the current deprecation window.
-2. Add a cheap runtime warning for deprecated raw-field access only if the JS
-   engine can detect property reads without broad complexity.
-3. Remove or feature-gate deprecated raw fields in the next breaking release.
-4. Keep `Other.raw` / `Unknown.raw` as explicit raw-source nodes.
 
 ## Simplifications And Naming
 
@@ -146,9 +139,10 @@ High-value simplifications:
   structured `data`/`newtype`, synonyms, and deriving clauses. A future breaking
   parser release should split it into clearer variants such as `Data`,
   `Newtype`, `TypeSynonym`, and `OpaqueTypeDecl`, while preserving current spans.
-- Parser `Type` intentionally carries no spans today. That is fine for the
-  formatter, but future analyzer diagnostics on type references will need
-  type-node spans or at least spans on type constructors.
+- Parser `Type` now carries byte spans. The linter custom-rule `TypeNode`
+  surface exposes source ranges with JavaScript slice offsets and parser byte
+  offsets so scripts can recover exact type text from `module.source` without
+  duplicate string fields.
 - `daml-fmt` has grown several gated structural passes. Keep adding one pass at
   a time, but prefer extracting shared traversal/edit helpers only after the
   next repeated pattern is real. Do not introduce a generic rewrite framework
@@ -163,7 +157,8 @@ Low-value or unsafe simplifications:
 - Do not collapse the parser, formatter, and linter AST types into one shared
   public mega-AST. The current parser AST plus linter IR boundary keeps custom
   rule compatibility manageable.
-- Do not remove raw custom-rule fields outside a versioned release.
+- Do not reintroduce raw custom-rule compatibility fields outside a versioned
+  release.
 
 ## Remaining AST Work
 
@@ -171,11 +166,10 @@ Parser:
 
 1. Split `Decl::TypeDef` into semantically named variants when the public API can
    break, or add additive helper accessors sooner if analyzers need them.
-2. Add spans to `Type` nodes before type-focused analyzer diagnostics.
-3. Promote more real-corpus declaration facts into parser tests, especially
+2. Promote more real-corpus declaration facts into parser tests, especially
    single-line record sums, explicit-brace records, deriving strategies, and
    opaque fallback cases.
-4. Add adversarial parser tests for nested comments inside declarations,
+3. Add adversarial parser tests for nested comments inside declarations,
    unterminated comments, CRLF in layout-sensitive constructs, tabs in layout
    blocks, and Unicode identifiers in declarations.
 
@@ -216,24 +210,25 @@ linter findings, diagnostics serialization, or custom-rule API compatibility.
 
 ```sh
 cargo test -p daml-parser
-cargo clippy -p daml-parser --all-targets -- -D warnings
-cargo fmt --all --check
-cargo test --workspace --all-features
+cargo test -p daml-lint --lib
+cargo test -p daml-fmt --lib --features dev-tools
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-cd crates/daml-fmt && npm test
-cd crates/daml-fmt && ./tools/verify-rust.sh
+cargo fmt --all --check
+cargo run -p daml-lint -- -f json --fail-on critical crates/daml-lint/test-fixtures/good_patterns.daml
+cargo run -p daml-lint -- -f json --fail-on critical --rules crates/daml-lint/examples/no-bare-contractid-field.js crates/daml-fmt/original/sdk/compiler/damlc/tests/daml-test-files/CoerceContractId.daml
+cargo run -p daml-fmt --bin daml-fmt -- --check crates/daml-lint/test-fixtures/bad_patterns.daml
 ```
 
 Results:
 
-- `cargo test -p daml-parser`: 89 passed.
-- `cargo clippy -p daml-parser --all-targets -- -D warnings`: passed.
-- `cargo fmt --all --check`: passed.
-- `cargo test --workspace --all-features`: `daml-fmt` 38 passed,
-  `daml-lint` 193 passed, `daml-parser` 89 passed; doc tests passed.
+- `cargo test -p daml-parser`: 90 passed.
+- `cargo test -p daml-lint --lib`: 196 passed.
+- `cargo test -p daml-fmt --lib --features dev-tools`: 38 passed.
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`:
   passed.
-- `npm test` in `crates/daml-fmt`: 924 files, 924 ok, 0 crashed,
-  0 mismatched, 0 non-idempotent.
-- `./tools/verify-rust.sh` in `crates/daml-fmt`: 924 files,
-  0 non-idempotent, desugar subset 12 files, 0 not equivalent.
+- `cargo fmt --all --check`: passed.
+- Linter manual sanity: clean fixture produced zero findings and zero parse
+  errors; migrated custom rule reported the `cid : ContractId Int` field via
+  structured `field.type_`.
+- Formatter manual sanity: `--check` reported the intentionally unformatted bad
+  fixture, and stdout formatting showed canonical colon/layout normalization.

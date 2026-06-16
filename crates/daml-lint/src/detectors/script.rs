@@ -352,6 +352,139 @@ function on_template(template) {
     }
 
     #[test]
+    fn test_dts_exposes_structured_only_contract() {
+        let dts = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/examples/daml-lint.d.ts"
+        ))
+        .expect("read daml-lint.d.ts");
+        assert!(dts.contains("ir_version: 3"));
+        for forbidden in [
+            "body_raw",
+            "raw_text",
+            "cid_expr",
+            "controllers: string",
+            "signatories: string",
+            "observers: string",
+            "type_text",
+            "key_type: string",
+            "type_signature: string",
+            "expr: string",
+            "condition: string",
+        ] {
+            assert!(
+                !dts.contains(forbidden),
+                "daml-lint.d.ts must not expose removed field {forbidden:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_runtime_module_exposes_structured_only_contract() {
+        let det = load_script_from_str(
+            "structured-only-runtime",
+            r#"
+const NAME = "structured-only-runtime";
+const SEVERITY = "low";
+
+function has(o, k) {
+  return Object.prototype.hasOwnProperty.call(o, k);
+}
+
+function checkNoOldFields(label, node, fields) {
+  for (const field of fields) {
+    if (has(node, field)) report(1, `${label} still exposes ${field}`);
+  }
+}
+
+function spanOfType(ty) {
+  const tag = Object.keys(ty)[0];
+  return ty[tag].span;
+}
+
+function typeSource(m, ty) {
+  const span = spanOfType(ty);
+  return m.source.slice(span.start, span.end);
+}
+
+function field(template, name) {
+  return template.fields.find((f) => f.name === name);
+}
+
+function check(m) {
+  if (m.ir_version !== 3) report(1, `expected ir_version 3, got ${m.ir_version}`);
+  const t = m.templates[0];
+  checkNoOldFields("template", t, ["signatories", "observers"]);
+  if (typeof t.key_type === "string") report(1, "template key_type is still a string");
+  checkNoOldFields("ensure", t.ensure_clause, ["raw_text"]);
+  for (const f of t.fields) {
+    checkNoOldFields("field", f, ["type_text"]);
+    if (typeof f.type_ === "string") report(1, `field ${f.name} type_ is still a string`);
+  }
+  if (typeSource(m, field(t, "maybeCid").type_) !== "Optional (ContractId T)") {
+    report(1, "type span cannot recover Optional (ContractId T)");
+  }
+  if (typeSource(m, field(t, "precision").type_) !== "Numeric 10") {
+    report(1, "type span cannot recover Numeric 10");
+  }
+  const c = t.choices[0];
+  checkNoOldFields("choice", c, ["controllers", "body_raw", "return_type_text"]);
+  if (typeof c.return_type === "string") report(1, "choice return_type is still a string");
+  for (const p of c.parameters) checkNoOldFields("choice parameter", p, ["type_text"]);
+  for (const stmt of c.body) {
+    if ("Let" in stmt) checkNoOldFields("Let", stmt.Let, ["expr"]);
+    if ("Assert" in stmt) checkNoOldFields("Assert", stmt.Assert, ["condition"]);
+    if ("Fetch" in stmt) checkNoOldFields("Fetch", stmt.Fetch, ["cid_expr"]);
+    if ("Archive" in stmt) checkNoOldFields("Archive", stmt.Archive, ["cid_expr"]);
+    if ("Create" in stmt) checkNoOldFields("Create", stmt.Create, ["raw"]);
+    if ("Exercise" in stmt) checkNoOldFields("Exercise", stmt.Exercise, ["cid_expr", "raw"]);
+  }
+  const fn = m.functions[0];
+  checkNoOldFields("function", fn, ["body_raw", "type_text"]);
+  if (typeof fn.type_signature === "string") report(1, "function type_signature is still a string");
+}
+"#,
+        )
+        .unwrap();
+        let source = r#"
+module RuntimeSurface where
+
+template T
+  with
+    owner : Party
+    cid : ContractId T
+    maybeCid : Optional (ContractId T)
+    amount : Decimal
+    precision : Numeric 10
+  where
+    signatory owner
+    observer owner
+    ensure amount > 0.0
+    key owner : Party
+    maintainer key
+
+    choice C : ContractId T
+      with
+        p : Party
+        target : ContractId T
+      controller owner
+      observer p
+      do
+        let x = target
+        assert True
+        fetched <- fetch target
+        archive target
+        created <- create this with owner = p
+        exercise target C with p = p; target = target
+
+helper : Party -> Update ()
+helper p = pure ()
+"#;
+        let module = parse_daml(source, Path::new("RuntimeSurface.daml"));
+        assert!(det.detect(&module).is_empty());
+    }
+
+    #[test]
     fn test_on_choice_visitor_gets_template_context() {
         let det = load_script_from_str(
             "on-choice",
@@ -359,11 +492,26 @@ function on_template(template) {
 const NAME = "consuming-choice-signatory-controller";
 const SEVERITY = "medium";
 
+function exprText(e) {
+    if ("Var" in e) {
+        const v = e.Var;
+        return v.qualifier === null ? v.name : `${v.qualifier}.${v.name}`;
+    }
+    if ("Con" in e) {
+        const c = e.Con;
+        return c.qualifier === null ? c.name : `${c.qualifier}.${c.name}`;
+    }
+    if ("App" in e) return [exprText(e.App.func), ...e.App.args.map(exprText)].join(" ");
+    if ("Unknown" in e) return e.Unknown.raw;
+    return "";
+}
+
 function on_choice(choice, template) {
     if (!choice.consuming) {
         return;
     }
-    if (choice.controllers.some(c => template.signatories.includes(c))) {
+    const signatories = template.signatory_exprs.map(exprText);
+    if (choice.controller_exprs.some(c => signatories.includes(exprText(c)))) {
         return;
     }
     report(choice, `Consuming choice '${choice.name}' has no signatory controller`);
@@ -658,6 +806,23 @@ function stmtKinds(stmts, seen) {
   }
 }
 
+function typeHeadName(t) {
+  if (t === null) return "Unknown";
+  const tag = Object.keys(t)[0];
+  if (tag === "Con") return t.Con.name;
+  if (tag === "App") return typeHeadName(t.App.head);
+  return tag;
+}
+
+function typeKind(t) {
+  if (t === null) return "Scalar:Unknown";
+  const tag = Object.keys(t)[0];
+  if (tag === "Con") return "Scalar:" + t.Con.name;
+  if (tag === "List") return "Param:List";
+  if (tag === "App") return "Param:" + typeHeadName(t.App.head);
+  return "Scalar:" + tag;
+}
+
 function check(m) {
   const seen = new Set();
   for (const t of m.templates) {
@@ -674,8 +839,7 @@ function check(m) {
       if (t.interface_instances[0].methods.length > 0) seen.add("InstanceMethod");
     }
     for (const f of t.fields) {
-      if (typeof f.type_ === "string") seen.add("Scalar:" + f.type_);
-      else seen.add("Param:" + Object.keys(f.type_)[0]);
+      seen.add(typeKind(f.type_));
     }
     for (const c of t.choices) {
       if (c.parameters.length > 0) seen.add("ChoiceParams");
@@ -719,7 +883,7 @@ function check(m) {
             "Param:Optional",
             "Param:ContractId",
             "Param:TextMap",
-            "Param:Named",
+            "Scalar:Custom",
             "Ensure",
             "ChoiceParams",
             "Nonconsuming",

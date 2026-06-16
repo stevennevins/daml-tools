@@ -51,7 +51,7 @@ normalization (`normalize_gaps` in `src/lib.rs`).
 - `src/layout_ast.rs` — the AST-driven layout backend (`format_ast`), the
   `do`-block rule, comment-awareness, and the `same_tokens` gate. Unit-tested.
 - `src/bin/daml-fmt.rs` — the CLI (`<file...>`, `-w`, `--check`, stdin).
-- `src/bin/coverage.rs` — the coverage metric (modeled vs verbatim).
+- `src/bin/coverage.rs` — structural edit candidates over modeled constructs.
 - `src/bin/lossless-check.rs`, `src/bin/ast-check.rs` — parser round-trip
   checks (token+trivia losslessness; AST byte-faithful reconstruction).
 - `original/` — 924 corpus files from digital-asset/daml (Apache-2.0 upstream; some example files carry no per-file SPDX header), all
@@ -115,7 +115,7 @@ re-run the sweeps, update `SCOREBOARD.md` + the corpus manifests, commit.
 
 Each new construct = a canonical column rule + verbatim content slicing,
 landed behind the gate, verified `--desugar` 924/924 + idempotent, with the
-coverage metric rising.
+structural candidate metric rising.
 
 Landed (each its own gated structural pass, iterated to a fixpoint,
 `--desugar`-clean + idempotent):

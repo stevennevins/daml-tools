@@ -135,14 +135,6 @@ impl Parser {
             .map_or(Pos { line: 1, column: 1 }, |t| t.pos)
     }
 
-    fn prev_line(&self) -> usize {
-        if self.i == 0 {
-            1
-        } else {
-            self.toks[self.i - 1].pos.line
-        }
-    }
-
     fn bump(&mut self) -> Option<Token> {
         let t = self.toks.get(self.i).cloned();
         if t.is_some() {
@@ -731,7 +723,6 @@ impl Parser {
             }
             let ty_start = self.i;
             self.skip_to_item_end();
-            let type_text = self.slice_text(ty_start);
             let ty = parse_type_tokens(&self.toks[ty_start..self.i]);
             // The type is shared by all names but sits after the last one, so
             // only the last field can span `name : Type` without overlapping a
@@ -747,7 +738,6 @@ impl Parser {
                 };
                 fields.push(FieldDecl {
                     name,
-                    type_text: type_text.clone(),
                     ty: ty.clone(),
                     pos: p,
                     span,
@@ -850,7 +840,7 @@ impl Parser {
         // than record a half-truth a detector would trust.
         self.skip_constructor_args();
         let arg_types = match parse_type_tokens(&self.toks[start..self.i]) {
-            Some(Type::App(_, args)) => args,
+            Some(Type::App(_, args, _)) => args,
             Some(Type::Con { .. }) => Vec::new(),
             _ => return Err(()),
         };
@@ -1003,12 +993,10 @@ impl Parser {
                 self.bump();
                 let expr_start = self.i;
                 let expr = self.expr();
-                let mut type_text = String::new();
                 let mut ty = None;
                 if self.eat_op(":") {
                     let ty_start = self.i;
                     self.skip_to_item_end();
-                    type_text = self.slice_text(ty_start);
                     ty = parse_type_tokens(&self.toks[ty_start..self.i]);
                 } else {
                     // The expression parser consumes `: Type` annotations;
@@ -1024,14 +1012,12 @@ impl Parser {
                         }
                     }
                     if let Some(j) = colon {
-                        type_text = render_tokens(&self.toks[j + 1..self.i]);
                         ty = parse_type_tokens(&self.toks[j + 1..self.i]);
                     }
                     self.skip_to_item_end();
                 }
                 TemplateBodyDecl::Key {
                     expr,
-                    type_text,
                     ty,
                     pos,
                     span: self.node_span(start),
@@ -1121,12 +1107,10 @@ impl Parser {
             return None;
         }
         let name = self.upper_name()?;
-        let mut return_type_text = String::new();
         let mut return_ty = None;
         if self.eat_op(":") {
             let ty_start = self.i;
             self.skip_type_tokens();
-            return_type_text = self.slice_text(ty_start);
             return_ty = parse_type_tokens(&self.toks[ty_start..self.i]);
         }
         let mut params = Vec::new();
@@ -1162,7 +1146,6 @@ impl Parser {
         } else {
             None
         };
-        let end_line = self.prev_line();
         self.skip_to_item_end();
         if dangling {
             // Discard the abandoned with-block's closing brace so it does
@@ -1173,7 +1156,6 @@ impl Parser {
         Some(ChoiceDecl {
             name,
             consuming,
-            return_type_text,
             return_ty,
             params,
             controllers,
@@ -1181,7 +1163,6 @@ impl Parser {
             body,
             pos,
             span: self.node_span(start_i),
-            end_line: end_line.max(pos.line),
         })
     }
 
@@ -1302,7 +1283,6 @@ impl Parser {
                             // Single name: span the whole `name : Type`.
                             methods.push(FieldDecl {
                                 name: mname,
-                                type_text: self.slice_text(ty_start),
                                 ty: parse_type_tokens(&self.toks[ty_start..self.i]),
                                 pos: mpos,
                                 span: Span::new(mstart, self.end_byte().max(mstart)),
@@ -1421,15 +1401,14 @@ impl Parser {
             self.eat_op(":");
             let ty_start = self.i;
             self.skip_to_item_end();
-            let type_text = self.slice_text(ty_start);
+            let ty = parse_type_tokens(&self.toks[ty_start..self.i]);
             return Some(Decl::Function(FunctionDecl {
                 name,
-                type_text: Some(type_text),
+                ty,
                 equations: Vec::new(),
                 pos,
                 sig_span: Some(self.node_span(start_i)),
                 span: self.node_span(start_i),
-                end_line: pos.line,
             }));
         }
 
@@ -1481,11 +1460,10 @@ impl Parser {
         if self.eat_keyword("where") {
             where_bindings = self.binding_block();
         }
-        let end_line = self.prev_line();
         self.skip_to_item_end();
         Some(Decl::Function(FunctionDecl {
             name,
-            type_text: None,
+            ty: None,
             equations: vec![Equation {
                 params,
                 body,
@@ -1497,7 +1475,6 @@ impl Parser {
             pos,
             sig_span: None,
             span: self.node_span(start_i),
-            end_line: end_line.max(pos.line),
         }))
     }
 
@@ -2998,8 +2975,8 @@ fn merge_functions(decls: &mut Vec<Decl>) {
                 });
                 match existing {
                     Some(g) => {
-                        if g.type_text.is_none() {
-                            g.type_text = f.type_text.clone();
+                        if g.ty.is_none() {
+                            g.ty = f.ty.clone();
                         }
                         if g.sig_span.is_none() {
                             g.sig_span = f.sig_span;
@@ -3019,7 +2996,6 @@ fn merge_functions(decls: &mut Vec<Decl>) {
                         g.span = equations_extent(&g.equations)
                             .or(g.sig_span)
                             .unwrap_or(g.span);
-                        g.end_line = g.end_line.max(f.end_line);
                     }
                     None => out.push(Decl::Function(f)),
                 }
@@ -3043,11 +3019,7 @@ fn merge_functions(decls: &mut Vec<Decl>) {
 pub(crate) fn parse_type_tokens(toks: &[Token]) -> Option<Type> {
     // Virtual layout tokens carry no type meaning; drop them so a stray VSemi
     // in the slice can't sink an otherwise-clean parse.
-    let real: Vec<&Tok> = toks
-        .iter()
-        .filter(|t| !t.is_virtual())
-        .map(|t| &t.tok)
-        .collect();
+    let real: Vec<&Token> = toks.iter().filter(|t| !t.is_virtual()).collect();
     if real.is_empty() {
         return None;
     }
@@ -3063,7 +3035,7 @@ pub(crate) fn parse_type_tokens(toks: &[Token]) -> Option<Type> {
 }
 
 struct TypeParser<'a> {
-    toks: &'a [&'a Tok],
+    toks: &'a [&'a Token],
     i: usize,
 }
 
@@ -3071,16 +3043,16 @@ struct TypeParser<'a> {
 /// (`Numeric 10` — not a type, so it never enters the App arg list).
 enum Atom {
     Ty(Type),
-    DroppedLit,
+    DroppedLit(Span),
 }
 
 impl<'a> TypeParser<'a> {
-    fn peek(&self) -> Option<&'a Tok> {
+    fn peek(&self) -> Option<&'a Token> {
         self.toks.get(self.i).copied()
     }
 
     fn eat_op(&mut self, op: &str) -> bool {
-        if self.peek().is_some_and(|t| t.is_op(op)) {
+        if self.peek().is_some_and(|t| t.tok.is_op(op)) {
             self.i += 1;
             true
         } else {
@@ -3095,11 +3067,13 @@ impl<'a> TypeParser<'a> {
         if self.eat_op("=>") {
             // `lhs` was the constraint context; drop it, keep the body.
             let body = self.parse_type()?;
-            return Some(Type::Constrained(Box::new(body)));
+            let span = Span::new(lhs.span().start, body.span().end);
+            return Some(Type::Constrained(Box::new(body), span));
         }
         if self.eat_op("->") {
             let rhs = self.parse_type()?;
-            return Some(Type::Fun(Box::new(lhs), Box::new(rhs)));
+            let span = Span::new(lhs.span().start, rhs.span().end);
+            return Some(Type::Fun(Box::new(lhs), Box::new(rhs), span));
         }
         Some(lhs)
     }
@@ -3109,9 +3083,11 @@ impl<'a> TypeParser<'a> {
         let head = match self.parse_atom()? {
             Atom::Ty(t) => t,
             // A bare nat literal is not a type.
-            Atom::DroppedLit => return None,
+            Atom::DroppedLit(_) => return None,
         };
         let mut args = Vec::new();
+        let start = head.span().start;
+        let mut end = head.span().end;
         loop {
             // Only continue the spine if the next token can START an atom; an
             // operator (`->`, `=>`) or closer ends it.
@@ -3119,14 +3095,22 @@ impl<'a> TypeParser<'a> {
                 break;
             }
             match self.parse_atom()? {
-                Atom::Ty(t) => args.push(t),
-                Atom::DroppedLit => {} // `Numeric 10` — drop the `10`.
+                Atom::Ty(t) => {
+                    end = t.span().end;
+                    args.push(t);
+                }
+                Atom::DroppedLit(span) => {
+                    // `Numeric 10` — drop the `10` as structure but keep it in
+                    // the enclosing type span.
+                    end = span.end;
+                }
             }
         }
+        let span = Span::new(start, end);
         if args.is_empty() {
-            Some(head)
+            Some(head.with_span(span))
         } else {
-            Some(Type::App(Box::new(head), args))
+            Some(Type::App(Box::new(head), args, span))
         }
     }
 
@@ -3134,7 +3118,7 @@ impl<'a> TypeParser<'a> {
     /// should keep going).
     fn at_atom_start(&self) -> bool {
         matches!(
-            self.peek(),
+            self.peek().map(|t| &t.tok),
             Some(Tok::UpperId { .. })
                 | Some(Tok::LowerId { .. })
                 | Some(Tok::IntLit(_))
@@ -3145,11 +3129,13 @@ impl<'a> TypeParser<'a> {
     }
 
     fn parse_atom(&mut self) -> Option<Atom> {
-        match self.peek()? {
+        let tok = self.peek()?;
+        match &tok.tok {
             Tok::UpperId { qualifier, name } => {
                 let con = Type::Con {
                     qualifier: qualifier.clone(),
                     name: name.clone(),
+                    span: Span::new(tok.start, tok.end),
                 };
                 self.i += 1;
                 Some(Atom::Ty(con))
@@ -3157,56 +3143,55 @@ impl<'a> TypeParser<'a> {
             Tok::LowerId { name, .. } => {
                 // Type variable (`a`, `n`). Qualified lowercase never appears in
                 // a real type position; treat the name as the variable.
-                let var = Type::Var(name.clone());
+                let var = Type::Var(name.clone(), Span::new(tok.start, tok.end));
                 self.i += 1;
                 Some(Atom::Ty(var))
             }
             Tok::IntLit(_) | Tok::DecimalLit(_) => {
                 // Type-level nat literal (`Numeric 10`): consumed, but dropped.
                 self.i += 1;
-                Some(Atom::DroppedLit)
+                Some(Atom::DroppedLit(Span::new(tok.start, tok.end)))
             }
             Tok::LBracket => {
+                let start = tok.start;
                 self.i += 1;
                 let inner = self.parse_type()?;
-                if self.eat_bracket(Tok::RBracket) {
-                    Some(Atom::Ty(Type::List(Box::new(inner))))
-                } else {
-                    None
-                }
+                self.eat_bracket(Tok::RBracket)
+                    .map(|end| Atom::Ty(Type::List(Box::new(inner), Span::new(start, end.end))))
             }
             Tok::LParen => {
+                let start = tok.start;
                 self.i += 1;
-                if self.eat_bracket(Tok::RParen) {
-                    return Some(Atom::Ty(Type::Unit)); // ()
+                if let Some(end) = self.eat_bracket(Tok::RParen) {
+                    // ()
+                    return Some(Atom::Ty(Type::Unit(Span::new(start, end.end))));
                 }
                 let first = self.parse_type()?;
-                if self.peek() == Some(&Tok::Comma) {
+                if self.peek().map(|t| &t.tok) == Some(&Tok::Comma) {
                     let mut items = vec![first];
-                    while self.eat_bracket(Tok::Comma) {
+                    while self.eat_bracket(Tok::Comma).is_some() {
                         items.push(self.parse_type()?);
                     }
-                    if self.eat_bracket(Tok::RParen) {
-                        Some(Atom::Ty(Type::Tuple(items)))
-                    } else {
-                        None
-                    }
-                } else if self.eat_bracket(Tok::RParen) {
-                    Some(Atom::Ty(first)) // grouping parens
+                    self.eat_bracket(Tok::RParen)
+                        .map(|end| Atom::Ty(Type::Tuple(items, Span::new(start, end.end))))
                 } else {
-                    None
+                    self.eat_bracket(Tok::RParen).map(|end| {
+                        // Grouping parens.
+                        Atom::Ty(first.with_span(Span::new(start, end.end)))
+                    })
                 }
             }
             _ => None,
         }
     }
 
-    fn eat_bracket(&mut self, tok: Tok) -> bool {
-        if self.peek() == Some(&tok) {
+    fn eat_bracket(&mut self, tok: Tok) -> Option<&'a Token> {
+        if self.peek().is_some_and(|t| t.tok == tok) {
+            let t = self.peek();
             self.i += 1;
-            true
+            t
         } else {
-            false
+            None
         }
     }
 }
@@ -3266,15 +3251,52 @@ mod type_tests {
         Type::Con {
             qualifier: None,
             name: name.to_string(),
+            span: Span::default(),
         }
+    }
+
+    fn qualified_con(qualifier: &str, name: &str) -> Type {
+        Type::Con {
+            qualifier: Some(qualifier.to_string()),
+            name: name.to_string(),
+            span: Span::default(),
+        }
+    }
+
+    fn app(head: Type, args: Vec<Type>) -> Type {
+        Type::App(Box::new(head), args, Span::default())
+    }
+
+    fn list(inner: Type) -> Type {
+        Type::List(Box::new(inner), Span::default())
+    }
+
+    fn tuple(items: Vec<Type>) -> Type {
+        Type::Tuple(items, Span::default())
+    }
+
+    fn fun(param: Type, result: Type) -> Type {
+        Type::Fun(Box::new(param), Box::new(result), Span::default())
+    }
+
+    fn var(name: &str) -> Type {
+        Type::Var(name.to_string(), Span::default())
+    }
+
+    fn unit() -> Type {
+        Type::Unit(Span::default())
+    }
+
+    fn constrained(body: Type) -> Type {
+        Type::Constrained(Box::new(body), Span::default())
     }
 
     #[test]
     fn atoms() {
         assert_eq!(ty("Party"), Some(con("Party")));
         assert_eq!(ty("Decimal"), Some(con("Decimal")));
-        assert_eq!(ty("a"), Some(Type::Var("a".to_string())));
-        assert_eq!(ty("()"), Some(Type::Unit));
+        assert_eq!(ty("a"), Some(var("a")));
+        assert_eq!(ty("()"), Some(unit()));
     }
 
     #[test]
@@ -3283,21 +3305,18 @@ mod type_tests {
         // not one opaque name.
         assert_eq!(
             ty("ContractId Foo"),
-            Some(Type::App(Box::new(con("ContractId")), vec![con("Foo")]))
+            Some(app(con("ContractId"), vec![con("Foo")]))
         );
         assert_eq!(
             ty("Optional (ContractId Foo)"),
-            Some(Type::App(
-                Box::new(con("Optional")),
-                vec![Type::App(Box::new(con("ContractId")), vec![con("Foo")])]
+            Some(app(
+                con("Optional"),
+                vec![app(con("ContractId"), vec![con("Foo")])]
             ))
         );
         assert_eq!(
             ty("Map Text Int"),
-            Some(Type::App(
-                Box::new(con("Map")),
-                vec![con("Text"), con("Int")]
-            ))
+            Some(app(con("Map"), vec![con("Text"), con("Int")]))
         );
     }
 
@@ -3305,11 +3324,8 @@ mod type_tests {
     fn qualified_constructor_keeps_qualifier() {
         assert_eq!(
             ty("DA.Map.Map Text Int"),
-            Some(Type::App(
-                Box::new(Type::Con {
-                    qualifier: Some("DA.Map".to_string()),
-                    name: "Map".to_string(),
-                }),
+            Some(app(
+                qualified_con("DA.Map", "Map"),
                 vec![con("Text"), con("Int")]
             ))
         );
@@ -3317,19 +3333,15 @@ mod type_tests {
 
     #[test]
     fn list_and_tuple() {
-        assert_eq!(ty("[Text]"), Some(Type::List(Box::new(con("Text")))));
+        assert_eq!(ty("[Text]"), Some(list(con("Text"))));
         assert_eq!(
             ty("(Int, Text)"),
-            Some(Type::Tuple(vec![con("Int"), con("Text")]))
+            Some(tuple(vec![con("Int"), con("Text")]))
         );
         // A tuple is NOT a grouping paren — must stay a Tuple, never collapse.
         assert_eq!(
             ty("(a, b, c)"),
-            Some(Type::Tuple(vec![
-                Type::Var("a".to_string()),
-                Type::Var("b".to_string()),
-                Type::Var("c".to_string())
-            ]))
+            Some(tuple(vec![var("a"), var("b"), var("c")]))
         );
         // Single grouping paren unwraps.
         assert_eq!(ty("(Text)"), Some(con("Text")));
@@ -3339,24 +3351,15 @@ mod type_tests {
     fn function_types_are_arrows_not_names() {
         // These are exactly the corpus strings the old matcher swallowed into
         // one opaque `Named`.
-        assert_eq!(
-            ty("Int -> Int"),
-            Some(Type::Fun(Box::new(con("Int")), Box::new(con("Int"))))
-        );
+        assert_eq!(ty("Int -> Int"), Some(fun(con("Int"), con("Int"))));
         // Right associativity: `a -> b -> c` == `a -> (b -> c)`.
         assert_eq!(
             ty("Int -> Text -> Bool"),
-            Some(Type::Fun(
-                Box::new(con("Int")),
-                Box::new(Type::Fun(Box::new(con("Text")), Box::new(con("Bool"))))
-            ))
+            Some(fun(con("Int"), fun(con("Text"), con("Bool"))))
         );
         assert_eq!(
             ty("Party -> Script ()"),
-            Some(Type::Fun(
-                Box::new(con("Party")),
-                Box::new(Type::App(Box::new(con("Script")), vec![Type::Unit]))
-            ))
+            Some(fun(con("Party"), app(con("Script"), vec![unit()])))
         );
     }
 
@@ -3364,10 +3367,7 @@ mod type_tests {
     fn script_application() {
         // `Script ()` ×147 in the corpus — an application flattened to `Named`
         // before. Now a real App.
-        assert_eq!(
-            ty("Script ()"),
-            Some(Type::App(Box::new(con("Script")), vec![Type::Unit]))
-        );
+        assert_eq!(ty("Script ()"), Some(app(con("Script"), vec![unit()])));
     }
 
     #[test]
@@ -3375,13 +3375,7 @@ mod type_tests {
         // `Numeric 10`: the `10` is a type-level nat, not a type, so it drops
         // and the head Con stands alone. `Numeric n` keeps the type variable.
         assert_eq!(ty("Numeric 10"), Some(con("Numeric")));
-        assert_eq!(
-            ty("Numeric n"),
-            Some(Type::App(
-                Box::new(con("Numeric")),
-                vec![Type::Var("n".to_string())]
-            ))
-        );
+        assert_eq!(ty("Numeric n"), Some(app(con("Numeric"), vec![var("n")])));
     }
 
     #[test]
@@ -3390,19 +3384,13 @@ mod type_tests {
         // Context dropped; body (the arrow) kept.
         assert_eq!(
             ty("NumericScale n => Numeric 37 -> Numeric n"),
-            Some(Type::Constrained(Box::new(Type::Fun(
-                Box::new(con("Numeric")),
-                Box::new(Type::App(
-                    Box::new(con("Numeric")),
-                    vec![Type::Var("n".to_string())]
-                ))
-            ))))
+            Some(constrained(fun(
+                con("Numeric"),
+                app(con("Numeric"), vec![var("n")])
+            )))
         );
         // Tuple context `(Eq a, Show a) => a` also drops cleanly.
-        assert_eq!(
-            ty("(Eq a, Show a) => a"),
-            Some(Type::Constrained(Box::new(Type::Var("a".to_string()))))
-        );
+        assert_eq!(ty("(Eq a, Show a) => a"), Some(constrained(var("a"))));
     }
 
     #[test]
@@ -3437,7 +3425,7 @@ template T
         assert_eq!(t.fields[0].ty, Some(con("Party")));
         assert_eq!(
             t.fields[1].ty,
-            Some(Type::App(Box::new(con("ContractId")), vec![con("Asset")]))
+            Some(app(con("ContractId"), vec![con("Asset")]))
         );
         let choice = match &t
             .body
@@ -3449,9 +3437,9 @@ template T
         };
         assert_eq!(
             choice.return_ty,
-            Some(Type::App(
-                Box::new(con("Optional")),
-                vec![Type::App(Box::new(con("ContractId")), vec![con("Asset")])]
+            Some(app(
+                con("Optional"),
+                vec![app(con("ContractId"), vec![con("Asset")])]
             ))
         );
     }

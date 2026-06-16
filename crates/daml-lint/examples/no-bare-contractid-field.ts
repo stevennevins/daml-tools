@@ -1,29 +1,40 @@
 // Templates storing raw ContractId fields (or Optional/List of them) risk
 // stale references: the pointed-to contract can be archived underneath.
-// Exercises on_field with deep DamlType narrowing.
+// Exercises on_field with structured TypeNode narrowing.
 // Compile: npx esbuild no-bare-contractid-field.ts --outfile=no-bare-contractid-field.js
 
 const NAME = "no-bare-contractid-field";
 const SEVERITY = "low";
 const DESCRIPTION = "Template fields holding ContractIds risk dangling references";
 
-function containsContractId(ty: DamlType): boolean {
-  if (typeof ty === "string") {
+function containsContractId(ty: TypeNode | null): boolean {
+  if (ty === null) {
     return false;
   }
-  if ("ContractId" in ty) {
-    return true;
+  if ("App" in ty) {
+    return (
+      isCon(ty.App.head, "ContractId") ||
+      containsContractId(ty.App.head) ||
+      ty.App.args.some(containsContractId)
+    );
   }
   if ("List" in ty) {
-    return containsContractId(ty.List);
+    return containsContractId(ty.List.inner);
   }
-  if ("Optional" in ty) {
-    return containsContractId(ty.Optional);
+  if ("Tuple" in ty) {
+    return ty.Tuple.items.some(containsContractId);
   }
-  if ("TextMap" in ty) {
-    return containsContractId(ty.TextMap);
+  if ("Fun" in ty) {
+    return containsContractId(ty.Fun.param) || containsContractId(ty.Fun.result);
+  }
+  if ("Constrained" in ty) {
+    return containsContractId(ty.Constrained.body);
   }
   return false;
+}
+
+function isCon(ty: TypeNode, name: string): boolean {
+  return "Con" in ty && ty.Con.name === name;
 }
 
 function on_field(field: Field, template: Template): void {

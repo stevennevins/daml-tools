@@ -1,12 +1,12 @@
-//! Coverage metric for the AST formatter (replaces the retired `score` bin,
-//! which measured byte-match to `expected/` — no longer the target).
+//! Structural candidate metric for the AST formatter (replaces the retired
+//! `score` bin, which measured byte-match to `expected/` — no longer the
+//! target).
 //!
-//! Reports how many AST blocks our rules canonically lay out vs pass through
-//! verbatim. Currently the modeled construct is `do`-blocks, so coverage =
-//! do-blocks reindented / total do-blocks across the corpus. Higher = more of
-//! the corpus is laid out by our own rules. (On the already-canonical corpus
-//! most blocks are no-ops, so the count of *reindented* blocks is naturally
-//! small; the metric tracks rising modeled-construct coverage as rules land.)
+//! Reports structural edit candidates over modeled constructs for the currently
+//! modeled construct families (do, if, case, let-in, constructor `with`, and
+//! template/interface bodies). This is not a percentage: one construct can
+//! produce multiple edits, and on the already-canonical corpus most modeled
+//! constructs are no-ops.
 //!
 //! Usage: coverage [--list]
 
@@ -33,26 +33,26 @@ fn main() {
     let mut originals = Vec::new();
     collect(Path::new("original"), &mut originals);
 
-    let (mut reindented, mut total_blocks, mut files_with_edits) = (0usize, 0usize, 0usize);
+    let (mut candidates, mut modeled, mut files_with_candidates) = (0usize, 0usize, 0usize);
     for o in &originals {
         let Ok(src) = std::fs::read_to_string(o) else {
             continue;
         };
         let (r, t) = coverage(&src);
-        reindented += r;
-        total_blocks += t;
+        candidates += r;
+        modeled += t;
         if r > 0 {
-            files_with_edits += 1;
+            files_with_candidates += 1;
             if list {
-                println!("REINDENT {} ({} do-block(s))", o.display(), r);
+                println!("CANDIDATE {} ({} structural edit(s))", o.display(), r);
             }
         }
     }
     println!(
-        "\ndo-blocks: {} reindented / {} total across {} files ({} files reindented)",
-        reindented,
-        total_blocks,
+        "\nAST layout: {} structural edit candidate(s) / {} modeled construct(s) across {} files ({} files with candidates)",
+        candidates,
+        modeled,
         originals.len(),
-        files_with_edits
+        files_with_candidates
     );
 }

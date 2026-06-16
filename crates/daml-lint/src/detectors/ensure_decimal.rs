@@ -30,7 +30,7 @@ impl Detector for MissingEnsureDecimal {
             let decimal_fields: Vec<_> = template
                 .fields
                 .iter()
-                .filter(|f| f.type_.is_decimal())
+                .filter(|f| f.daml_type.is_decimal())
                 .collect();
 
             if decimal_fields.is_empty() {

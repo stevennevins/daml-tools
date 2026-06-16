@@ -4,15 +4,26 @@
 // (e.g. `npx esbuild my-rule.ts --outfile=my-rule.js`), and pass the .js
 // file to daml-lint --rules. Node shapes mirror src/ir.rs.
 //
-// v2: nodes now carry a real expression AST (`Expr`). The raw-text fields
-// of v1 (`body_raw`, `raw_text`, statement `expr`/`condition`/`raw`) are
-// kept for compatibility but deprecated; prefer the structured payloads.
+// v3: nodes carry structured expression and type ASTs. Compatibility-only raw
+// fields and rendered party-name lists from v1/v2 have been removed.
 
 /** Span of a declaration-level node (template, choice, field, ...). */
 interface Span {
   file: string;
   line: number;
   column: number;
+}
+
+/** Source range for typed parser nodes.
+ *
+ *  `start`/`end` are UTF-16 code-unit offsets into `module.source`, so
+ *  `module.source.slice(span.start, span.end)` returns the exact source text.
+ *  `byte_start`/`byte_end` preserve the parser's UTF-8 byte-span basis. */
+interface SourceSpan extends Span {
+  start: number;
+  end: number;
+  byte_start: number;
+  byte_end: number;
 }
 
 /** Position of an expression-level node. 1-based; the file is the
@@ -22,38 +33,18 @@ interface SrcPos {
   column: number;
 }
 
-/** DAML types as parsed by daml-lint.
- *
- *  Builtin scalar types serialize as bare strings: "Party", "Text",
- *  "Decimal", "Int", "Bool", "Date", "Time", "Unit" (for `()`), and
- *  "Unknown" (anything carrying no money/collection meaning — tuples,
- *  function types `a -> b`, and bare type variables).
- *
- *  Parameterized types are single-key objects whose value is the inner
- *  type: { List: "Text" }, { Optional: "Party" }, { TextMap: "Int" },
- *  { ContractId: { Named: "Iou" } }.
- *
- *  User-defined / unrecognized capitalized types are { Named: "..." }
- *  where the payload is the (possibly qualified) constructor NAME — e.g.
- *  { Named: "Iou" } or { Named: "Lib.Mod.Asset" }. Application arguments
- *  are not part of the name: `Foo Bar` is { Named: "Foo" }. Recognized
- *  collections are classified, not Named, regardless of how they are
- *  qualified: `Map.Map Party Decimal` is { Map: [...] }, not Named. */
-type DamlType =
-  | "Party"
-  | "Text"
-  | "Decimal"
-  | "Int"
-  | "Bool"
-  | "Date"
-  | "Time"
-  | "Unit"
-  | "Unknown"
-  | { ContractId: DamlType }
-  | { List: DamlType }
-  | { Optional: DamlType }
-  | { TextMap: DamlType }
-  | { Named: string };
+/** Structured DAML type AST. Source spans support diagnostics and exact
+ *  `module.source` slicing. Unknown/unparseable types are represented as null
+ *  at the field that carries the type. */
+type TypeNode =
+  | { Con: { qualifier: string | null; name: string; span: SourceSpan } }
+  | { App: { head: TypeNode; args: TypeNode[]; span: SourceSpan } }
+  | { List: { inner: TypeNode; span: SourceSpan } }
+  | { Tuple: { items: TypeNode[]; span: SourceSpan } }
+  | { Fun: { param: TypeNode; result: TypeNode; span: SourceSpan } }
+  | { Var: { name: string; span: SourceSpan } }
+  | { Unit: { span: SourceSpan } }
+  | { Constrained: { body: TypeNode; span: SourceSpan } };
 
 /** Expression AST. Tagged unions: use the key as discriminant, e.g.
  *  `if ("BinOp" in e && e.BinOp.op === "/") { ... }`.
@@ -108,14 +99,11 @@ interface RecordField {
 
 interface Field {
   name: string;
-  type_: DamlType;
+  type_: TypeNode | null;
   span: Span;
 }
 
 interface EnsureClause {
-  /** @deprecated prefer `expr`. "ensure " + rendered condition. */
-  raw_text: string;
-  /** Structured ensure condition. */
   expr: Expr;
   span: Span;
 }
@@ -123,11 +111,9 @@ interface EnsureClause {
 /** Statements are single-key objects tagged by kind. Use the tag as a
  *  discriminant: `if ("Create" in stmt) { stmt.Create.template_name ... }`.
  *
- *  The per-field `@deprecated` raw-text payloads (`Let.expr`,
- *  `Assert.condition`, the `cid_expr`s, `Create`/`Exercise` `raw`) have
- *  structured replacements (`value`, `condition_expr`, `cid`, `argument`)
- *  that carry the parse tree. `Other.raw` is NOT deprecated — it is the
- *  deliberate raw-source form for statements with no structured encoding.
+ *  Structured payloads (`value`, `condition_expr`, `cid`, `argument`) carry
+ *  the parse tree. `Other.raw` is the deliberate raw-source form for statements
+ *  with no structured encoding.
  *  `binder` is the pattern text bound by `x <- ...`, when
  *  present. Ledger actions under `$`/lambdas are surfaced as their own
  *  statements, in source order. An `if`/`case` is surfaced as a `Branch`
@@ -137,26 +123,18 @@ type Statement =
   | {
       Let: {
         name: string;
-        /** @deprecated prefer `value` (structured `Expr`). */
-        expr: string;
         value: Expr;
         span: SrcPos;
       };
     }
   | {
       Assert: {
-        /** @deprecated whole `assert`/`assertMsg` call text; prefer
-         *  `condition_expr` (the structured condition only — drops the
-         *  `assertMsg` message). */
-        condition: string;
         condition_expr: Expr;
         span: SrcPos;
       };
     }
   | {
       Fetch: {
-        /** @deprecated prefer `cid` (structured `Expr`). */
-        cid_expr: string;
         cid: Expr;
         binder: string | null;
         span: SrcPos;
@@ -164,8 +142,6 @@ type Statement =
     }
   | {
       Archive: {
-        /** @deprecated prefer `cid` (structured `Expr`). */
-        cid_expr: string;
         cid: Expr;
         span: SrcPos;
       };
@@ -173,10 +149,6 @@ type Statement =
   | {
       Create: {
         template_name: string;
-        /** @deprecated whole `create ...` call text; reconstruct from
-         *  `template_name` + `argument` (which is only the payload record). */
-        raw: string;
-        /** The created payload, usually a Record expression. */
         argument: Expr;
         binder: string | null;
         span: SrcPos;
@@ -184,14 +156,8 @@ type Statement =
     }
   | {
       Exercise: {
-        /** @deprecated prefer `cid` (structured `Expr`). */
-        cid_expr: string;
         choice_name: string;
-        /** @deprecated whole `exercise ...` call text; reconstruct from
-         *  `cid` + `choice_name` + `argument` (only the choice argument). */
-        raw: string;
         cid: Expr;
-        /** The choice argument (usually a Record expression), if present. */
         argument: Expr | null;
         binder: string | null;
         span: SrcPos;
@@ -215,18 +181,12 @@ interface BranchArm {
 interface Choice {
   name: string;
   consuming: boolean;
-  /** Controller expressions rendered to text (list literals flattened). */
-  controllers: string[];
-  /** Structured controller expressions. */
   controller_exprs: Expr[];
   /** Choice observers, if declared. */
   observer_exprs: Expr[];
   parameters: Field[];
-  return_type: DamlType;
+  return_type: TypeNode | null;
   body: Statement[];
-  /** @deprecated original source lines of the choice body; prefer `body`
-   *  (structured statements). For verbatim line text/comments use `m.source`. */
-  body_raw: string;
   span: Span;
 }
 
@@ -240,16 +200,12 @@ interface InterfaceInstance {
 interface Template {
   name: string;
   fields: Field[];
-  /** Signatory expressions rendered to text (list literals flattened). */
-  signatories: string[];
-  observers: string[];
-  /** Structured signatory/observer expressions. */
   signatory_exprs: Expr[];
   observer_exprs: Expr[];
   ensure_clause: EnsureClause | null;
   /** `key <expr> : <Type>`, if declared. */
   key_expr: Expr | null;
-  key_type: string | null;
+  key_type: TypeNode | null;
   maintainer_exprs: Expr[];
   choices: Choice[];
   /** Interfaces this template implements. */
@@ -259,7 +215,7 @@ interface Template {
 
 interface InterfaceMethod {
   name: string;
-  type_text: string;
+  type_: TypeNode | null;
   span: Span;
 }
 
@@ -276,12 +232,9 @@ interface DamlInterface {
 
 interface DamlFunction {
   name: string;
-  /** Declared type signature text, if present. */
-  type_signature: string | null;
+  /** Declared type signature, if present. */
+  type_signature: TypeNode | null;
   body: Statement[];
-  /** @deprecated original source lines of the function; prefer `body`
-   *  (structured statements). For verbatim line text/comments use `m.source`. */
-  body_raw: string;
   span: Span;
 }
 
@@ -293,6 +246,7 @@ interface Import {
 }
 
 interface DamlModule {
+  ir_version: 3;
   name: string;
   file: string;
   imports: Import[];

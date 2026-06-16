@@ -78,7 +78,7 @@ tools/verify-rust.sh               # needs Daml SDK 3.4.11 on PATH for desugar
 tools/verify-rust.sh --desugar     # full-corpus desugar sweep
 ```
 
-The coverage metric (how much of the corpus our rules canonically lay out):
+The structural candidate metric (edit candidates over modeled constructs):
 
 ```sh
 cargo run --features dev-tools --bin coverage

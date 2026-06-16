@@ -12,6 +12,10 @@ fn parse(source: &str) -> DamlModule {
     parse_daml_with_diagnostics(source, Path::new("hostile.daml")).0
 }
 
+fn single_var(exprs: &[Expr], expected: &str) -> bool {
+    matches!(exprs, [Expr::Var { name, .. }] if name == expected)
+}
+
 #[test]
 fn keywords_in_comments_create_no_structure() {
     let m = parse(
@@ -74,7 +78,7 @@ fn tabs_mixed_with_spaces() {
     );
     assert_eq!(m.templates.len(), 1);
     assert_eq!(m.templates[0].fields.len(), 1);
-    assert_eq!(m.templates[0].signatories, vec!["x"]);
+    assert!(single_var(&m.templates[0].signatory_exprs, "x"));
 }
 
 #[test]
@@ -165,14 +169,20 @@ fn operator_that_looks_like_comment() {
     let m = parse("module M where\nf = a --> b\ng = c --- this is a comment\n");
     assert_eq!(m.functions.len(), 2);
     // f's body must contain the --> application, g's must not see the comment
-    assert!(m.functions[0].body_raw.contains("-->"));
+    assert!(m.functions[0].body.iter().any(|s| matches!(
+        s,
+        Statement::Other {
+            expr: Expr::BinOp { op, .. },
+            ..
+        } if op == "-->"
+    )));
 }
 
 #[test]
 fn pathological_one_liner_template() {
     let m = parse("module M where\ntemplate T with { x : Party } where { signatory x }\n");
     assert_eq!(m.templates.len(), 1);
-    assert_eq!(m.templates[0].signatories, vec!["x"]);
+    assert!(single_var(&m.templates[0].signatory_exprs, "x"));
 }
 
 #[test]
@@ -239,7 +249,7 @@ fn empty_with_block_before_controller() {
     ));
     let c = &m.templates[0].choices[0];
     assert_eq!(c.name, "F");
-    assert_eq!(c.controllers, vec!["owner"]);
+    assert!(single_var(&c.controller_exprs, "owner"));
     assert!(c.parameters.is_empty());
 }
 
@@ -305,7 +315,7 @@ fn sdk_corpus_syntax_gaps() {
     ));
     assert_eq!(m.templates.len(), 1);
     assert_eq!(m.templates[0].fields.len(), 1);
-    assert_eq!(m.templates[0].signatories, vec!["p"]);
+    assert!(single_var(&m.templates[0].signatory_exprs, "p"));
 
     // Compact choice header: trailing `with`, controller dedented below
     // where fields would sit; following choices must survive.

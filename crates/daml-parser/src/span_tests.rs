@@ -114,6 +114,72 @@ fn template_field_and_signatory_spans() {
 }
 
 #[test]
+fn type_node_spans_are_tight() {
+    let src = r#"module M where
+template T
+  with
+    owner : Party
+  where
+    signatory owner
+    key owner : Party
+    maintainer owner
+    choice Go : Optional (ContractId T)
+      controller owner
+      do pure None
+
+interface I where
+  method : Numeric 10
+
+f : ContractId T -> Script ()
+f cid = pure ()
+"#;
+    let m = parse(src);
+    let Decl::Template(t) = m
+        .decls
+        .iter()
+        .find(|d| matches!(d, Decl::Template(_)))
+        .unwrap()
+    else {
+        unreachable!()
+    };
+    let field_ty = t.fields[0].ty.as_ref().expect("field type");
+    assert_eq!(text(src, field_ty.span()), "Party");
+    let key_ty = t
+        .body
+        .iter()
+        .find_map(|b| match b {
+            TemplateBodyDecl::Key { ty, .. } => ty.as_ref(),
+            _ => None,
+        })
+        .expect("key type");
+    assert_eq!(text(src, key_ty.span()), "Party");
+    let choice_ty = t
+        .body
+        .iter()
+        .find_map(|b| match b {
+            TemplateBodyDecl::Choice(c) => c.return_ty.as_ref(),
+            _ => None,
+        })
+        .expect("choice return type");
+    assert_eq!(text(src, choice_ty.span()), "Optional (ContractId T)");
+
+    let Decl::Interface(i) = m
+        .decls
+        .iter()
+        .find(|d| matches!(d, Decl::Interface(_)))
+        .unwrap()
+    else {
+        unreachable!()
+    };
+    let method_ty = i.methods[0].ty.as_ref().expect("method type");
+    assert_eq!(text(src, method_ty.span()), "Numeric 10");
+
+    let f = first_function(&m, "f");
+    let fn_ty = f.ty.as_ref().expect("function signature type");
+    assert_eq!(text(src, fn_ty.span()), "ContractId T -> Script ()");
+}
+
+#[test]
 fn render_from_ast_roundtrips_small_programs() {
     let cases = [
         "module M where\nf = 1\n",
