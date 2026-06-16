@@ -70,7 +70,7 @@ fn new_runtime() -> Result<(Runtime, Rc<std::cell::Cell<u64>>), String> {
 
 /// Read a top-level string constant. `const` bindings are lexical, not
 /// globalThis properties, so they're read by evaluating an expression.
-fn read_const(ctx: &Ctx, name: &str) -> Option<String> {
+fn read_const(ctx: &Ctx<'_>, name: &str) -> Option<String> {
     ctx.eval::<Option<String>, _>(format!("typeof {n} === 'string' ? {n} : null", n = name))
         .ok()
         .flatten()
@@ -130,7 +130,7 @@ pub fn load_script(path: &Path) -> Result<Box<dyn Detector>, String> {
         let globals = ctx.globals();
         let has_visitor = VISITORS
             .iter()
-            .any(|v| globals.get::<_, Function>(*v).is_ok());
+            .any(|v| globals.get::<_, Function<'_>>(*v).is_ok());
         if !has_visitor {
             return Err(format!(
                 "rule '{}': script defines none of the visitor functions ({})",
@@ -161,8 +161,8 @@ fn json<T: serde::Serialize>(v: &T) -> String {
     serde_json::to_string(v).expect("IR types always serialize")
 }
 
-fn register_report(ctx: &Ctx, sink: Reported) -> Result<(), String> {
-    let report = Function::new(ctx.clone(), move |arg: Value, message: String| {
+fn register_report(ctx: &Ctx<'_>, sink: Reported) -> Result<(), String> {
+    let report = Function::new(ctx.clone(), move |arg: Value<'_>, message: String| {
         let (line, column) = location_of(&arg);
         sink.borrow_mut().push((line, column, message));
     })
@@ -174,12 +174,12 @@ fn register_report(ctx: &Ctx, sink: Reported) -> Result<(), String> {
 
 /// First argument of report(): a node object (location from its span) or a
 /// line number.
-fn location_of(arg: &Value) -> (usize, usize) {
+fn location_of(arg: &Value<'_>) -> (usize, usize) {
     if let Some(line) = arg.as_number() {
         return ((line as i64).max(1) as usize, 1);
     }
     if let Some(obj) = arg.as_object() {
-        if let Ok(span) = obj.get::<_, Object>("span") {
+        if let Ok(span) = obj.get::<_, Object<'_>>("span") {
             let line: i64 = span.get("line").unwrap_or(1);
             let column: i64 = span.get("column").unwrap_or(1);
             return (line.max(1) as usize, column.max(1) as usize);
@@ -198,7 +198,7 @@ impl ScriptDetector {
             register_report(&ctx, reported.clone())?;
 
             let globals = ctx.globals();
-            let visitor = |name: &str| globals.get::<_, Function>(name).ok();
+            let visitor = |name: &str| globals.get::<_, Function<'_>>(name).ok();
             let rule = self.name.as_str();
 
             for template in &module.templates {

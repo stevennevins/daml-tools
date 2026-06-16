@@ -12,6 +12,9 @@ readme = "README.md"
 keywords = ["daml", "parser", "lexer", "syntax-tree", "lossless"]
 categories = ["parser-implementations", "development-tools"]
 
+[lints]
+workspace = true
+
 # Foundation crate: deliberately ZERO external dependencies. Both daml-lint and
 # daml-fmt sit on top of this; it must not drag rules, diagnostics, or CLI deps
 # into a consumer that only wants the parse tree.

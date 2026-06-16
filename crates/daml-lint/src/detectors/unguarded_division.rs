@@ -50,7 +50,7 @@ impl UnguardedDivision {
         &self,
         stmts: &[Statement],
         guarded: &HashSet<String>,
-        ctx: &Ctx,
+        ctx: &Ctx<'_>,
         findings: &mut Vec<Finding>,
     ) {
         for s in stmts {
@@ -81,7 +81,7 @@ impl UnguardedDivision {
         &self,
         e: &Expr,
         guarded: &HashSet<String>,
-        ctx: &Ctx,
+        ctx: &Ctx<'_>,
         findings: &mut Vec<Finding>,
     ) {
         if let Some((denom_expr, span)) = division_denominator(e) {

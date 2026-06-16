@@ -24,8 +24,10 @@ jobs:
       - name: rustfmt
         run: cargo fmt --all --check
       - name: clippy
-        # --all-features so the feature-gated dev-tool bins are linted too.
-        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+        # Lint policy (the denies) lives in root Cargo.toml [workspace.lints], so
+        # no `-- -D warnings` here. --all-features so the feature-gated dev-tool
+        # bins are linted too.
+        run: cargo clippy --workspace --all-targets --all-features --locked
       - name: test
         run: cargo test --workspace --all-features --locked
       - name: daml-fmt differential (924 corpus files, no SDK)

@@ -451,7 +451,8 @@ fn other_statement(expr: &ast::Expr, binder: Option<&ast::Pat>) -> Statement {
 
 fn lower_do(stmts: &[DoStmt]) -> Vec<Statement> {
     let mut out = Vec::new();
-    let mut helpers: std::collections::HashMap<String, Helper> = std::collections::HashMap::new();
+    let mut helpers: std::collections::HashMap<String, Helper<'_>> =
+        std::collections::HashMap::new();
     for stmt in stmts {
         match stmt {
             DoStmt::Let { bindings, .. } => {
@@ -470,7 +471,13 @@ fn lower_do(stmts: &[DoStmt]) -> Vec<Statement> {
                     // for expansion there, and do NOT surface its archive at the
                     // `let` line.
                     if let Some(params) = formal_param_names(b) {
-                        helpers.insert(b.pat.render(), Helper { params, body: &b.expr });
+                        helpers.insert(
+                            b.pat.render(),
+                            Helper {
+                                params,
+                                body: &b.expr,
+                            },
+                        );
                     }
                 }
             }
@@ -533,7 +540,7 @@ fn formal_param_names(b: &ast::Binding) -> Option<Vec<String>> {
 fn expand_helper_call(
     expr: &ast::Expr,
     binder: Option<&ast::Pat>,
-    helpers: &std::collections::HashMap<String, Helper>,
+    helpers: &std::collections::HashMap<String, Helper<'_>>,
     out: &mut Vec<Statement>,
 ) -> bool {
     let ast::Expr::App { func, args, .. } = expr else {
@@ -591,9 +598,14 @@ fn subst_expr(
                 span: *span,
             },
         },
-        E::App { func, args, span, .. } => E::App {
+        E::App {
+            func, args, span, ..
+        } => E::App {
             func: Box::new(subst_expr(func, subst, call_pos)),
-            args: args.iter().map(|a| subst_expr(a, subst, call_pos)).collect(),
+            args: args
+                .iter()
+                .map(|a| subst_expr(a, subst, call_pos))
+                .collect(),
             pos: call_pos,
             span: *span,
         },
@@ -626,12 +638,18 @@ fn subst_expr(
             span: *span,
         },
         E::Tuple { items, span, .. } => E::Tuple {
-            items: items.iter().map(|i| subst_expr(i, subst, call_pos)).collect(),
+            items: items
+                .iter()
+                .map(|i| subst_expr(i, subst, call_pos))
+                .collect(),
             pos: call_pos,
             span: *span,
         },
         E::List { items, span, .. } => E::List {
-            items: items.iter().map(|i| subst_expr(i, subst, call_pos)).collect(),
+            items: items
+                .iter()
+                .map(|i| subst_expr(i, subst, call_pos))
+                .collect(),
             pos: call_pos,
             span: *span,
         },
@@ -727,7 +745,13 @@ fn collect_actions_inner(
                 // The condition rides along as the Branch scrutinee so a defensive
                 // guard (`if amount <= 0 then abort`) stays analyzable; the arms
                 // (then, else) carry no pattern.
-                push_branch(Some(cond), &[then_branch, else_branch], &[None, None], expr, out);
+                push_branch(
+                    Some(cond),
+                    &[then_branch, else_branch],
+                    &[None, None],
+                    expr,
+                    out,
+                );
             } else {
                 // Expression-position `if`: surface only ledger actions inside,
                 // leaving the `Expr::If` (and its condition guard) for the

@@ -15,9 +15,32 @@ categories = ["development-tools", "command-line-utilities"]
 # `examples/` are kept — users writing AST rules need them).
 exclude = ["test-fixtures/", "docs/"]
 
+[lints]
+workspace = true
+
 [dependencies]
 daml-parser.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-clap.workspace = true
-rquickjs.workspace = true
+# clap (CLI) and rquickjs (custom-rule JS engine) are optional so a library
+# consumer with `default-features = false` gets parser + IR + built-in detectors
+# WITHOUT pulling a CLI arg parser or a JS runtime. The published binary turns
+# both on via the default features below.
+clap = { workspace = true, optional = true }
+rquickjs = { workspace = true, optional = true }
+
+[features]
+default = ["cli", "custom-rules"]
+# `cli`: the clap-based `daml-lint` binary. The built-in detectors are always
+# usable as a library regardless of this feature.
+cli = ["dep:clap"]
+# `custom-rules`: load JavaScript AST rules via `--rules` (rquickjs engine).
+custom-rules = ["dep:rquickjs"]
+
+# The CLI binary wires up `--rules`, so it needs BOTH the clap CLI and the
+# custom-rule engine. With `default-features = false` the bin is skipped and you
+# get the dependency-light library. The lib target is still auto-detected.
+[[bin]]
+name = "daml-lint"
+path = "src/main.rs"
+required-features = ["cli", "custom-rules"]

@@ -23,6 +23,9 @@ exclude = [
     "package.json",
 ]
 
+[lints]
+workspace = true
+
 [dependencies]
 # daml-fmt depends on the parser ONLY. It must never pull in daml-lint.
 daml-parser.workspace = true
