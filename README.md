@@ -54,9 +54,18 @@ git config core.hooksPath .githooks
 prek prepare-hooks
 ```
 
-The pre-commit hook runs `cargo fmt --all --check`. The commit message hook
-enforces Conventional Commits so release-plz can derive changelogs and version
-bumps.
+Developers also need the Rust `rustfmt` and `clippy` components and Node.js 18+
+or newer, matching CI.
+
+The pre-commit hook runs the local lint gates from CI: `cargo fmt --all --check`,
+`cargo clippy --workspace --all-targets --all-features --locked`, and
+`RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked`.
+The commit message hook enforces Conventional Commits so release-plz can derive
+changelogs and version bumps.
+
+The pre-push hook runs the heavier test gates: `cargo test --workspace
+--all-features --locked` and the formatter's 924-file differential test
+(`cd crates/daml-fmt && node test/diff.js`).
 
 The parser/layout integration tests use a vendored
 [daml-finance](https://github.com/digital-asset/daml-finance) corpus under
