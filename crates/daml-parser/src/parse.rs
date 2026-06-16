@@ -468,10 +468,14 @@ impl Parser {
                         self.skip_type_params();
                         if self.eat_op("=") {
                             let body_start = self.i;
-                            let (c, d, ok) = self.data_constructors();
-                            if ok {
-                                constructors = c;
-                                deriving = d;
+                            let (
+                                parsed_constructors,
+                                parsed_deriving_classes,
+                                parsed_structured_body,
+                            ) = self.parse_data_constructors();
+                            if parsed_structured_body {
+                                constructors = parsed_constructors;
+                                deriving = parsed_deriving_classes;
                             } else {
                                 // A constructor hit an empty `with` block (its
                                 // fields are all commented out), which leaves an
@@ -768,19 +772,19 @@ impl Parser {
     /// Parse the right-hand side of a `data`/`newtype` declaration:
     /// `Ctor [payload] | Ctor [payload] | ...` followed by an optional
     /// `deriving (...)`. Returns the constructors, the flattened deriving class
-    /// names, and an `ok` flag — `false` means a constructor hit an empty `with`
+    /// names, and a parsed-body flag — `false` means a constructor hit an empty `with`
     /// block (an unbalanced layout brace) and the caller must abandon the
     /// structured parse. Stops at the first token that cannot continue the list;
     /// the caller's `skip_to_item_end` then consumes any unmodeled remainder.
-    fn data_constructors(&mut self) -> (Vec<DataConstructor>, Vec<String>, bool) {
-        let mut ctors = Vec::new();
+    fn parse_data_constructors(&mut self) -> (Vec<DataConstructor>, Vec<String>, bool) {
+        let mut constructors = Vec::new();
         loop {
             if self.at_keyword("deriving") {
                 break;
             }
             match self.peek() {
                 Some(Tok::UpperId { .. }) => match self.data_constructor() {
-                    Ok(Some(c)) => ctors.push(c),
+                    Ok(Some(constructor)) => constructors.push(constructor),
                     Ok(None) => break,
                     // Dangling empty `with` block — bail to the opaque path.
                     Err(()) => return (Vec::new(), Vec::new(), false),
@@ -797,7 +801,7 @@ impl Parser {
         while self.at_keyword("deriving") {
             deriving.extend(self.parse_deriving());
         }
-        (ctors, deriving, true)
+        (constructors, deriving, true)
     }
 
     /// Parse one constructor alternative: a name, then either record fields

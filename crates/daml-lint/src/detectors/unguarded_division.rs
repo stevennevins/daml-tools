@@ -2,9 +2,9 @@ use crate::detector::{Detector, Finding, Severity};
 use crate::ir::{DamlModule, EnsureClause, Expr, SrcPos, Statement};
 use std::collections::HashSet;
 
-/// Shared, read-only context threaded through the recursive division scan.
-struct Ctx<'a> {
-    all_stmts: &'a [Statement],
+/// Shared, read-only context threaded through the recursive denominator scan.
+struct DenominatorScanContext<'a> {
+    all_statements: &'a [Statement],
     ensure: Option<&'a EnsureClause>,
     file: &'a std::path::Path,
     context_name: &'a str,
@@ -34,13 +34,13 @@ impl UnguardedDivision {
         context_name: &str,
     ) -> Vec<Finding> {
         let mut findings = Vec::new();
-        let ctx = Ctx {
-            all_stmts: statements,
+        let scan_context = DenominatorScanContext {
+            all_statements: statements,
             ensure,
             file,
             context_name,
         };
-        self.scan_stmts(statements, &HashSet::new(), &ctx, &mut findings);
+        self.scan_stmts(statements, &HashSet::new(), &scan_context, &mut findings);
         findings
     }
 
@@ -48,28 +48,33 @@ impl UnguardedDivision {
     /// has already proven non-zero.
     fn scan_stmts(
         &self,
-        stmts: &[Statement],
-        guarded: &HashSet<String>,
-        ctx: &Ctx<'_>,
+        statements: &[Statement],
+        guarded_denominator_keys: &HashSet<String>,
+        scan_context: &DenominatorScanContext<'_>,
         findings: &mut Vec<Finding>,
     ) {
-        for s in stmts {
-            for e in crate::ir::statement_exprs(s) {
-                self.scan_expr(e, guarded, ctx, findings);
+        for statement in statements {
+            for expr in crate::ir::statement_exprs(statement) {
+                self.scan_expr(expr, guarded_denominator_keys, scan_context, findings);
             }
-            match s {
+            match statement {
                 Statement::TryCatch {
                     try_body,
                     catch_body,
                     ..
                 } => {
-                    self.scan_stmts(try_body, guarded, ctx, findings);
-                    self.scan_stmts(catch_body, guarded, ctx, findings);
+                    self.scan_stmts(try_body, guarded_denominator_keys, scan_context, findings);
+                    self.scan_stmts(catch_body, guarded_denominator_keys, scan_context, findings);
                 }
                 // An `if`/`case` arm is its own scope; scan each for divisions.
                 Statement::Branch { arms, .. } => {
                     for arm in arms {
-                        self.scan_stmts(&arm.body, guarded, ctx, findings);
+                        self.scan_stmts(
+                            &arm.body,
+                            guarded_denominator_keys,
+                            scan_context,
+                            findings,
+                        );
                     }
                 }
                 _ => {}
@@ -79,31 +84,41 @@ impl UnguardedDivision {
 
     fn scan_expr(
         &self,
-        e: &Expr,
-        guarded: &HashSet<String>,
-        ctx: &Ctx<'_>,
+        expr: &Expr,
+        guarded_denominator_keys: &HashSet<String>,
+        scan_context: &DenominatorScanContext<'_>,
         findings: &mut Vec<Finding>,
     ) {
-        if let Some((denom_expr, span)) = division_denominator(e) {
-            let denom_expr = unwrap_numeric_wrapper(denom_expr);
+        if let Some((denominator_expr, span)) = division_denominator(expr) {
+            let denominator_expr = unwrap_numeric_wrapper(denominator_expr);
             // `x / 2.0` and `x / (-2.0)` divide by a non-zero constant — safe.
-            if !denom_expr.is_nonzero_numeric_divisor() {
-                let denom = denom_display(denom_expr);
+            if !denominator_expr.is_nonzero_numeric_divisor() {
+                let denominator = denom_display(denominator_expr);
                 // An enclosing `if denom /= 0 then ...` already proved it.
-                let if_guarded = matches!(denom_expr.ref_string(), Some(k) if guarded.contains(&k));
-                if !if_guarded && !self.has_prior_guard(&denom, ctx.all_stmts, ctx.ensure, span) {
+                let is_guarded_by_enclosing_if = matches!(
+                    denominator_expr.ref_string(),
+                    Some(key) if guarded_denominator_keys.contains(&key)
+                );
+                if !is_guarded_by_enclosing_if
+                    && !self.has_prior_guard(
+                        &denominator,
+                        scan_context.all_statements,
+                        scan_context.ensure,
+                        span,
+                    )
+                {
                     findings.push(self.finding(
-                        ctx.file,
+                        scan_context.file,
                         span.line,
-                        &denom,
-                        ctx.context_name,
-                        &e.render_text(),
+                        &denominator,
+                        scan_context.context_name,
+                        &expr.render_text(),
                     ));
                 }
             }
         }
 
-        match e {
+        match expr {
             // `if denom /= 0 then x / denom else fallback`: the then-branch holds
             // the condition; the else-branch holds its negation (so `if denom == 0
             // then fallback else x / denom` is guarded too).
@@ -113,18 +128,20 @@ impl UnguardedDivision {
                 else_branch,
                 ..
             } => {
-                self.scan_expr(cond, guarded, ctx, findings);
-                let mut then_guarded = guarded.clone();
+                self.scan_expr(cond, guarded_denominator_keys, scan_context, findings);
+                let mut then_guarded = guarded_denominator_keys.clone();
                 collect_nonzero_keys(cond, &mut then_guarded);
-                self.scan_expr(then_branch, &then_guarded, ctx, findings);
-                let mut else_guarded = guarded.clone();
+                self.scan_expr(then_branch, &then_guarded, scan_context, findings);
+                let mut else_guarded = guarded_denominator_keys.clone();
                 collect_else_nonzero_keys(cond, &mut else_guarded);
-                self.scan_expr(else_branch, &else_guarded, ctx, findings);
+                self.scan_expr(else_branch, &else_guarded, scan_context, findings);
             }
-            Expr::DoBlock { statements, .. } => self.scan_stmts(statements, guarded, ctx, findings),
+            Expr::DoBlock { statements, .. } => {
+                self.scan_stmts(statements, guarded_denominator_keys, scan_context, findings)
+            }
             _ => {
-                for c in crate::ir::child_exprs(e) {
-                    self.scan_expr(c, guarded, ctx, findings);
+                for child_expr in crate::ir::child_exprs(expr) {
+                    self.scan_expr(child_expr, guarded_denominator_keys, scan_context, findings);
                 }
             }
         }
@@ -180,7 +197,7 @@ impl UnguardedDivision {
         }
 
         let division_pos = (division.line, division.column);
-        let mut guarded = false;
+        let mut has_unconditional_guard = false;
         // Only asserts that UNCONDITIONALLY run before the division can guard it.
         // An assert inside a `Branch` arm runs only when that arm is taken, so it
         // never dominates a later division — do not descend into Branch arms.
@@ -194,11 +211,11 @@ impl UnguardedDivision {
                 if (span.line, span.column) < division_pos
                     && crate::ir::expr_guarantees_nonzero(condition_expr, denominator)
                 {
-                    guarded = true;
+                    has_unconditional_guard = true;
                 }
             }
         });
-        guarded
+        has_unconditional_guard
     }
 }
 

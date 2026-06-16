@@ -152,7 +152,7 @@ pub fn lex(source: &str) -> (Vec<Token>, Vec<LexError>) {
 }
 
 pub fn lex_with_trivia(source: &str) -> (Vec<Token>, Vec<Trivia>, Vec<LexError>) {
-    let mut lx = Lexer {
+    let mut lexer = Lexer {
         chars: source.chars().collect(),
         src: source,
         i: 0,
@@ -163,11 +163,11 @@ pub fn lex_with_trivia(source: &str) -> (Vec<Token>, Vec<Trivia>, Vec<LexError>)
         trivia: Vec::new(),
         errors: Vec::new(),
     };
-    lx.run();
-    let mut trivia = lx.trivia;
-    add_blank_line_trivia(source, &lx.tokens, &mut trivia);
+    lexer.scan_tokens();
+    let mut trivia = lexer.trivia;
+    add_blank_line_trivia(source, &lexer.tokens, &mut trivia);
     trivia.sort_by_key(|t| t.start);
-    (lx.tokens, trivia, lx.errors)
+    (lexer.tokens, trivia, lexer.errors)
 }
 
 /// Reconstruct the source from token and trivia spans. `Ok` only when the
@@ -333,7 +333,7 @@ impl<'a> Lexer<'a> {
         });
     }
 
-    fn run(&mut self) {
+    fn scan_tokens(&mut self) {
         while let Some(c) = self.peek() {
             let pos = self.pos();
             let start = self.byte;

@@ -189,7 +189,7 @@ fn location_of(arg: &Value<'_>) -> (usize, usize) {
 }
 
 impl ScriptDetector {
-    fn run(&self, module: &DamlModule) -> Result<Vec<Finding>, String> {
+    fn collect_script_findings(&self, module: &DamlModule) -> Result<Vec<Finding>, String> {
         let reported: Reported = Rc::new(RefCell::new(Vec::new()));
 
         self.interrupt_count.set(0);
@@ -286,7 +286,7 @@ impl Detector for ScriptDetector {
     fn detect(&self, module: &DamlModule) -> Vec<Finding> {
         // Detector::detect can't return errors; a script that fails at runtime
         // is a broken rule and the scan results can't be trusted — fail loud.
-        self.run(module).unwrap_or_else(|e| {
+        self.collect_script_findings(module).unwrap_or_else(|e| {
             eprintln!("Error: rules script {}: {}", self.path, e);
             std::process::exit(2);
         })
@@ -637,7 +637,7 @@ function on_template(t) {}
     fn test_runtime_error_surfaces_rule_and_visitor() {
         let script = raw_detector("boom", r#"function on_template(t) { t.does.not.exist; }"#);
         let module = parse_daml(TEMPLATE_NO_ENSURE, Path::new("Test.daml"));
-        let err = script.run(&module).unwrap_err();
+        let err = script.collect_script_findings(&module).unwrap_err();
         assert!(err.contains("boom"));
         assert!(err.contains("on_template"));
     }
@@ -653,7 +653,7 @@ function on_template(t) { while (true) {} }
 "#,
         );
         let module = parse_daml(TEMPLATE_NO_ENSURE, Path::new("Test.daml"));
-        assert!(script.run(&module).is_err());
+        assert!(script.collect_script_findings(&module).is_err());
     }
 
     /// Interrupt counter resets between modules: a long (but finite) rule
@@ -670,7 +670,7 @@ function on_template(t) { let x = 0; for (let i = 0; i < 200000; i++) { x += i; 
         );
         let module = parse_daml(TEMPLATE_NO_ENSURE, Path::new("Test.daml"));
         for _ in 0..5 {
-            assert!(script.run(&module).is_ok());
+            assert!(script.collect_script_findings(&module).is_ok());
         }
     }
 

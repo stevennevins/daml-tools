@@ -61,16 +61,16 @@ fn main() {
             }
         }
     }
-    if let Some(dup) = detector::find_duplicate_name(&detectors) {
+    if let Some(duplicate_detector_name) = detector::find_duplicate_name(&detectors) {
         eprintln!(
             "Error: rule '{}': name collides with a built-in detector or another rule",
-            dup
+            duplicate_detector_name
         );
         std::process::exit(2);
     }
 
     // Discover .daml files
-    let files = discover_files(&cli.paths);
+    let files = discover_daml_files(&cli.paths);
     if files.is_empty() {
         eprintln!("No .daml files found.");
         std::process::exit(2);
@@ -152,31 +152,31 @@ fn main() {
     std::process::exit(code);
 }
 
-fn discover_files(paths: &[PathBuf]) -> Vec<PathBuf> {
-    let mut files = Vec::new();
+fn discover_daml_files(paths: &[PathBuf]) -> Vec<PathBuf> {
+    let mut daml_files = Vec::new();
     for path in paths {
         if path.is_file() {
             if path.extension().is_some_and(|e| e == "daml") {
-                files.push(path.clone());
+                daml_files.push(path.clone());
             }
         } else if path.is_dir() {
-            walk_dir(path, &mut files);
+            collect_daml_files(path, &mut daml_files);
         } else {
             eprintln!("Warning: scan path {} does not exist.", path.display());
         }
     }
-    files.sort();
-    files
+    daml_files.sort();
+    daml_files
 }
 
-fn walk_dir(dir: &PathBuf, files: &mut Vec<PathBuf>) {
+fn collect_daml_files(dir: &PathBuf, daml_files: &mut Vec<PathBuf>) {
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                walk_dir(&path, files);
+                collect_daml_files(&path, daml_files);
             } else if path.extension().is_some_and(|e| e == "daml") {
-                files.push(path);
+                daml_files.push(path);
             }
         }
     }
