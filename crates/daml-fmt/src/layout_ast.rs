@@ -9,21 +9,24 @@
 //!   2. For a layout block, reindent ONLY the block's child lines so the anchor
 //!      construct lands at `anchor_col + 2`: a `do`-block's statements to
 //!      `do_col + 2` (including a `do` that opens with `let`), an
-//!      `if`/`then`/`else`'s `then`/`else` clauses to `if_col + 2`, and a
+//!      `if`/`then`/`else`'s `then`/`else` clauses to `if_col + 2`, a
 //!      `case … of`'s alternatives to `case_col + 2`, a `let … in` expression's
 //!      bindings to `let_col + 2`, and a `Con with` construction's fields to
 //!      `con_col + 2`. The anchor line itself is never moved, which makes each
 //!      rule a fixpoint: a second pass computes delta 0. Children shift by one
 //!      uniform delta, so the block's internal structure (and any nested blocks)
-//!      ride along.
+//!      ride along. A `template` body is the one STRUCTURED rule: its
+//!      `with`/`where` keywords go to `template_col + 2` and the field /
+//!      signatory-choice-decl blocks to `template_col + 4` (two different
+//!      deltas), so a 4-space ladder collapses to the canonical 2-space one.
 //!   3. Comments are sacred: comment lines are never measured-from and never
 //!      shifted (CLAUDE.md). Block-comment interiors are trivia, untouched.
 //!   4. Gate the whole candidate on `same_tokens` = identical LAID-OUT token
 //!      stream (offside virtuals included) ⇒ identical parse ⇒ identical
 //!      desugar. Any accepted reindent is desugar-safe BY CONSTRUCTION.
 //!   5. Fall back to the input (verbatim) when the gate rejects or a node is
-//!      not modeled. Unmodeled constructs (`where`, guards, record UPDATES
-//!      (`expr with`), template/data declarations, TypeDef, expression
+//!      not modeled. Unmodeled constructs (guards, record UPDATES (`expr with`),
+//!      `interface` bodies, `data` declarations, TypeDef, expression
 //!      continuations) pass through verbatim — desugar-safe and lets us land one
 //!      construct at a time.
 //!
@@ -52,8 +55,8 @@ pub fn format_ast(src: &str) -> String {
     // one's gate still converges within a single call (idempotence).
     let mut base = src.to_string();
     for _ in 0..MAX_STRUCTURAL_PASSES {
-        let next = gated_con_with_pass(&gated_letin_pass(&gated_case_pass(&gated_if_pass(
-            &gated_do_pass(&base),
+        let next = gated_template_pass(&gated_con_with_pass(&gated_letin_pass(&gated_case_pass(
+            &gated_if_pass(&gated_do_pass(&base)),
         ))));
         if next == base {
             break;
@@ -125,6 +128,17 @@ fn gated_letin_pass(src: &str) -> String {
 fn gated_con_with_pass(src: &str) -> String {
     let (module, _) = parse_module(src);
     let r = reindent_con_with(src, &module);
+    if r != src && same_tokens(src, &r) {
+        r
+    } else {
+        src.to_string()
+    }
+}
+
+/// Structured template-body reindent of `src`, gated like the do-pass.
+fn gated_template_pass(src: &str) -> String {
+    let (module, _) = parse_module(src);
+    let r = reindent_templates(src, &module);
     if r != src && same_tokens(src, &r) {
         r
     } else {
@@ -922,6 +936,142 @@ fn reindent_con_with(src: &str, module: &Module) -> String {
     apply_shifts(src, &edits)
 }
 
+/// Shift a SINGLE line to `target` indent (for a `with`/`where` keyword line).
+fn push_line_edit(edits: &mut Vec<Edit>, ls: &[usize], src: &str, line: usize, target: i64) {
+    if leading_has_tab(src, ls[line]) {
+        return;
+    }
+    let delta = target - indent_of(src, ls, line);
+    if delta != 0 {
+        let end = *ls.get(line + 1).unwrap_or(&src.len());
+        edits.push(Edit {
+            child_start: ls[line],
+            block_end: end,
+            delta,
+        });
+    }
+}
+
+/// Shift a block `[first_byte .. end_byte)` to `target`, anchored on its first
+/// line — but only when that first line is its own line (line-leading, and below
+/// `head_line`), so an inline `with f : T` / `template X with` is left alone.
+fn push_block_edit(
+    edits: &mut Vec<Edit>,
+    ls: &[usize],
+    src: &str,
+    first_byte: usize,
+    end_byte: usize,
+    target: i64,
+    head_line: usize,
+) {
+    let first_line = line_of(ls, first_byte);
+    if first_line <= head_line {
+        return;
+    }
+    // The first element must start its line (nothing but spaces before it).
+    if src[ls[first_line]..first_byte].chars().any(|c| c != ' ') {
+        return;
+    }
+    if leading_has_tab(src, ls[first_line]) {
+        return;
+    }
+    let delta = target - indent_of(src, ls, first_line);
+    if delta != 0 {
+        edits.push(Edit {
+            child_start: ls[first_line],
+            block_end: end_byte,
+            delta,
+        });
+    }
+}
+
+/// Byte span of a template body declaration (the enum's variants each carry
+/// their own span).
+fn body_decl_span(d: &TemplateBodyDecl) -> Span {
+    match d {
+        TemplateBodyDecl::Signatory { span, .. }
+        | TemplateBodyDecl::Observer { span, .. }
+        | TemplateBodyDecl::Ensure { span, .. }
+        | TemplateBodyDecl::Key { span, .. }
+        | TemplateBodyDecl::Maintainer { span, .. }
+        | TemplateBodyDecl::Other { span, .. } => *span,
+        TemplateBodyDecl::Choice(c) => c.span,
+        TemplateBodyDecl::InterfaceInstance(i) => i.span,
+    }
+}
+
+/// Structured `template` body reindent: the `with`/`where` keyword lines to
+/// `template_indent + 2` and the field / signatory-choice-decl blocks to
+/// `template_indent + 4`. Unlike a single uniform shift, the two DIFFERENT
+/// deltas turn a 4-space ladder into the canonical 2-space one; choice bodies
+/// (and any nested do-blocks) ride the decl-block shift and are then
+/// canonicalized by the do-pass. `same_tokens` gates the whole candidate.
+fn template_edits(src: &str, module: &Module) -> Vec<Edit> {
+    let line_starts = line_start_table(src);
+    let comments = comment_spans(src);
+    let mut edits = Vec::new();
+    for d in &module.decls {
+        let Decl::Template(t) = d else { continue };
+        let head_line = line_of(&line_starts, t.span.start);
+        if leading_has_tab(src, line_starts[head_line]) {
+            continue;
+        }
+        let head_indent = indent_of(src, &line_starts, head_line);
+        let kw_target = head_indent + INDENT;
+        let body_target = head_indent + 2 * INDENT;
+
+        // with-block: the `with` keyword line + the field block.
+        if let (Some(f0), Some(fl)) = (t.fields.first(), t.fields.last()) {
+            if let Some(w) = find_keyword(src, t.span.start, f0.span.start, "with", &comments) {
+                let wl = line_of(&line_starts, w);
+                if wl > head_line {
+                    push_line_edit(&mut edits, &line_starts, src, wl, kw_target);
+                }
+            }
+            push_block_edit(
+                &mut edits,
+                &line_starts,
+                src,
+                f0.span.start,
+                fl.span.end,
+                body_target,
+                head_line,
+            );
+        }
+
+        // where-block: the `where` keyword line + the body-decl block.
+        if let (Some(b0), Some(bl)) = (t.body.first(), t.body.last()) {
+            let b0_start = body_decl_span(b0).start;
+            let bl_end = body_decl_span(bl).end;
+            let where_from = t.fields.last().map(|f| f.span.end).unwrap_or(t.span.start);
+            if let Some(wh) = find_keyword(src, where_from, b0_start, "where", &comments) {
+                let whl = line_of(&line_starts, wh);
+                if whl > head_line {
+                    push_line_edit(&mut edits, &line_starts, src, whl, kw_target);
+                }
+            }
+            push_block_edit(
+                &mut edits,
+                &line_starts,
+                src,
+                b0_start,
+                bl_end,
+                body_target,
+                head_line,
+            );
+        }
+    }
+    edits
+}
+
+fn reindent_templates(src: &str, module: &Module) -> String {
+    let edits = template_edits(src, module);
+    if edits.is_empty() {
+        return src.to_string();
+    }
+    apply_shifts(src, &edits)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1143,6 +1293,37 @@ mod tests {
     fn inline_con_with_is_untouched() {
         let src = "f = Asset with issuer = a; owner = b\n";
         assert_eq!(format_ast(src), src);
+    }
+
+    #[test]
+    fn template_four_space_ladder_canonicalized_to_two() {
+        // The case the uniform shift could NOT fix: a 4-space ladder. The
+        // structured reindent uses different deltas for keywords (-> +2) and
+        // fields/decls (-> +4), so it becomes the canonical 2-space ladder, and
+        // the choice's internal 2-space ladder rides the decl-block shift.
+        let src = "template Coin\n    with\n        issuer : Party\n    where\n        signatory issuer\n        choice Burn : ()\n          controller issuer\n          do pure ()\n";
+        let out = format_ast(src);
+        let want = "template Coin\n  with\n    issuer: Party\n  where\n    signatory issuer\n    choice Burn: ()\n      controller issuer\n      do pure ()\n";
+        assert_eq!(out, want);
+        assert_eq!(format_ast(&out), out); // idempotent
+    }
+
+    #[test]
+    fn canonical_template_is_a_fixpoint() {
+        let src = "template Coin\n  with\n    issuer: Party\n  where\n    signatory issuer\n";
+        assert_eq!(format_ast(src), src);
+    }
+
+    #[test]
+    fn under_indented_template_body_canonicalized() {
+        // where-decls at the `where` column (2) move to template_indent + 4 = 4.
+        let src = "template Coin\n  with\n    issuer: Party\n  where\n  signatory issuer\n";
+        let out = format_ast(src);
+        assert_eq!(
+            out,
+            "template Coin\n  with\n    issuer: Party\n  where\n    signatory issuer\n"
+        );
+        assert_eq!(format_ast(&out), out); // idempotent
     }
 
     #[test]

@@ -20,20 +20,20 @@ exception MyException
         message m
 
 template Test
-    with
-        p: Party
-    where
-        signatory p
-        choice Call: ()
-            controller p
-            do
-                x <-
-                    try do
-                        throw (MyException "ok")
-                        pure "err"
-                    catch
-                        MyException m -> pure m
-                x === "ok"
+  with
+    p: Party
+  where
+    signatory p
+    choice Call: ()
+        controller p
+        do
+            x <-
+                try do
+                    throw (MyException "ok")
+                    pure "err"
+                catch
+                    MyException m -> pure m
+            x === "ok"
 
 tryCatchExample = script do
   p <- allocateParty "Alice"

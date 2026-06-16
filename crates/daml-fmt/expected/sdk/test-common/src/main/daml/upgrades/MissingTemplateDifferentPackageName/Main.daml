@@ -6,7 +6,7 @@ module Main where
 template T with
     p: Party
   where
-  signatory p
+    signatory p
 
 -- Remove U when compared with v1 of MissingTemplate
 -- But this is in a different package-name so no error expected

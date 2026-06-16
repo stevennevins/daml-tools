@@ -10,7 +10,7 @@ import DA.Assert
 template Foo with
     p: Party
   where
-  signatory p
+    signatory p
 
 main = script do
   alice <- allocateParty "Alice"

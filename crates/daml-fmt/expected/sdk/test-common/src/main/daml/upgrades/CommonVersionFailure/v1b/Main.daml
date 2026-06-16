@@ -13,8 +13,8 @@ data TKey1b = TKey1b { p : Party }
 template T with
     p: Party
   where
-  signatory p
-  key (TKey1b p) : TKey1b
-  maintainer key.p
+    signatory p
+    key (TKey1b p) : TKey1b
+    maintainer key.p
 
 data D = D { t : Text }

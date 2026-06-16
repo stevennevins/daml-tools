@@ -15,8 +15,8 @@ template T with
     new1: Optional Int
     new2: Optional Int
   where
-  signatory p
-  key (TKey p) : TKey
-  maintainer key.p
+    signatory p
+    key (TKey p) : TKey
+    maintainer key.p
 
 data D = D { t : Text }

@@ -10,12 +10,12 @@ import DA.Assert
 template Self with
     p: Party
   where
-  signatory p
+    signatory p
 
-  choice Same: ()
-    with other: ContractId Self
-    controller p
-    do self === other
+    choice Same: ()
+      with other: ContractId Self
+      controller p
+      do self === other
 
 main = script do
   alice <- allocateParty "Alice"

@@ -5,8 +5,8 @@
 module Tests.Template2 where
 
 template TestTemplate
-    with
-        owner: Party
-        pair: (Int, Int)
-    where
-        signatory owner
+  with
+    owner: Party
+    pair: (Int, Int)
+  where
+    signatory owner

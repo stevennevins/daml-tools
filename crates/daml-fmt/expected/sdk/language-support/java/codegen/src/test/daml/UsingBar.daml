@@ -7,9 +7,9 @@ import Bar
 import AnotherBar
 
 template UsingBar
-    with
-        cid: ContractId Bar
-        another: ContractId AnotherBar
-        owner: Party
-    where
-        signatory owner
+  with
+    cid: ContractId Bar
+    another: ContractId AnotherBar
+    owner: Party
+  where
+    signatory owner

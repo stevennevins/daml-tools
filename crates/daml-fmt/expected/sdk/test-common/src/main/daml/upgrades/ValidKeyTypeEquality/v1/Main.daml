@@ -12,6 +12,6 @@ data NonUniform a = Nil | NonUniform (TKey (a, a))
 template T with
     p: Party
   where
-  signatory p
-  key (TKey p Nil) : TKey Int
-  maintainer key.p
+    signatory p
+    key (TKey p Nil) : TKey Int
+    maintainer key.p

@@ -4,7 +4,7 @@
 module AnotherBar where
 
 template AnotherBar
-    with
-        owner: Party
-    where
-        signatory owner
+  with
+    owner: Party
+  where
+    signatory owner

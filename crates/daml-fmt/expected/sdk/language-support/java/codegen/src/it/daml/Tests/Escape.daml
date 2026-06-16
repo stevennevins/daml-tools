@@ -44,16 +44,16 @@ data FieldVsPackage = FieldVsPackage
 -- * java reserved names as field names
 -- * java reserved names as choice field names
 template EscapeTemplates
-    with
-        int: Int
-        owner: Party
-        r: EscapeRecords () () ()
-        v: EscapeVariants () ()
-        p: FieldVsPackage
-    where
-        signatory owner
+  with
+    int: Int
+    owner: Party
+    r: EscapeRecords () () ()
+    v: EscapeVariants () ()
+    p: FieldVsPackage
+  where
+    signatory owner
 
-        choice Void: ()
-            with switch: ()
-            controller owner
-            do return ()
+    choice Void: ()
+        with switch: ()
+        controller owner
+        do return ()

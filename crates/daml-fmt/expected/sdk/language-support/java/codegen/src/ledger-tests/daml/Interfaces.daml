@@ -20,7 +20,7 @@ interface TIf where
       dup this
 
 template Child
-    with
+  with
     party: Party
   where
     signatory party
@@ -38,7 +38,7 @@ template Child
       dup = toInterfaceContractId <$> create this
 
 template ChildClone
-    with
+  with
     party: Party
   where
     signatory party

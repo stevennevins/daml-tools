@@ -21,11 +21,11 @@ data MapItemMapRecord = MapItemMapRecord
   deriving (Eq, Show)
 
 template TemplateWithMap
-    with
-        owner: Party
-        valueMap: TextMap Int
-    where
-        signatory owner
+  with
+    owner: Party
+    valueMap: TextMap Int
+  where
+    signatory owner
 
 data MapVariant x = IntVariant (TextMap Int) |
                     TextVariant (TextMap Text) |
@@ -36,11 +36,11 @@ data MapVariant x = IntVariant (TextMap Int) |
 -- Not part of the test but the codegen filters out
 -- data definitions which are not used in a template
 template TextMapTestTemplate
-    with
-        owner: Party
-        mapRecord: MapRecord
-        mapItem: MapItem Int
-        mapItemRecord: MapItemMapRecord
-        mapVariant: MapVariant Int
-    where
-        signatory owner
+  with
+    owner: Party
+    mapRecord: MapRecord
+    mapItem: MapItem Int
+    mapItemRecord: MapItemMapRecord
+    mapVariant: MapVariant Int
+  where
+    signatory owner

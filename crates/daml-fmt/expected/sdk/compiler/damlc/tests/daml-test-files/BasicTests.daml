@@ -152,15 +152,15 @@ template SimpleMultiParty
 
 
 template Composite
-   with p1: Party
-   where
-     signatory p1
+  with p1: Party
+  where
+    signatory p1
 
-     choice First: Text
-       controller p1
-       do cid <- create Simple with p = p1
-          cid2 <- exercise cid Hello
-          pure "hello"
+    choice First: Text
+      controller p1
+      do cid <- create Simple with p = p1
+         cid2 <- exercise cid Hello
+         pure "hello"
 
 
 ccreate: Party -> Commands (ContractId Simple)

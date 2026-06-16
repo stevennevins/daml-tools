@@ -13,20 +13,20 @@ data MySimpleTemplateKey =
       party: Party
 
 template MySimpleTemplate
-    with
-        owner: Party
-    where
-        signatory owner
+  with
+    owner: Party
+  where
+    signatory owner
 
-        key MySimpleTemplateKey owner: MySimpleTemplateKey
-        maintainer key.party
+    key MySimpleTemplateKey owner: MySimpleTemplateKey
+    maintainer key.party
 -- END_SIMPLE_TEMPLATE
 
-        choice MyChoice
-            : ()
-            with parameter: Int
-            controller owner
-            do return ()
+    choice MyChoice
+        : ()
+        with parameter: Int
+        controller owner
+        do return ()
 
 emptyTemplateTest = script do
   alice <- allocateParty "Alice"

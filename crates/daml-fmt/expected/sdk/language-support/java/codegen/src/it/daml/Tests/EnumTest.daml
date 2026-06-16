@@ -13,9 +13,9 @@ data ALLUPPERCASE = AllUpperCase | NotAllUpperCase deriving (Eq, Show, Enum)
 -- Not part of the test but the codegen filters out
 -- data definitions which are not used in a template
 template FooBarTemplate
-    with
-        owner: Party
-        foobarItem: FooBar
-        uppercaseItem: ALLUPPERCASE
-    where
-        signatory owner
+  with
+    owner: Party
+    foobarItem: FooBar
+    uppercaseItem: ALLUPPERCASE
+  where
+    signatory owner

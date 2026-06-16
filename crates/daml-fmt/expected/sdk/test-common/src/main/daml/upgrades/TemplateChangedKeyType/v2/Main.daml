@@ -9,6 +9,6 @@ data TKey2 = TKey2 with p: Party
 template T with
     p: Party
   where
-  signatory p
-  key (TKey2 p) : TKey2
-  maintainer key.p
+    signatory p
+    key (TKey2 p) : TKey2
+    maintainer key.p

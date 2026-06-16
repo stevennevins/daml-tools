@@ -35,11 +35,11 @@ data ParameterizedListRecord a = ParameterizedListRecord
 -- Not part of the test but the codegen filters out
 -- data definitions which are not used in a template
 template ListTestTemplate
-    with
-        owner: Party
-        myListRecord: MyListRecord
-        myListOfListRecord: MyListOfListRecord
-        colorListRecord: ColorListRecord
-        parameterizedListRecord: ParameterizedListRecord Int
-    where
-        signatory owner
+  with
+    owner: Party
+    myListRecord: MyListRecord
+    myListOfListRecord: MyListOfListRecord
+    colorListRecord: ColorListRecord
+    parameterizedListRecord: ParameterizedListRecord Int
+  where
+    signatory owner

@@ -10,6 +10,6 @@ data TKey
 template T with
     p: Party
   where
-  signatory p
-  key (TKey1 p) : TKey
-  maintainer key.p
+    signatory p
+    key (TKey1 p) : TKey
+    maintainer key.p

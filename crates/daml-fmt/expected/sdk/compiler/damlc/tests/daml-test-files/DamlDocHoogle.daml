@@ -6,13 +6,13 @@ module DamlDocHoogle where
 template T with
     p: Party
   where
-  signatory p
-  choice TCall: ()
+    signatory p
+    choice TCall: ()
     -- ^ TCall docs
-    with
-      i: Int
-    controller p
-    do pure ()
+      with
+        i: Int
+      controller p
+      do pure ()
 
 -- | View docs
 data View = View {}

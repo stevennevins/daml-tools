@@ -79,41 +79,41 @@ class Class4 t where
     member4': t
 
 template Template0
-    with
-        tfield0: Party
-        tfield0': Party
-    where
-        signatory tfield0
-        choice Choice0: ()
-          controller tfield0
-          do pure ()
+  with
+    tfield0: Party
+    tfield0': Party
+  where
+    signatory tfield0
+    choice Choice0: ()
+      controller tfield0
+      do pure ()
 
 template Template1
-    with
-        tfield1: Party
-        tfield1': Party
-    where
-        signatory tfield1
-        choice Choice1: ()
-          controller tfield1
-          do pure ()
+  with
+    tfield1: Party
+    tfield1': Party
+  where
+    signatory tfield1
+    choice Choice1: ()
+      controller tfield1
+      do pure ()
 
 template Template2
-    with
-        tfield2: Party
-        tfield2': Party
-    where
-        signatory tfield2
-        choice Choice2: ()
-          controller tfield2
-          do pure ()
+  with
+    tfield2: Party
+    tfield2': Party
+  where
+    signatory tfield2
+    choice Choice2: ()
+      controller tfield2
+      do pure ()
 
 template Template3
-    with
-        tfield3: Party
-        tfield3': Party
-    where
-        signatory tfield3
-        choice Choice3: ()
-          controller tfield3
-          do pure ()
+  with
+    tfield3: Party
+    tfield3': Party
+  where
+    signatory tfield3
+    choice Choice3: ()
+      controller tfield3
+      do pure ()

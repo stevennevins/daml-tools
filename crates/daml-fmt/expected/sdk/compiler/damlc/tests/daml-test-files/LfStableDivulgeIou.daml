@@ -26,39 +26,39 @@ data Amount = Amount {value: Decimal; currency: Text} deriving (Eq, Show)
 amountAsText (amount : Amount) : Text = show amount.value <> amount.currency
 
 template GetCash
- with
-   payer: Party
-   owner: Party
-   amount: Amount
- where
-   signatory payer, owner
+  with
+    payer: Party
+    owner: Party
+    amount: Amount
+  where
+    signatory payer, owner
 
 template Iou
 
- with
-   payer: Party
-   owner: Party
-   amount: Amount
- where
-   signatory payer
-   observer owner
-   choice Call: ContractId GetCash
-     controller owner
-     do create GetCash with payer; owner; amount
+  with
+    payer: Party
+    owner: Party
+    amount: Amount
+  where
+    signatory payer
+    observer owner
+    choice Call: ContractId GetCash
+      controller owner
+      do create GetCash with payer; owner; amount
 
-   choice Transfer: ContractId Iou with newOwner: Party
-     controller owner
-     do create Iou with payer; owner = newOwner; amount
+    choice Transfer: ContractId Iou with newOwner: Party
+      controller owner
+      do create Iou with payer; owner = newOwner; amount
 
 template DivulgeIouByExercise
- with
-   payer: Party
-   divulgee: Party
- where
-   signatory divulgee
-   observer payer
-   nonconsuming choice Divulge: ()
-     with ref: ContractId Iou
-     controller payer
-     do iou <- fetch ref
-        pure ()
+  with
+    payer: Party
+    divulgee: Party
+  where
+    signatory divulgee
+    observer payer
+    nonconsuming choice Divulge: ()
+      with ref: ContractId Iou
+      controller payer
+      do iou <- fetch ref
+         pure ()

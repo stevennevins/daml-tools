@@ -20,7 +20,7 @@ interface TIf where
       dup this
 
 template Child
-    with
+  with
     party: Party
   where
     signatory party

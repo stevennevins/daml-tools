@@ -4,4 +4,4 @@
 module PkgManagerTest where
 
 template S with p: Party where
-  signatory p
+    signatory p

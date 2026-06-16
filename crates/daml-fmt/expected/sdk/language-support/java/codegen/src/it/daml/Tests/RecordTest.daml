@@ -45,10 +45,10 @@ data NestedVariant = Nested Int
   deriving (Eq, Show)
 
 template Foo
-    with
-        owner: Party
-    where
-        signatory owner
+  with
+    owner: Party
+  where
+    signatory owner
 
 data ParametrizedContractId a = ParametrizedContractId
     with
@@ -71,14 +71,14 @@ data Const t a
 -- Not part of the test but the codegen filters out
 -- data definitions which are not used in a template
 template RecordTestTemplate
-    with
-        owner: Party
-        myRecord: MyRecord
-        parametricRecord: ParametricRecord Int Int
-        outerRecord: OuterRecord Int Int
-        nestedRecord: NestedRecord
-        parametrizedContractId: ParametrizedContractId Int
-        fixedContractId: FixedContractId
-        usesNumType: UsesNumType Int Int
-    where
-        signatory owner
+  with
+    owner: Party
+    myRecord: MyRecord
+    parametricRecord: ParametricRecord Int Int
+    outerRecord: OuterRecord Int Int
+    nestedRecord: NestedRecord
+    parametrizedContractId: ParametrizedContractId Int
+    fixedContractId: FixedContractId
+    usesNumType: UsesNumType Int Int
+  where
+    signatory owner

@@ -32,12 +32,12 @@ data OptionalVariant x = OptionalParametricVariant (Optional x)
 -- Not part of the test but the codegen filters out
 -- data definitions which are not used in a template
 template OptionalTestTemplate
-    with
-        owner: Party
-        myOptionalRecord: MyOptionalRecord
-        nestedOptionalRecord: NestedOptionalRecord
-        myOptionalListRecord: MyOptionalListRecord
-        myListOfOptionalsRecord: MyListOfOptionalsRecord
-        optionalVariant: OptionalVariant Int
-    where
-        signatory owner
+  with
+    owner: Party
+    myOptionalRecord: MyOptionalRecord
+    nestedOptionalRecord: NestedOptionalRecord
+    myOptionalListRecord: MyOptionalListRecord
+    myListOfOptionalsRecord: MyListOfOptionalsRecord
+    optionalVariant: OptionalVariant Int
+  where
+    signatory owner

@@ -16,11 +16,11 @@ data MapMapRecord = MapMapRecord
   deriving (Eq, Show)
 
 template TemplateWithMap
-    with
-        owner: Party
-        valueMap: Map Int Text
-    where
-        signatory owner
+  with
+    owner: Party
+    valueMap: Map Int Text
+  where
+    signatory owner
 
 data MapVariant x y = IntVariant (Map Int Int) |
                       TextVariant (Map Text Text) |
@@ -31,10 +31,10 @@ data MapVariant x y = IntVariant (Map Int Int) |
 -- Not part of the test but the codegen filters out
 -- data definitions which are not used in a template
 template GenMapTestTemplate
-    with
-        owner: Party
-        mapRecord: MapRecord
-        mapMapRecord: MapMapRecord
-        mapVariant: MapVariant Int Text
-    where
-        signatory owner
+  with
+    owner: Party
+    mapRecord: MapRecord
+    mapMapRecord: MapMapRecord
+    mapVariant: MapVariant Int Text
+  where
+    signatory owner

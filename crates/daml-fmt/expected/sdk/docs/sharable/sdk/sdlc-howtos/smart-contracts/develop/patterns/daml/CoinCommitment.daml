@@ -16,7 +16,7 @@ template CoinCommitment
     owner: Party
     issuer: Party
     amount: Decimal
-   where
+  where
     signatory issuer
     observer owner
 -- END_COIN_COMMITMENT_TEMPLATE_DATATYPE

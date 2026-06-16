@@ -175,7 +175,7 @@ template Agreement
       do exercise cid TriProposalAccept
 
 template DummyContractFactory
- with
+  with
     operator: Party
   where
     signatory operator
@@ -250,12 +250,12 @@ template WithObservers
     giver: Party
     observers: [Party]
   where
-  signatory giver
-  observer observers
+    signatory giver
+    observer observers
 
-  choice Ping: ()
-    controller giver
-    do return ()
+    choice Ping: ()
+      controller giver
+      do return ()
 
 template BranchingSignatories
   with
@@ -263,7 +263,7 @@ template BranchingSignatories
     signTrue: Party
     signFalse: Party
   where
-  signatory (if whichSign then signTrue else signFalse)
+    signatory (if whichSign then signTrue else signFalse)
 
 ctrl: BranchingControllers -> Party
 ctrl BranchingControllers { whichCtrl, ctrlTrue, ctrlFalse } =
@@ -276,12 +276,12 @@ template BranchingControllers
     ctrlTrue: Party
     ctrlFalse: Party
   where
-  signatory giver
-  observer ctrl this
+    signatory giver
+    observer ctrl this
 
-  choice Delete: ()
-    controller ctrl this
-    do return ()
+    choice Delete: ()
+      controller ctrl this
+      do return ()
 
 
 template PayOut
