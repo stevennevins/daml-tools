@@ -46,10 +46,12 @@ cargo test  --workspace
 ## Commit messages
 
 This repo uses Conventional Commits so release-plz can derive changelogs and
-version bumps. Enable the versioned commit hook in new checkouts with:
+version bumps. Enable the versioned commit hook in new checkouts with
+`pre-commit`:
 
 ```sh
-git config core.hooksPath .githooks
+uv tool install pre-commit
+pre-commit install --install-hooks --hook-type commit-msg
 ```
 
 The parser/layout integration tests use a vendored
