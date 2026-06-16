@@ -784,4 +784,171 @@ function check(m) {
         assert!(load_script(Path::new("examples/function-ledger-actions.js")).is_ok());
         assert!(load_script(Path::new("examples/choice-param-shadows-field.js")).is_ok());
     }
+
+    // Regression (audit finding 19): the shipped unguarded-division-ast example
+    // rule must flag `100.0 / n` when the only `assert (n /= 0.0)` lives inside
+    // an `if` branch — when the branch is not taken the assert never runs, so
+    // `n` can be 0. The branch-lifted assert must not count as a prior guard.
+    #[test]
+    fn test_example_unguarded_division_flags_conditional_assert() {
+        let det = load_script(Path::new("examples/unguarded-division-ast.js")).unwrap();
+        let source = r#"module CondFn where
+
+template T
+  with
+    p : Party
+  where
+    signatory p
+
+    choice Risky : Decimal
+      with
+        n : Decimal
+        b : Bool
+      controller p
+      do
+        if b then assert (n /= 0.0) else pure ()
+        pure (100.0 / n)
+"#;
+        let module = parse_daml(source, Path::new("CondFn.daml"));
+        let findings = det.detect(&module);
+        assert_eq!(
+            findings.len(),
+            1,
+            "conditional assert should not suppress the division"
+        );
+        assert!(findings[0].message.contains("'n'"));
+    }
+
+    // Counter-case for finding 19: an unconditional do-block assert still
+    // suppresses (no false positive introduced by the fix).
+    #[test]
+    fn test_example_unguarded_division_respects_unconditional_assert() {
+        let det = load_script(Path::new("examples/unguarded-division-ast.js")).unwrap();
+        let source = r#"module Safe where
+
+template T
+  with
+    p : Party
+  where
+    signatory p
+
+    choice OK : Decimal
+      with
+        n : Decimal
+      controller p
+      do
+        assert (n /= 0.0)
+        pure (100.0 / n)
+"#;
+        let module = parse_daml(source, Path::new("Safe.daml"));
+        assert!(det.detect(&module).is_empty());
+    }
+
+    // Regression (audit finding 20): a consuming choice controlled by an
+    // ordinary party field whose NAME merely starts with "signatory" (e.g.
+    // `signatoryParty`) is NOT signatory-controlled — the loose startsWith
+    // substring match gave a false all-clear. It must flag.
+    #[test]
+    fn test_example_signatory_controller_flags_lookalike_field() {
+        let det = load_script(Path::new(
+            "examples/consuming-choice-signatory-controller.js",
+        ))
+        .unwrap();
+        let source = r#"module SigFP where
+
+template Bar
+  with
+    issuer : Party
+    signatoryParty : Party
+  where
+    signatory issuer
+
+    choice Grab : ContractId Bar
+      controller signatoryParty
+      do
+        create this with issuer = issuer
+"#;
+        let module = parse_daml(source, Path::new("SigFP.daml"));
+        let findings = det.detect(&module);
+        assert_eq!(findings.len(), 1, "signatoryParty is not a signatory");
+        assert!(findings[0].message.contains("Grab"));
+    }
+
+    // Counter-case for finding 20: the legitimate flexible-controller forms
+    // `controller signatory this` and `controller signatory this, obs` (both
+    // serialize the keyword as exactly "signatory this") still suppress.
+    #[test]
+    fn test_example_signatory_controller_allows_signatory_this() {
+        let det = load_script(Path::new(
+            "examples/consuming-choice-signatory-controller.js",
+        ))
+        .unwrap();
+        let source = r#"module SigOk where
+
+template Baz
+  with
+    issuer : Party
+    obs : Party
+  where
+    signatory issuer
+
+    choice GrabA : ContractId Baz
+      controller signatory this
+      do
+        create this with issuer = issuer
+
+    choice GrabB : ContractId Baz
+      controller signatory this, obs
+      do
+        create this with issuer = issuer
+"#;
+        let module = parse_daml(source, Path::new("SigOk.daml"));
+        assert!(det.detect(&module).is_empty());
+    }
+
+    // Regression (audit finding 27): `trace` inside a `{- ... -}` block comment
+    // is not executable code and must not be flagged.
+    #[test]
+    fn test_example_no_trace_ignores_block_comment() {
+        let det = load_script(Path::new("examples/no-trace.js")).unwrap();
+        let source = r#"module BlockComment where
+
+{- This module used to call trace for debugging.
+   We removed it. -}
+foo : Int
+foo = 1
+"#;
+        let module = parse_daml(source, Path::new("BlockComment.daml"));
+        assert!(det.detect(&module).is_empty());
+    }
+
+    // Regression (audit finding 28): `trace` as a word inside a Text literal is
+    // not a Debug.trace call and must not be flagged.
+    #[test]
+    fn test_example_no_trace_ignores_string_literal() {
+        let det = load_script(Path::new("examples/no-trace.js")).unwrap();
+        let source = r#"module Trace2 where
+
+msg : Text
+msg = "please trace this transaction"
+"#;
+        let module = parse_daml(source, Path::new("Trace2.daml"));
+        assert!(det.detect(&module).is_empty());
+    }
+
+    // Counter-case for findings 27/28: a real `trace` call is still flagged, so
+    // the comment/string stripping did not blind the rule.
+    #[test]
+    fn test_example_no_trace_still_flags_real_call() {
+        let det = load_script(Path::new("examples/no-trace.js")).unwrap();
+        let source = r#"module RealTrace where
+
+foo : Int -> Int
+foo x = trace "dbg" (x + 1)
+"#;
+        let module = parse_daml(source, Path::new("RealTrace.daml"));
+        let findings = det.detect(&module);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].line, 4);
+    }
 }

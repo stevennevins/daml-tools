@@ -10,75 +10,39 @@ use crate::ir::{DamlModule, Statement};
 /// Catches: H3 (archive-before-execute in CloseVoteRequest)
 pub struct ArchiveBeforeExecute;
 
+/// One archive that consumes a contract: where it is, what spelled it, and the
+/// contract id text (for the message).
+struct Archived {
+    line: usize,
+    kind: &'static str,
+    cid: String,
+}
+
 impl ArchiveBeforeExecute {
-    fn check_statements(
-        &self,
-        statements: &[Statement],
-        body_raw: &str,
-        file: &std::path::Path,
-        base_line: usize,
-        _choice_name: &str,
-    ) -> Vec<Finding> {
+    /// Walk a statement scope IN ORDER. Every archive seen before a `try/catch`
+    /// at this level is reported (each consumes a contract). Archives inside an
+    /// EARLIER try/catch live in that block's body, not this scope, so a later
+    /// sibling `try` cannot wrongly flag them. Each try/catch body is then
+    /// scanned as its own scope.
+    fn check_statements(&self, statements: &[Statement], file: &std::path::Path) -> Vec<Finding> {
         let mut findings = Vec::new();
-        // Archives seen since the last try, as (line, evidence). Every one of
-        // them is reported when a try is hit — multiple archives before one try
-        // each consume a contract.
-        let mut pending: Vec<(usize, String)> = Vec::new();
+        let mut pending: Vec<Archived> = Vec::new();
 
-        let lines: Vec<&str> = body_raw.lines().collect();
-
-        // Track line positions for archive and try statements
-        for (line_idx, line) in lines.iter().enumerate() {
-            let raw_trimmed = line.trim();
-            // Strip line comments so a comment mentioning fetchAndArchive cannot
-            // masquerade as a real archive statement.
-            let trimmed = match raw_trimmed.find("--") {
-                Some(0) => continue,
-                Some(idx) => raw_trimmed[..idx].trim_end(),
-                None => raw_trimmed,
-            };
-
-            if trimmed.contains("fetchAndArchive") || trimmed.starts_with("archive ") {
-                pending.push((base_line + line_idx, trimmed.to_string()));
-            }
-
-            if !pending.is_empty() && (trimmed.starts_with("try") || trimmed == "try") {
-                let try_line = base_line + line_idx;
-                for (archive_line, evidence) in pending.drain(..) {
-                    findings.push(Finding {
-                        detector: self.name().to_string(),
-                        severity: self.severity(),
-                        file: file.to_path_buf(),
-                        line: archive_line,
-                        column: 1,
-                        message: format!(
-                            "Contract archived via '{}' at line {} before try/catch block at line {}. \
-                             If execution fails, the archived contract is permanently consumed.",
-                            if evidence.contains("fetchAndArchive") {
-                                "fetchAndArchive"
-                            } else {
-                                "archive"
-                            },
-                            archive_line,
-                            try_line,
-                        ),
-                        evidence: format!("{}\n  ...\n  try do ...", evidence),
-                    });
-                }
-            }
-        }
-
-        // Structured fallback: the raw line scan only matches an archive at the
-        // start of a line, so a multiline `archive\n  cid` slips past it. The
-        // parser still produces Statement::Archive, so catch the archive-then-try
-        // pattern here too — deduped by line against the raw-scan findings so the
-        // common case is not double-reported.
-        let reported: std::collections::HashSet<usize> = findings.iter().map(|f| f.line).collect();
-        let mut last_archive: Option<(usize, String)> = None;
-        for stmt in statements {
+        for (i, stmt) in statements.iter().enumerate() {
             match stmt {
                 Statement::Archive { span, cid_expr, .. } => {
-                    last_archive = Some((span.line, cid_expr.clone()));
+                    // `fetchAndArchive` lowers to an Archive immediately followed
+                    // by a Fetch of the same cid; recognize it for the message.
+                    let kind = if is_fetch_and_archive(statements, i) {
+                        "fetchAndArchive"
+                    } else {
+                        "archive"
+                    };
+                    pending.push(Archived {
+                        line: span.line,
+                        kind,
+                        cid: cid_expr.clone(),
+                    });
                 }
                 // `exercise cid Archive` (the built-in Archive choice) also
                 // consumes the contract — the canonical H3 pattern.
@@ -88,27 +52,33 @@ impl ArchiveBeforeExecute {
                     choice_name,
                     ..
                 } if choice_name == "Archive" || choice_name.ends_with(".Archive") => {
-                    last_archive = Some((span.line, cid_expr.clone()));
+                    pending.push(Archived {
+                        line: span.line,
+                        kind: "archive",
+                        cid: cid_expr.clone(),
+                    });
                 }
-                Statement::TryCatch { span, .. } => {
-                    if let Some((archive_line, cid)) = last_archive.take() {
-                        if !reported.contains(&archive_line) {
-                            findings.push(Finding {
-                                detector: self.name().to_string(),
-                                severity: self.severity(),
-                                file: file.to_path_buf(),
-                                line: archive_line,
-                                column: 1,
-                                message: format!(
-                                    "Contract archived via 'archive {}' at line {} before try/catch block at line {}. \
-                                     If execution fails, the archived contract is permanently consumed.",
-                                    cid.trim(),
-                                    archive_line,
-                                    span.line,
-                                ),
-                                evidence: format!("archive {}\n  ...\n  try do ...", cid.trim()),
-                            });
-                        }
+                Statement::TryCatch {
+                    span,
+                    try_body,
+                    catch_body,
+                    ..
+                } => {
+                    for a in pending.drain(..) {
+                        findings.push(self.finding(file, &a, span.line));
+                    }
+                    // Each branch is its own scope (catches nested archive-then-try).
+                    findings.extend(self.check_statements(try_body, file));
+                    findings.extend(self.check_statements(catch_body, file));
+                }
+                // An `if`/`case` runs exactly ONE arm, so an archive in one arm and
+                // a `try` in another are mutually exclusive — never paired. Scan
+                // each arm as its own independent scope. Parent `pending` archives
+                // are left untouched: they still precede any LATER top-level try,
+                // but they do not reach into (or escape from) these arms.
+                Statement::Branch { arms, .. } => {
+                    for arm in arms {
+                        findings.extend(self.check_statements(&arm.body, file));
                     }
                 }
                 _ => {}
@@ -117,6 +87,36 @@ impl ArchiveBeforeExecute {
 
         findings
     }
+
+    fn finding(&self, file: &std::path::Path, a: &Archived, try_line: usize) -> Finding {
+        Finding {
+            detector: self.name().to_string(),
+            severity: self.severity(),
+            file: file.to_path_buf(),
+            line: a.line,
+            column: 1,
+            message: format!(
+                "Contract archived via '{}' at line {} before try/catch block at line {}. \
+                 If execution fails, the archived contract is permanently consumed.",
+                a.kind, a.line, try_line,
+            ),
+            evidence: format!("{} {}\n  ...\n  try do ...", a.kind, a.cid.trim()),
+        }
+    }
+}
+
+/// True if `statements[i]` is the Archive half of a `fetchAndArchive` — the
+/// parser lowers that to an Archive directly followed by a Fetch of the same
+/// contract at the same source line.
+fn is_fetch_and_archive(statements: &[Statement], i: usize) -> bool {
+    let Statement::Archive { span, cid_expr, .. } = &statements[i] else {
+        return false;
+    };
+    matches!(
+        statements.get(i + 1),
+        Some(Statement::Fetch { span: fspan, cid_expr: fcid, .. })
+            if fspan.line == span.line && fcid == cid_expr
+    )
 }
 
 impl Detector for ArchiveBeforeExecute {
@@ -137,13 +137,7 @@ impl Detector for ArchiveBeforeExecute {
 
         for template in &module.templates {
             for choice in &template.choices {
-                findings.extend(self.check_statements(
-                    &choice.body,
-                    &choice.body_raw,
-                    &module.file,
-                    choice.span.line,
-                    &choice.name,
-                ));
+                findings.extend(self.check_statements(&choice.body, &module.file));
             }
         }
 
@@ -340,6 +334,350 @@ template VoteManager
         assert!(
             !findings.is_empty(),
             "exercise Archive before try must be flagged"
+        );
+    }
+
+    // Regression (audit round-3): an identifier that merely STARTS with "try"
+    // (`tryAgain`) is not a try/catch block and must not flag a prior archive.
+    #[test]
+    fn test_identifier_starting_with_try_is_not_a_try_block() {
+        let source = r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      with
+        cid : ContractId Foo
+      controller admin
+      do
+        archive cid
+        tryAgain admin
+        pure ()
+"#;
+        let module = parse_daml(source, Path::new("TryName.daml"));
+        let findings = ArchiveBeforeExecute.detect(&module);
+        assert!(
+            findings.is_empty(),
+            "`tryAgain` is not a try/catch block: {:?}",
+            findings
+        );
+    }
+
+    // Regression (audit round-3): an archive nested inside an EARLIER try/catch
+    // is not flagged by a LATER, separate try block.
+    #[test]
+    fn test_archive_inside_earlier_try_not_flagged_by_later_try() {
+        let source = r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      with
+        cid : ContractId Foo
+      controller admin
+      do
+        try do
+          archive cid
+        catch
+          e -> pure ()
+        try do
+          executeAction admin
+        catch
+          e -> pure ()
+"#;
+        let module = parse_daml(source, Path::new("Scoped.daml"));
+        let findings = ArchiveBeforeExecute.detect(&module);
+        assert!(
+            findings.is_empty(),
+            "archive inside the first try is not 'before' the second try: {:?}",
+            findings
+        );
+    }
+
+    // Regression (audit round-3): a fetchAndArchive inside a STRING literal is
+    // not a real archive.
+    #[test]
+    fn test_archive_in_string_literal_is_not_archive() {
+        let source = r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      controller admin
+      do
+        debug "call fetchAndArchive before retrying"
+        try do
+          executeAction admin
+        catch
+          e -> pure ()
+"#;
+        let module = parse_daml(source, Path::new("StrArch.daml"));
+        let findings = ArchiveBeforeExecute.detect(&module);
+        assert!(
+            findings.is_empty(),
+            "fetchAndArchive inside a string is not an archive: {:?}",
+            findings
+        );
+    }
+
+    // Regression (audit round-3): multiple MULTILINE archives before one try are
+    // each reported (the structured walk does not drop earlier ones).
+    #[test]
+    fn test_multiple_multiline_archives_each_reported() {
+        let source = r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      with
+        a : ContractId Foo
+        b : ContractId Foo
+      controller admin
+      do
+        archive
+          a
+        archive
+          b
+        try do
+          executeAction admin
+        catch
+          e -> pure ()
+"#;
+        let module = parse_daml(source, Path::new("MultiMulti.daml"));
+        let findings = ArchiveBeforeExecute.detect(&module);
+        assert_eq!(
+            findings.len(),
+            2,
+            "both multiline archives must be reported: {:?}",
+            findings
+        );
+    }
+
+    // Regression (findings 13/16): an archive in the THEN arm and a try in the
+    // ELSE arm are mutually exclusive — exactly one runs — so the archive can
+    // never execute before that try. No finding.
+    #[test]
+    fn test_archive_then_try_else_not_flagged() {
+        let source = r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      with
+        cid : ContractId Foo
+        useArchive : Bool
+      controller admin
+      do
+        if useArchive
+          then archive cid
+          else try do
+                 doWork admin
+               catch
+                 e -> pure ()
+"#;
+        let module = parse_daml(source, Path::new("Branch.daml"));
+        assert!(
+            ArchiveBeforeExecute.detect(&module).is_empty(),
+            "archive in then / try in else are mutually exclusive: {:?}",
+            ArchiveBeforeExecute.detect(&module)
+        );
+    }
+
+    // Regression (finding 14): the SWAPPED arms — try in then, archive in else —
+    // is the SAME mutually-exclusive situation and must be treated identically
+    // (also no finding), not order-dependently.
+    #[test]
+    fn test_try_then_archive_else_not_flagged() {
+        let source = r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      with
+        cid : ContractId Foo
+        useArchive : Bool
+      controller admin
+      do
+        if useArchive
+          then try do
+                 doWork admin
+               catch
+                 e -> pure ()
+          else archive cid
+"#;
+        let module = parse_daml(source, Path::new("Branch.daml"));
+        assert!(
+            ArchiveBeforeExecute.detect(&module).is_empty(),
+            "try in then / archive in else are mutually exclusive: {:?}",
+            ArchiveBeforeExecute.detect(&module)
+        );
+    }
+
+    // Regression (finding 13/16): an archive-before-try WITHIN a single arm still
+    // flags — the per-arm scope must catch ordered archive→try.
+    #[test]
+    fn test_archive_before_try_within_one_arm_is_flagged() {
+        let source = r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      with
+        cid : ContractId Foo
+        flag : Bool
+      controller admin
+      do
+        if flag
+          then do
+            archive cid
+            try do
+              doWork admin
+            catch
+              e -> pure ()
+          else pure ()
+"#;
+        let module = parse_daml(source, Path::new("WithinArm.daml"));
+        assert!(
+            !ArchiveBeforeExecute.detect(&module).is_empty(),
+            "an archive then try in the SAME arm must still flag"
+        );
+    }
+
+    // Regression (finding 11): a let-helper that DEFINES `archive` but is never
+    // invoked archives nothing — no finding.
+    #[test]
+    fn test_uncalled_archive_helper_not_flagged() {
+        let source = r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      with
+        cid : ContractId Foo
+      controller admin
+      do
+        let doArchive x = archive x
+        try do
+          doWork admin
+        catch
+          e -> pure ()
+"#;
+        let module = parse_daml(source, Path::new("Helper.daml"));
+        assert!(
+            ArchiveBeforeExecute.detect(&module).is_empty(),
+            "a never-invoked archive helper consumes nothing: {:?}",
+            ArchiveBeforeExecute.detect(&module)
+        );
+    }
+
+    // Regression (finding 12): an archive helper invoked INSIDE the try body runs
+    // inside the protected block — no finding.
+    #[test]
+    fn test_archive_helper_called_inside_try_not_flagged() {
+        let source = r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      with
+        cid : ContractId Foo
+      controller admin
+      do
+        let doArchive x = archive x
+        try do
+          doWork admin
+          doArchive cid
+        catch
+          e -> pure ()
+"#;
+        let module = parse_daml(source, Path::new("Helper.daml"));
+        assert!(
+            ArchiveBeforeExecute.detect(&module).is_empty(),
+            "a helper called inside the try archives inside the protected block: {:?}",
+            ArchiveBeforeExecute.detect(&module)
+        );
+    }
+
+    // Regression (finding 15): a helper invoked BEFORE the try flags at the
+    // CALL line with the real cid, not the definition line / formal param.
+    #[test]
+    fn test_archive_helper_called_before_try_flags_at_call_site() {
+        let source = r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      with
+        cid : ContractId Foo
+      controller admin
+      do
+        let doArchive x = archive x
+        doArchive cid
+        try do
+          executeAction admin
+        catch
+          e -> pure ()
+"#;
+        let module = parse_daml(source, Path::new("Helper.daml"));
+        let findings = ArchiveBeforeExecute.detect(&module);
+        assert_eq!(
+            findings.len(),
+            1,
+            "the helper call before the try archives: {findings:?}"
+        );
+        let call_line = source
+            .lines()
+            .position(|l| l.trim() == "doArchive cid")
+            .unwrap()
+            + 1;
+        assert_eq!(
+            findings[0].line, call_line,
+            "must cite the call site, not the definition line"
+        );
+        assert!(
+            findings[0].evidence.contains("cid") && !findings[0].evidence.contains(" x\n"),
+            "evidence must cite the real cid, not the formal param: {}",
+            findings[0].evidence
         );
     }
 

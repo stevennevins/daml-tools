@@ -18,6 +18,13 @@ function creates(stmts: Statement[]): boolean {
         return true;
       }
     }
+    // An if/case keeps its arms as separate scopes; a create may be in any arm.
+    if ("Branch" in stmt) {
+      const br = (stmt as { Branch: { arms: Statement[][] } }).Branch;
+      if (br.arms.some(creates)) {
+        return true;
+      }
+    }
   }
   return false;
 }

@@ -110,6 +110,10 @@ fn settlement_instruction_template() {
             pred(s)
                 || matches!(s, Statement::TryCatch { try_body, catch_body, .. }
                     if has_kind(try_body, pred) || has_kind(catch_body, pred))
+                // An `if`/`case` keeps its arms as separate scopes; the effect
+                // may live inside one of them.
+                || matches!(s, Statement::Branch { arms, .. }
+                    if arms.iter().any(|arm| has_kind(&arm.body, pred)))
         })
     }
     assert!(has_kind(&f.body, &|s| matches!(

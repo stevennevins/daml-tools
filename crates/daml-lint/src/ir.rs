@@ -142,66 +142,12 @@ impl DamlType {
     }
 
     pub fn is_unbounded(&self) -> bool {
-        self.is_text() || self.is_textmap() || self.is_list() || self.is_map()
-    }
-}
-
-fn is_ident_byte(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'_' || b == b'\''
-}
-
-/// True if `pattern` occurs in `text` with a non-identifier char (or string
-/// start) immediately before it. Use when `pattern` BEGINS with the identifier
-/// you care about, so `"count > 0"` is not matched inside `"discount > 0"`.
-pub(crate) fn contains_left_anchored(text: &str, pattern: &str) -> bool {
-    let b = text.as_bytes();
-    let mut from = 0;
-    while let Some(rel) = text[from..].find(pattern) {
-        let i = from + rel;
-        if i == 0 || !is_ident_byte(b[i - 1]) {
-            return true;
+        match self {
+            // An `Optional Text` / `Optional [a]` is still unbounded when present.
+            DamlType::Optional(inner) => inner.is_unbounded(),
+            _ => self.is_text() || self.is_textmap() || self.is_list() || self.is_map(),
         }
-        from = i + 1;
     }
-    false
-}
-
-/// True if `pattern` occurs in `text` with a non-identifier char (or string
-/// end) immediately after it. Use when `pattern` ENDS with the identifier you
-/// care about, so `"0 < amount"` is not matched inside `"0 < amountDue"`.
-pub(crate) fn contains_right_anchored(text: &str, pattern: &str) -> bool {
-    let b = text.as_bytes();
-    let mut from = 0;
-    while let Some(rel) = text[from..].find(pattern) {
-        let i = from + rel;
-        let j = i + pattern.len();
-        if j == text.len() || !is_ident_byte(b[j]) {
-            return true;
-        }
-        from = i + 1;
-    }
-    false
-}
-
-/// True if `ident` appears in `text` as a whole identifier token (bounded on
-/// both sides), so `"q"` does not match inside `"quantity"`.
-pub(crate) fn mentions_ident(text: &str, ident: &str) -> bool {
-    if ident.is_empty() {
-        return false;
-    }
-    let b = text.as_bytes();
-    let mut from = 0;
-    while let Some(rel) = text[from..].find(ident) {
-        let i = from + rel;
-        let j = i + ident.len();
-        let left = i == 0 || !is_ident_byte(b[i - 1]);
-        let right = j == text.len() || !is_ident_byte(b[j]);
-        if left && right {
-            return true;
-        }
-        from = i + 1;
-    }
-    false
 }
 
 /// Split `s` at its first top-level (not inside `()`/`[]`) space into
@@ -217,65 +163,6 @@ fn split_top_level_ws(s: &str) -> (&str, &str) {
         }
     }
     (s.trim(), "")
-}
-
-/// Blank out line comments (`-- … EOL`), block comments (`{- … -}`), and the
-/// contents of double-quoted string literals, so a substring scan doesn't match
-/// inside lexical noise (a `> 0` in a comment is not a real guard). Lengths and
-/// newlines are preserved so line indexing stays valid.
-pub(crate) fn code_only(src: &str) -> String {
-    let b = src.as_bytes();
-    let n = b.len();
-    let mut out = String::with_capacity(n);
-    let mut i = 0;
-    while i < n {
-        // line comment
-        if b[i] == b'-' && b.get(i + 1) == Some(&b'-') {
-            while i < n && b[i] != b'\n' {
-                out.push(' ');
-                i += 1;
-            }
-            continue;
-        }
-        // block comment
-        if b[i] == b'{' && b.get(i + 1) == Some(&b'-') {
-            out.push_str("  ");
-            i += 2;
-            while i < n && !(b[i] == b'-' && b.get(i + 1) == Some(&b'}')) {
-                out.push(if b[i] == b'\n' { '\n' } else { ' ' });
-                i += 1;
-            }
-            if i < n {
-                out.push_str("  ");
-                i += 2;
-            }
-            continue;
-        }
-        // string literal
-        if b[i] == b'"' {
-            out.push('"');
-            i += 1;
-            while i < n && b[i] != b'"' {
-                if b[i] == b'\\' && i + 1 < n {
-                    out.push_str("  ");
-                    i += 2;
-                    continue;
-                }
-                out.push(' ');
-                i += 1;
-            }
-            if i < n {
-                out.push('"');
-                i += 1;
-            }
-            continue;
-        }
-        // ordinary char (copy whole UTF-8 char; i is at a boundary here)
-        let ch = src[i..].chars().next().unwrap();
-        out.push(ch);
-        i += ch.len_utf8();
-    }
-    out
 }
 
 /// True if `s` has a top-level (depth-0) comma — i.e. it is a tuple body, not a
@@ -411,6 +298,553 @@ pub struct RecordField {
     pub value: Option<Expr>,
 }
 
+// ----- Expr analysis ------------------------------------------------------
+//
+// Detectors decide on the structured `Expr` tree, not on `raw_text`. Walking
+// the tree makes a whole class of lexical bugs vanish: `not (...)`, `a || b`,
+// operator direction, and `> 0` mentions hiding in comments / string literals
+// all stop mattering, because the tree carries the real meaning.
+
+impl Expr {
+    /// Flatten a top-level `&&` conjunction into its leaf conditions. Only
+    /// these are *guaranteed* to hold: anything under `||`, `not (...)`, or an
+    /// `if` is returned as one opaque leaf, so it can never masquerade as a
+    /// guarantee.
+    pub(crate) fn conjuncts(&self) -> Vec<&Expr> {
+        fn go<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
+            match e {
+                Expr::BinOp { op, lhs, rhs, .. } if op == "&&" => {
+                    go(lhs, out);
+                    go(rhs, out);
+                }
+                _ => out.push(e),
+            }
+        }
+        let mut out = Vec::new();
+        go(self, &mut out);
+        out
+    }
+
+    /// A plain value reference rendered to a dotted string: `amount`,
+    /// `this.amount` (record projection is `BinOp "."`), `Map.lookup`. None for
+    /// anything that is not a variable / constructor / projection chain.
+    pub(crate) fn ref_string(&self) -> Option<String> {
+        match self {
+            Expr::Var {
+                name, qualifier, ..
+            }
+            | Expr::Con {
+                name, qualifier, ..
+            } => Some(match qualifier {
+                Some(q) => format!("{}.{}", q, name),
+                None => name.clone(),
+            }),
+            Expr::BinOp { op, lhs, rhs, .. } if op == "." => {
+                Some(format!("{}.{}", lhs.ref_string()?, rhs.ref_string()?))
+            }
+            _ => None,
+        }
+    }
+
+    /// True if this expression refers to `name`: a bare reference, or a
+    /// `this.<name>` / `self.<name>` projection (the implicit-record forms a
+    /// choice body may use for a template field).
+    pub(crate) fn refers_to(&self, name: &str) -> bool {
+        match self.ref_string() {
+            Some(s) => s == name || strip_implicit_self(&s) == strip_implicit_self(name),
+            None => false,
+        }
+    }
+
+    /// True if this is a numeric literal equal to zero (`0`, `0.0`, `0.`).
+    pub(crate) fn is_zero_lit(&self) -> bool {
+        match self {
+            Expr::Lit { kind, value, .. } if kind == "Int" || kind == "Decimal" => {
+                let t = value.trim();
+                !t.is_empty() && t.bytes().all(|b| b == b'0' || b == b'.') && t.contains('0')
+            }
+            _ => false,
+        }
+    }
+
+    /// True if this is a non-zero numeric literal (a safe divisor — `x / 2.0`,
+    /// or a strictly-positive floor like `0.01`). Negative literals are spelled
+    /// `Neg(Lit)`, so a bare `Lit` is always non-negative.
+    pub(crate) fn is_nonzero_numeric_lit(&self) -> bool {
+        matches!(self, Expr::Lit { kind, .. } if kind == "Int" || kind == "Decimal")
+            && !self.is_zero_lit()
+    }
+
+    /// True if this divides safely: a non-zero numeric literal, or the negation
+    /// of one. A negated literal is `Neg(Lit)` (`x / (-2.0)`), which is just as
+    /// safe a divisor as `x / 2.0` — but `-0.0` / `-0` is still zero and unsafe.
+    ///
+    /// Distinct from [`is_nonzero_numeric_lit`], which deliberately rejects
+    /// negative literals so they cannot pose as a `>= 0` or `== positive` bound.
+    pub(crate) fn is_nonzero_numeric_divisor(&self) -> bool {
+        match self {
+            Expr::Neg { expr, .. } => expr.is_nonzero_numeric_divisor(),
+            _ => self.is_nonzero_numeric_lit(),
+        }
+    }
+
+    /// True if this is a non-negative numeric literal (`0`, `0.01`, `100.0`).
+    /// Negative literals are spelled `Neg(Lit)` and do not match.
+    pub(crate) fn is_nonneg_numeric_lit(&self) -> bool {
+        matches!(self, Expr::Lit { kind, .. } if kind == "Int" || kind == "Decimal")
+    }
+
+    /// Best-effort source-ish rendering, for evidence / messages only.
+    pub(crate) fn render_text(&self) -> String {
+        match self {
+            Expr::Var { .. } | Expr::Con { .. } => self.ref_string().unwrap_or_default(),
+            Expr::Lit { value, .. } => value.clone(),
+            Expr::Neg { expr, .. } => format!("-{}", expr.render_text()),
+            Expr::BinOp { op, lhs, rhs, .. } if op == "." => {
+                format!("{}.{}", lhs.render_text(), rhs.render_text())
+            }
+            Expr::BinOp { op, lhs, rhs, .. } => {
+                format!("{} {} {}", lhs.render_text(), op, rhs.render_text())
+            }
+            Expr::App { func, args, .. } => {
+                let mut s = func.render_text();
+                for a in args {
+                    s.push(' ');
+                    s.push_str(&a.render_text());
+                }
+                s
+            }
+            Expr::Tuple { items, .. } => format!("({})", render_join(items, ", ")),
+            Expr::List { items, .. } => format!("[{}]", render_join(items, ", ")),
+            Expr::Unknown { raw, .. } => raw.clone(),
+            _ => "…".to_string(),
+        }
+    }
+
+    /// The head of an application spine: `f a b` → `f`, `query @T x` → `query`.
+    pub(crate) fn app_head(&self) -> &Expr {
+        match self {
+            Expr::App { func, .. } => func.app_head(),
+            other => other,
+        }
+    }
+}
+
+fn render_join(items: &[Expr], sep: &str) -> String {
+    items
+        .iter()
+        .map(|i| i.render_text())
+        .collect::<Vec<_>>()
+        .join(sep)
+}
+
+/// Strip the implicit-record prefix a choice body may put on a field
+/// reference (`this.rate` / `self.rate` → `rate`), so a guard written bare
+/// still matches a denominator written through `this`.
+fn strip_implicit_self(s: &str) -> &str {
+    s.strip_prefix("this.")
+        .or_else(|| s.strip_prefix("self."))
+        .unwrap_or(s)
+}
+
+/// A guaranteed conjunct that bounds `name` to be ≥ 0. The constant side may be
+/// ANY non-negative literal: `amount > 100.0` and `amount >= 0.01` bound it
+/// positive just as `amount > 0` does. A negative bound (`amount > -5.0`, which
+/// the parser spells `Neg(Lit)`) does NOT count. An equality `amount == 5.0`
+/// pins the field to a positive constant, so it counts too — but the literal
+/// must be NON-ZERO (`== 0.0` still admits zero and stays flagged).
+pub(crate) fn is_nonneg_bound(c: &Expr, name: &str) -> bool {
+    match c {
+        Expr::BinOp { op, lhs, rhs, .. } => match op.as_str() {
+            ">" | ">=" => lhs.refers_to(name) && rhs.is_nonneg_numeric_lit(),
+            "<" | "<=" => rhs.refers_to(name) && lhs.is_nonneg_numeric_lit(),
+            "==" => {
+                (lhs.refers_to(name) && rhs.is_nonzero_numeric_lit())
+                    || (rhs.refers_to(name) && lhs.is_nonzero_numeric_lit())
+            }
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+/// A guaranteed conjunct that bounds `name` strictly away from zero — the only
+/// thing that makes a division safe. `>= 0` is rejected: zero still divides.
+pub(crate) fn is_nonzero_bound(c: &Expr, name: &str) -> bool {
+    match c {
+        Expr::BinOp { op, lhs, rhs, .. } => match op.as_str() {
+            ">" => lhs.refers_to(name) && rhs.is_zero_lit(),
+            "<" => rhs.refers_to(name) && lhs.is_zero_lit(),
+            "/=" | "!=" => {
+                (lhs.refers_to(name) && rhs.is_zero_lit())
+                    || (rhs.refers_to(name) && lhs.is_zero_lit())
+            }
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+/// A guaranteed conjunct that bounds `name` STRICTLY positive: `name > 0`,
+/// `0 < name`, or a positive floor `name >= 0.01`. `name >= 0` is rejected — it
+/// admits zero (the zero-amount vulnerability).
+pub(crate) fn is_strict_positive_bound(c: &Expr, name: &str) -> bool {
+    match c {
+        Expr::BinOp { op, lhs, rhs, .. } => match op.as_str() {
+            ">" => lhs.refers_to(name) && rhs.is_nonneg_numeric_lit(),
+            ">=" => lhs.refers_to(name) && rhs.is_nonzero_numeric_lit(),
+            "<" => rhs.refers_to(name) && lhs.is_nonneg_numeric_lit(),
+            "<=" => rhs.refers_to(name) && lhs.is_nonzero_numeric_lit(),
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+/// True if a guaranteed conjunct of `cond` bounds `name` strictly positive.
+pub(crate) fn expr_guarantees_strict_positive(cond: &Expr, name: &str) -> bool {
+    cond.conjuncts()
+        .iter()
+        .any(|c| is_strict_positive_bound(c, name))
+}
+
+/// A guaranteed conjunct that bounds `length name` / `size name` from ABOVE
+/// (`length f < N`, `N >= size f`). A mere lower bound (`length f > 0`) does
+/// NOT bound the size and is intentionally rejected.
+///
+/// The bounding operand must be a real CONSTANT: a non-negative numeric literal
+/// or a free identifier (a module-level constant). It must NOT be a sibling
+/// template field — the contract creator sets the entire payload, so a field
+/// bound like `length tags < cap` is attacker-controlled and bounds nothing
+/// (`fields` is the template's field-name set). A relational bound against
+/// another collection's length (`length a == length b`) is rejected too, since
+/// it forces only equal length, not a constant ceiling.
+fn is_size_upper_bound(c: &Expr, name: &str, fields: &[String]) -> bool {
+    match c {
+        Expr::BinOp { op, lhs, rhs, .. } => match op.as_str() {
+            "<" | "<=" => is_size_app(lhs, name) && is_const_size_bound(rhs, fields),
+            ">" | ">=" => is_size_app(rhs, name) && is_const_size_bound(lhs, fields),
+            // An exact-size constraint `length f == N` bounds the size too.
+            "==" => {
+                (is_size_app(lhs, name) && is_const_size_bound(rhs, fields))
+                    || (is_size_app(rhs, name) && is_const_size_bound(lhs, fields))
+            }
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+/// True if `e` is a real constant ceiling for a size bound: a non-negative
+/// numeric literal, or a plain identifier / projection that is NOT a sibling
+/// template field (i.e. a module-level constant). A sibling field is
+/// attacker-controlled, and a non-reference expression — notably another
+/// `length`/`size` application — is no ceiling at all.
+fn is_const_size_bound(e: &Expr, fields: &[String]) -> bool {
+    if e.is_nonneg_numeric_lit() {
+        return true;
+    }
+    match e.ref_string() {
+        Some(_) => !fields.iter().any(|f| e.refers_to(f)),
+        None => false,
+    }
+}
+
+/// True if `func args` is a `length`/`size` call (at any qualifier) of a single
+/// argument referring to `name`.
+fn is_size_call(func: &Expr, args: &[Expr], name: &str) -> bool {
+    matches!(func, Expr::Var { name: f, .. } if f == "length" || f == "size")
+        && args.len() == 1
+        && args[0].refers_to(name)
+}
+
+/// `length f` / `size f`, at any qualifier (`T.length f`, `Map.size f`).
+fn is_size_app(e: &Expr, name: &str) -> bool {
+    match e {
+        Expr::App { func, args, .. } => is_size_call(func, args, name),
+        // `length transfer.note` is `length (transfer.note)`, but `.` (an
+        // operator looser than application) makes the parser read it as
+        // `(length transfer).note`. Reconstruct the intended `length base.field`
+        // and match it against `name`, whether `name` is dotted
+        // (`transfer.note`) or, when the base is the template instance
+        // (`this`/`self`), the bare field (`note`).
+        Expr::BinOp { op, lhs, rhs, .. } if op == "." => match lhs.as_ref() {
+            Expr::App { func, args, .. }
+                if matches!(func.as_ref(), Expr::Var { name: f, .. } if f == "length" || f == "size")
+                    && args.len() == 1 =>
+            {
+                let base = args[0].ref_string();
+                let field = rhs.ref_string();
+                match (base, field) {
+                    (Some(base), Some(field)) => {
+                        format!("{base}.{field}") == name
+                            || (matches!(base.as_str(), "this" | "self") && rhs.refers_to(name))
+                    }
+                    _ => false,
+                }
+            }
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+/// True if a guaranteed conjunct of `cond` bounds `name` strictly away from
+/// zero — used to recognize an `assert`/`ensure` that guards a division.
+pub(crate) fn expr_guarantees_nonzero(cond: &Expr, name: &str) -> bool {
+    cond.conjuncts().iter().any(|c| is_nonzero_bound(c, name))
+}
+
+/// True if `e` is `null <name>` / `Foldable.null <name>` — an emptiness test on
+/// the list `name`.
+fn is_null_app(e: &Expr, name: &str) -> bool {
+    matches!(e, Expr::App { func, args, .. }
+        if matches!(func.as_ref(), Expr::Var { name: f, .. } if f == "null")
+            && args.len() == 1
+            && args[0].refers_to(name))
+        || matches!(e, Expr::BinOp { op, lhs, rhs, .. } if op == "$"
+            && matches!(lhs.as_ref(), Expr::Var { name: f, .. } if f == "null")
+            && rhs.refers_to(name))
+}
+
+/// A guaranteed conjunct that establishes the list `name` is NON-EMPTY: a strict
+/// lower bound on its `length`/`size` (`length p > 0`, `0 < length p`,
+/// `length p >= 1`, `1 <= length p`, `length p /= 0`), or a `not (null p)` /
+/// `not $ null p` assertion. An UPPER bound (`length p < N`, `length p <= N`)
+/// does NOT count — the empty list still satisfies it — and neither does a bound
+/// against a non-zero/non-`1` operand spelled as a free identifier (`length p <
+/// maxNumInputs`), which is an attacker-controllable ceiling, not a floor.
+fn is_nonempty_bound(c: &Expr, name: &str) -> bool {
+    match c {
+        // `length p > 0`, `length p >= 1`, `0 < length p`, `1 <= length p`.
+        Expr::BinOp { op, lhs, rhs, .. } => match op.as_str() {
+            ">" => is_size_app(lhs, name) && rhs.is_zero_lit(),
+            ">=" => is_size_app(lhs, name) && rhs.is_nonzero_numeric_lit(),
+            "<" => is_size_app(rhs, name) && lhs.is_zero_lit(),
+            "<=" => is_size_app(rhs, name) && lhs.is_nonzero_numeric_lit(),
+            // `length p /= 0` / `0 /= length p`: a count that is never zero.
+            "/=" | "!=" => {
+                (is_size_app(lhs, name) && rhs.is_zero_lit())
+                    || (is_size_app(rhs, name) && lhs.is_zero_lit())
+            }
+            // `not $ null p`: the `$` splits `not` from its argument `null p`.
+            "$" => {
+                matches!(lhs.as_ref(), Expr::Var { name: f, .. } if f == "not")
+                    && is_null_app(rhs, name)
+            }
+            _ => false,
+        },
+        // `not (null p)`.
+        Expr::App { func, args, .. } => {
+            matches!(func.as_ref(), Expr::Var { name: f, .. } if f == "not")
+                && args.len() == 1
+                && is_null_app(&args[0], name)
+        }
+        _ => false,
+    }
+}
+
+/// True if a guaranteed conjunct of `cond` proves the list `name` is non-empty.
+pub(crate) fn expr_guarantees_nonempty(cond: &Expr, name: &str) -> bool {
+    cond.conjuncts().iter().any(|c| is_nonempty_bound(c, name))
+}
+
+/// True if a guaranteed conjunct of `cond` bounds `length name` / `size name`
+/// only from ABOVE — `length p < N`, `length p <= N`, `N > length p`, or a count
+/// compared against any non-zero ceiling (a literal or a free identifier such as
+/// `maxNumInputs`). This is the "max-count but no min-count" anti-pattern: the
+/// empty list passes such a check, so an upper bound on its own leaves the
+/// zero-input vulnerability open.
+pub(crate) fn expr_has_size_upper_bound(cond: &Expr, name: &str) -> bool {
+    cond.conjuncts().iter().any(|c| match c {
+        Expr::BinOp { op, lhs, rhs, .. } => match op.as_str() {
+            // `length p < N` / `length p <= N` — but `length p < 1` / `<= 0`
+            // actually forces emptiness, not a ceiling on a non-empty list; treat
+            // a literal `1`/`0` floor-ish operand conservatively as not an
+            // upper-bound-only guard so we never flag it as max-only.
+            "<" | "<=" => is_size_app(lhs, name) && is_ceiling_operand(rhs),
+            ">" | ">=" => is_size_app(rhs, name) && is_ceiling_operand(lhs),
+            _ => false,
+        },
+        _ => false,
+    })
+}
+
+/// True if `e` is a real ceiling operand for an upper-bound count check: a
+/// non-negative numeric literal, or a free identifier / projection (a
+/// module-level constant or a field like `maxNumInputs`). A `length`/`size`
+/// application is not a constant ceiling.
+fn is_ceiling_operand(e: &Expr) -> bool {
+    e.is_nonneg_numeric_lit() || e.ref_string().is_some()
+}
+
+/// The expressions held directly by a statement (NOT recursing into nested
+/// statements; do-blocks are reached through the walkers below).
+pub(crate) fn statement_exprs(s: &Statement) -> Vec<&Expr> {
+    match s {
+        Statement::Let { value, .. } => vec![value],
+        Statement::Assert { condition_expr, .. } => vec![condition_expr],
+        Statement::Fetch { cid, .. } => vec![cid],
+        Statement::Archive { cid, .. } => vec![cid],
+        Statement::Create { argument, .. } => vec![argument],
+        Statement::Exercise { cid, argument, .. } => match argument {
+            Some(a) => vec![cid, a],
+            None => vec![cid],
+        },
+        Statement::Other { expr, .. } => vec![expr],
+        // A Branch's only direct expression is the case scrutinee; the arm
+        // bodies (and the expressions therein) are reached through the body
+        // walkers. TryCatch carries no direct expression at all.
+        Statement::Branch { scrutinee, .. } => scrutinee.iter().collect(),
+        Statement::TryCatch { .. } => vec![],
+    }
+}
+
+/// Immediate sub-expressions of `e`, one level deep. A `DoBlock` returns none
+/// here — the walkers descend into its statements explicitly.
+pub(crate) fn child_exprs(e: &Expr) -> Vec<&Expr> {
+    match e {
+        Expr::App { func, args, .. } => {
+            let mut v = vec![func.as_ref()];
+            v.extend(args.iter());
+            v
+        }
+        Expr::BinOp { lhs, rhs, .. } => vec![lhs, rhs],
+        Expr::Neg { expr, .. } => vec![expr],
+        Expr::Lambda { body, .. } => vec![body],
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } => vec![cond, then_branch, else_branch],
+        Expr::Case {
+            scrutinee, alts, ..
+        } => {
+            let mut v = vec![scrutinee.as_ref()];
+            v.extend(alts.iter().map(|a| &a.body));
+            v
+        }
+        Expr::LetIn { bindings, body, .. } => {
+            let mut v: Vec<&Expr> = bindings.iter().map(|b| &b.value).collect();
+            v.push(body);
+            v
+        }
+        Expr::Record { base, fields, .. } => {
+            let mut v = vec![base.as_ref()];
+            v.extend(fields.iter().filter_map(|f| f.value.as_ref()));
+            v
+        }
+        Expr::Tuple { items, .. } | Expr::List { items, .. } => items.iter().collect(),
+        Expr::Var { .. }
+        | Expr::Con { .. }
+        | Expr::Lit { .. }
+        | Expr::DoBlock { .. }
+        | Expr::Unknown { .. } => vec![],
+    }
+}
+
+/// Visit every expression in a body — the direct statement expressions and,
+/// recursively, everything nested inside them (do-blocks, try/catch, case
+/// alternatives, lambdas, …).
+pub(crate) fn walk_body_exprs<'a>(stmts: &'a [Statement], f: &mut impl FnMut(&'a Expr)) {
+    for s in stmts {
+        for e in statement_exprs(s) {
+            walk_expr(e, f);
+        }
+        match s {
+            Statement::TryCatch {
+                try_body,
+                catch_body,
+                ..
+            } => {
+                walk_body_exprs(try_body, f);
+                walk_body_exprs(catch_body, f);
+            }
+            Statement::Branch { arms, .. } => {
+                for arm in arms {
+                    walk_body_exprs(&arm.body, f);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Visit `e` and, recursively, every sub-expression within it.
+pub(crate) fn for_each_subexpr<'a>(e: &'a Expr, f: &mut impl FnMut(&'a Expr)) {
+    walk_expr(e, f);
+}
+
+fn walk_expr<'a>(e: &'a Expr, f: &mut impl FnMut(&'a Expr)) {
+    f(e);
+    if let Expr::DoBlock { statements, .. } = e {
+        walk_body_exprs(statements, f);
+    }
+    for c in child_exprs(e) {
+        walk_expr(c, f);
+    }
+}
+
+/// Visit every statement that UNCONDITIONALLY runs in `stmts`: the top-level
+/// statements and, recursively, the bodies of a `TryCatch`. A `Branch` arm is
+/// deliberately NOT entered — exactly one arm runs at runtime, so a statement
+/// inside an arm does not unconditionally dominate its siblings. Used by guard
+/// checks where a conditional `assert` must not count as a guarantee.
+pub(crate) fn walk_unconditional_stmts<'a>(
+    stmts: &'a [Statement],
+    f: &mut impl FnMut(&'a Statement),
+) {
+    for s in stmts {
+        f(s);
+        if let Statement::TryCatch {
+            try_body,
+            catch_body,
+            ..
+        } = s
+        {
+            walk_unconditional_stmts(try_body, f);
+            walk_unconditional_stmts(catch_body, f);
+        }
+    }
+}
+
+/// Visit every statement in a body, descending through try/catch and through
+/// do-blocks nested inside statement expressions.
+pub(crate) fn walk_body_stmts<'a>(stmts: &'a [Statement], g: &mut impl FnMut(&'a Statement)) {
+    for s in stmts {
+        g(s);
+        match s {
+            Statement::TryCatch {
+                try_body,
+                catch_body,
+                ..
+            } => {
+                walk_body_stmts(try_body, g);
+                walk_body_stmts(catch_body, g);
+            }
+            Statement::Branch { arms, .. } => {
+                for arm in arms {
+                    walk_body_stmts(&arm.body, g);
+                }
+            }
+            _ => {}
+        }
+        for e in statement_exprs(s) {
+            walk_nested_do_stmts(e, g);
+        }
+    }
+}
+
+fn walk_nested_do_stmts<'a>(e: &'a Expr, g: &mut impl FnMut(&'a Statement)) {
+    if let Expr::DoBlock { statements, .. } = e {
+        walk_body_stmts(statements, g);
+    }
+    for c in child_exprs(e) {
+        walk_nested_do_stmts(c, g);
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Field {
     pub name: String,
@@ -455,39 +889,34 @@ pub struct EnsureClause {
 }
 
 impl EnsureClause {
-    pub fn references_field_with_bound(&self, field_name: &str, bound: &str) -> bool {
-        let text = &self.raw_text;
-        text.contains(field_name) && text.contains(bound)
-    }
-
-    pub fn references_field(&self, field_name: &str) -> bool {
-        self.raw_text.contains(field_name)
-    }
-
-    /// Whether the ensure clause bounds `field_name` to be non-negative. The
-    /// field sits at the identifier end of each pattern, so anchor on it: this
-    /// stops `count` from matching inside `discount > 0`. (Non-strict `>= 0` is
-    /// accepted on purpose — a field may legitimately allow a zero balance.)
+    /// Whether the ensure clause bounds `field_name` to be non-negative.
+    /// Decides on the `Expr` tree: only comparisons reachable through top-level
+    /// `&&` count, so `not (x > 0)` and `a || x > 0` do NOT guarantee a bound,
+    /// and a field named only inside a string literal is never "bounded".
+    /// (Non-strict `>= 0` is accepted — a field may allow a zero balance.)
     pub fn has_positive_bound(&self, field_name: &str) -> bool {
-        let text = &self.raw_text;
-        contains_left_anchored(text, &format!("{} > 0", field_name))
-            || contains_left_anchored(text, &format!("{} >= 0", field_name))
-            || contains_right_anchored(text, &format!("0 < {}", field_name))
-            || contains_right_anchored(text, &format!("0 <= {}", field_name))
-            || contains_right_anchored(text, &format!("0.0 < {}", field_name))
-            || contains_right_anchored(text, &format!("0.0 <= {}", field_name))
+        self.expr
+            .conjuncts()
+            .iter()
+            .any(|c| is_nonneg_bound(c, field_name))
     }
 
-    pub fn has_size_bound(&self, field_name: &str) -> bool {
-        let text = &self.raw_text;
-        // The field is the argument at the end of each pattern, so right-anchor
-        // it so `reason` is not matched inside `reasons`.
-        contains_right_anchored(text, &format!("T.length {}", field_name))
-            || contains_right_anchored(text, &format!("Text.length {}", field_name))
-            || contains_right_anchored(text, &format!("DA.Text.length {}", field_name))
-            || contains_right_anchored(text, &format!("length {}", field_name))
-            || contains_right_anchored(text, &format!("Map.size {}", field_name))
-            || contains_right_anchored(text, &format!("size {}", field_name))
+    /// Whether the ensure clause bounds the SIZE of `field_name` from above
+    /// (`length f < N`). A mere lower bound (`length f > 0`) leaves the field
+    /// unbounded and does not count. `fields` is the template's field-name set:
+    /// a bound against a sibling field (`length f < cap`) is attacker-controlled
+    /// and does not count either.
+    pub fn has_size_bound(&self, field_name: &str, fields: &[String]) -> bool {
+        self.expr
+            .conjuncts()
+            .iter()
+            .any(|c| is_size_upper_bound(c, field_name, fields))
+    }
+
+    /// Whether the ensure clause guarantees `name` is strictly away from zero
+    /// (a real division guard); runs before every choice body.
+    pub fn guarantees_nonzero(&self, name: &str) -> bool {
+        expr_guarantees_nonzero(&self.expr, name)
     }
 }
 
@@ -558,6 +987,21 @@ pub enum Statement {
         catch_body: Vec<Statement>,
         span: SrcPos,
     },
+    /// An `if`/`case` whose branches are NOT flattened into the parent sequence:
+    /// each arm is its own statement scope. Exactly one arm runs at runtime, so an
+    /// archive in one arm and a `try` in another are mutually exclusive — an
+    /// ordering detector must scan each arm independently, never pairing across
+    /// arms (mirrors how `TryCatch` keeps its bodies as separate scopes).
+    ///
+    /// `scrutinee` is the `case <e> of` expression (None for `if`), and each arm
+    /// carries the source pattern it matched (None for the `if` then/else arms),
+    /// so a detector can decide on the case shape structurally instead of
+    /// re-scanning the body text.
+    Branch {
+        scrutinee: Option<Expr>,
+        arms: Vec<BranchArm>,
+        span: SrcPos,
+    },
     Other {
         raw: String,
         /// Structured form of the statement expression.
@@ -565,6 +1009,14 @@ pub enum Statement {
         binder: Option<String>,
         span: SrcPos,
     },
+}
+
+/// One arm of a `Statement::Branch`. `pattern` is the rendered case alt pattern
+/// (`x :: _`, `[a]`, `_`); None for the then/else arms of an `if`.
+#[derive(Debug, Clone, Serialize)]
+pub struct BranchArm {
+    pub pattern: Option<String>,
+    pub body: Vec<Statement>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -676,18 +1128,8 @@ mod tests {
         assert!(matches!(DamlType::from_str("(a, b, c)"), DamlType::Unknown));
     }
 
-    // Regression (sweep F1/F7/F12/F29): whole-identifier matching, so `q` is not
-    // found inside `quantity` and `count` not inside `discount`.
-    #[test]
-    fn identifier_matchers_respect_token_boundaries() {
-        assert!(mentions_ident("(q > 0)", "q"));
-        assert!(!mentions_ident("(quantity > 0)", "q"));
-        assert!(mentions_ident("r.amount > 0", "r.amount"));
-
-        assert!(contains_left_anchored("count > 0", "count > 0"));
-        assert!(!contains_left_anchored("discount > 0", "count > 0"));
-
-        assert!(contains_right_anchored("length reason", "length reason"));
-        assert!(!contains_right_anchored("length reasons", "length reason"));
-    }
+    // Whole-identifier matching is now structural: `Expr::refers_to` compares
+    // variable names exactly, so `count` never matches inside `discount`. The
+    // intent is exercised end-to-end by the ensure_decimal /
+    // unbounded_fields substring-field regression tests.
 }

@@ -16,6 +16,12 @@ function ledgerActions(stmts) {
     if ("TryCatch" in stmt) {
       found.push(...ledgerActions(stmt.TryCatch.try_body), ...ledgerActions(stmt.TryCatch.catch_body));
     }
+    // An if/case keeps its arms as separate scopes; descend into each.
+    if ("Branch" in stmt) {
+      for (const arm of stmt.Branch.arms) {
+        found.push(...ledgerActions(arm));
+      }
+    }
   }
   return found;
 }

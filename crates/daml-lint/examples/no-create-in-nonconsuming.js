@@ -14,6 +14,12 @@ function creates(stmts) {
         return true;
       }
     }
+    // An if/case keeps its arms as separate scopes; a create may be in any arm.
+    if ("Branch" in stmt) {
+      if (stmt.Branch.arms.some(creates)) {
+        return true;
+      }
+    }
   }
   return false;
 }

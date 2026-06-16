@@ -122,8 +122,10 @@ interface EnsureClause {
  *  Raw-text payloads (`expr`, `condition`, `raw`) are deprecated; the
  *  structured fields (`value`, `condition_expr`, `argument`, `cid`) carry
  *  the parse tree. `binder` is the pattern text bound by `x <- ...`, when
- *  present. Ledger actions nested under if/case/`$`/lambdas are surfaced
- *  as their own statements, in source order. */
+ *  present. Ledger actions under `$`/lambdas are surfaced as their own
+ *  statements, in source order. An `if`/`case` is surfaced as a `Branch`
+ *  whose `arms` are each their own statement scope (exactly one runs), so a
+ *  rule must descend into `arms` to see effects inside a branch. */
 type Statement =
   | { Let: { name: string; expr: string; value: Expr; span: SrcPos } }
   | { Assert: { condition: string; condition_expr: Expr; span: SrcPos } }
@@ -152,7 +154,19 @@ type Statement =
       };
     }
   | { TryCatch: { try_body: Statement[]; catch_body: Statement[]; span: SrcPos } }
+  /** `if`/`case`: each arm is an independent statement scope (exactly one
+   *  arm runs at runtime). `scrutinee` is the `case <e> of` expression (null
+   *  for `if`); each arm carries the source pattern it matched (null for the
+   *  `if` then/else arms). */
+  | { Branch: { scrutinee: Expr | null; arms: BranchArm[]; span: SrcPos } }
   | { Other: { raw: string; expr: Expr; binder: string | null; span: SrcPos } };
+
+/** One arm of a `Branch`: the matched case pattern (null for `if` arms) and the
+ *  arm's own statement scope. */
+interface BranchArm {
+  pattern: string | null;
+  body: Statement[];
+}
 
 interface Choice {
   name: string;

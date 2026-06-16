@@ -20,6 +20,13 @@ function ledgerActions(stmts: Statement[]): string[] {
       const tc = (stmt as { TryCatch: { try_body: Statement[]; catch_body: Statement[] } }).TryCatch;
       found.push(...ledgerActions(tc.try_body), ...ledgerActions(tc.catch_body));
     }
+    // An if/case keeps its arms as separate scopes; descend into each.
+    if ("Branch" in stmt) {
+      const br = (stmt as { Branch: { arms: Statement[][] } }).Branch;
+      for (const arm of br.arms) {
+        found.push(...ledgerActions(arm));
+      }
+    }
   }
   return found;
 }

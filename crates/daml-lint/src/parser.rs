@@ -451,30 +451,34 @@ fn other_statement(expr: &ast::Expr, binder: Option<&ast::Pat>) -> Statement {
 
 fn lower_do(stmts: &[DoStmt]) -> Vec<Statement> {
     let mut out = Vec::new();
+    let mut helpers: std::collections::HashMap<String, Helper> = std::collections::HashMap::new();
     for stmt in stmts {
         match stmt {
             DoStmt::Let { bindings, .. } => {
                 for b in bindings {
+                    let name = binding_name(b);
                     out.push(Statement::Let {
-                        name: binding_name(b),
+                        name: name.clone(),
                         expr: b.expr.render(),
                         value: lower_expr(&b.expr),
                         span: src_pos(b.pos),
                     });
-                    // A plain `let x = create ...` binds an Update value
-                    // without executing it, but a let-bound local helper
-                    // (`let go x = do archive x`) performs its actions when
-                    // invoked from this body — surface those.
-                    if !b.params.is_empty() {
-                        let mut acts = Vec::new();
-                        collect_actions(&b.expr, None, &mut acts);
-                        out.extend(acts);
+                    // A let-bound local helper (`let go x = archive x`) only
+                    // DEFINES its actions; they execute at the CALL site (or
+                    // never), not at the definition. Record it under its bare
+                    // name (without the parameters that `binding_name` appends)
+                    // for expansion there, and do NOT surface its archive at the
+                    // `let` line.
+                    if let Some(params) = formal_param_names(b) {
+                        helpers.insert(b.pat.render(), Helper { params, body: &b.expr });
                     }
                 }
             }
             DoStmt::Bind { pat, expr, .. } => {
                 let mut acts = Vec::new();
-                if collect_actions(expr, Some(pat), &mut acts) {
+                if expand_helper_call(expr, Some(pat), &helpers, &mut out) {
+                    // expanded in place at the call site
+                } else if collect_actions(expr, Some(pat), &mut acts) {
                     out.extend(acts);
                 } else {
                     out.push(other_statement(expr, Some(pat)));
@@ -482,7 +486,9 @@ fn lower_do(stmts: &[DoStmt]) -> Vec<Statement> {
             }
             DoStmt::Expr { expr, .. } => {
                 let mut acts = Vec::new();
-                if collect_actions(expr, None, &mut acts) {
+                if expand_helper_call(expr, None, &helpers, &mut out) {
+                    // expanded in place at the call site
+                } else if collect_actions(expr, None, &mut acts) {
                     out.extend(acts);
                 } else {
                     out.push(other_statement(expr, None));
@@ -493,11 +499,207 @@ fn lower_do(stmts: &[DoStmt]) -> Vec<Statement> {
     out
 }
 
+/// A let-bound local helper (`let f x = archive x`): its formal parameter names
+/// and body. Its ledger actions run at each CALL site (or never), so they are
+/// expanded where it is invoked, not recorded at the definition.
+struct Helper<'a> {
+    params: Vec<String>,
+    body: &'a ast::Expr,
+}
+
+/// The simple variable names of a function binding's formal parameters
+/// (`let f x y = ...` → `["x", "y"]`). None when the binding takes no parameters
+/// (a plain value, not a helper) or any parameter is a non-trivial pattern we
+/// cannot substitute by name.
+fn formal_param_names(b: &ast::Binding) -> Option<Vec<String>> {
+    if b.params.is_empty() {
+        return None;
+    }
+    b.params
+        .iter()
+        .map(|p| match p {
+            ast::Pat::Var { name, .. } => Some(name.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// If `expr` invokes a known local helper with a matching argument count, expand
+/// the helper body with the actual arguments substituted for its formal
+/// parameters, re-point every node to the CALL site, and lower the result there
+/// (so the archive/effect lands on the invocation line with the real argument).
+/// Returns true when an action was expanded. A partial application (arity
+/// mismatch) is left for normal lowering.
+fn expand_helper_call(
+    expr: &ast::Expr,
+    binder: Option<&ast::Pat>,
+    helpers: &std::collections::HashMap<String, Helper>,
+    out: &mut Vec<Statement>,
+) -> bool {
+    let ast::Expr::App { func, args, .. } = expr else {
+        return false;
+    };
+    let ast::Expr::Var {
+        qualifier: None,
+        name,
+        ..
+    } = func.as_ref()
+    else {
+        return false;
+    };
+    let Some(helper) = helpers.get(name) else {
+        return false;
+    };
+    if helper.params.len() != args.len() {
+        return false;
+    }
+    let subst: std::collections::HashMap<&str, &ast::Expr> = helper
+        .params
+        .iter()
+        .map(|p| p.as_str())
+        .zip(args.iter())
+        .collect();
+    let call_pos = expr.pos();
+    let expanded = subst_expr(helper.body, &subst, call_pos);
+    collect_actions(&expanded, binder, out)
+}
+
+/// Substitute actual arguments for a helper's formal parameters throughout
+/// `expr`, re-pointing every rebuilt node to `call_pos` (the invocation site) so
+/// a finding cites the call, not the definition. A bare `Var` naming a formal is
+/// replaced by the actual argument; everything else is rebuilt structurally, and
+/// any node we do not rebuild is repointed as-is. The realistic helper is a
+/// single ledger action over its arguments.
+fn subst_expr(
+    expr: &ast::Expr,
+    subst: &std::collections::HashMap<&str, &ast::Expr>,
+    call_pos: ast::Pos,
+) -> ast::Expr {
+    use ast::Expr as E;
+    match expr {
+        E::Var {
+            qualifier: None,
+            name,
+            span,
+            ..
+        } => match subst.get(name.as_str()) {
+            Some(arg) => repoint(arg, call_pos),
+            None => E::Var {
+                qualifier: None,
+                name: name.clone(),
+                pos: call_pos,
+                span: *span,
+            },
+        },
+        E::App { func, args, span, .. } => E::App {
+            func: Box::new(subst_expr(func, subst, call_pos)),
+            args: args.iter().map(|a| subst_expr(a, subst, call_pos)).collect(),
+            pos: call_pos,
+            span: *span,
+        },
+        E::BinOp {
+            op, lhs, rhs, span, ..
+        } => E::BinOp {
+            op: op.clone(),
+            lhs: Box::new(subst_expr(lhs, subst, call_pos)),
+            rhs: Box::new(subst_expr(rhs, subst, call_pos)),
+            pos: call_pos,
+            span: *span,
+        },
+        E::Neg { expr, span, .. } => E::Neg {
+            expr: Box::new(subst_expr(expr, subst, call_pos)),
+            pos: call_pos,
+            span: *span,
+        },
+        E::Record {
+            base, fields, span, ..
+        } => E::Record {
+            base: Box::new(subst_expr(base, subst, call_pos)),
+            fields: fields
+                .iter()
+                .map(|f| ast::FieldAssign {
+                    value: f.value.as_ref().map(|v| subst_expr(v, subst, call_pos)),
+                    ..f.clone()
+                })
+                .collect(),
+            pos: call_pos,
+            span: *span,
+        },
+        E::Tuple { items, span, .. } => E::Tuple {
+            items: items.iter().map(|i| subst_expr(i, subst, call_pos)).collect(),
+            pos: call_pos,
+            span: *span,
+        },
+        E::List { items, span, .. } => E::List {
+            items: items.iter().map(|i| subst_expr(i, subst, call_pos)).collect(),
+            pos: call_pos,
+            span: *span,
+        },
+        // A helper body that is itself a do-block / conditional / lambda is
+        // beyond this targeted substitution; repoint what we can and lower it
+        // as-is.
+        other => repoint(other, call_pos),
+    }
+}
+
+/// Shallowly re-point an expression's top-level position to `call_pos` so a
+/// substituted argument or unhandled body reports the invocation line. Nested
+/// positions are left as-is.
+fn repoint(expr: &ast::Expr, call_pos: ast::Pos) -> ast::Expr {
+    use ast::Expr as E;
+    let mut e = expr.clone();
+    match &mut e {
+        E::Var { pos, .. }
+        | E::Con { pos, .. }
+        | E::Lit { pos, .. }
+        | E::App { pos, .. }
+        | E::BinOp { pos, .. }
+        | E::Neg { pos, .. }
+        | E::Lambda { pos, .. }
+        | E::If { pos, .. }
+        | E::Case { pos, .. }
+        | E::Do { pos, .. }
+        | E::LetIn { pos, .. }
+        | E::Record { pos, .. }
+        | E::Tuple { pos, .. }
+        | E::List { pos, .. }
+        | E::Try { pos, .. }
+        | E::Section { pos, .. }
+        | E::Error { pos, .. } => *pos = call_pos,
+    }
+    e
+}
+
 /// Walk an expression collecting ledger-action statements (create,
 /// exercise, fetch, archive, assert, try/catch). Returns true if anything
 /// was collected. Only unqualified applications count: `Lifecycle.exercise`
 /// is a user function, not the ledger action.
+///
+/// External callers are all statement-position, where an `if`/`case` is its own
+/// set of mutually-exclusive scopes and an `assert` is an unconditional guard.
 fn collect_actions(expr: &ast::Expr, binder: Option<&ast::Pat>, out: &mut Vec<Statement>) -> bool {
+    collect_actions_inner(expr, binder, out, true, false)
+}
+
+/// `stmt_pos` is true when `expr` is in statement position (a do-statement or an
+/// `if`/`case` arm). A statement-position `if`/`case` is lowered to a single
+/// `Statement::Branch` whose arms are independent scopes; an `if`/`case` reached
+/// by descending into a sub-expression (an application argument, an operand, a
+/// lambda body) is left in the `Expr` tree for the enclosing statement to carry,
+/// so a value-level guard like `if denom /= 0 then x / denom` stays analyzable.
+///
+/// `conditional` is true once we are inside a branch / iteration / lambda
+/// argument that runs only on some paths or zero-or-more times. An `assert`
+/// lifted from there is not a guarantee, so it is recorded as a plain
+/// `Statement::Other` (scannable, but never a guard) rather than a
+/// `Statement::Assert`.
+fn collect_actions_inner(
+    expr: &ast::Expr,
+    binder: Option<&ast::Pat>,
+    out: &mut Vec<Statement>,
+    stmt_pos: bool,
+    conditional: bool,
+) -> bool {
     let before = out.len();
     match expr {
         ast::Expr::Do { stmts, .. } => {
@@ -516,26 +718,48 @@ fn collect_actions(expr: &ast::Expr, binder: Option<&ast::Pat>, out: &mut Vec<St
             });
         }
         ast::Expr::If {
+            cond,
             then_branch,
             else_branch,
             ..
         } => {
-            collect_actions(then_branch, None, out);
-            collect_actions(else_branch, None, out);
+            if stmt_pos {
+                // The condition rides along as the Branch scrutinee so a defensive
+                // guard (`if amount <= 0 then abort`) stays analyzable; the arms
+                // (then, else) carry no pattern.
+                push_branch(Some(cond), &[then_branch, else_branch], &[None, None], expr, out);
+            } else {
+                // Expression-position `if`: surface only ledger actions inside,
+                // leaving the `Expr::If` (and its condition guard) for the
+                // enclosing statement.
+                collect_actions_inner(then_branch, None, out, false, conditional);
+                collect_actions_inner(else_branch, None, out, false, conditional);
+            }
         }
-        ast::Expr::Case { alts, .. } => {
-            for a in alts {
-                collect_actions(&a.body, None, out);
+        ast::Expr::Case {
+            scrutinee, alts, ..
+        } => {
+            if stmt_pos {
+                let bodies: Vec<&ast::Expr> = alts.iter().map(|a| &a.body).collect();
+                let patterns: Vec<Option<String>> =
+                    alts.iter().map(|a| Some(a.pat.render())).collect();
+                push_branch(Some(scrutinee), &bodies, &patterns, expr, out);
+            } else {
+                for a in alts {
+                    collect_actions_inner(&a.body, None, out, false, conditional);
+                }
             }
         }
         ast::Expr::LetIn { body, .. } => {
-            collect_actions(body, None, out);
+            collect_actions_inner(body, None, out, stmt_pos, conditional);
         }
         ast::Expr::Lambda { body, .. } => {
-            collect_actions(body, None, out);
+            // A lambda body runs in a deferred / zero-or-more context, so an
+            // assert inside it is not an unconditional guarantee.
+            collect_actions_inner(body, None, out, false, true);
         }
         ast::Expr::Neg { expr, .. } => {
-            collect_actions(expr, None, out);
+            collect_actions_inner(expr, None, out, false, conditional);
         }
         ast::Expr::BinOp {
             op,
@@ -552,23 +776,27 @@ fn collect_actions(expr: &ast::Expr, binder: Option<&ast::Pat>, out: &mut Vec<St
                     pos: *pos,
                     span: *span,
                 };
-                if classify_app(&as_app, binder, out) {
+                if classify_app(&as_app, binder, out, conditional) {
                     return out.len() > before;
                 }
             }
-            collect_actions(lhs, None, out);
-            collect_actions(rhs, None, out);
+            collect_actions_inner(lhs, None, out, false, conditional);
+            collect_actions_inner(rhs, None, out, false, conditional);
         }
         ast::Expr::App { args, .. } => {
-            if !classify_app(expr, binder, out) {
+            if !classify_app(expr, binder, out, conditional) {
+                // `when c act` / `forA_ xs f` run their action argument only on
+                // some paths or zero-or-more times: an assert lifted from inside
+                // is conditional, not a guard.
+                let arg_conditional = conditional || is_conditional_combinator(expr.app_head());
                 for a in args {
-                    collect_actions(a, None, out);
+                    collect_actions_inner(a, None, out, false, arg_conditional);
                 }
             }
         }
         ast::Expr::Tuple { items, .. } | ast::Expr::List { items, .. } => {
             for i in items {
-                collect_actions(i, None, out);
+                collect_actions_inner(i, None, out, false, conditional);
             }
         }
         _ => {}
@@ -576,21 +804,81 @@ fn collect_actions(expr: &ast::Expr, binder: Option<&ast::Pat>, out: &mut Vec<St
     out.len() > before
 }
 
+/// Lower each branch of a statement-position `if`/`case` into its own scope and
+/// push one `Statement::Branch`. `scrutinee` is the case scrutinee (None for
+/// `if`); `patterns[i]` is arm i's source pattern (None for the `if` then/else
+/// arms). Always pushes the Branch: the case shape (scrutinee + patterns) must
+/// survive even when the arms perform no ledger action, so a detector can read
+/// it structurally.
+fn push_branch(
+    scrutinee: Option<&ast::Expr>,
+    branches: &[&ast::Expr],
+    patterns: &[Option<String>],
+    whole: &ast::Expr,
+    out: &mut Vec<Statement>,
+) {
+    let arms = branches
+        .iter()
+        .enumerate()
+        .map(|(i, b)| BranchArm {
+            pattern: patterns.get(i).cloned().flatten(),
+            body: statements_of_expr(b),
+        })
+        .collect();
+    out.push(Statement::Branch {
+        scrutinee: scrutinee.map(lower_expr),
+        arms,
+        span: src_pos(whole.pos()),
+    });
+}
+
+/// True if `head` is a combinator that runs its action argument conditionally or
+/// zero-or-more times (`when`, `unless`, `forA_`, `mapA_`, …), so an `assert`
+/// lifted from that argument is not an unconditional guard. Matched on the
+/// trailing identifier at any qualifier.
+fn is_conditional_combinator(head: &ast::Expr) -> bool {
+    matches!(
+        head,
+        ast::Expr::Var { name, .. } if matches!(
+            name.as_str(),
+            "when"
+                | "unless"
+                | "forA_"
+                | "forA"
+                | "forM_"
+                | "forM"
+                | "mapA_"
+                | "mapA"
+                | "mapM_"
+                | "mapM"
+        )
+    )
+}
+
 /// If `expr` is an application of a ledger-action head, push the matching
 /// statement(s) and return true.
-fn classify_app(expr: &ast::Expr, binder: Option<&ast::Pat>, out: &mut Vec<Statement>) -> bool {
+fn classify_app(
+    expr: &ast::Expr,
+    binder: Option<&ast::Pat>,
+    out: &mut Vec<Statement>,
+    conditional: bool,
+) -> bool {
     let args = expr.app_args();
     if args.is_empty() {
         return false;
     }
-    let head_name = match expr.app_head() {
+    let (head_name, qualified) = match expr.app_head() {
         ast::Expr::Var {
-            qualifier: None,
-            name,
-            ..
-        } => name.as_str(),
+            qualifier, name, ..
+        } => (name.as_str(), qualifier.is_some()),
         _ => return false,
     };
+    // The ledger actions are the UNQUALIFIED primitives (`Lifecycle.exercise` is
+    // a user function, not the ledger action). The one exception is the assert
+    // guard, which is routinely written qualified (`DA.Assert.assertMsg`).
+    if qualified && head_name != "assert" && head_name != "assertMsg" {
+        return false;
+    }
     let arg_text = |i: usize| args.get(i).map(|a| a.render()).unwrap_or_default();
     let arg_expr = |i: usize| {
         args.get(i).map(lower_expr).unwrap_or(Expr::Unknown {
@@ -674,18 +962,30 @@ fn classify_app(expr: &ast::Expr, binder: Option<&ast::Pat>, out: &mut Vec<State
             true
         }
         "assert" | "assertMsg" => {
-            // The condition is the assert's argument (after the message for
-            // assertMsg), not the whole call.
-            let cond_idx = if head_name == "assertMsg" { 1 } else { 0 };
-            let condition_expr = args
-                .get(cond_idx)
-                .map(lower_expr)
-                .unwrap_or_else(|| lower_expr(expr));
-            out.push(Statement::Assert {
-                condition: expr.render(),
-                condition_expr,
-                span,
-            });
+            if conditional {
+                // An assert that runs only on some paths (inside an `if`/`case`
+                // arm, a `when`, or a `forA_` lambda) guarantees nothing. Keep it
+                // scannable but deny it guard status: record it as a plain Other.
+                out.push(Statement::Other {
+                    raw: expr.render(),
+                    expr: lower_expr(expr),
+                    binder: None,
+                    span,
+                });
+            } else {
+                // The condition is the assert's argument (after the message for
+                // assertMsg), not the whole call.
+                let cond_idx = if head_name == "assertMsg" { 1 } else { 0 };
+                let condition_expr = args
+                    .get(cond_idx)
+                    .map(lower_expr)
+                    .unwrap_or_else(|| lower_expr(expr));
+                out.push(Statement::Assert {
+                    condition: expr.render(),
+                    condition_expr,
+                    span,
+                });
+            }
             true
         }
         _ => false,

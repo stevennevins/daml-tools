@@ -152,6 +152,137 @@ template Round
         assert!(findings.iter().any(|f| f.message.contains("'price'")));
     }
 
+    // Regression (round-3 F8): a NEGATED comparison does not bound the field —
+    // `not (amount > 0)` guarantees nothing, so amount must still be flagged.
+    #[test]
+    fn test_negated_bound_does_not_count() {
+        let source = r#"module Test where
+
+template T
+  with
+    admin : Party
+    amount : Decimal
+  where
+    signatory admin
+    ensure not (amount > 0.0)
+"#;
+        let module = parse_daml(source, Path::new("T.daml"));
+        let findings = MissingEnsureDecimal.detect(&module);
+        assert!(
+            findings.iter().any(|f| f.message.contains("'amount'")),
+            "negated bound must not satisfy positivity: {:?}",
+            findings
+        );
+    }
+
+    // Regression (audit round-3): a strict lower bound above a positive constant
+    // (`amount > 100.0`, a minimum-trade-size) bounds the field positive and
+    // must NOT be flagged. A negative bound (`amount > -5.0`) still flags.
+    #[test]
+    fn test_positive_constant_lower_bound_passes() {
+        let tmpl = |ensure: &str| {
+            format!(
+                "module T where\n\ntemplate M\n  with\n    owner : Party\n    amount : Decimal\n  where\n    signatory owner\n    ensure {}\n",
+                ensure
+            )
+        };
+        let ok = parse_daml(&tmpl("amount > 100.0"), Path::new("M.daml"));
+        assert!(
+            !MissingEnsureDecimal
+                .detect(&ok)
+                .iter()
+                .any(|f| f.message.contains("'amount'")),
+            "amount > 100.0 bounds amount positive: {:?}",
+            MissingEnsureDecimal.detect(&ok)
+        );
+
+        let neg = parse_daml(&tmpl("amount > -5.0"), Path::new("M.daml"));
+        assert!(
+            MissingEnsureDecimal
+                .detect(&neg)
+                .iter()
+                .any(|f| f.message.contains("'amount'")),
+            "a negative lower bound does not guarantee positivity: {:?}",
+            MissingEnsureDecimal.detect(&neg)
+        );
+    }
+
+    // Regression (audit round-3): `amount == <positive literal>` pins the field
+    // to a positive constant and must NOT be flagged, written either way round.
+    // `== 0.0` still admits zero and `== -5.0` (a Neg(Lit)) is negative, so both
+    // keep flagging.
+    #[test]
+    fn test_equality_to_positive_constant_passes() {
+        let tmpl = |ensure: &str| {
+            format!(
+                "module T where\n\ntemplate M\n  with\n    owner : Party\n    amount : Decimal\n  where\n    signatory owner\n    ensure {}\n",
+                ensure
+            )
+        };
+        let flags = |ensure: &str| {
+            let m = parse_daml(&tmpl(ensure), Path::new("M.daml"));
+            MissingEnsureDecimal
+                .detect(&m)
+                .iter()
+                .any(|f| f.message.contains("'amount'"))
+        };
+        assert!(
+            !flags("amount == 5.0"),
+            "amount == 5.0 pins amount positive"
+        );
+        assert!(
+            !flags("5.0 == amount"),
+            "5.0 == amount pins amount positive"
+        );
+        assert!(flags("amount == -5.0"), "== -5.0 is negative, still flags");
+        assert!(flags("amount == 0.0"), "== 0.0 admits zero, still flags");
+    }
+
+    // Regression (round-3 F8): a comparison under `||` is not guaranteed.
+    #[test]
+    fn test_disjunction_bound_does_not_count() {
+        let source = r#"module Test where
+
+template T
+  with
+    admin : Party
+    amount : Decimal
+    flag : Bool
+  where
+    signatory admin
+    ensure flag || amount > 0.0
+"#;
+        let module = parse_daml(source, Path::new("T.daml"));
+        let findings = MissingEnsureDecimal.detect(&module);
+        assert!(
+            findings.iter().any(|f| f.message.contains("'amount'")),
+            "a bound under || is not guaranteed: {:?}",
+            findings
+        );
+    }
+
+    // A comparison reached through top-level `&&` IS guaranteed.
+    #[test]
+    fn test_conjunction_bound_counts() {
+        let source = r#"module Test where
+
+template T
+  with
+    admin : Party
+    amount : Decimal
+  where
+    signatory admin
+    ensure amount > 0.0 && admin == admin
+"#;
+        let module = parse_daml(source, Path::new("T.daml"));
+        let findings = MissingEnsureDecimal.detect(&module);
+        assert!(
+            !findings.iter().any(|f| f.message.contains("'amount'")),
+            "amount > 0.0 under && IS a bound: {:?}",
+            findings
+        );
+    }
+
     // Regression (sweep F29): `count` is not bounded by a `discount > 0` ensure
     // on a different field.
     #[test]

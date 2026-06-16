@@ -1,221 +1,288 @@
 use crate::detector::{Detector, Finding, Severity};
-use crate::ir::{DamlModule, Statement};
+use crate::ir::{DamlModule, EnsureClause, Expr, SrcPos, Statement};
+use std::collections::HashSet;
+
+/// Shared, read-only context threaded through the recursive division scan.
+struct Ctx<'a> {
+    all_stmts: &'a [Statement],
+    ensure: Option<&'a EnsureClause>,
+    file: &'a std::path::Path,
+    context_name: &'a str,
+}
 
 /// Detector #2: unguarded-division
 ///
-/// Find all division expressions (/ operator or div function) in choice bodies
-/// and functions. Walk backward through the statement list to find a prior
-/// assertMsg or ensure check that bounds the denominator to > 0. Flag divisions
-/// where no such guard exists.
+/// Find every division — the `/` operator, infix `` `div` ``, and prefix
+/// `div x y` — in choice bodies and functions, and flag any whose denominator
+/// is not bounded away from zero by a prior `assert`/`assertMsg` or the
+/// enclosing template `ensure`.
+///
+/// Decided entirely on the structured `Expr` tree: a `/` inside a string
+/// literal or a comment is not a `BinOp`, a line-wrapped division is one node,
+/// and the denominator is a real sub-expression (so `intToDecimal n` and
+/// `(a + b)` are handled structurally, never as text).
 ///
 /// Catches: M11 (amuletPrice division), M12 (capPerCoupon division)
 pub struct UnguardedDivision;
 
 impl UnguardedDivision {
-    fn check_body_raw(
+    fn check_body(
         &self,
-        body_raw: &str,
         statements: &[Statement],
+        ensure: Option<&EnsureClause>,
         file: &std::path::Path,
-        base_line: usize,
         context_name: &str,
     ) -> Vec<Finding> {
         let mut findings = Vec::new();
-        let lines: Vec<&str> = body_raw.lines().collect();
+        let ctx = Ctx {
+            all_stmts: statements,
+            ensure,
+            file,
+            context_name,
+        };
+        self.scan_stmts(statements, &HashSet::new(), &ctx, &mut findings);
+        findings
+    }
 
-        for (line_idx, line) in lines.iter().enumerate() {
-            let trimmed = line.trim();
-            // Comment text (ASCII diagrams full of slashes) is not code.
-            let trimmed = match trimmed.find("--") {
-                Some(0) => continue,
-                Some(idx) => trimmed[..idx].trim_end(),
-                None => trimmed,
-            };
-
-            // Every division on this line (paren-aware; skips numeric-literal
-            // denominators and numeric-conversion wrappers), so a second
-            // division like `c / d` in `a / b + c / d` is not missed.
-            let mut seen = std::collections::HashSet::new();
-            for denominator in denominators_on_line(trimmed) {
-                if denominator.is_empty() || !seen.insert(denominator.clone()) {
-                    continue;
+    /// Walk statements, threading the set of denominator keys an enclosing `if`
+    /// has already proven non-zero.
+    fn scan_stmts(
+        &self,
+        stmts: &[Statement],
+        guarded: &HashSet<String>,
+        ctx: &Ctx,
+        findings: &mut Vec<Finding>,
+    ) {
+        for s in stmts {
+            for e in crate::ir::statement_exprs(s) {
+                self.scan_expr(e, guarded, ctx, findings);
+            }
+            match s {
+                Statement::TryCatch {
+                    try_body,
+                    catch_body,
+                    ..
+                } => {
+                    self.scan_stmts(try_body, guarded, ctx, findings);
+                    self.scan_stmts(catch_body, guarded, ctx, findings);
                 }
-                let has_guard =
-                    self.has_prior_guard(&denominator, statements, body_raw, base_line, line_idx);
-                if !has_guard {
-                    findings.push(Finding {
-                        detector: self.name().to_string(),
-                        severity: self.severity(),
-                        file: file.to_path_buf(),
-                        line: base_line + line_idx,
-                        column: 1,
-                        message: format!(
-                            "Unguarded division by '{}' — no prior > 0 check found in {}.",
-                            denominator, context_name
-                        ),
-                        evidence: trimmed.to_string(),
-                    });
+                // An `if`/`case` arm is its own scope; scan each for divisions.
+                Statement::Branch { arms, .. } => {
+                    for arm in arms {
+                        self.scan_stmts(&arm.body, guarded, ctx, findings);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn scan_expr(
+        &self,
+        e: &Expr,
+        guarded: &HashSet<String>,
+        ctx: &Ctx,
+        findings: &mut Vec<Finding>,
+    ) {
+        if let Some((denom_expr, span)) = division_denominator(e) {
+            let denom_expr = unwrap_numeric_wrapper(denom_expr);
+            // `x / 2.0` and `x / (-2.0)` divide by a non-zero constant — safe.
+            if !denom_expr.is_nonzero_numeric_divisor() {
+                let denom = denom_display(denom_expr);
+                // An enclosing `if denom /= 0 then ...` already proved it.
+                let if_guarded = matches!(denom_expr.ref_string(), Some(k) if guarded.contains(&k));
+                if !if_guarded && !self.has_prior_guard(&denom, ctx.all_stmts, ctx.ensure, span) {
+                    findings.push(self.finding(
+                        ctx.file,
+                        span.line,
+                        &denom,
+                        ctx.context_name,
+                        &e.render_text(),
+                    ));
                 }
             }
         }
 
-        findings
+        match e {
+            // `if denom /= 0 then x / denom else fallback`: the then-branch holds
+            // the condition; the else-branch holds its negation (so `if denom == 0
+            // then fallback else x / denom` is guarded too).
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                self.scan_expr(cond, guarded, ctx, findings);
+                let mut then_guarded = guarded.clone();
+                collect_nonzero_keys(cond, &mut then_guarded);
+                self.scan_expr(then_branch, &then_guarded, ctx, findings);
+                let mut else_guarded = guarded.clone();
+                collect_else_nonzero_keys(cond, &mut else_guarded);
+                self.scan_expr(else_branch, &else_guarded, ctx, findings);
+            }
+            Expr::DoBlock { statements, .. } => self.scan_stmts(statements, guarded, ctx, findings),
+            _ => {
+                for c in crate::ir::child_exprs(e) {
+                    self.scan_expr(c, guarded, ctx, findings);
+                }
+            }
+        }
     }
 
+    fn finding(
+        &self,
+        file: &std::path::Path,
+        line: usize,
+        denominator: &str,
+        context_name: &str,
+        evidence: &str,
+    ) -> Finding {
+        Finding {
+            detector: self.name().to_string(),
+            severity: self.severity(),
+            file: file.to_path_buf(),
+            line,
+            column: 1,
+            message: format!(
+                "Unguarded division by '{}' — no prior > 0 check found in {}.",
+                denominator, context_name
+            ),
+            evidence: evidence.to_string(),
+        }
+    }
+
+    /// True if some `assert`/`assertMsg` that runs strictly before `division`,
+    /// or the enclosing template `ensure`, structurally bounds `denominator`
+    /// away from zero. Matching is on the assert's `condition_expr`, so a check
+    /// buried under `||` / `not (...)` cannot masquerade as a guard.
+    ///
+    /// "Before" is decided on the `(line, column)` source position, not the line
+    /// alone: in a one-line do-block (`do { assertMsg ...; pure (x / y) }`) the
+    /// guard and the division share a line, and the earlier column is the one
+    /// that runs first. A guard placed *after* the division (later column on the
+    /// same line, or a later line) still does not suppress.
     fn has_prior_guard(
         &self,
         denominator: &str,
         statements: &[Statement],
-        body_raw: &str,
-        base_line: usize,
-        division_line: usize,
+        ensure: Option<&EnsureClause>,
+        division: &SrcPos,
     ) -> bool {
+        let denominator = denominator.trim();
         if denominator.is_empty() {
             return false;
         }
-        // A guard only counts if it runs BEFORE the division. `division_abs` is
-        // the division's real source line (base_line + its body-relative line).
-        let division_abs = base_line + division_line;
 
-        // `>= 0` is intentionally NOT accepted: y == 0 satisfies it yet still
-        // divides by zero. Only strict-positive (`> 0`) or explicit non-zero
-        // (`/= 0`, the Daml idiom) checks guard a division.
-        let is_positivity = |s: &str| s.contains("> 0") || s.contains("/= 0") || s.contains("!= 0");
+        // The ensure clause holds before the choice body runs.
+        if ensure.is_some_and(|ec| ec.guarantees_nonzero(denominator)) {
+            return true;
+        }
 
-        // Structured asserts that appear strictly before the division. Match the
-        // denominator as a WHOLE identifier so a guard on `quantity` does not
-        // masquerade as a guard on `q`.
-        for stmt in statements {
+        let division_pos = (division.line, division.column);
+        let mut guarded = false;
+        // Only asserts that UNCONDITIONALLY run before the division can guard it.
+        // An assert inside a `Branch` arm runs only when that arm is taken, so it
+        // never dominates a later division — do not descend into Branch arms.
+        crate::ir::walk_unconditional_stmts(statements, &mut |stmt| {
             if let Statement::Assert {
-                condition, span, ..
+                condition_expr,
+                span,
+                ..
             } = stmt
             {
-                if span.line < division_abs
-                    && crate::ir::mentions_ident(condition, denominator)
-                    && is_positivity(condition)
+                if (span.line, span.column) < division_pos
+                    && crate::ir::expr_guarantees_nonzero(condition_expr, denominator)
                 {
-                    return true;
+                    guarded = true;
+                }
+            }
+        });
+        guarded
+    }
+}
+
+/// Add every key that `cond` proves non-zero (under top-level `&&`) — so a
+/// division by that key inside the then-branch of `if cond` is guarded.
+fn collect_nonzero_keys(cond: &Expr, out: &mut HashSet<String>) {
+    for c in cond.conjuncts() {
+        if let Expr::BinOp { lhs, rhs, .. } = c {
+            for operand in [lhs.as_ref(), rhs.as_ref()] {
+                if let Some(k) = operand.ref_string() {
+                    if crate::ir::is_nonzero_bound(c, &k) {
+                        out.insert(k);
+                    }
                 }
             }
         }
+    }
+}
 
-        // Raw body lines strictly before the division line.
-        let lines: Vec<&str> = body_raw.lines().collect();
-        for (i, line) in lines.iter().enumerate() {
-            if i >= division_line {
-                break;
-            }
-            let trimmed = line.trim();
-            if (trimmed.contains("assertMsg") || trimmed.contains("assert "))
-                && crate::ir::mentions_ident(trimmed, denominator)
-                && is_positivity(trimmed)
-            {
-                return true;
+/// Add keys the NEGATION of `cond` proves non-zero — the else-branch case. The
+/// useful idiom is `if denom == 0 then fallback else x / denom`: when `denom ==
+/// 0` is false, `denom` is non-zero.
+fn collect_else_nonzero_keys(cond: &Expr, out: &mut HashSet<String>) {
+    if let Expr::BinOp { op, lhs, rhs, .. } = cond {
+        if op == "==" {
+            if lhs.is_zero_lit() {
+                if let Some(k) = rhs.ref_string() {
+                    out.insert(k);
+                }
+            } else if rhs.is_zero_lit() {
+                if let Some(k) = lhs.ref_string() {
+                    out.insert(k);
+                }
             }
         }
-
-        false
     }
+}
+
+/// The denominator and source position of a division expression, if `e` is one:
+/// the `/` operator, infix `` `div` ``, or prefix `div x y` (denominator is the
+/// second argument).
+fn division_denominator(e: &Expr) -> Option<(&Expr, &SrcPos)> {
+    match e {
+        Expr::BinOp { op, rhs, span, .. } if op == "/" || op == "`div`" => Some((rhs, span)),
+        Expr::App { func, args, span } if args.len() >= 2 => match func.as_ref() {
+            Expr::Var {
+                name,
+                qualifier: None,
+                ..
+            } if name == "div" => Some((&args[1], span)),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Render a denominator for the message, parenthesizing a compound expression
+/// so `x / (a + b)` reports `(a + b)`, not a bare `a + b`.
+fn denom_display(e: &Expr) -> String {
+    match e {
+        Expr::Var { .. } | Expr::Con { .. } | Expr::Lit { .. } => e.render_text(),
+        // A record projection `a.b` is atomic enough to show unwrapped.
+        Expr::BinOp { op, .. } if op == "." => e.render_text(),
+        _ => format!("({})", e.render_text()),
+    }
+}
+
+/// Peel a numeric-conversion wrapper off a denominator: `intToDecimal n`
+/// divides by `n`, not by the function.
+fn unwrap_numeric_wrapper(e: &Expr) -> &Expr {
+    if let Expr::App { func, args, .. } = e {
+        if let Expr::Var { name, .. } = func.as_ref() {
+            if NUMERIC_WRAPPERS.contains(&name.as_str()) && args.len() == 1 {
+                return unwrap_numeric_wrapper(&args[0]);
+            }
+        }
+    }
+    e
 }
 
 /// Numeric-conversion wrappers that are pure noise as a "denominator": the
 /// value that can actually be zero is their argument. `x / intToDecimal n`
 /// divides by `n`, not by the function `intToDecimal`.
 const NUMERIC_WRAPPERS: [&str; 2] = ["intToDecimal", "intToNumeric"];
-
-fn is_numeric_literal(s: &str) -> bool {
-    !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit() || b == b'.')
-}
-
-/// Read the operand starting at byte `start`: a balanced `(...)` group, or a run
-/// of identifier / `.` / digit chars. None if there is nothing there. Stops at
-/// the first non-ASCII byte, so it never slices a multi-byte char.
-fn read_operand(line: &str, start: usize) -> Option<String> {
-    let b = line.as_bytes();
-    if start >= b.len() {
-        return None;
-    }
-    if b[start] == b'(' {
-        let mut depth = 0i32;
-        let mut k = start;
-        while k < b.len() {
-            match b[k] {
-                b'(' => depth += 1,
-                b')' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return Some(line[start..=k].to_string());
-                    }
-                }
-                _ => {}
-            }
-            k += 1;
-        }
-        return Some(line[start..].to_string());
-    }
-    let mut k = start;
-    while k < b.len()
-        && (b[k].is_ascii_alphanumeric() || b[k] == b'_' || b[k] == b'.' || b[k] == b'\'')
-    {
-        k += 1;
-    }
-    if k == start {
-        None
-    } else {
-        Some(line[start..k].to_string())
-    }
-}
-
-/// The denominator just past a `/` at byte `start`, skipping numeric-conversion
-/// wrappers (`x / intToDecimal n` → `n`) and suppressing non-zero numeric-literal
-/// denominators (`x / 2.0` is safe; `x / 0` still flags).
-fn resolve_denominator(line: &str, start: usize) -> Option<String> {
-    let b = line.as_bytes();
-    let mut j = start;
-    while j < b.len() && b[j] == b' ' {
-        j += 1;
-    }
-    let op = read_operand(line, j)?;
-    if NUMERIC_WRAPPERS.contains(&op.as_str()) {
-        return resolve_denominator(line, j + op.len());
-    }
-    if is_numeric_literal(&op) && op != "0" && op != "0.0" && op != "0." {
-        return None;
-    }
-    Some(op)
-}
-
-/// Every division denominator on `line` (the `/` operator or the `` `div` ``
-/// function), left to right — so multiple divisions on one line are all seen.
-fn denominators_on_line(line: &str) -> Vec<String> {
-    let b = line.as_bytes();
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i < b.len() {
-        // `/` division operator, excluding `/=` (not-equal) and `//`.
-        if b[i] == b'/'
-            && b.get(i + 1) != Some(&b'=')
-            && b.get(i + 1) != Some(&b'/')
-            && (i == 0 || b[i - 1] != b'/')
-        {
-            if let Some(d) = resolve_denominator(line, i + 1) {
-                out.push(d);
-            }
-            i += 1;
-            continue;
-        }
-        // `` `div` `` infix division.
-        if b[i] == b'`' && b[i..].starts_with(b"`div`") {
-            if let Some(d) = resolve_denominator(line, i + 5) {
-                out.push(d);
-            }
-            i += 5;
-            continue;
-        }
-        i += 1;
-    }
-    out
-}
 
 impl Detector for UnguardedDivision {
     fn name(&self) -> &str {
@@ -234,23 +301,24 @@ impl Detector for UnguardedDivision {
         let mut findings = Vec::new();
 
         for template in &module.templates {
+            // A denominator bounded by the template `ensure` is guarded before
+            // any choice body runs.
+            let ensure = template.ensure_clause.as_ref();
             for choice in &template.choices {
-                findings.extend(self.check_body_raw(
-                    &choice.body_raw,
+                findings.extend(self.check_body(
                     &choice.body,
+                    ensure,
                     &module.file,
-                    choice.span.line,
                     &format!("choice '{}'", choice.name),
                 ));
             }
         }
 
         for func in &module.functions {
-            findings.extend(self.check_body_raw(
-                &func.body_raw,
+            findings.extend(self.check_body(
                 &func.body,
+                None,
                 &module.file,
-                func.span.line,
                 &format!("function '{}'", func.name),
             ));
         }
@@ -270,7 +338,7 @@ mod tests {
         let source = r#"module Test where
 
 scaleFees fees rate =
-  map (\f -> f { amount = f.amount * (1.0 / rate)) fees
+  map (\f -> f with amount = f.amount * (1.0 / rate)) fees
 "#;
         let module = parse_daml(source, Path::new("AmuletRules.daml"));
         let findings = UnguardedDivision.detect(&module);
@@ -412,6 +480,317 @@ compute a b c d = do
         assert!(
             !UnguardedDivision.detect(&zero).is_empty(),
             "x / 0 must flag"
+        );
+    }
+
+    // Regression (audit round-3): a `/` inside a STRING LITERAL is not a
+    // division — a URL or path in a log line must not be flagged.
+    #[test]
+    fn test_slash_in_string_literal_is_not_division() {
+        let source = r#"module Test where
+
+logUrl = debug "http://host/api/v1/data"
+"#;
+        let module = parse_daml(source, Path::new("Url.daml"));
+        assert!(
+            UnguardedDivision.detect(&module).is_empty(),
+            "slashes inside a string literal are not divisions: {:?}",
+            UnguardedDivision.detect(&module)
+        );
+    }
+
+    // Regression (audit round-3): a `/` inside a comment is not a division.
+    #[test]
+    fn test_slash_in_comment_is_not_division() {
+        let source = r#"module Test where
+
+f x = do
+  {- ratio a/b/c is documented elsewhere -}
+  pure x -- see n/m below
+"#;
+        let module = parse_daml(source, Path::new("Cmt.daml"));
+        assert!(
+            UnguardedDivision.detect(&module).is_empty(),
+            "slashes inside comments are not divisions: {:?}",
+            UnguardedDivision.detect(&module)
+        );
+    }
+
+    // Regression (audit round-3): a division whose operator wraps to the next
+    // line is one expression and must still be flagged.
+    #[test]
+    fn test_line_wrapped_division_is_flagged() {
+        let source = "module Test where\n\nratio a b = a /\n  b\n";
+        let module = parse_daml(source, Path::new("Wrap.daml"));
+        assert!(
+            !UnguardedDivision.detect(&module).is_empty(),
+            "a line-wrapped `a / b` is still an unguarded division"
+        );
+    }
+
+    // Regression (audit round-3): division by a parenthesized non-zero numeric
+    // constant is safe.
+    #[test]
+    fn test_parenthesized_literal_denominator_is_safe() {
+        let module = parse_daml("module T where\nf x = x / (2.0)\n", Path::new("P.daml"));
+        assert!(
+            UnguardedDivision.detect(&module).is_empty(),
+            "x / (2.0) is safe: {:?}",
+            UnguardedDivision.detect(&module)
+        );
+    }
+
+    // Regression (audit round-3): the defensive `if denom /= 0 then x/denom else
+    // fallback` idiom is guarded by its condition — no finding.
+    #[test]
+    fn test_if_nonzero_guard_suppresses() {
+        let m = parse_daml(
+            "module T where\nf x denom = pure (if denom /= 0.0 then x / denom else 0.0)\n",
+            Path::new("If.daml"),
+        );
+        assert!(
+            UnguardedDivision.detect(&m).is_empty(),
+            "if denom /= 0 then x/denom guards the division: {:?}",
+            UnguardedDivision.detect(&m)
+        );
+    }
+
+    // Regression (audit round-3): the flipped form `if denom == 0 then fallback
+    // else x/denom` is guarded on the else-branch.
+    #[test]
+    fn test_if_zero_else_guard_suppresses() {
+        let m = parse_daml(
+            "module T where\nf x denom = pure (if denom == 0.0 then 0.0 else x / denom)\n",
+            Path::new("IfElse.daml"),
+        );
+        assert!(
+            UnguardedDivision.detect(&m).is_empty(),
+            "else-branch of `if denom == 0` has denom /= 0: {:?}",
+            UnguardedDivision.detect(&m)
+        );
+    }
+
+    // But an `if` on an UNRELATED condition does not guard the division.
+    #[test]
+    fn test_if_unrelated_condition_does_not_guard() {
+        let m = parse_daml(
+            "module T where\nf x denom flag = pure (if flag then x / denom else 0.0)\n",
+            Path::new("IfUnrel.daml"),
+        );
+        assert!(
+            !UnguardedDivision.detect(&m).is_empty(),
+            "`if flag` says nothing about denom — must still flag"
+        );
+    }
+
+    // Regression (round-3 F22): the prefix application form `div x y` divides
+    // by its SECOND argument and must be flagged like `x / y`.
+    #[test]
+    fn test_prefix_div_is_flagged() {
+        let source = r#"module Test where
+
+share total n = pure (div total n)
+"#;
+        let module = parse_daml(source, Path::new("Share.daml"));
+        let findings = UnguardedDivision.detect(&module);
+        assert!(
+            findings.iter().any(|f| f.message.contains("'n'")),
+            "prefix `div total n` divides by n and must flag: {:?}",
+            findings
+        );
+    }
+
+    // Regression (round-3 F22): a guard on the prefix-div denominator suppresses.
+    #[test]
+    fn test_guarded_prefix_div_passes() {
+        let source = r#"module Test where
+
+share total n = do
+  assertMsg "n positive" (n > 0)
+  pure (div total n)
+"#;
+        let module = parse_daml(source, Path::new("Share.daml"));
+        assert!(
+            UnguardedDivision.detect(&module).is_empty(),
+            "a `> 0` guard on n must suppress the prefix-div finding"
+        );
+    }
+
+    // Regression (round-3 F22): `div x 2` divides by a non-zero literal — safe.
+    #[test]
+    fn test_prefix_div_literal_denominator_is_safe() {
+        let source = "module T where\nf x = pure (div x 2)\n";
+        let module = parse_daml(source, Path::new("Lit.daml"));
+        assert!(
+            UnguardedDivision.detect(&module).is_empty(),
+            "div x 2 is safe"
+        );
+    }
+
+    // Regression (round-3 F24): a denominator bounded by the enclosing template
+    // `ensure` clause is guarded before the choice body runs.
+    #[test]
+    fn test_ensure_clause_guards_choice_division() {
+        let source = r#"module Test where
+
+template Pool
+  with
+    admin : Party
+    rate : Decimal
+  where
+    signatory admin
+    ensure rate > 0.0
+
+    choice Share : Decimal
+      with
+        total : Decimal
+      controller admin
+      do
+        pure (total / rate)
+"#;
+        let module = parse_daml(source, Path::new("Pool.daml"));
+        assert!(
+            UnguardedDivision.detect(&module).is_empty(),
+            "ensure rate > 0.0 guards the division by rate: {:?}",
+            UnguardedDivision.detect(&module)
+        );
+    }
+
+    // Regression (round-3 F24): a guard hidden under `||` is NOT a guarantee —
+    // the division must still be flagged.
+    #[test]
+    fn test_disjunction_guard_does_not_suppress() {
+        let source = r#"module Test where
+
+f x y = do
+  assertMsg "weak" (y > 0 || x > 5)
+  pure (x / y)
+"#;
+        let module = parse_daml(source, Path::new("Or.daml"));
+        assert!(
+            !UnguardedDivision.detect(&module).is_empty(),
+            "`y > 0 || x > 5` does not guarantee y > 0, so the division must flag"
+        );
+    }
+
+    // Regression (audit F10): a guard on the SAME line as the division (a
+    // one-line braced do-block) runs before it and must suppress. Ordering is by
+    // source position, not line alone, so the earlier-column assert counts.
+    #[test]
+    fn test_same_line_guard_suppresses() {
+        let source = "module Test where\nf x y = do { assertMsg \"y\" (y > 0.0); pure (x / y) }\n";
+        let module = parse_daml(source, Path::new("SameLine.daml"));
+        assert!(
+            UnguardedDivision.detect(&module).is_empty(),
+            "a guard before the division on the same line must suppress: {:?}",
+            UnguardedDivision.detect(&module)
+        );
+    }
+
+    // Regression (audit F10): the converse must still flag — a guard placed
+    // AFTER the division on the same line runs too late.
+    #[test]
+    fn test_same_line_guard_after_division_is_flagged() {
+        let source = "module Test where\nf x y = do { pure (x / y); assertMsg \"y\" (y > 0.0) }\n";
+        let module = parse_daml(source, Path::new("SameLineLate.daml"));
+        assert!(
+            !UnguardedDivision.detect(&module).is_empty(),
+            "a guard after the division on the same line must NOT suppress"
+        );
+    }
+
+    // Regression (audit F26): division by a non-zero NEGATIVE literal is safe,
+    // exactly like `x / 2.0`. The parser spells `-2.0` as `Neg(Lit)`.
+    #[test]
+    fn test_negative_literal_denominator_is_safe() {
+        let infix = parse_daml("module T where\nf x = x / (-2.0)\n", Path::new("Neg.daml"));
+        assert!(
+            UnguardedDivision.detect(&infix).is_empty(),
+            "x / (-2.0) is safe: {:?}",
+            UnguardedDivision.detect(&infix)
+        );
+
+        let prefix = parse_daml(
+            "module T where\nf x = div x (-3)\n",
+            Path::new("NegDiv.daml"),
+        );
+        assert!(
+            UnguardedDivision.detect(&prefix).is_empty(),
+            "div x (-3) is safe: {:?}",
+            UnguardedDivision.detect(&prefix)
+        );
+
+        // But `-0.0` is still zero — it must stay flagged.
+        let neg_zero = parse_daml(
+            "module T where\nf x = x / (-0.0)\n",
+            Path::new("NegZero.daml"),
+        );
+        assert!(
+            !UnguardedDivision.detect(&neg_zero).is_empty(),
+            "x / (-0.0) divides by zero and must flag"
+        );
+    }
+
+    // Regression (finding 9/17): a guard inside one arm of an `if`/`case` runs
+    // only on that path, so it does NOT guard a later unconditional division.
+    #[test]
+    fn test_conditional_if_guard_does_not_suppress() {
+        let m = parse_daml(
+            "module Test where\nf flag x y = do\n  if flag\n    then assertMsg \"y ok\" (y > 0.0)\n    else pure ()\n  pure (x / y)\n",
+            Path::new("CondIf.daml"),
+        );
+        assert!(
+            !UnguardedDivision.detect(&m).is_empty(),
+            "an assert only on the then-path must not suppress the later x / y"
+        );
+
+        let mc = parse_daml(
+            "module Test where\nf k x y = do\n  case k of\n    _ -> assertMsg \"y\" (y > 0.0)\n  pure (x / y)\n",
+            Path::new("CondCase.daml"),
+        );
+        assert!(
+            !UnguardedDivision.detect(&mc).is_empty(),
+            "an assert only in a case alt must not suppress the later x / y"
+        );
+    }
+
+    // Regression (finding 25): an assert inside a `forA_` lambda runs zero times
+    // for an empty list, so it does not prove the denominator non-zero. The
+    // `when`-gated form is conditional too.
+    #[test]
+    fn test_iterative_or_conditional_guard_does_not_suppress() {
+        let for_a = parse_daml(
+            "module Test where\nf x y items = do\n  forA_ items (\\i -> assertMsg \"y\" (y > 0.0))\n  pure (x / y)\n",
+            Path::new("ForA.daml"),
+        );
+        assert!(
+            !UnguardedDivision.detect(&for_a).is_empty(),
+            "an assert inside a forA_ lambda runs zero times on []; must still flag"
+        );
+
+        let when_gated = parse_daml(
+            "module Test where\nf x y b = do\n  when b (assertMsg \"y\" (y > 0.0))\n  pure (x / y)\n",
+            Path::new("WhenG.daml"),
+        );
+        assert!(
+            !UnguardedDivision.detect(&when_gated).is_empty(),
+            "an assert under `when` runs only when the guard holds; must still flag"
+        );
+    }
+
+    // Counter-case: an `if cond then x/denom` where cond proves denom non-zero
+    // is guarded on that branch and stays clean, and a top-level unconditional
+    // assert before a division inside a branch still suppresses.
+    #[test]
+    fn test_unconditional_guard_before_branch_division_suppresses() {
+        let m = parse_daml(
+            "module Test where\nf x y b = do\n  assertMsg \"y\" (y > 0.0)\n  if b then pure (x / y) else pure 0.0\n",
+            Path::new("Dom.daml"),
+        );
+        assert!(
+            UnguardedDivision.detect(&m).is_empty(),
+            "an unconditional guard dominating the branch must suppress: {:?}",
+            UnguardedDivision.detect(&m)
         );
     }
 
