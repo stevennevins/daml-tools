@@ -68,8 +68,8 @@ boolToInt b = case b of
 
 -- BOOL_TO_INT2_BEGIN
 boolToInt2 b = if b
-  then 1
-  else 0
+                 then 1
+                 else 0
 -- BOOL_TO_INT2_END
 
 -- TEXT_TO_BOOL_BEGIN
@@ -95,8 +95,8 @@ typeError b = if b
 -- INT_OR_TEXT_BEGIN
 intOrText: Bool -> Either Int Text
 intOrText b = if b
-  then Left 1
-  else Right "a"
+                then Left 1
+                else Right "a"
 -- INT_OR_TEXT_END
 
 -- S_T_BEGIN
@@ -123,32 +123,32 @@ typeError b p = if b
 
 -- S_OR_T_BEGIN
 ifThenSElseT1 b p = if b
-  then do
-    cid <- create S with p
-    return (Left cid)
-  else do
-    cid <- create T with p
-    return (Right cid)
+                      then do
+                        cid <- create S with p
+                        return (Left cid)
+                      else do
+                        cid <- create T with p
+                        return (Right cid)
 
 ifThenSElseT2 b p = if b
-  then do
-    create S with p
-    return ()
-  else do
-    create T with p
-    return ()
+                      then do
+                        create S with p
+                        return ()
+                      else do
+                        create T with p
+                        return ()
 -- S_OR_T_END
 
 -- VOID_BEGIN
 ifThenSElseT3 b p = if b
-  then void (create S with p)
-  else void (create T with p)
+                      then void (create S with p)
+                      else void (create T with p)
 -- VOID_END
 
 -- CUSTOM_WHEN_BEGIN
 conditionalS b p = if b
-  then void (create S with p)
-  else return ()
+                     then void (create S with p)
+                     else return ()
 -- CUSTOM_WHEN_END
 
 -- WHEN_BEGIN

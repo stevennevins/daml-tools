@@ -457,12 +457,12 @@ template Forkable
       do if (n == 0)
            then
              pure [self]
-            else do
-                c1 <- create Forkable with party = party, parent = Some self
-                l1 <- exercise c1 Fork with n = n-1
-                c2 <- create Forkable with party = party, parent = Some self
-                l2 <- exercise c2 Fork with n = n-1
-                pure (l1 ++ l2)
+           else do
+               c1 <- create Forkable with party = party, parent = Some self
+               l1 <- exercise c1 Fork with n = n-1
+               c2 <- create Forkable with party = party, parent = Some self
+               l2 <- exercise c2 Fork with n = n-1
+               pure (l1 ++ l2)
 
 -- this monster exists solely to test the nesting limit, in the absence of recursive types.
 -- generated with

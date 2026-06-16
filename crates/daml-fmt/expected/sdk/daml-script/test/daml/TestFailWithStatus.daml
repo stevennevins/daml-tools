@@ -46,8 +46,8 @@ template T
       controller p
       do
         pure $ if shouldFail
-          then failWithStatusPure validFailureStatus
-          else ()
+                 then failWithStatusPure validFailureStatus
+                 else ()
 
 roundtrip: Script ()
 roundtrip = do

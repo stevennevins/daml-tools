@@ -185,8 +185,8 @@ cordic n r
       , 0.6072529350 ]
 
     kn = if n < 17
-      then ks !! n
-      else last ks
+           then ks !! n
+           else last ks
 
 -- | `cordicInner` implements the inner loop of the CORDIC algorithm
 cordicInner: Int -> Decimal -> (Decimal, Decimal) -> Decimal -> [Decimal] -> (Decimal, Decimal)

@@ -159,8 +159,8 @@ minimumOn _ [] = error "minimumOn: empty list"
 minimumOn f (x::xs) = fst $ foldl keep_min (x, f x) xs
   where keep_min (m, km) e = let ke = f e
                              in if ke < km
-                                then (e, ke)
-                                else (m, km)
+                                  then (e, ke)
+                                  else (m, km)
 
 -- | `maximumOn f xs` returns the first element `x` of `xs` for which `f x`
 -- is greater than or equal to any other `f y` for `y` in `xs`. `xs` must be
@@ -170,8 +170,8 @@ maximumOn _ [] = error "maximumOn: empty list"
 maximumOn f (x::xs) = fst $ foldl keep_max (x, f x) xs
   where keep_max (m, km) e = let ke = f e
                              in if ke > km
-                                then (e, ke)
-                                else (m, km)
+                                  then (e, ke)
+                                  else (m, km)
 
 -- | Merge two sorted lists using into a single, sorted whole, allowing
 -- the programmer to specify the comparison function.

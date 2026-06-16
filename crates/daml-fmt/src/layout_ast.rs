@@ -6,20 +6,22 @@
 //!
 //! Uniform mechanism (the architecture the prototype validated):
 //!   1. Walk the AST; every node carries a byte `Span`.
-//!   2. For a layout block (currently `do`), reindent ONLY the block's child
-//!      lines so the first real statement lands at `anchor_col + 2`. The anchor
-//!      (`do`) line itself is never moved, which makes the rule a fixpoint:
-//!      a second pass computes delta 0. Children shift by one uniform delta, so
-//!      the block's internal structure (and any nested blocks) ride along.
+//!   2. For a layout block, reindent ONLY the block's child lines so the anchor
+//!      construct lands at `anchor_col + 2`: a `do`-block's statements to
+//!      `do_col + 2` (including a `do` that opens with `let`), and an
+//!      `if`/`then`/`else`'s `then`/`else` clauses to `if_col + 2`. The anchor
+//!      line itself is never moved, which makes each rule a fixpoint: a second
+//!      pass computes delta 0. Children shift by one uniform delta, so the
+//!      block's internal structure (and any nested blocks) ride along.
 //!   3. Comments are sacred: comment lines are never measured-from and never
 //!      shifted (CLAUDE.md). Block-comment interiors are trivia, untouched.
 //!   4. Gate the whole candidate on `same_tokens` = identical LAID-OUT token
 //!      stream (offside virtuals included) ⇒ identical parse ⇒ identical
 //!      desugar. Any accepted reindent is desugar-safe BY CONSTRUCTION.
 //!   5. Fall back to the input (verbatim) when the gate rejects or a node is
-//!      not modeled. Unmodeled constructs (case, with, where, guards, let-in,
-//!      record updates, TypeDef, expression continuations) pass through
-//!      verbatim — desugar-safe and lets us land one construct at a time.
+//!      not modeled. Unmodeled constructs (case, with, where, guards, `let … in`
+//!      expressions, record updates, TypeDef, expression continuations) pass
+//!      through verbatim — desugar-safe and lets us land one construct at a time.
 //!
 //! On top of the structural pass we compose the proven, token-gated
 //! whitespace + colon-spacing normalization (`crate::normalize_gaps`).
@@ -31,18 +33,27 @@ use daml_parser::parse::parse_module;
 
 const INDENT: i64 = 2;
 
-/// Format with the AST-driven `do`-block rule, then the gap normalization;
+/// Upper bound on structural-reindent iterations. The do-pass and if-pass can
+/// unblock one another (the if-pass's `else` shift can remove a collision that
+/// made the do-pass's gate reject), so they are iterated to a fixpoint for
+/// single-call idempotence. Real inputs converge in 1-2; the cap only guards a
+/// pathological non-convergence (the last output is still gate-safe).
+const MAX_STRUCTURAL_PASSES: usize = 6;
+
+/// Format with the AST-driven structural reindents, then the gap normalization;
 /// every step is gated for desugar-safety.
 pub fn format_ast(src: &str) -> String {
-    let (module, _diags) = parse_module(src);
-
-    // Step 1: structural reindent (do-blocks). Gate vs the input.
-    let reindented = reindent_do_blocks(src, &module);
-    let base = if reindented != src && same_tokens(src, &reindented) {
-        reindented
-    } else {
-        src.to_string()
-    };
+    // Step 1: structural reindent (do-blocks, then if/then/else), each its own
+    // gated pass. Iterate to a fixpoint so a later pass that unblocks an earlier
+    // one's gate still converges within a single call (idempotence).
+    let mut base = src.to_string();
+    for _ in 0..MAX_STRUCTURAL_PASSES {
+        let next = gated_if_pass(&gated_do_pass(&base));
+        if next == base {
+            break;
+        }
+        base = next;
+    }
 
     // Step 2: whitespace + colon normalization on top, gated vs `base`.
     // same_tokens is transitive, so gating each step against its own input
@@ -56,6 +67,30 @@ pub fn format_ast(src: &str) -> String {
         return ws_only;
     }
     base
+}
+
+/// Do-block reindent of `src`, accepted only if it passes the `same_tokens`
+/// gate; otherwise `src` unchanged.
+fn gated_do_pass(src: &str) -> String {
+    let (module, _) = parse_module(src);
+    let r = reindent_do_blocks(src, &module);
+    if r != src && same_tokens(src, &r) {
+        r
+    } else {
+        src.to_string()
+    }
+}
+
+/// if/then/else clause reindent of `src`, gated like the do-pass. Re-parses its
+/// own input so spans match the (possibly already do-reindented) bytes.
+fn gated_if_pass(src: &str) -> String {
+    let (module, _) = parse_module(src);
+    let r = reindent_ifs(src, &module);
+    if r != src && same_tokens(src, &r) {
+        r
+    } else {
+        src.to_string()
+    }
 }
 
 /// Count of do-blocks reindented vs total do-blocks — the coverage metric
@@ -406,6 +441,225 @@ fn collect_do_spans(m: &Module, out: &mut Vec<Span>) {
     visit_do(m, &mut |span, _stmts| out.push(span));
 }
 
+/// Visit every expression in the module, pre-order. The generic walker behind
+/// construct-specific rules (if/then/else, …); mirrors `visit_do`'s reach but
+/// yields every node, not just `Do`.
+fn walk_module_exprs(m: &Module, f: &mut impl FnMut(&Expr)) {
+    for d in &m.decls {
+        match d {
+            Decl::Function(fun) => {
+                for eq in &fun.equations {
+                    walk_expr(&eq.body, f);
+                    for (g, b) in &eq.guards {
+                        walk_expr(g, f);
+                        walk_expr(b, f);
+                    }
+                    for wb in &eq.where_bindings {
+                        walk_expr(&wb.expr, f);
+                    }
+                }
+            }
+            Decl::Template(t) => {
+                for b in &t.body {
+                    match b {
+                        TemplateBodyDecl::Choice(c) => {
+                            if let Some(body) = &c.body {
+                                walk_expr(body, f);
+                            }
+                        }
+                        TemplateBodyDecl::Ensure { expr, .. }
+                        | TemplateBodyDecl::Key { expr, .. }
+                        | TemplateBodyDecl::Maintainer { expr, .. } => walk_expr(expr, f),
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn walk_expr(e: &Expr, f: &mut impl FnMut(&Expr)) {
+    f(e);
+    match e {
+        Expr::App { func, args, .. } => {
+            walk_expr(func, f);
+            args.iter().for_each(|a| walk_expr(a, f));
+        }
+        Expr::BinOp { lhs, rhs, .. } => {
+            walk_expr(lhs, f);
+            walk_expr(rhs, f);
+        }
+        Expr::Neg { expr, .. } | Expr::Lambda { body: expr, .. } => walk_expr(expr, f),
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            walk_expr(cond, f);
+            walk_expr(then_branch, f);
+            walk_expr(else_branch, f);
+        }
+        Expr::Case {
+            scrutinee, alts, ..
+        } => {
+            walk_expr(scrutinee, f);
+            alts.iter().for_each(|a| walk_expr(&a.body, f));
+        }
+        Expr::Do { stmts, .. } => {
+            for s in stmts {
+                match s {
+                    DoStmt::Bind { expr, .. } | DoStmt::Expr { expr, .. } => walk_expr(expr, f),
+                    DoStmt::Let { bindings, .. } => {
+                        bindings.iter().for_each(|b| walk_expr(&b.expr, f))
+                    }
+                }
+            }
+        }
+        Expr::LetIn { bindings, body, .. } => {
+            bindings.iter().for_each(|b| walk_expr(&b.expr, f));
+            walk_expr(body, f);
+        }
+        Expr::Record { base, fields, .. } => {
+            walk_expr(base, f);
+            for fa in fields {
+                if let Some(v) = &fa.value {
+                    walk_expr(v, f);
+                }
+            }
+        }
+        Expr::Tuple { items, .. } | Expr::List { items, .. } => {
+            items.iter().for_each(|it| walk_expr(it, f))
+        }
+        Expr::Try { body, handlers, .. } => {
+            walk_expr(body, f);
+            handlers.iter().for_each(|h| walk_expr(&h.body, f));
+        }
+        Expr::Section {
+            operand: Some(o), ..
+        } => walk_expr(o, f),
+        _ => {}
+    }
+}
+
+/// Byte offset of the standalone keyword `kw` in `src[from..to)`, skipping any
+/// match that falls inside a comment. The region between two sibling expression
+/// spans is only layout + the keyword, so a word-boundary scan is safe.
+fn find_keyword(
+    src: &str,
+    from: usize,
+    to: usize,
+    kw: &str,
+    comments: &[(usize, usize)],
+) -> Option<usize> {
+    let hay = &src[from..to.min(src.len())];
+    let bytes = hay.as_bytes();
+    let mut i = 0;
+    while let Some(rel) = hay[i..].find(kw) {
+        let at = i + rel;
+        let before_ok = at == 0 || !bytes[at - 1].is_ascii_alphanumeric();
+        let after = at + kw.len();
+        let after_ok = after >= hay.len() || !bytes[after].is_ascii_alphanumeric();
+        let abs = from + at;
+        if before_ok && after_ok && !is_comment_line(comments, abs) {
+            return Some(abs);
+        }
+        i = at + 1;
+    }
+    None
+}
+
+/// Reindent the `then` and `else` clauses of multi-line `if`/`then`/`else` so
+/// each keyword lands at `if_col + 2`. Only a clause whose keyword starts its
+/// own line is moved, and the whole clause (keyword line + its branch's
+/// continuation lines) shifts by ONE uniform delta — the let-block trick — so
+/// the branch's internal layout is preserved. `same_tokens` still gates it.
+fn if_edits(src: &str, module: &Module) -> Vec<Edit> {
+    let line_starts = line_start_table(src);
+    let comments = comment_spans(src);
+
+    // (if_span, if_byte, cond_end, then_span, else_span), outermost first.
+    let mut ifs: Vec<(Span, usize, usize, Span, Span)> = Vec::new();
+    walk_module_exprs(module, &mut |e| {
+        if let Expr::If {
+            span,
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } = e
+        {
+            ifs.push((
+                *span,
+                span.start,
+                cond.span().end,
+                then_branch.span(),
+                else_branch.span(),
+            ));
+        }
+    });
+    ifs.sort_by(|a, b| a.0.start.cmp(&b.0.start).then(b.0.end.cmp(&a.0.end)));
+
+    let mut edits: Vec<Edit> = Vec::new();
+    let mut accepted: Vec<Span> = Vec::new();
+    for (if_span, if_byte, cond_end, then_span, else_span) in ifs {
+        // Skip an if nested in one we already claimed (it rides the outer shift).
+        if accepted
+            .iter()
+            .any(|a| a.start <= if_span.start && if_span.end <= a.end && *a != if_span)
+        {
+            continue;
+        }
+        accepted.push(if_span);
+
+        let if_line = line_of(&line_starts, if_byte);
+        if leading_has_tab(src, line_starts[if_line]) {
+            continue;
+        }
+        // Visual column of the `if` keyword on its line — count CHARACTERS, not
+        // bytes, so a multibyte char before `if` does not over-indent (the shift
+        // emits spaces and `indent_of` counts chars, so these must agree).
+        let if_col = src[line_starts[if_line]..if_byte].chars().count() as i64;
+        let target = if_col + INDENT;
+
+        let then_byte = find_keyword(src, cond_end, then_span.start, "then", &comments);
+        let else_byte = find_keyword(src, then_span.end, else_span.start, "else", &comments);
+
+        for (kw_byte, branch_end) in [(then_byte, then_span.end), (else_byte, else_span.end)] {
+            let Some(kw_byte) = kw_byte else { continue };
+            let kw_line = line_of(&line_starts, kw_byte);
+            let ls = line_starts[kw_line];
+            // Only move a clause whose keyword STARTS its line (leading spaces
+            // only). An inline `if c then x else y` is left alone.
+            if src[ls..kw_byte].chars().any(|c| c != ' ') {
+                continue;
+            }
+            if leading_has_tab(src, ls) {
+                continue;
+            }
+            let cur = indent_of(src, &line_starts, kw_line);
+            let delta = target - cur;
+            if delta != 0 {
+                edits.push(Edit {
+                    child_start: ls,
+                    block_end: branch_end,
+                    delta,
+                });
+            }
+        }
+    }
+    edits
+}
+
+fn reindent_ifs(src: &str, module: &Module) -> String {
+    let edits = if_edits(src, module);
+    if edits.is_empty() {
+        return src.to_string();
+    }
+    apply_shifts(src, &edits)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -488,6 +742,55 @@ mod tests {
         // try/catch handler layout is still deliberately left verbatim.
         let src = "f = do\n      _ <- try foo catch _ -> bar\n      pure ()\n";
         assert_eq!(format_ast(src), src);
+    }
+
+    #[test]
+    fn if_then_else_reindented_to_if_col_plus_two() {
+        // `if` at col 2; then/else lines move to col 4 (if_col + 2).
+        let src = "f x =\n  if x > 0\n      then 1\n      else 2\n";
+        let out = format_ast(src);
+        assert_eq!(out, "f x =\n  if x > 0\n    then 1\n    else 2\n");
+        assert_eq!(format_ast(&out), out); // idempotent
+    }
+
+    #[test]
+    fn if_then_else_already_aligned_is_a_fixpoint() {
+        let src = "f x =\n  if x > 0\n    then 1\n    else 2\n";
+        assert_eq!(format_ast(src), src);
+    }
+
+    #[test]
+    fn single_line_if_is_untouched() {
+        // Inline then/else are not line-leading, so the rule leaves them alone.
+        let src = "g x = if x then 1 else 2\n";
+        assert_eq!(format_ast(src), src);
+    }
+
+    #[test]
+    fn do_then_if_passes_reach_a_single_call_fixpoint() {
+        // Regression: a do-block as the `then`-branch where `then`/`else` are at
+        // different columns. In pass 1 the do-pass's body shift collides with
+        // the not-yet-moved `else` (offside VSemi) so its gate rejects; the
+        // if-pass then moves `else`, removing the collision. The structural
+        // passes must iterate to a fixpoint so a SINGLE format call is already
+        // idempotent — format(format(x)) == format(x).
+        let src = "f =\n  if c\n    then do\n       a\n       b\n      else d\n";
+        let once = format_ast(src);
+        let twice = format_ast(&once);
+        assert_eq!(once, twice, "single-call output must be a fixpoint");
+    }
+
+    #[test]
+    fn if_then_else_multiline_branch_rides_uniform_shift() {
+        // A then-branch spanning extra lines shifts by ONE uniform delta, so the
+        // branch's own indentation structure is preserved (8->6, 10->8).
+        let src = "f x =\n  if x > 0\n      then g\n             a\n      else h\n";
+        let out = format_ast(src);
+        assert_eq!(
+            out,
+            "f x =\n  if x > 0\n    then g\n           a\n    else h\n"
+        );
+        assert_eq!(format_ast(&out), out); // idempotent
     }
 
     #[test]

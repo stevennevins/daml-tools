@@ -75,8 +75,8 @@ roundCeiling: NumericScale n => Numeric 37 -> Numeric n
 roundCeiling x =
    if (x <= cast r) then
     r
-  else
-    r + epsilon
+     else
+       r + epsilon
   where
     r = roundHalfEven x
 
@@ -84,8 +84,8 @@ roundFloor: NumericScale n => Numeric 37 -> Numeric n
 roundFloor x =
     if (cast r <= x) then
       r
-    else
-      r - epsilon
+      else
+        r - epsilon
     where
       r = roundHalfEven x
 
@@ -93,22 +93,22 @@ roundUp: NumericScale n => Numeric 37 -> Numeric n
 roundUp x =
     if (0.0 <= x) then
       roundCeiling x
-    else
-      roundFloor x
+      else
+        roundFloor x
 
 roundDown: NumericScale n => Numeric 37 -> Numeric n
 roundDown x =
     if (0.0 <= x) then
       roundFloor x
-    else
-      roundCeiling x
+      else
+        roundCeiling x
 
 roundHalfCeiling: NumericScale n => Numeric 37 -> Numeric n
 roundHalfCeiling x =
     if (x <= cast r) then
       r
-    else
-      roundHalfEven (x + epsilon)
+      else
+        roundHalfEven (x + epsilon)
     where
       r = roundHalfEven x
 
@@ -116,8 +116,8 @@ roundHalfFloor: NumericScale n => Numeric 37 -> Numeric n
 roundHalfFloor x =
     if (cast r <= x) then
       r
-    else
-      roundHalfEven (x - epsilon)
+      else
+        roundHalfEven (x - epsilon)
     where
       r = roundHalfEven x
 
@@ -125,15 +125,15 @@ roundHalfUp: NumericScale n => Numeric 37 -> Numeric n
 roundHalfUp x =
     if (0.0 <= x) then
      roundHalfCeiling x
-    else
-      roundHalfFloor x
+      else
+        roundHalfFloor x
 
 roundHalfDown: NumericScale n => Numeric 37 -> Numeric n
 roundHalfDown x =
   if (0.0 <= x) then
     roundHalfFloor x
-  else
-    roundHalfCeiling x
+    else
+      roundHalfCeiling x
 
 roundUnnecessary: NumericScale n => Numeric 37 -> Numeric n
 roundUnnecessary = cast

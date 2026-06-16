@@ -12,15 +12,15 @@ import DA.Assert
 range: a -> (a -> a) -> Int -> [a]
 range x next n =
   if n <= 0 then []
-  else reverse (rangeHelper [x] next (n - 1))
+    else reverse (rangeHelper [x] next (n - 1))
 
 rangeHelper: [a] -> (a -> a) -> Int -> [a]
 rangeHelper xs next n =
   if n <= 0 then xs
-  else
-    case xs of
-      []     -> []
-      h :: _ -> rangeHelper ((next h) :: xs) next (n - 1)
+    else
+      case xs of
+        []     -> []
+        h :: _ -> rangeHelper ((next h) :: xs) next (n - 1)
 
 rangeTest: Script ()
 rangeTest = script do
