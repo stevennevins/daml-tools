@@ -566,11 +566,11 @@ exerciseByKeyMaintainerUnchangedGlobal = test $ do
 
 expectSuccess: Either SubmitError a -> Script ()
 expectSuccess r = case r of
-    Right _ -> pure ()
-    Left e -> assertFail $ "Expected success but got " <> show e
+  Right _ -> pure ()
+  Left e -> assertFail $ "Expected success but got " <> show e
 
 expectMetadataChangedError: Either SubmitError a -> Script ()
 expectMetadataChangedError r = case r of
-    Right _ -> assertFail "Expected failure but got success"
-    Left (UpgradeError (ValidationFailed _ _ _ _ _ _ _ _ _ _ _) msg) -> pure ()
-    Left e -> assertFail $ "Expected Upgrade error but got " <> show e
+  Right _ -> assertFail "Expected failure but got success"
+  Left (UpgradeError (ValidationFailed _ _ _ _ _ _ _ _ _ _ _) msg) -> pure ()
+  Left e -> assertFail $ "Expected Upgrade error but got " <> show e

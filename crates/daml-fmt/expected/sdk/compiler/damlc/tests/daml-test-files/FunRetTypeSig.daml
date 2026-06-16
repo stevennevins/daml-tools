@@ -19,8 +19,8 @@ fact (n : Int) : Int
 
 -- Polymorphic test
 mymap (f : a -> b) (xs : [a]) : [b] = case xs of
-    [] -> []
-    x::xs -> f x::mymap f xs
+  [] -> []
+  x::xs -> f x::mymap f xs
 
 -- Test that the rewriting in the compiler works.
 testFact = script do

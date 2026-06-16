@@ -18,8 +18,8 @@ red = Red
 
 isRed: Color -> Bool
 isRed = \case
-    Red -> True
-    _ -> False
+  Red -> True
+  _ -> False
 
 -- Note that it is important to use so many constructors
 -- to get GHC to implement the Eq instance using getTag/tagToEnum#.

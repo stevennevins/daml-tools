@@ -917,12 +917,12 @@ fetchTemplateWithUnexpectedlyMissingKey = test $ do
 
 expectMetadataChangedError: forall t k a. (HasTemplateTypeRep t, TemplateKey t k, Eq k) => k -> [Party] -> Either SubmitError a -> Script ()
 expectMetadataChangedError key maintainers r = case r of
-    Right _ -> assertFail "Expected failure but got success"
-    Left (UpgradeError (ValidationFailed _ _ _ _ _ _ _ _ _ _ (Some (foundKey, foundMaintainers))) msg)
-      | fromAnyContractKey @t foundKey == Some key &&
-        sort maintainers == sort foundMaintainers
-      -> pure ()
-    Left e -> assertFail $ "Expected Upgrade error but got " <> show e
+  Right _ -> assertFail "Expected failure but got success"
+  Left (UpgradeError (ValidationFailed _ _ _ _ _ _ _ _ _ _ (Some (foundKey, foundMaintainers))) msg)
+    | fromAnyContractKey @t foundKey == Some key &&
+      sort maintainers == sort foundMaintainers
+    -> pure ()
+  Left e -> assertFail $ "Expected Upgrade error but got " <> show e
 
 {- PACKAGE
 name: contract-key-query-n

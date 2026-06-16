@@ -8,18 +8,19 @@
 //!   1. Walk the AST; every node carries a byte `Span`.
 //!   2. For a layout block, reindent ONLY the block's child lines so the anchor
 //!      construct lands at `anchor_col + 2`: a `do`-block's statements to
-//!      `do_col + 2` (including a `do` that opens with `let`), and an
-//!      `if`/`then`/`else`'s `then`/`else` clauses to `if_col + 2`. The anchor
-//!      line itself is never moved, which makes each rule a fixpoint: a second
-//!      pass computes delta 0. Children shift by one uniform delta, so the
-//!      block's internal structure (and any nested blocks) ride along.
+//!      `do_col + 2` (including a `do` that opens with `let`), an
+//!      `if`/`then`/`else`'s `then`/`else` clauses to `if_col + 2`, and a
+//!      `case … of`'s alternatives to `case_col + 2`. The anchor line itself is
+//!      never moved, which makes each rule a fixpoint: a second pass computes
+//!      delta 0. Children shift by one uniform delta, so the block's internal
+//!      structure (and any nested blocks) ride along.
 //!   3. Comments are sacred: comment lines are never measured-from and never
 //!      shifted (CLAUDE.md). Block-comment interiors are trivia, untouched.
 //!   4. Gate the whole candidate on `same_tokens` = identical LAID-OUT token
 //!      stream (offside virtuals included) ⇒ identical parse ⇒ identical
 //!      desugar. Any accepted reindent is desugar-safe BY CONSTRUCTION.
 //!   5. Fall back to the input (verbatim) when the gate rejects or a node is
-//!      not modeled. Unmodeled constructs (case, with, where, guards, `let … in`
+//!      not modeled. Unmodeled constructs (with, where, guards, `let … in`
 //!      expressions, record updates, TypeDef, expression continuations) pass
 //!      through verbatim — desugar-safe and lets us land one construct at a time.
 //!
@@ -48,7 +49,7 @@ pub fn format_ast(src: &str) -> String {
     // one's gate still converges within a single call (idempotence).
     let mut base = src.to_string();
     for _ in 0..MAX_STRUCTURAL_PASSES {
-        let next = gated_if_pass(&gated_do_pass(&base));
+        let next = gated_case_pass(&gated_if_pass(&gated_do_pass(&base)));
         if next == base {
             break;
         }
@@ -86,6 +87,17 @@ fn gated_do_pass(src: &str) -> String {
 fn gated_if_pass(src: &str) -> String {
     let (module, _) = parse_module(src);
     let r = reindent_ifs(src, &module);
+    if r != src && same_tokens(src, &r) {
+        r
+    } else {
+        src.to_string()
+    }
+}
+
+/// case-alternative reindent of `src`, gated like the do-pass.
+fn gated_case_pass(src: &str) -> String {
+    let (module, _) = parse_module(src);
+    let r = reindent_cases(src, &module);
     if r != src && same_tokens(src, &r) {
         r
     } else {
@@ -660,6 +672,72 @@ fn reindent_ifs(src: &str, module: &Module) -> String {
     apply_shifts(src, &edits)
 }
 
+/// Reindent the alternative block of a multi-line `case … of` so the alts land
+/// at `case_line_indent + 2` (the same anchor convention as a `do`-block). The
+/// whole alt block shifts by ONE uniform delta, so each alt's body — including
+/// nested do/case/if — rides along; `same_tokens` rejects any shift that would
+/// dedent the block below its offside requirement (e.g. a `case` hanging in a
+/// `where` binding). Inline `case x of A -> …` alts and tab-indented blocks are
+/// left verbatim. Mirrors `do_block_edits`.
+fn case_edits(src: &str, module: &Module) -> Vec<Edit> {
+    let line_starts = line_start_table(src);
+
+    // (case_span, first_alt_start, last_alt_end), outermost first.
+    let mut cases: Vec<(Span, usize, usize)> = Vec::new();
+    walk_module_exprs(module, &mut |e| {
+        if let Expr::Case { span, alts, .. } = e {
+            if let (Some(first), Some(last)) = (alts.first(), alts.last()) {
+                cases.push((*span, first.span.start, last.span.end));
+            }
+        }
+    });
+    cases.sort_by(|a, b| a.0.start.cmp(&b.0.start).then(b.0.end.cmp(&a.0.end)));
+
+    let mut edits: Vec<Edit> = Vec::new();
+    let mut accepted: Vec<Span> = Vec::new();
+    for (case_span, first_alt, last_alt_end) in cases {
+        // Skip a case nested in one we already claimed (it rides the outer shift).
+        if accepted
+            .iter()
+            .any(|a| a.start <= case_span.start && case_span.end <= a.end && *a != case_span)
+        {
+            continue;
+        }
+        accepted.push(case_span);
+
+        let case_line = line_of(&line_starts, case_span.start);
+        let alt_line = line_of(&line_starts, first_alt);
+        // Inline `case x of A -> …` (alts share the case line): leave verbatim.
+        if alt_line <= case_line {
+            continue;
+        }
+        if leading_has_tab(src, line_starts[case_line])
+            || leading_has_tab(src, line_starts[alt_line])
+        {
+            continue;
+        }
+        let case_indent = indent_of(src, &line_starts, case_line);
+        let cur = indent_of(src, &line_starts, alt_line);
+        let delta = (case_indent + INDENT) - cur;
+        if delta != 0 {
+            edits.push(Edit {
+                child_start: line_starts[alt_line],
+                block_end: last_alt_end,
+                delta,
+            });
+        }
+    }
+    edits
+}
+
+fn reindent_cases(src: &str, module: &Module) -> String {
+    let edits = case_edits(src, module);
+    if edits.is_empty() {
+        return src.to_string();
+    }
+    apply_shifts(src, &edits)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -790,6 +868,41 @@ mod tests {
             out,
             "f x =\n  if x > 0\n    then g\n           a\n    else h\n"
         );
+        assert_eq!(format_ast(&out), out); // idempotent
+    }
+
+    #[test]
+    fn case_alts_reindented_to_case_indent_plus_two() {
+        // case-line indent 0; alts at col 6 move to col 2.
+        let src = "f x = case x of\n      None -> 1\n      Some y -> y\n";
+        let out = format_ast(src);
+        assert_eq!(out, "f x = case x of\n  None -> 1\n  Some y -> y\n");
+        assert_eq!(format_ast(&out), out); // idempotent
+    }
+
+    #[test]
+    fn case_alts_already_aligned_is_a_fixpoint() {
+        let src = "f x = case x of\n  None -> 1\n  Some y -> y\n";
+        assert_eq!(format_ast(src), src);
+    }
+
+    #[test]
+    fn inline_case_is_untouched() {
+        // alts share the `case` line — left verbatim.
+        let src = "f x = case x of None -> 1; Some y -> y\n";
+        assert_eq!(format_ast(src), src);
+    }
+
+    #[test]
+    fn nested_case_rides_outer_shift() {
+        // Inner case (an alt body) rides the outer alt block's uniform shift; the
+        // inner alts stay aligned relative to their own `case`.
+        let src = "f x = case x of\n      A -> case y of\n             P -> 1\n             Q -> 2\n      B -> 0\n";
+        let out = format_ast(src);
+        // Outer alts to col 2; inner alts ride the same -4 shift (13 -> 9).
+        let want =
+            "f x = case x of\n  A -> case y of\n         P -> 1\n         Q -> 2\n  B -> 0\n";
+        assert_eq!(out, want);
         assert_eq!(format_ast(&out), out); // idempotent
     }
 

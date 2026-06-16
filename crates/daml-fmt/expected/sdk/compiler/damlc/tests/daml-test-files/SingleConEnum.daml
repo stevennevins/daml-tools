@@ -17,4 +17,4 @@ red = Red
 
 isRed: Color -> Bool
 isRed = \case
-    Red -> True
+  Red -> True
