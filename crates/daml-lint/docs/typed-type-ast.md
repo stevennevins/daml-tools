@@ -1,9 +1,48 @@
 # Design: AST-based types (replace the `type_text` reparse)
 
-Status: **PLANNED — design only.** No parser code changed yet. This is the
-written plan for the one deferred item from the branch review; the three other
-follow-ups (workspace lints, `rust_2018_idioms`, daml-lint feature-gating) have
-landed.
+Status: **IMPLEMENTED.** Landed as designed below. What shipped:
+
+- `daml_parser::ast::Type` + a pure token-slice type parser
+  (`parse::parse_type_tokens`) that never touches the cursor or any span.
+- Additive `ty: Option<Type>` on `FieldDecl`, `ChoiceDecl` return, and the
+  `Key` body decl, populated at parse time from the real token stream.
+- `DamlType::from_type` (in `daml-lint`'s `ir.rs`) maps `Type` → the coarse
+  rule-facing `DamlType`; the three lint lowering sites now classify from `ty`
+  (`None` → `Unknown`). `DamlType`'s shape — the rule-facing contract — is
+  unchanged; only its *source* moved from a string to the structured `Type`.
+- `DamlType::from_str` and its string helpers (`strip_grouping_parens`,
+  `split_top_level_ws`, `ir.rs`'s `has_top_level_comma`) are deleted.
+
+Verification on landing: `cargo fmt`/clippy/test all green; the daml-fmt
+differential held **924/924** (formatter provably untouched). Corpus lint:
+finding *fingerprints* (detector/file/line/column) were unchanged — 257
+findings, 4 parse errors, 0 added, 0 removed. **One** finding's content changed,
+and it is a strict improvement: the `unbounded-fields` finding on
+`ExplicitSerializable.daml` now also lists the field `seriSet : Set.Set Int`,
+which the old prefix matcher missed (it only recognized `Set ` / `DA.Set.Set `,
+not the aliased `Set.Set`). The new classifier keys on the constructor tail name
+and so catches every import spelling of a stdlib collection — an intended
+accuracy gain, exactly the "structuring may surface findings" the migration plan
+predicted.
+
+A corpus parity probe (over template/choice/interface field, param and return
+types — the positions any detector classifies) found **no** money/collection/
+ContractId type degrading to `Unknown`/`Named`. The remaining diffs are
+equivalences (an `App` collapsing to its head `Named`) or improvements:
+qualified `Set.Set`/`P.Int` now recognized; function types and lossy-`type_text`
+junk now honestly `Unknown` instead of a misleading `Named`. (Note: a *function*
+type built from money constructors, e.g. `Numeric n -> Numeric n`, now maps to
+`Unknown` rather than the old matcher's `Decimal` — correct, since a function is
+not money — but it occurs only in top-level function signatures, not the
+classified positions, so it is latent.)
+
+This was the one deferred item from the branch review; the three other
+follow-ups (workspace lints, `rust_2018_idioms`, daml-lint feature-gating) had
+already landed.
+
+---
+
+The original design plan follows, kept as the record of intent.
 
 ## Problem
 

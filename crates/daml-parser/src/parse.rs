@@ -629,6 +629,7 @@ impl Parser {
             let ty_start = self.i;
             self.skip_to_item_end();
             let type_text = self.slice_text(ty_start);
+            let ty = parse_type_tokens(&self.toks[ty_start..self.i]);
             // The type is shared by all names but sits after the last one, so
             // only the last field can span `name : Type` without overlapping a
             // sibling; earlier names of `x, y : T` stay name-only. daml-fmt
@@ -644,6 +645,7 @@ impl Parser {
                 fields.push(FieldDecl {
                     name,
                     type_text: type_text.clone(),
+                    ty: ty.clone(),
                     pos: p,
                     span,
                 });
@@ -720,10 +722,12 @@ impl Parser {
                 let expr_start = self.i;
                 let expr = self.expr();
                 let mut type_text = String::new();
+                let mut ty = None;
                 if self.eat_op(":") {
                     let ty_start = self.i;
                     self.skip_to_item_end();
                     type_text = self.slice_text(ty_start);
+                    ty = parse_type_tokens(&self.toks[ty_start..self.i]);
                 } else {
                     // The expression parser consumes `: Type` annotations;
                     // recover the key type from the last top-level colon.
@@ -739,12 +743,14 @@ impl Parser {
                     }
                     if let Some(j) = colon {
                         type_text = render_tokens(&self.toks[j + 1..self.i]);
+                        ty = parse_type_tokens(&self.toks[j + 1..self.i]);
                     }
                     self.skip_to_item_end();
                 }
                 TemplateBodyDecl::Key {
                     expr,
                     type_text,
+                    ty,
                     pos,
                     span: self.node_span(start),
                 }
@@ -833,10 +839,12 @@ impl Parser {
         }
         let name = self.upper_name()?;
         let mut return_type_text = String::new();
+        let mut return_ty = None;
         if self.eat_op(":") {
             let ty_start = self.i;
             self.skip_type_tokens();
             return_type_text = self.slice_text(ty_start);
+            return_ty = parse_type_tokens(&self.toks[ty_start..self.i]);
         }
         let mut params = Vec::new();
         let mut dangling = false;
@@ -883,6 +891,7 @@ impl Parser {
             name,
             consuming,
             return_type_text,
+            return_ty,
             params,
             controllers,
             observers,
@@ -1011,6 +1020,7 @@ impl Parser {
                             methods.push(FieldDecl {
                                 name: mname,
                                 type_text: self.slice_text(ty_start),
+                                ty: parse_type_tokens(&self.toks[ty_start..self.i]),
                                 pos: mpos,
                                 span: Span::new(mstart, self.end_byte().max(mstart)),
                             });
@@ -2661,6 +2671,186 @@ fn merge_functions(decls: &mut Vec<Decl>) {
 }
 
 /// Render a token slice back to compact source-like text.
+/// Parse a type from a slice of the type's tokens (e.g. the tokens between a
+/// field's `:` and the item end). PURE: it never touches the main parser cursor
+/// and never affects any span, so it is invisible to daml-fmt. Returns `None`
+/// when the whole slice does not parse cleanly as a type — analysis then treats
+/// the type as unknown, exactly as the old string matcher's fallthrough did.
+///
+/// Grammar (precedence low → high): constraint `C => T`, function `a -> b`
+/// (right-assoc), application `head arg...` (left-assoc), then atoms (`Con`,
+/// `Var`, `[T]`, `()`, `(T)`, `(a, b)`).
+pub(crate) fn parse_type_tokens(toks: &[Token]) -> Option<Type> {
+    // Virtual layout tokens carry no type meaning; drop them so a stray VSemi
+    // in the slice can't sink an otherwise-clean parse.
+    let real: Vec<&Tok> = toks
+        .iter()
+        .filter(|t| !t.is_virtual())
+        .map(|t| &t.tok)
+        .collect();
+    if real.is_empty() {
+        return None;
+    }
+    let mut p = TypeParser { toks: &real, i: 0 };
+    let ty = p.parse_type()?;
+    // Require the whole slice to be consumed: a partial parse means the type
+    // had a shape we don't model, so report unknown rather than a half-truth.
+    if p.i == real.len() {
+        Some(ty)
+    } else {
+        None
+    }
+}
+
+struct TypeParser<'a> {
+    toks: &'a [&'a Tok],
+    i: usize,
+}
+
+/// Result of parsing one atom: a real type, or a dropped type-level nat literal
+/// (`Numeric 10` — not a type, so it never enters the App arg list).
+enum Atom {
+    Ty(Type),
+    DroppedLit,
+}
+
+impl<'a> TypeParser<'a> {
+    fn peek(&self) -> Option<&'a Tok> {
+        self.toks.get(self.i).copied()
+    }
+
+    fn eat_op(&mut self, op: &str) -> bool {
+        if self.peek().is_some_and(|t| t.is_op(op)) {
+            self.i += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Full type: a constraint context `=> body`, or a function `a -> b`, or a
+    /// bare application.
+    fn parse_type(&mut self) -> Option<Type> {
+        let lhs = self.parse_btype()?;
+        if self.eat_op("=>") {
+            // `lhs` was the constraint context; drop it, keep the body.
+            let body = self.parse_type()?;
+            return Some(Type::Constrained(Box::new(body)));
+        }
+        if self.eat_op("->") {
+            let rhs = self.parse_type()?;
+            return Some(Type::Fun(Box::new(lhs), Box::new(rhs)));
+        }
+        Some(lhs)
+    }
+
+    /// Application spine: one head atom applied to zero or more argument atoms.
+    fn parse_btype(&mut self) -> Option<Type> {
+        let head = match self.parse_atom()? {
+            Atom::Ty(t) => t,
+            // A bare nat literal is not a type.
+            Atom::DroppedLit => return None,
+        };
+        let mut args = Vec::new();
+        loop {
+            // Only continue the spine if the next token can START an atom; an
+            // operator (`->`, `=>`) or closer ends it.
+            if !self.at_atom_start() {
+                break;
+            }
+            match self.parse_atom()? {
+                Atom::Ty(t) => args.push(t),
+                Atom::DroppedLit => {} // `Numeric 10` — drop the `10`.
+            }
+        }
+        if args.is_empty() {
+            Some(head)
+        } else {
+            Some(Type::App(Box::new(head), args))
+        }
+    }
+
+    /// True if the current token can begin an atom (so the application spine
+    /// should keep going).
+    fn at_atom_start(&self) -> bool {
+        matches!(
+            self.peek(),
+            Some(Tok::UpperId { .. })
+                | Some(Tok::LowerId { .. })
+                | Some(Tok::IntLit(_))
+                | Some(Tok::DecimalLit(_))
+                | Some(Tok::LBracket)
+                | Some(Tok::LParen)
+        )
+    }
+
+    fn parse_atom(&mut self) -> Option<Atom> {
+        match self.peek()? {
+            Tok::UpperId { qualifier, name } => {
+                let con = Type::Con {
+                    qualifier: qualifier.clone(),
+                    name: name.clone(),
+                };
+                self.i += 1;
+                Some(Atom::Ty(con))
+            }
+            Tok::LowerId { name, .. } => {
+                // Type variable (`a`, `n`). Qualified lowercase never appears in
+                // a real type position; treat the name as the variable.
+                let var = Type::Var(name.clone());
+                self.i += 1;
+                Some(Atom::Ty(var))
+            }
+            Tok::IntLit(_) | Tok::DecimalLit(_) => {
+                // Type-level nat literal (`Numeric 10`): consumed, but dropped.
+                self.i += 1;
+                Some(Atom::DroppedLit)
+            }
+            Tok::LBracket => {
+                self.i += 1;
+                let inner = self.parse_type()?;
+                if self.eat_bracket(Tok::RBracket) {
+                    Some(Atom::Ty(Type::List(Box::new(inner))))
+                } else {
+                    None
+                }
+            }
+            Tok::LParen => {
+                self.i += 1;
+                if self.eat_bracket(Tok::RParen) {
+                    return Some(Atom::Ty(Type::Unit)); // ()
+                }
+                let first = self.parse_type()?;
+                if self.peek() == Some(&Tok::Comma) {
+                    let mut items = vec![first];
+                    while self.eat_bracket(Tok::Comma) {
+                        items.push(self.parse_type()?);
+                    }
+                    if self.eat_bracket(Tok::RParen) {
+                        Some(Atom::Ty(Type::Tuple(items)))
+                    } else {
+                        None
+                    }
+                } else if self.eat_bracket(Tok::RParen) {
+                    Some(Atom::Ty(first)) // grouping parens
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn eat_bracket(&mut self, tok: Tok) -> bool {
+        if self.peek() == Some(&tok) {
+            self.i += 1;
+            true
+        } else {
+            false
+        }
+    }
+}
+
 pub fn render_tokens(toks: &[Token]) -> String {
     let mut s = String::new();
     let mut prev_no_space_after = true;
@@ -2696,4 +2886,248 @@ pub fn render_tokens(toks: &[Token]) -> String {
         prev_no_space_after = no_space_after;
     }
     s
+}
+
+#[cfg(test)]
+mod type_tests {
+    use super::*;
+    use crate::lexer::lex;
+
+    /// Parse a bare type string straight through the lexer. A single-line type
+    /// has no layout-significant newlines, so no virtual tokens appear — this
+    /// exercises the type grammar in isolation.
+    fn ty(s: &str) -> Option<Type> {
+        let (toks, errs) = lex(s);
+        assert!(errs.is_empty(), "lex errors for {s:?}: {errs:?}");
+        parse_type_tokens(&toks)
+    }
+
+    fn con(name: &str) -> Type {
+        Type::Con {
+            qualifier: None,
+            name: name.to_string(),
+        }
+    }
+
+    #[test]
+    fn atoms() {
+        assert_eq!(ty("Party"), Some(con("Party")));
+        assert_eq!(ty("Decimal"), Some(con("Decimal")));
+        assert_eq!(ty("a"), Some(Type::Var("a".to_string())));
+        assert_eq!(ty("()"), Some(Type::Unit));
+    }
+
+    #[test]
+    fn application_vs_constructor() {
+        // The whole point of the new model: `ContractId Foo` is an APPLICATION,
+        // not one opaque name.
+        assert_eq!(
+            ty("ContractId Foo"),
+            Some(Type::App(Box::new(con("ContractId")), vec![con("Foo")]))
+        );
+        assert_eq!(
+            ty("Optional (ContractId Foo)"),
+            Some(Type::App(
+                Box::new(con("Optional")),
+                vec![Type::App(Box::new(con("ContractId")), vec![con("Foo")])]
+            ))
+        );
+        assert_eq!(
+            ty("Map Text Int"),
+            Some(Type::App(
+                Box::new(con("Map")),
+                vec![con("Text"), con("Int")]
+            ))
+        );
+    }
+
+    #[test]
+    fn qualified_constructor_keeps_qualifier() {
+        assert_eq!(
+            ty("DA.Map.Map Text Int"),
+            Some(Type::App(
+                Box::new(Type::Con {
+                    qualifier: Some("DA.Map".to_string()),
+                    name: "Map".to_string(),
+                }),
+                vec![con("Text"), con("Int")]
+            ))
+        );
+    }
+
+    #[test]
+    fn list_and_tuple() {
+        assert_eq!(ty("[Text]"), Some(Type::List(Box::new(con("Text")))));
+        assert_eq!(
+            ty("(Int, Text)"),
+            Some(Type::Tuple(vec![con("Int"), con("Text")]))
+        );
+        // A tuple is NOT a grouping paren — must stay a Tuple, never collapse.
+        assert_eq!(
+            ty("(a, b, c)"),
+            Some(Type::Tuple(vec![
+                Type::Var("a".to_string()),
+                Type::Var("b".to_string()),
+                Type::Var("c".to_string())
+            ]))
+        );
+        // Single grouping paren unwraps.
+        assert_eq!(ty("(Text)"), Some(con("Text")));
+    }
+
+    #[test]
+    fn function_types_are_arrows_not_names() {
+        // These are exactly the corpus strings the old matcher swallowed into
+        // one opaque `Named`.
+        assert_eq!(
+            ty("Int -> Int"),
+            Some(Type::Fun(Box::new(con("Int")), Box::new(con("Int"))))
+        );
+        // Right associativity: `a -> b -> c` == `a -> (b -> c)`.
+        assert_eq!(
+            ty("Int -> Text -> Bool"),
+            Some(Type::Fun(
+                Box::new(con("Int")),
+                Box::new(Type::Fun(Box::new(con("Text")), Box::new(con("Bool"))))
+            ))
+        );
+        assert_eq!(
+            ty("Party -> Script ()"),
+            Some(Type::Fun(
+                Box::new(con("Party")),
+                Box::new(Type::App(Box::new(con("Script")), vec![Type::Unit]))
+            ))
+        );
+    }
+
+    #[test]
+    fn script_application() {
+        // `Script ()` ×147 in the corpus — an application flattened to `Named`
+        // before. Now a real App.
+        assert_eq!(
+            ty("Script ()"),
+            Some(Type::App(Box::new(con("Script")), vec![Type::Unit]))
+        );
+    }
+
+    #[test]
+    fn numeric_nat_literal_is_dropped() {
+        // `Numeric 10`: the `10` is a type-level nat, not a type, so it drops
+        // and the head Con stands alone. `Numeric n` keeps the type variable.
+        assert_eq!(ty("Numeric 10"), Some(con("Numeric")));
+        assert_eq!(
+            ty("Numeric n"),
+            Some(Type::App(
+                Box::new(con("Numeric")),
+                vec![Type::Var("n".to_string())]
+            ))
+        );
+    }
+
+    #[test]
+    fn constraint_context_is_dropped_body_kept() {
+        // `NumericScale n => Numeric 37 -> Numeric n` — a constrained function.
+        // Context dropped; body (the arrow) kept.
+        assert_eq!(
+            ty("NumericScale n => Numeric 37 -> Numeric n"),
+            Some(Type::Constrained(Box::new(Type::Fun(
+                Box::new(con("Numeric")),
+                Box::new(Type::App(
+                    Box::new(con("Numeric")),
+                    vec![Type::Var("n".to_string())]
+                ))
+            ))))
+        );
+        // Tuple context `(Eq a, Show a) => a` also drops cleanly.
+        assert_eq!(
+            ty("(Eq a, Show a) => a"),
+            Some(Type::Constrained(Box::new(Type::Var("a".to_string()))))
+        );
+    }
+
+    #[test]
+    fn unparseable_is_none() {
+        // A trailing arrow with no body is not a clean type → unknown (None),
+        // never a half-parse.
+        assert_eq!(ty("Int ->"), None);
+        assert_eq!(ty("-> Int"), None);
+    }
+
+    #[test]
+    fn ty_is_populated_through_real_parse() {
+        // End-to-end: the wiring actually fills `ty` on template fields and the
+        // choice return type, from the real token stream.
+        let src = r#"module M where
+template T
+  with
+    owner : Party
+    held : ContractId Asset
+  where
+    signatory owner
+    choice Go : Optional (ContractId Asset)
+      controller owner
+      do
+        pure None
+"#;
+        let (m, _) = parse_module(src);
+        let t = match &m.decls[0] {
+            Decl::Template(t) => t,
+            other => panic!("expected template, got {other:?}"),
+        };
+        assert_eq!(t.fields[0].ty, Some(con("Party")));
+        assert_eq!(
+            t.fields[1].ty,
+            Some(Type::App(Box::new(con("ContractId")), vec![con("Asset")]))
+        );
+        let choice = match &t
+            .body
+            .iter()
+            .find(|d| matches!(d, TemplateBodyDecl::Choice(_)))
+        {
+            Some(TemplateBodyDecl::Choice(c)) => (*c).clone(),
+            _ => panic!("expected choice"),
+        };
+        assert_eq!(
+            choice.return_ty,
+            Some(Type::App(
+                Box::new(con("Optional")),
+                vec![Type::App(Box::new(con("ContractId")), vec![con("Asset")])]
+            ))
+        );
+    }
+
+    #[test]
+    fn ty_is_populated_on_key_and_interface_method() {
+        // The other two type-bearing nodes: a template `key ... : T` and an
+        // interface method signature both fill `ty` from the token stream.
+        let src = r#"module M where
+template T
+  with
+    owner : Party
+  where
+    signatory owner
+    key owner : Party
+    maintainer owner
+
+interface I where
+  getAmount : Numeric 10
+"#;
+        let (m, _) = parse_module(src);
+        let t = match &m.decls[0] {
+            Decl::Template(t) => t,
+            other => panic!("expected template, got {other:?}"),
+        };
+        let key_ty = t.body.iter().find_map(|d| match d {
+            TemplateBodyDecl::Key { ty, .. } => Some(ty.clone()),
+            _ => None,
+        });
+        assert_eq!(key_ty, Some(Some(con("Party"))));
+
+        let iface = match &m.decls[1] {
+            Decl::Interface(i) => i,
+            other => panic!("expected interface, got {other:?}"),
+        };
+        // `Numeric 10` — the nat literal is dropped, leaving the bare head Con.
+        assert_eq!(iface.methods[0].ty, Some(con("Numeric")));
+    }
 }

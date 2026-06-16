@@ -1,3 +1,4 @@
+use daml_parser::ast::Type;
 use serde::Serialize;
 use std::path::PathBuf;
 
@@ -28,96 +29,102 @@ pub enum DamlType {
 }
 
 impl DamlType {
-    // Inherent `from_str`: total (returns DamlType, never fails), so it does not
-    // fit std::str::FromStr's `Result` signature.
-    #[allow(clippy::should_implement_trait)]
-    pub fn from_str(s: &str) -> DamlType {
-        // Strip a single matched outer pair of grouping parens, so
-        // `Optional (ContractId Foo)` recurses into `ContractId Foo` instead of
-        // collapsing to Unknown. Never strips the unit type `()`.
-        fn strip_grouping_parens(s: &str) -> &str {
-            let t = s.trim();
-            if t.len() < 2 || !t.starts_with('(') || !t.ends_with(')') {
-                return s;
-            }
-            let mut depth = 0usize;
-            for (i, c) in t.char_indices() {
-                match c {
-                    '(' => depth += 1,
-                    ')' => {
-                        depth -= 1;
-                        if depth == 0 {
-                            // The opening paren must match the LAST char; `(a)(b)`
-                            // is not a single grouping pair.
-                            if i != t.len() - 1 {
-                                return s;
-                            }
-                            let inner = t[1..t.len() - 1].trim();
-                            // Keep `()` (unit) and tuples `(a, b)` intact — only
-                            // strip a genuine grouping paren around one type.
-                            return if inner.is_empty() || has_top_level_comma(inner) {
-                                s
-                            } else {
-                                inner
-                            };
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            s
+    /// Map a structured parser [`Type`] to the coarse rule-facing
+    /// classification. Total. This is the single source of truth for
+    /// `Field.type_` / `Choice.return_type`: it decides on real structure
+    /// (application vs arrow vs atom), so unlike the old string reparse it can
+    /// never confuse `Script ()` (an application) or `Int -> Int` (a function)
+    /// for one opaque `Named`.
+    pub fn from_type(t: &Type) -> DamlType {
+        match t {
+            Type::Con { qualifier, name } => DamlType::con(qualifier.as_deref(), name),
+            Type::App(head, args) => match head.as_ref() {
+                Type::Con { qualifier, name } => DamlType::apply(qualifier.as_deref(), name, args),
+                // Application with a non-constructor head (a type variable, a
+                // function): nothing classifies these — opaque.
+                _ => DamlType::Unknown,
+            },
+            Type::List(inner) => DamlType::List(Box::new(DamlType::from_type(inner))),
+            Type::Unit => DamlType::Unit,
+            // A constraint context carries nothing a detector reasons about;
+            // classify by the body.
+            Type::Constrained(body) => DamlType::from_type(body),
+            // Tuples, arrows and bare type variables carry no money/collection
+            // meaning — the buckets the old matcher lumped into Unknown or a
+            // misleading Named. Now they are *known* to be these shapes.
+            Type::Tuple(_) | Type::Fun(_, _) | Type::Var(_) => DamlType::Unknown,
         }
-        let s = strip_grouping_parens(s.trim());
-        if s == "Party" {
-            DamlType::Party
-        } else if s == "Text" {
-            DamlType::Text
-        } else if s == "Decimal" {
-            DamlType::Decimal
-        } else if s == "Int" {
-            DamlType::Int
-        } else if s == "Bool" {
-            DamlType::Bool
-        } else if s == "Date" {
-            DamlType::Date
-        } else if s == "Time" {
-            DamlType::Time
-        } else if s == "()" {
-            DamlType::Unit
-        } else if let Some(inner) = s.strip_prefix("ContractId ") {
-            DamlType::ContractId(Box::new(DamlType::from_str(inner)))
-        } else if let Some(inner) = s.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
-            DamlType::List(Box::new(DamlType::from_str(inner)))
-        } else if let Some(inner) = s.strip_prefix("Optional ") {
-            DamlType::Optional(Box::new(DamlType::from_str(inner)))
-        } else if let Some(inner) = s.strip_prefix("TextMap ") {
-            DamlType::TextMap(Box::new(DamlType::from_str(inner)))
-        } else if s == "Numeric" || s.starts_with("Numeric ") {
-            // Decimal is exactly Numeric 10; the whole fixed-point family is the
-            // money type the monetary detectors care about.
-            DamlType::Decimal
-        } else if let Some(rest) = s
-            .strip_prefix("GenMap ")
-            .or_else(|| s.strip_prefix("Map "))
-            .or_else(|| s.strip_prefix("DA.Map.Map "))
-            .or_else(|| s.strip_prefix("DA.Map.GenMap "))
-        {
-            let (k, v) = split_top_level_ws(rest);
-            DamlType::Map(
-                Box::new(DamlType::from_str(k)),
-                Box::new(DamlType::from_str(v)),
-            )
-        } else if let Some(inner) = s
-            .strip_prefix("Set ")
-            .or_else(|| s.strip_prefix("DA.Set.Set "))
-        {
-            // No dedicated Set variant; model as an unbounded collection (List)
-            // so unbounded-fields flags it.
-            DamlType::List(Box::new(DamlType::from_str(inner)))
-        } else if s.starts_with(char::is_uppercase) {
-            DamlType::Named(s.to_string())
-        } else {
-            DamlType::Unknown
+    }
+
+    /// Build the opaque `Named` for an unrecognized constructor, keeping its
+    /// qualifier so a user type stays fully spelled (`Lib.Mod.Imported`, not
+    /// `Imported`) — matching how the old string matcher carried the qualified
+    /// text. No detector reads the name; it is rule-facing data only.
+    fn named(qualifier: Option<&str>, name: &str) -> DamlType {
+        DamlType::Named(match qualifier {
+            Some(q) => format!("{q}.{name}"),
+            None => name.to_string(),
+        })
+    }
+
+    /// A nullary constructor: the scalar builtins, the `Numeric`/`Decimal` money
+    /// family, else an opaque `Named`. Classification keys on the bare
+    /// constructor name and IGNORES the qualifier — deliberately matching all
+    /// import spellings of a stdlib type (`Map`, `DA.Map.Map`, the common alias
+    /// `Map.Map`). The old string matcher only recognized a fixed set of
+    /// spellings and missed the aliased forms; keying on the tail is the
+    /// intentional, more-complete behavior. Tradeoff: it is tail-WIDE, not
+    /// alias-specific — a user type whose tail name collides with a stdlib
+    /// collection (`MyMod.Map`) would also be classified as that collection.
+    /// That is unidiomatic and absent from the corpus; the heuristic favors
+    /// catching the real aliased collections.
+    fn con(qualifier: Option<&str>, name: &str) -> DamlType {
+        match name {
+            "Party" => DamlType::Party,
+            "Text" => DamlType::Text,
+            "Decimal" => DamlType::Decimal,
+            "Int" => DamlType::Int,
+            "Bool" => DamlType::Bool,
+            "Date" => DamlType::Date,
+            "Time" => DamlType::Time,
+            // `Decimal` is exactly `Numeric 10`; the whole fixed-point family is
+            // the money type the monetary detectors care about. A bare `Numeric`
+            // is `Numeric <nat>` with the nat literal dropped by the parser.
+            "Numeric" => DamlType::Decimal,
+            _ => DamlType::named(qualifier, name),
+        }
+    }
+
+    /// An applied constructor `name arg...`, keyed on the tail name (qualifier
+    /// ignored, see [`con`]). `List`/`Set` are NOT a list case here: a real list
+    /// is `[T]` (`Type::List`); `Set X` is modelled as an unbounded collection
+    /// so unbounded-fields flags it. Any other applied constructor (`Foo Bar`)
+    /// is opaque `Named` carrying the head (application args are not part of the
+    /// name — no detector reads it).
+    fn apply(qualifier: Option<&str>, name: &str, args: &[Type]) -> DamlType {
+        let first = || {
+            args.first()
+                .map(DamlType::from_type)
+                .unwrap_or(DamlType::Unknown)
+        };
+        match name {
+            "ContractId" => DamlType::ContractId(Box::new(first())),
+            "Optional" => DamlType::Optional(Box::new(first())),
+            "TextMap" => DamlType::TextMap(Box::new(first())),
+            // The fixed-point money family: `Numeric n`.
+            "Numeric" => DamlType::Decimal,
+            // Unbounded keyed collections: key + value when both are present.
+            "Map" | "GenMap" => {
+                let k = first();
+                let v = args
+                    .get(1)
+                    .map(DamlType::from_type)
+                    .unwrap_or(DamlType::Unknown);
+                DamlType::Map(Box::new(k), Box::new(v))
+            }
+            // No dedicated Set variant; model as an unbounded collection (List).
+            "Set" => DamlType::List(Box::new(first())),
+            _ => DamlType::named(qualifier, name),
         }
     }
 
@@ -148,36 +155,6 @@ impl DamlType {
             _ => self.is_text() || self.is_textmap() || self.is_list() || self.is_map(),
         }
     }
-}
-
-/// Split `s` at its first top-level (not inside `()`/`[]`) space into
-/// (head, rest). Used to peel one type argument off `Map k v`.
-fn split_top_level_ws(s: &str) -> (&str, &str) {
-    let mut depth = 0i32;
-    for (i, b) in s.bytes().enumerate() {
-        match b {
-            b'(' | b'[' => depth += 1,
-            b')' | b']' => depth -= 1,
-            b' ' if depth == 0 => return (s[..i].trim(), s[i + 1..].trim()),
-            _ => {}
-        }
-    }
-    (s.trim(), "")
-}
-
-/// True if `s` has a top-level (depth-0) comma — i.e. it is a tuple body, not a
-/// single grouped type.
-fn has_top_level_comma(s: &str) -> bool {
-    let mut depth = 0i32;
-    for b in s.bytes() {
-        match b {
-            b'(' | b'[' => depth += 1,
-            b')' | b']' => depth -= 1,
-            b',' if depth == 0 => return true,
-            _ => {}
-        }
-    }
-    false
 }
 
 /// Lightweight source position for expression-level nodes (1-based). The
@@ -1070,13 +1047,30 @@ pub struct DamlModule {
 mod tests {
     use super::*;
 
-    // Regression (audit F7): `Optional (ContractId Foo)` — the only valid way to
-    // spell that type — must preserve the nested ContractId, not collapse the
-    // parenthesized argument to Unknown. Rules that recurse for ContractIds
-    // depend on it.
+    // These exercise the `Type` -> `DamlType` mapping (`from_type`), which
+    // replaced the old `from_str` string reparse. The *parsing* of a source
+    // string into a `Type` is tested separately in daml-parser's `type_tests`;
+    // here we pin only how a parsed shape is classified for the detectors.
+
+    fn con(name: &str) -> Type {
+        Type::Con {
+            qualifier: None,
+            name: name.to_string(),
+        }
+    }
+    fn app(head: Type, args: Vec<Type>) -> Type {
+        Type::App(Box::new(head), args)
+    }
+
+    // Regression (audit F7): `Optional (ContractId Foo)` must preserve the nested
+    // ContractId — rules that recurse for ContractIds depend on it.
     #[test]
-    fn parenthesized_type_argument_is_parsed() {
-        match DamlType::from_str("Optional (ContractId Foo)") {
+    fn nested_contractid_maps_through() {
+        let ty = app(
+            con("Optional"),
+            vec![app(con("ContractId"), vec![con("Foo")])],
+        );
+        match DamlType::from_type(&ty) {
             DamlType::Optional(inner) => match *inner {
                 DamlType::ContractId(c) => {
                     assert!(matches!(*c, DamlType::Named(ref n) if n == "Foo"))
@@ -1085,47 +1079,103 @@ mod tests {
             },
             other => panic!("expected Optional, got {:?}", other),
         }
-        // `[ContractId Foo]` and bare grouping also resolve.
+        // A bare `ContractId Foo` (grouping parens already unwrapped by the
+        // parser) classifies as ContractId.
         assert!(matches!(
-            DamlType::from_str("(ContractId Foo)"),
+            DamlType::from_type(&app(con("ContractId"), vec![con("Foo")])),
             DamlType::ContractId(_)
         ));
-        // The unit type must survive paren-stripping.
-        assert!(matches!(DamlType::from_str("()"), DamlType::Unit));
+        // The unit type classifies as Unit.
+        assert!(matches!(DamlType::from_type(&Type::Unit), DamlType::Unit));
     }
 
-    // Regression (sweep F5/F6/F9/F27): `Numeric n` is the modern money type and
-    // must be treated as Decimal so the monetary detectors see it.
+    // Regression (sweep F5/F6/F9/F27): the whole `Numeric` fixed-point family is
+    // the money type — money detectors must see it as Decimal. (`Numeric 10`
+    // parses to a bare `Con "Numeric"` because the nat literal is dropped;
+    // `Numeric n` keeps the type variable.)
     #[test]
-    fn numeric_is_decimal() {
-        assert!(DamlType::from_str("Numeric 10").is_decimal());
-        assert!(DamlType::from_str("Numeric 6").is_decimal());
-        assert!(DamlType::from_str("Numeric").is_decimal());
-        assert!(DamlType::from_str("Decimal").is_decimal());
-        // Not a false match on a Named type that merely starts with "Numeric".
-        assert!(!DamlType::from_str("NumericThing").is_decimal());
+    fn numeric_family_is_decimal() {
+        assert!(DamlType::from_type(&con("Numeric")).is_decimal());
+        assert!(
+            DamlType::from_type(&app(con("Numeric"), vec![Type::Var("n".into())])).is_decimal()
+        );
+        assert!(DamlType::from_type(&con("Decimal")).is_decimal());
+        // A Named type that merely starts with "Numeric" is not money.
+        assert!(!DamlType::from_type(&con("NumericThing")).is_decimal());
     }
 
-    // Regression (sweep F25): Map/Set/GenMap are unbounded collections.
+    // Regression (sweep F25): Map/Set/GenMap are unbounded collections, at any
+    // qualifier.
     #[test]
     fn map_and_set_are_unbounded() {
-        assert!(DamlType::from_str("Map Text Int").is_unbounded());
-        assert!(DamlType::from_str("GenMap Party Int").is_unbounded());
-        assert!(DamlType::from_str("Set Party").is_unbounded());
-        assert!(DamlType::from_str("DA.Map.Map Text Int").is_unbounded());
+        assert!(
+            DamlType::from_type(&app(con("Map"), vec![con("Text"), con("Int")])).is_unbounded()
+        );
+        assert!(
+            DamlType::from_type(&app(con("GenMap"), vec![con("Party"), con("Int")])).is_unbounded()
+        );
+        assert!(DamlType::from_type(&app(con("Set"), vec![con("Party")])).is_unbounded());
+        let qualified = |q: &str, n: &str| Type::Con {
+            qualifier: Some(q.into()),
+            name: n.into(),
+        };
+        assert!(DamlType::from_type(&app(
+            qualified("DA.Map", "Map"),
+            vec![con("Text"), con("Int")]
+        ))
+        .is_unbounded());
+        // DELIBERATE improvement over the old prefix matcher: the common ALIASED
+        // spellings `Map.Map` / `Set.Set` (the qualified imports of the stdlib
+        // collections) are recognized too — the old matcher only knew `Map `,
+        // `DA.Map.Map `, `Set `, `DA.Set.Set ` and missed these. This is the
+        // single corpus finding the swap changed (`seriSet : Set.Set Int`).
+        assert!(
+            DamlType::from_type(&app(qualified("Map", "Map"), vec![con("Text"), con("Int")]))
+                .is_unbounded()
+        );
+        assert!(
+            DamlType::from_type(&app(qualified("Set", "Set"), vec![con("Int")])).is_unbounded()
+        );
         // A Named type starting with Map/Set is not a collection.
-        assert!(!DamlType::from_str("MapView").is_unbounded());
+        assert!(!DamlType::from_type(&con("MapView")).is_unbounded());
     }
 
-    // Regression (sweep F34): a tuple `(A, B)` is not a grouping paren and must
-    // not be mis-parsed as Named("A, B").
+    // An unrecognized constructor keeps its qualifier in the rule-facing `Named`
+    // payload, so a user type stays fully spelled rather than collapsing to its
+    // tail (which would alias two distinct module-qualified types).
     #[test]
-    fn tuple_type_is_unknown_not_named() {
+    fn named_keeps_qualifier() {
+        let qualified = Type::Con {
+            qualifier: Some("Lib.Mod".into()),
+            name: "Asset".into(),
+        };
+        assert_eq!(
+            DamlType::from_type(&qualified),
+            DamlType::Named("Lib.Mod.Asset".to_string())
+        );
+        assert_eq!(
+            DamlType::from_type(&con("Asset")),
+            DamlType::Named("Asset".to_string())
+        );
+    }
+
+    // Regression (sweep F34): a tuple `(A, B)` is its own shape, never a
+    // collection or a misleading Named — it classifies as Unknown.
+    #[test]
+    fn tuple_type_is_unknown() {
         assert!(matches!(
-            DamlType::from_str("(Int, Text)"),
+            DamlType::from_type(&Type::Tuple(vec![con("Int"), con("Text")])),
             DamlType::Unknown
         ));
-        assert!(matches!(DamlType::from_str("(a, b, c)"), DamlType::Unknown));
+    }
+
+    // The new model's headline win: a *function* type is known to be an arrow,
+    // not swallowed into `Named` the way the string matcher did with anything
+    // starting uppercase (`Int -> Int` was `Named("Int -> Int")`).
+    #[test]
+    fn function_type_is_unknown_not_named() {
+        let arrow = Type::Fun(Box::new(con("Int")), Box::new(con("Int")));
+        assert!(matches!(DamlType::from_type(&arrow), DamlType::Unknown));
     }
 
     // Whole-identifier matching is now structural: `Expr::refers_to` compares

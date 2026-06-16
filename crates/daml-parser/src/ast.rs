@@ -252,11 +252,50 @@ pub enum DoStmt {
     Expr { expr: Expr, pos: Pos, span: Span },
 }
 
+/// Structured Daml type, parsed from the real token stream (not from
+/// `type_text`). Scoped to the forms the corpus actually contains; it exists so
+/// downstream analysis can tell a type *application* from a *function arrow*
+/// from an atomic constructor — a distinction a string matcher structurally
+/// cannot make. It carries no span and is never rendered, so it is invisible to
+/// daml-fmt (which slices layout from `type_text` and the byte spans).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Type {
+    /// Type constructor, possibly qualified: `Party`, `DA.Map.Map`.
+    Con {
+        qualifier: Option<String>,
+        name: String,
+    },
+    /// Type application, head applied to one or more args: `ContractId Foo`,
+    /// `Map Text Int`, `Script ()`. Type-level nat literals (the `10` in
+    /// `Numeric 10`) are NOT types, so they are dropped from the arg list — a
+    /// `Numeric 10` collapses to the bare head `Con "Numeric"`.
+    App(Box<Type>, Vec<Type>),
+    /// List type `[T]`.
+    List(Box<Type>),
+    /// Tuple type `(a, b, ...)`.
+    Tuple(Vec<Type>),
+    /// Function type `a -> b` (right-associative).
+    Fun(Box<Type>, Box<Type>),
+    /// Lowercase type variable: `a`, `n`.
+    Var(String),
+    /// The unit type `()`.
+    Unit,
+    /// A constrained type `C a => T`: the context is dropped (no detector
+    /// reasons about constraints), the body `T` is kept.
+    Constrained(Box<Type>),
+}
+
 #[derive(Debug, Clone)]
 pub struct FieldDecl {
     pub name: String,
     /// Type rendered back to source-ish text (`ContractId Foo`, `[Text]`).
+    /// This is the slice daml-fmt and the lossless oracle rely on; it is NOT
+    /// repurposed. The structured `ty` below is the analysis truth.
     pub type_text: String,
+    /// Structured form of `type_text`, parsed from the token stream. `None`
+    /// when the type could not be parsed cleanly (analysis treats it as
+    /// unknown). Additive and span-free — see [`Type`].
+    pub ty: Option<Type>,
     pub pos: Pos,
     pub span: Span,
 }
@@ -274,6 +313,9 @@ pub struct ChoiceDecl {
     pub name: String,
     pub consuming: Consuming,
     pub return_type_text: String,
+    /// Structured form of `return_type_text` (see [`Type`]); `None` if it could
+    /// not be parsed cleanly or the choice declared no return type.
+    pub return_ty: Option<Type>,
     pub params: Vec<FieldDecl>,
     /// Comma-separated controller expressions.
     pub controllers: Vec<Expr>,
@@ -306,6 +348,9 @@ pub enum TemplateBodyDecl {
     Key {
         expr: Expr,
         type_text: String,
+        /// Structured form of `type_text` (see [`Type`]); `None` if absent or
+        /// not cleanly parseable.
+        ty: Option<Type>,
         pos: Pos,
         span: Span,
     },

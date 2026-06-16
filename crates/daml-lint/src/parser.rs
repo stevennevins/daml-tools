@@ -87,6 +87,16 @@ fn src_pos(pos: ast::Pos) -> SrcPos {
     }
 }
 
+/// Classify a parsed type into the rule-facing `DamlType`. `None` (the parser
+/// could not structure the type) degrades to `Unknown` — the same opaque bucket
+/// the old string matcher's fallthrough produced, and one no detector acts on.
+fn lower_type(ty: Option<&ast::Type>) -> DamlType {
+    match ty {
+        Some(t) => DamlType::from_type(t),
+        None => DamlType::Unknown,
+    }
+}
+
 // ----- expressions -------------------------------------------------------
 
 fn lower_expr(e: &ast::Expr) -> Expr {
@@ -223,7 +233,7 @@ fn lower_template(t: &ast::TemplateDecl, file: &Path, lines: &[&str]) -> Templat
         .iter()
         .map(|f| Field {
             name: f.name.clone(),
-            type_: DamlType::from_str(&f.type_text),
+            type_: lower_type(f.ty.as_ref()),
             span: span_at(file, f.pos),
         })
         .collect();
@@ -338,7 +348,7 @@ fn lower_choice(c: &ast::ChoiceDecl, file: &Path, lines: &[&str]) -> Choice {
         .iter()
         .map(|f| Field {
             name: f.name.clone(),
-            type_: DamlType::from_str(&f.type_text),
+            type_: lower_type(f.ty.as_ref()),
             span: span_at(file, f.pos),
         })
         .collect();
@@ -371,11 +381,7 @@ fn lower_choice(c: &ast::ChoiceDecl, file: &Path, lines: &[&str]) -> Choice {
         controller_exprs: c.controllers.iter().map(lower_expr).collect(),
         observer_exprs: c.observers.iter().map(lower_expr).collect(),
         parameters,
-        return_type: if c.return_type_text.is_empty() {
-            DamlType::Unknown
-        } else {
-            DamlType::from_str(&c.return_type_text)
-        },
+        return_type: lower_type(c.return_ty.as_ref()),
         body,
         body_raw,
         span: span_at(file, c.pos),

@@ -26,15 +26,19 @@ interface SrcPos {
  *
  *  Builtin scalar types serialize as bare strings: "Party", "Text",
  *  "Decimal", "Int", "Bool", "Date", "Time", "Unit" (for `()`), and
- *  "Unknown" (anything the parser could not classify, e.g. tuples).
+ *  "Unknown" (anything carrying no money/collection meaning — tuples,
+ *  function types `a -> b`, and bare type variables).
  *
  *  Parameterized types are single-key objects whose value is the inner
  *  type: { List: "Text" }, { Optional: "Party" }, { TextMap: "Int" },
  *  { ContractId: { Named: "Iou" } }.
  *
  *  User-defined / unrecognized capitalized types are { Named: "..." }
- *  where the payload is the raw type text (a string, NOT a DamlType) —
- *  e.g. { Named: "Iou" } or { Named: "Map.Map Party Decimal" }. */
+ *  where the payload is the (possibly qualified) constructor NAME — e.g.
+ *  { Named: "Iou" } or { Named: "Lib.Mod.Asset" }. Application arguments
+ *  are not part of the name: `Foo Bar` is { Named: "Foo" }. Recognized
+ *  collections are classified, not Named, regardless of how they are
+ *  qualified: `Map.Map Party Decimal` is { Map: [...] }, not Named. */
 type DamlType =
   | "Party"
   | "Text"
