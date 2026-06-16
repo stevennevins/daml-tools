@@ -9,5 +9,5 @@ import Daml.Script
 main = script do
   lazy (error "Hello World!")
 
-lazy: a -> Script ()
+lazy : a -> Script ()
 lazy _ = return ()

@@ -16,13 +16,13 @@ import qualified DA.TextMap as Map
 
 template Name
   with
-    party: Party
+    party : Party
   where
     signatory party
 
 -- Throws the failed auth error, a script we use for testing
 -- Takes a unit to avoid it being run directly
-failedAuthScript: () -> Script ()
+failedAuthScript : () -> Script ()
 failedAuthScript _ = do
   a <- allocatePartyByHint (PartyIdHint "alice")
   b <- allocatePartyByHint (PartyIdHint "bob")
@@ -30,7 +30,7 @@ failedAuthScript _ = do
   pure ()
 
 -- The error we expect to be thrown from the above script
-failedAuthError: FailedCmd
+failedAuthError : FailedCmd
 failedAuthError =
   FailedCmd with
     commandName = CommandName "Submit"
@@ -38,12 +38,12 @@ failedAuthError =
     errorMessage = ErrorMessage "Error: node NodeId(0) (-homePackageId-:TryCommands:Name) requires authorizers bob, but only alice were given"
 
 -- Tests an error that is nested into SError
-tryCommandsAuthorizationFailure: Script ()
+tryCommandsAuthorizationFailure : Script ()
 tryCommandsAuthorizationFailure = do
   res <- tryCommands $ failedAuthScript ()
   res === Left failedAuthError
 
-tryCommandsContractNotActive: Script ()
+tryCommandsContractNotActive : Script ()
 tryCommandsContractNotActive = do
   res <- tryCommands $ do
     a <- allocateParty "alice"
@@ -59,7 +59,7 @@ tryCommandsContractNotActive = do
     _ -> assertFail $ "Expected ContractNotActive error but got " <> show res
 
 -- Check that the lifted error can be caught
-liftedFailedCmdException: Script ()
+liftedFailedCmdException : Script ()
 liftedFailedCmdException = do
   res <- tryFailureStatus $ liftFailedCommandToFailureStatus $ failedAuthScript ()
   case res of

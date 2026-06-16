@@ -9,21 +9,21 @@
 module RestrictedNameWarnings where
 
 template TSelf with
-    self: Party
+    self : Party
   where
     signatory self
 
 template TArg with
-    arg: Party
+    arg : Party
   where
     signatory arg
 
 exception ESelf with
-    self: Text
+    self : Text
   where
     message self
 
 exception EArg with
-    arg: Text
+    arg : Text
   where
     message arg
