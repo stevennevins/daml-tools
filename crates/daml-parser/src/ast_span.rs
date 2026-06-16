@@ -69,9 +69,6 @@ fn tile(source: &str, module: &Module, trivia: &[Trivia]) -> Result<String, Stri
     collect_module(module, &mut content);
     let container = module.span;
     content.retain(|s| !(s.is_empty() || (s.start == container.start && s.end == container.end)));
-    if !module.header.is_empty() {
-        content.push(module.header);
-    }
 
     let mut items: Vec<(usize, usize)> = content.iter().map(|s| (s.start, s.end)).collect();
     // Blank-line trivia carry no bytes; comment/CPP trivia fill the gaps that
@@ -82,15 +79,25 @@ fn tile(source: &str, module: &Module, trivia: &[Trivia]) -> Result<String, Stri
             .filter(|t| !matches!(t.kind, TriviaKind::BlankLines(_)))
             .map(|t| (t.start, t.end)),
     );
-    items.sort_unstable();
+    // Outer-first, like `check_nesting`: when intervals share a start, emit the
+    // broader parent before contained children so child spans can be skipped as
+    // already-covered tiles.
+    items.sort_unstable_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)));
 
     let mut out = String::with_capacity(source.len());
     let mut prev = 0usize;
     for (start, end) in items {
         if start < prev {
-            // Overlapping intervals can't tile; nesting check should have caught
-            // structural overlaps, so this is a span/trivia inconsistency.
-            continue;
+            // Nested AST child spans and contained trivia are already covered
+            // by their parent tile. A partial overlap that extends past `prev`
+            // cannot be tiled losslessly and means the interval set is invalid.
+            if end <= prev {
+                continue;
+            }
+            return Err(format!(
+                "span/trivia interval [{}, {}) overlaps previous tile ending at {}",
+                start, end, prev
+            ));
         }
         let gap = &source[prev..start];
         if !gap.chars().all(char::is_whitespace) {
@@ -358,5 +365,37 @@ fn collect_dostmt(s: &DoStmt, out: &mut Vec<Span>) {
             out.push(*span);
             collect_expr(expr, out);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lexer::{Pos, Trivia};
+
+    #[test]
+    fn tile_reports_overlapping_intervals() {
+        let source = "module M where\n-- comment\n";
+        let module = Module {
+            name: "M".to_string(),
+            pos: Pos { line: 1, column: 1 },
+            span: Span::new(0, source.len()),
+            header: Span::new(0, "module M where".len()),
+            imports: Vec::new(),
+            decls: Vec::new(),
+        };
+        let trivia = vec![Trivia {
+            kind: TriviaKind::LineComment,
+            text: "-- comment".to_string(),
+            pos: Pos { line: 2, column: 1 },
+            start: "module M wher".len(),
+            end: "module M where\n-- comment".len(),
+        }];
+
+        let err = tile(source, &module, &trivia).unwrap_err();
+        assert!(
+            err.contains("overlaps previous tile"),
+            "overlap should fail loudly, got: {err}"
+        );
     }
 }

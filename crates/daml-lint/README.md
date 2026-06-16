@@ -186,9 +186,10 @@ escape hatches for constructs with no structured form (e.g.
 [examples/no-trace.ts](examples/no-trace.ts) matches source text).
 
 Heads up: visitors must be `function` declarations — arrow functions assigned
-to `const` are not discovered. If a script fails at runtime the scan aborts
-with exit code 2; rule errors are never swallowed. A runaway loop is
-interrupted so a broken rule can't hang CI. The engine runs JavaScript
+to `const` are not discovered. If a script fails at runtime, the CLI exits 2;
+library callers can use `Detector::try_detect` to receive the rule error
+without terminating the host process. Rule errors are never swallowed. A runaway
+loop is interrupted so a broken rule can't hang CI. The engine runs JavaScript
 (ES2023) — no Node APIs, no `require`/`import`, no filesystem or network.
 Each rule's script is evaluated once and its visitors are then called for
 every module — visitors should be stateless; don't accumulate findings in
@@ -249,6 +250,16 @@ sources under [corpus/daml-finance/](https://github.com/stevennevins/daml-tools/
 ground-truth corpus; see
 [corpus/daml-finance/README.md](https://github.com/stevennevins/daml-tools/blob/main/corpus/daml-finance/README.md) for
 provenance and licensing.
+
+## Public API Stability
+
+`daml-lint` is pre-1.0. The CLI exit codes and documented feature flags are the
+stable user contract for 0.1.x. The rule-facing IR is intentionally public for
+custom rules and library users, but it may gain structure in 0.x minor releases;
+custom rules should check `ir_version` and match typed nodes rather than raw
+source substrings. Detector result types such as `Finding`, `Severity`, and
+`DetectError` are non-exhaustive; use their documented fields/accessors and keep
+wildcard arms when matching enums. Patch releases should remain compatible.
 
 ## License
 

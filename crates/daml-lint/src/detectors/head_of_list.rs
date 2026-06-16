@@ -35,6 +35,11 @@ pub struct HeadOfListQuery;
 /// The query primitives whose results are unordered.
 const QUERY_FUNCS: [&str; 4] = ["query", "queryFilter", "queryContractId", "queryInterface"];
 
+struct HeadScanContext<'a> {
+    file: &'a std::path::Path,
+    context: &'a str,
+}
+
 impl Detector for HeadOfListQuery {
     fn name(&self) -> &str {
         "head-of-list-query"
@@ -63,126 +68,14 @@ impl Detector for HeadOfListQuery {
         }
 
         for (statements, context) in bodies {
-            // 1. Which bindings hold a raw query result? Tracked with
-            // last-binding-wins semantics over the statement stream: a re-bind to
-            // a query keeps the name a query result, a re-bind to anything derived
-            // (sorted / filtered / pure) clears it, so the shadowed head of a
-            // sorted list is deterministic and not flagged. Only plain-identifier
-            // binders are list-holder names; a destructuring binder (`[x]`,
-            // `(x :: _)`) does not name a list and is handled in 1b below.
             let mut query_binders: HashSet<String> = HashSet::new();
-            crate::ir::walk_body_stmts(statements, &mut |s| {
-                if let Some((name, value)) = binder_and_value(s) {
-                    if !is_plain_identifier(name) {
-                        // 1b. A destructuring bind STRAIGHT from a query is the
-                        // canonical "expect exactly one" bug: `[x] <- query`
-                        // crashes on 0/2+, `(x :: _) <- query` picks a
-                        // non-deterministic head. Flag it like the `case` path.
-                        if is_query_app(value) {
-                            self.flag_destructure_bind(
-                                name,
-                                stmt_line(s),
-                                &module.file,
-                                &context,
-                                &mut findings,
-                            );
-                        }
-                        return;
-                    }
-                    if is_query_app(value) {
-                        query_binders.insert(name.to_string());
-                    } else {
-                        // 1d. `head <$> query` / `fmap head (query ...)`: the
-                        // picked element binds directly, no intermediate list. The
-                        // binder holds a single non-deterministic element, so flag
-                        // it (and do not track the binder as a list).
-                        if let Some(f) = fmap_head_of_query(value) {
-                            findings.push(self.finding(
-                                &module.file,
-                                stmt_line(s),
-                                format!(
-                                    "`{}` over query result in {}. Query results \
-                                     have non-deterministic order.",
-                                    f, context
-                                ),
-                                format!("{} <$> query", f),
-                            ));
-                        }
-                        // Re-bound to a derived/unrelated value: no longer a raw
-                        // query result.
-                        query_binders.remove(name);
-                    }
-                }
-            });
-
-            // 1c. Propagate pure aliases of a query result to a fixpoint, so
-            // `let alias = results; head alias` (and chains `let b = a`) flag the
-            // same bug. Only bare references are followed — a derived binding
-            // (`sortOn`/`filter`/`map`) is correctly out of scope.
-            propagate_aliases(statements, &mut query_binders);
-
-            if query_binders.is_empty() {
-                continue;
-            }
-
-            // 2a. `head` / `last` / `!!` on a query binding — on the Expr tree.
-            let on_query =
-                |e: &Expr| matches!(e.ref_string(), Some(r) if query_binders.contains(&r));
-            crate::ir::walk_body_exprs(statements, &mut |e| match e {
-                // `head xs` / `DA.List.head xs` / `L.last xs` (any qualifier).
-                Expr::App { func, args, span }
-                    if args.len() == 1 && head_or_last(func).is_some() && on_query(&args[0]) =>
-                {
-                    let f = head_or_last(func).unwrap();
-                    findings.push(self.finding(
-                        &module.file,
-                        span.line,
-                        format!(
-                            "`{}` on query result in {}. Query results have \
-                             non-deterministic order.",
-                            f, context
-                        ),
-                        format!("{} {}", f, args[0].render_text()),
-                    ));
-                }
-                // `head $ xs` — `$` is application; the denominator-free idiom.
-                Expr::BinOp { op, lhs, rhs, span } if op == "$" && on_query(rhs) => {
-                    if let Some(f) = head_or_last(lhs) {
-                        findings.push(self.finding(
-                            &module.file,
-                            span.line,
-                            format!(
-                                "`{} $` on query result in {}. Query results have \
-                                 non-deterministic order.",
-                                f, context
-                            ),
-                            format!("{} $ {}", f, rhs.render_text()),
-                        ));
-                    }
-                }
-                Expr::BinOp { op, lhs, span, .. } if op == "!!" && on_query(lhs) => {
-                    findings.push(self.finding(
-                        &module.file,
-                        span.line,
-                        format!(
-                            "Index `!!` into query result in {}. Query results have \
-                             non-deterministic order.",
-                            context
-                        ),
-                        format!("{} !!", lhs.render_text()),
-                    ));
-                }
-                _ => {}
-            });
-
-            // 2b. `case <query binding> of` with a head / single-element alt,
-            // read structurally off the `Statement::Branch` a statement-position
-            // case lowers to (scrutinee + per-arm pattern).
-            self.scan_case_patterns(
+            self.scan_statements(
                 statements,
-                &query_binders,
-                &module.file,
-                &context,
+                &mut query_binders,
+                &HeadScanContext {
+                    file: &module.file,
+                    context: &context,
+                },
                 &mut findings,
             );
         }
@@ -192,6 +85,185 @@ impl Detector for HeadOfListQuery {
 }
 
 impl HeadOfListQuery {
+    /// Scan a statement scope in source order. Query-result tracking is updated
+    /// only after the current statement has been inspected, so `head results`
+    /// before a later safe rebind still sees `results` as a raw query result.
+    fn scan_statements(
+        &self,
+        statements: &[Statement],
+        query_binders: &mut HashSet<String>,
+        scan_context: &HeadScanContext<'_>,
+        findings: &mut Vec<Finding>,
+    ) {
+        for statement in statements {
+            for expr in crate::ir::statement_exprs(statement) {
+                self.scan_expr(expr, query_binders, scan_context, findings);
+            }
+
+            match statement {
+                Statement::TryCatch {
+                    try_body,
+                    catch_body,
+                    ..
+                } => {
+                    let mut try_binders = query_binders.clone();
+                    self.scan_statements(try_body, &mut try_binders, scan_context, findings);
+                    let mut catch_binders = query_binders.clone();
+                    self.scan_statements(catch_body, &mut catch_binders, scan_context, findings);
+                }
+                Statement::Branch {
+                    scrutinee: Some(scrutinee),
+                    arms,
+                    span,
+                } => {
+                    self.scan_branch_patterns(
+                        scrutinee,
+                        arms,
+                        *span,
+                        query_binders,
+                        scan_context,
+                        findings,
+                    );
+                    for arm in arms {
+                        let mut arm_binders = query_binders.clone();
+                        self.scan_statements(&arm.body, &mut arm_binders, scan_context, findings);
+                    }
+                }
+                Statement::Branch { arms, .. } => {
+                    for arm in arms {
+                        let mut arm_binders = query_binders.clone();
+                        self.scan_statements(&arm.body, &mut arm_binders, scan_context, findings);
+                    }
+                }
+                _ => {}
+            }
+
+            self.update_query_binding(statement, query_binders, scan_context, findings);
+        }
+    }
+
+    fn scan_expr(
+        &self,
+        expr: &Expr,
+        query_binders: &HashSet<String>,
+        scan_context: &HeadScanContext<'_>,
+        findings: &mut Vec<Finding>,
+    ) {
+        let on_query = |e: &Expr| matches!(e.ref_string(), Some(r) if query_binders.contains(&r));
+
+        match expr {
+            // `head xs` / `DA.List.head xs` / `L.last xs` (any qualifier).
+            Expr::App { func, args, span }
+                if args.len() == 1 && head_or_last(func).is_some() && on_query(&args[0]) =>
+            {
+                let f = head_or_last(func).unwrap();
+                findings.push(self.finding(
+                    scan_context.file,
+                    span.line,
+                    format!(
+                        "`{}` on query result in {}. Query results have \
+                         non-deterministic order.",
+                        f, scan_context.context
+                    ),
+                    format!("{} {}", f, args[0].render_text()),
+                ));
+            }
+            // `head $ xs` — `$` is application; the denominator-free idiom.
+            Expr::BinOp { op, lhs, rhs, span } if op == "$" && on_query(rhs) => {
+                if let Some(f) = head_or_last(lhs) {
+                    findings.push(self.finding(
+                        scan_context.file,
+                        span.line,
+                        format!(
+                            "`{} $` on query result in {}. Query results have \
+                             non-deterministic order.",
+                            f, scan_context.context
+                        ),
+                        format!("{} $ {}", f, rhs.render_text()),
+                    ));
+                }
+            }
+            Expr::BinOp { op, lhs, span, .. } if op == "!!" && on_query(lhs) => {
+                findings.push(self.finding(
+                    scan_context.file,
+                    span.line,
+                    format!(
+                        "Index `!!` into query result in {}. Query results have \
+                         non-deterministic order.",
+                        scan_context.context
+                    ),
+                    format!("{} !!", lhs.render_text()),
+                ));
+            }
+            Expr::DoBlock { statements, .. } => {
+                let mut nested_binders = query_binders.clone();
+                self.scan_statements(statements, &mut nested_binders, scan_context, findings);
+            }
+            _ => {}
+        }
+
+        for child_expr in crate::ir::child_exprs(expr) {
+            self.scan_expr(child_expr, query_binders, scan_context, findings);
+        }
+    }
+
+    /// Apply last-binding-wins query-result tracking for the statement that was
+    /// just scanned.
+    fn update_query_binding(
+        &self,
+        statement: &Statement,
+        query_binders: &mut HashSet<String>,
+        scan_context: &HeadScanContext<'_>,
+        findings: &mut Vec<Finding>,
+    ) {
+        let Some((name, value)) = binder_and_value(statement) else {
+            return;
+        };
+
+        if !is_plain_identifier(name) {
+            // A destructuring bind STRAIGHT from a query is the canonical
+            // "expect exactly one" bug: `[x] <- query` crashes on 0/2+,
+            // `(x :: _) <- query` picks a non-deterministic head.
+            if is_query_app(value) {
+                self.flag_destructure_bind(
+                    name,
+                    stmt_line(statement),
+                    scan_context.file,
+                    scan_context.context,
+                    findings,
+                );
+            }
+            return;
+        }
+
+        if is_query_app(value) {
+            query_binders.insert(name.to_string());
+        } else if let Some(src) = value.ref_string() {
+            if query_binders.contains(&src) {
+                query_binders.insert(name.to_string());
+            } else {
+                query_binders.remove(name);
+            }
+        } else {
+            // `head <$> query` / `fmap head (query ...)`: the picked element
+            // binds directly, no intermediate list. The binder holds a single
+            // non-deterministic element, so flag it and do not track the binder.
+            if let Some(f) = fmap_head_of_query(value) {
+                findings.push(self.finding(
+                    scan_context.file,
+                    stmt_line(statement),
+                    format!(
+                        "`{}` over query result in {}. Query results \
+                         have non-deterministic order.",
+                        f, scan_context.context
+                    ),
+                    format!("{} <$> query", f),
+                ));
+            }
+            query_binders.remove(name);
+        }
+    }
+
     fn finding(
         &self,
         file: &std::path::Path,
@@ -211,62 +283,49 @@ impl HeadOfListQuery {
     }
 
     /// Flag each head / single-element `case` alternative whose case scrutinizes
-    /// a tracked query binding. A statement-position `case` is lowered to a
-    /// `Statement::Branch` carrying the scrutinee `Expr` and each arm's rendered
-    /// pattern, so attribution is structural: a nested `case <other> of` is its
-    /// own `Branch` node with its own scrutinee and can never leak its alts onto
-    /// the outer query scrutinee.
-    fn scan_case_patterns(
+    /// a tracked query binding.
+    fn scan_branch_patterns(
         &self,
-        statements: &[Statement],
+        scrutinee: &Expr,
+        arms: &[crate::ir::BranchArm],
+        span: crate::ir::SrcPos,
         query_binders: &HashSet<String>,
-        file: &std::path::Path,
-        context: &str,
+        scan_context: &HeadScanContext<'_>,
         findings: &mut Vec<Finding>,
     ) {
-        crate::ir::walk_body_stmts(statements, &mut |s| {
-            let Statement::Branch {
-                scrutinee: Some(scrutinee),
-                arms,
-                span,
-            } = s
-            else {
-                return;
+        if !matches!(scrutinee.ref_string(), Some(r) if query_binders.contains(&r)) {
+            return;
+        }
+        for arm in arms {
+            let Some(pattern) = arm.pattern.as_deref() else {
+                continue;
             };
-            if !matches!(scrutinee.ref_string(), Some(r) if query_binders.contains(&r)) {
-                return;
+            // The parser renders a cons pattern in prefix form (`(:: x _)`),
+            // so the binder matcher — not the infix one — is the right test.
+            if is_cons_head_binder(pattern) {
+                findings.push(self.finding(
+                    scan_context.file,
+                    span.line,
+                    format!(
+                        "Head-of-list pattern '{}' on query result in {}. \
+                         Query results have non-deterministic order.",
+                        pattern, scan_context.context
+                    ),
+                    pattern.to_string(),
+                ));
+            } else if is_singleton_list_pattern(pattern) {
+                findings.push(self.finding(
+                    scan_context.file,
+                    span.line,
+                    format!(
+                        "Single-element list pattern '{}' on query result in {}. \
+                         Crashes on 0 or 2+ results.",
+                        pattern, scan_context.context
+                    ),
+                    pattern.to_string(),
+                ));
             }
-            for arm in arms {
-                let Some(pattern) = arm.pattern.as_deref() else {
-                    continue;
-                };
-                // The parser renders a cons pattern in prefix form (`(:: x _)`),
-                // so the binder matcher — not the infix one — is the right test.
-                if is_cons_head_binder(pattern) {
-                    findings.push(self.finding(
-                        file,
-                        span.line,
-                        format!(
-                            "Head-of-list pattern '{}' on query result in {}. \
-                             Query results have non-deterministic order.",
-                            pattern, context
-                        ),
-                        pattern.to_string(),
-                    ));
-                } else if is_singleton_list_pattern(pattern) {
-                    findings.push(self.finding(
-                        file,
-                        span.line,
-                        format!(
-                            "Single-element list pattern '{}' on query result in {}. \
-                             Crashes on 0 or 2+ results.",
-                            pattern, context
-                        ),
-                        pattern.to_string(),
-                    ));
-                }
-            }
-        });
+        }
     }
 
     /// Flag a destructuring monadic bind `[x] <- query` / `(x :: _) <- query`
@@ -355,32 +414,6 @@ fn is_cons_head_binder(binder: &str) -> bool {
     };
     // `:: <head> <tail>` — the tail (last whitespace-separated atom) is `_`.
     matches!(rest.rsplit_once(char::is_whitespace), Some((_, tail)) if tail.trim() == "_")
-}
-
-/// Propagate pure aliases of a query result to a fixpoint. A binding whose value
-/// is a bare reference (`let alias = results`) to a name already tracked as a
-/// query result makes its own name a query result too; chains
-/// (`let b = a`) converge by iterating until no name is added. Derived bindings
-/// (`sortOn`/`filter`/`map ...`) are not bare references and are not followed.
-fn propagate_aliases(statements: &[Statement], query_binders: &mut HashSet<String>) {
-    loop {
-        let mut added = false;
-        crate::ir::walk_body_stmts(statements, &mut |s| {
-            if let Some((name, value)) = binder_and_value(s) {
-                if is_plain_identifier(name) && !query_binders.contains(name) {
-                    if let Some(src) = value.ref_string() {
-                        if query_binders.contains(&src) {
-                            query_binders.insert(name.to_string());
-                            added = true;
-                        }
-                    }
-                }
-            }
-        });
-        if !added {
-            break;
-        }
-    }
 }
 
 /// True if the application spine's head is an unqualified query primitive.
@@ -794,6 +827,28 @@ pick owner = do
         assert!(
             findings.is_empty(),
             "`let raw = sortOn snd raw` clears the query tracking: {:?}",
+            findings
+        );
+    }
+
+    // Regression (release audit): a later safe rebind must not erase an earlier
+    // unsafe head-of-list use. The detector has to scan with the binding
+    // environment current at each statement, not with the final environment.
+    #[test]
+    fn test_head_before_sorted_rebind_is_still_flagged() {
+        let source = r#"module Test where
+
+pick owner = do
+  results <- query @Foo owner
+  first <- pure (head results)
+  results <- pure (sortOn snd results)
+  pure first
+"#;
+        let module = parse_daml(source, Path::new("HeadBeforeRebind.daml"));
+        let findings = HeadOfListQuery.detect(&module);
+        assert!(
+            findings.iter().any(|f| f.message.contains("head")),
+            "`head results` before a safe rebind is still unsafe: {:?}",
             findings
         );
     }

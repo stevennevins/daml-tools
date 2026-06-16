@@ -4,7 +4,6 @@ use std::collections::HashSet;
 
 /// Shared, read-only context threaded through the recursive denominator scan.
 struct DenominatorScanContext<'a> {
-    all_statements: &'a [Statement],
     ensure: Option<&'a EnsureClause>,
     file: &'a std::path::Path,
     context_name: &'a str,
@@ -35,7 +34,6 @@ impl UnguardedDivision {
     ) -> Vec<Finding> {
         let mut findings = Vec::new();
         let scan_context = DenominatorScanContext {
-            all_statements: statements,
             ensure,
             file,
             context_name,
@@ -44,8 +42,8 @@ impl UnguardedDivision {
         findings
     }
 
-    /// Walk statements, threading the set of denominator keys an enclosing `if`
-    /// has already proven non-zero.
+    /// Walk statements in source order, threading the set of denominator keys
+    /// already proven non-zero by dominating asserts or enclosing `if`s.
     fn scan_stmts(
         &self,
         statements: &[Statement],
@@ -53,9 +51,10 @@ impl UnguardedDivision {
         scan_context: &DenominatorScanContext<'_>,
         findings: &mut Vec<Finding>,
     ) {
+        let mut current_guarded_keys = guarded_denominator_keys.clone();
         for statement in statements {
             for expr in crate::ir::statement_exprs(statement) {
-                self.scan_expr(expr, guarded_denominator_keys, scan_context, findings);
+                self.scan_expr(expr, &current_guarded_keys, scan_context, findings);
             }
             match statement {
                 Statement::TryCatch {
@@ -63,21 +62,19 @@ impl UnguardedDivision {
                     catch_body,
                     ..
                 } => {
-                    self.scan_stmts(try_body, guarded_denominator_keys, scan_context, findings);
-                    self.scan_stmts(catch_body, guarded_denominator_keys, scan_context, findings);
+                    self.scan_stmts(try_body, &current_guarded_keys, scan_context, findings);
+                    self.scan_stmts(catch_body, &current_guarded_keys, scan_context, findings);
                 }
                 // An `if`/`case` arm is its own scope; scan each for divisions.
                 Statement::Branch { arms, .. } => {
                     for arm in arms {
-                        self.scan_stmts(
-                            &arm.body,
-                            guarded_denominator_keys,
-                            scan_context,
-                            findings,
-                        );
+                        self.scan_stmts(&arm.body, &current_guarded_keys, scan_context, findings);
                     }
                 }
                 _ => {}
+            }
+            if let Statement::Assert { condition_expr, .. } = statement {
+                collect_nonzero_keys(condition_expr, &mut current_guarded_keys);
             }
         }
     }
@@ -99,14 +96,10 @@ impl UnguardedDivision {
                     denominator_expr.ref_string(),
                     Some(key) if guarded_denominator_keys.contains(&key)
                 );
-                if !is_guarded_by_enclosing_if
-                    && !self.has_prior_guard(
-                        &denominator,
-                        scan_context.all_statements,
-                        scan_context.ensure,
-                        span,
-                    )
-                {
+                let is_guarded_by_ensure = scan_context
+                    .ensure
+                    .is_some_and(|ec| ec.guarantees_nonzero(&denominator));
+                if !is_guarded_by_enclosing_if && !is_guarded_by_ensure {
                     findings.push(self.finding(
                         scan_context.file,
                         span.line,
@@ -167,55 +160,6 @@ impl UnguardedDivision {
             ),
             evidence: evidence.to_string(),
         }
-    }
-
-    /// True if some `assert`/`assertMsg` that runs strictly before `division`,
-    /// or the enclosing template `ensure`, structurally bounds `denominator`
-    /// away from zero. Matching is on the assert's `condition_expr`, so a check
-    /// buried under `||` / `not (...)` cannot masquerade as a guard.
-    ///
-    /// "Before" is decided on the `(line, column)` source position, not the line
-    /// alone: in a one-line do-block (`do { assertMsg ...; pure (x / y) }`) the
-    /// guard and the division share a line, and the earlier column is the one
-    /// that runs first. A guard placed *after* the division (later column on the
-    /// same line, or a later line) still does not suppress.
-    fn has_prior_guard(
-        &self,
-        denominator: &str,
-        statements: &[Statement],
-        ensure: Option<&EnsureClause>,
-        division: &SrcPos,
-    ) -> bool {
-        let denominator = denominator.trim();
-        if denominator.is_empty() {
-            return false;
-        }
-
-        // The ensure clause holds before the choice body runs.
-        if ensure.is_some_and(|ec| ec.guarantees_nonzero(denominator)) {
-            return true;
-        }
-
-        let division_pos = (division.line, division.column);
-        let mut has_unconditional_guard = false;
-        // Only asserts that UNCONDITIONALLY run before the division can guard it.
-        // An assert inside a `Branch` arm runs only when that arm is taken, so it
-        // never dominates a later division — do not descend into Branch arms.
-        crate::ir::walk_unconditional_stmts(statements, &mut |stmt| {
-            if let Statement::Assert {
-                condition_expr,
-                span,
-                ..
-            } = stmt
-            {
-                if (span.line, span.column) < division_pos
-                    && crate::ir::expr_guarantees_nonzero(condition_expr, denominator)
-                {
-                    has_unconditional_guard = true;
-                }
-            }
-        });
-        has_unconditional_guard
     }
 }
 
@@ -768,6 +712,27 @@ f x y = do
         assert!(
             !UnguardedDivision.detect(&mc).is_empty(),
             "an assert only in a case alt must not suppress the later x / y"
+        );
+    }
+
+    // Release-audit regression: an assert and division in the same branch arm
+    // are on the same path, so the guard should suppress the division there.
+    #[test]
+    fn test_branch_arm_guard_suppresses_division_in_same_arm() {
+        let source = r#"module Test where
+
+f flag x y =
+  if flag then do
+    assertMsg "y" (y /= 0.0)
+    pure (x / y)
+  else
+    pure 0.0
+"#;
+        let module = parse_daml(source, Path::new("BranchGuard.daml"));
+        assert!(
+            UnguardedDivision.detect(&module).is_empty(),
+            "a guard in the same branch arm dominates that arm's division: {:?}",
+            UnguardedDivision.detect(&module)
         );
     }
 

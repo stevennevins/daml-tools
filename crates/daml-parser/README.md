@@ -58,9 +58,12 @@ assert!(diagnostics.is_empty());
 
 ## Stability
 
-`daml-parser` is a real library other crates depend on, so its public API
-follows SemVer strictly — a breaking change to the public types is a major
-bump, guarded in CI by `cargo-semver-checks`.
+`daml-parser` is pre-1.0. The supported public entry points are the modules
+listed above, with `parse::parse_module` as the normal start. The AST is public
+so tools can inspect parser output; downstream code should prefer parser-created
+trees over manual construction. Breaking public API changes use 0.x minor bumps,
+and patch releases should stay compatible. `cargo-semver-checks` is a soft CI
+signal until the first crates.io baseline exists.
 
 ## License
 

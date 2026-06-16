@@ -13,7 +13,6 @@ edition = "2021"
 rust-version = "1.87.0"
 license = "AGPL-3.0-only"
 repository = "https://github.com/stevennevins/daml-tools"
-homepage = "https://github.com/stevennevins/daml-tools"
 authors = ["Steven Nevins"]
 
 [workspace.dependencies]

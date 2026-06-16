@@ -10,6 +10,9 @@
 //!
 //! Start at [`parse::parse_module`]. For byte-faithful reconstruction from the
 //! parse tree, see [`ast_span::render_from_ast`] and [`lexer::render_lossless`].
+//! The AST modules are public for inspection by tools; parser-created trees are
+//! the supported construction path. This crate is pre-1.0, so breaking public
+//! API changes use 0.x minor bumps and patch releases should stay compatible.
 //!
 //! # Example
 //!

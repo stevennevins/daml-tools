@@ -1,4 +1,4 @@
-use crate::detector::{parse_severity, Detector, Finding, Severity};
+use crate::detector::{parse_severity, DetectError, Detector, Finding, Severity};
 use crate::ir::DamlModule;
 use rquickjs::{CatchResultExt, Context, Ctx, Function, Object, Runtime, Value};
 use std::cell::RefCell;
@@ -284,12 +284,13 @@ impl Detector for ScriptDetector {
     }
 
     fn detect(&self, module: &DamlModule) -> Vec<Finding> {
-        // Detector::detect can't return errors; a script that fails at runtime
-        // is a broken rule and the scan results can't be trusted — fail loud.
-        self.collect_script_findings(module).unwrap_or_else(|e| {
-            eprintln!("Error: rules script {}: {}", self.path, e);
-            std::process::exit(2);
-        })
+        self.try_detect(module)
+            .unwrap_or_else(|e| panic!("rules script {}: {}", self.path, e))
+    }
+
+    fn try_detect(&self, module: &DamlModule) -> Result<Vec<Finding>, DetectError> {
+        self.collect_script_findings(module)
+            .map_err(|e| DetectError::new(self.name(), e))
     }
 }
 
@@ -640,6 +641,15 @@ function on_template(t) {}
         let err = script.collect_script_findings(&module).unwrap_err();
         assert!(err.contains("boom"));
         assert!(err.contains("on_template"));
+    }
+
+    #[test]
+    fn test_try_detect_returns_runtime_errors_to_library_callers() {
+        let script = raw_detector("boom", r#"function on_template(t) { t.does.not.exist; }"#);
+        let module = parse_daml(TEMPLATE_NO_ENSURE, Path::new("Test.daml"));
+        let err = script.try_detect(&module).unwrap_err();
+        assert_eq!(err.detector(), "boom");
+        assert!(err.message().contains("on_template"));
     }
 
     #[test]

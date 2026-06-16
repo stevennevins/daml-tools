@@ -38,7 +38,7 @@ bindings (line-leading `let`) → `let_col + 2`; `Con with` construction fields 
 normalization. Still verbatim by design: record UPDATES (`expr with`),
 `try`/`catch` bodies, guards, `data`/TypeDef declarations, and expression
 continuations. Structural candidate metric:
-`cd crates/daml-fmt && cargo run --features dev-tools --bin coverage` reports
+`cd crates/daml-fmt && cargo run --features dev-tools --bin coverage -- original` reports
 635 structural edit candidates / 5605 modeled constructs across the 924-file
 corpus (201 files with candidates). The metric covers do-blocks, if/case/let-in,
 constructor `with`, and template/interface bodies. This is not a percentage:
@@ -56,7 +56,7 @@ oracle vouches it is meaning-preserving.
 Measure coverage with:
 
 ```sh
-cd crates/daml-fmt && cargo run --features dev-tools --bin coverage
+cd crates/daml-fmt && cargo run --features dev-tools --bin coverage -- original
 ```
 
 This reports structural edit candidates over modeled constructs and replaces the

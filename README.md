@@ -58,14 +58,17 @@ cargo install daml-fmt
 
 ## Versioning & release
 
-Each crate is versioned independently. All published library targets are
-guarded by `cargo-semver-checks`; `daml-parser` is the stable foundation, while
-`daml-lint` and `daml-fmt` are CLI-first and may bump faster as their public
-surfaces settle. Releases are driven by [release-plz](release-plz.toml) in
-dependency order (parser first, then lint + fmt).
+Each crate is versioned independently. Before the first crates.io baseline,
+`cargo-semver-checks` is a soft CI signal; after 0.1.0 is published it should be
+made a hard gate. While the crates are pre-1.0, breaking public API changes use
+0.x minor bumps and patch releases stay compatible.
 
-CI builds the CLIs on Linux x64, macOS ARM64, and Windows x64. Other targets are
-best effort until a dedicated release-binary workflow is added.
+Releases are driven by [release-plz](release-plz.toml) in dependency order
+(parser first, then lint + fmt). The GitHub workflow expects a crates.io
+`CARGO_REGISTRY_TOKEN`; set `RELEASE_PLZ_TOKEN` to a PAT if release PRs/tags
+must trigger follow-on workflows. CLI release archives and SHA-256 files are
+built for Linux x64, macOS ARM64, and Windows x64 when `daml-lint-v*` or
+`daml-fmt-v*` tags are published.
 
 ## License
 

@@ -1,0 +1,75 @@
+name: Release Artifacts
+
+on:
+  push:
+    tags:
+      - "daml-lint-v*"
+      - "daml-fmt-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to attach assets to"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-cli-archive:
+    name: build CLI archive (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Build CLIs
+        run: cargo build --release --locked --target ${{ matrix.target }} --bin daml-lint --bin daml-fmt
+      - name: Package archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          target="${{ matrix.target }}"
+          release_dir="target/${target}/release"
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            archive="daml-tools-${target}.zip"
+            7z a "dist/${archive}" \
+              "${release_dir}/daml-lint.exe" \
+              "${release_dir}/daml-fmt.exe"
+          else
+            archive="daml-tools-${target}.tar.gz"
+            tar -czf "dist/${archive}" -C "${release_dir}" daml-lint daml-fmt
+          fi
+          if command -v sha256sum >/dev/null 2>&1; then
+            (cd dist && sha256sum "${archive}" > "${archive}.sha256")
+          else
+            (cd dist && shasum -a 256 "${archive}" > "${archive}.sha256")
+          fi
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+      - name: Upload to GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "${TAG}" >/dev/null 2>&1 || \
+            gh release create "${TAG}" --verify-tag --title "${TAG}" --notes "CLI artifacts for ${TAG}."
+          gh release upload "${TAG}" dist/* --clobber

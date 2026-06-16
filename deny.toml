@@ -3,17 +3,27 @@
 
 [licenses]
 # Every crate in the tree (workspace members + dependencies) must resolve to
-# one of these. Our crates are AGPL-3.0-only; the current dependency set is
-# permissive (MIT / Apache-2.0 / Unicode-3.0 / Zlib). Add a license here only
-# after reviewing it.
+# one of these. Keep this global list for third-party dependency licenses only;
+# workspace AGPL licenses are listed as explicit exceptions below.
 allow = [
-    "AGPL-3.0-only",
     "MIT",
     "Apache-2.0",
     "Unicode-3.0",
     "Zlib",
 ]
 confidence-threshold = 0.9
+
+[[licenses.exceptions]]
+name = "daml-parser"
+allow = ["AGPL-3.0-only"]
+
+[[licenses.exceptions]]
+name = "daml-lint"
+allow = ["AGPL-3.0-only"]
+
+[[licenses.exceptions]]
+name = "daml-fmt"
+allow = ["AGPL-3.0-only"]
 
 [advisories]
 # Default RustSec database. Vulnerabilities fail the build; so do yanked crates.

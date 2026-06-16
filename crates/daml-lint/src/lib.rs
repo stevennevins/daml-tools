@@ -5,6 +5,10 @@
 //! separate [`daml_parser`] crate. This crate lowers that AST into a
 //! rule-facing IR ([`ir`], via [`parser`]) and runs [`detectors`] over it.
 //! Start at [`parser::parse_daml_with_diagnostics`].
+//! The IR is public so custom rules and library callers can inspect it; parser
+//! lowering is the supported construction path. This crate is pre-1.0, so
+//! breaking public API changes use 0.x minor bumps and patch releases should
+//! stay compatible.
 //!
 //! # Example
 //!

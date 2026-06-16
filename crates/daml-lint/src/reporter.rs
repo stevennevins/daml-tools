@@ -9,16 +9,15 @@ pub enum OutputFormat {
     Json,
 }
 
-impl OutputFormat {
-    // Inherent `from_str`: returns Option (None on unknown input) rather than
-    // std::str::FromStr's `Result`, so it is not the trait method.
-    #[allow(clippy::should_implement_trait)]
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for OutputFormat {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "sarif" => Some(OutputFormat::Sarif),
-            "markdown" | "md" => Some(OutputFormat::Markdown),
-            "json" => Some(OutputFormat::Json),
-            _ => None,
+            "sarif" => Ok(OutputFormat::Sarif),
+            "markdown" | "md" => Ok(OutputFormat::Markdown),
+            "json" => Ok(OutputFormat::Json),
+            _ => Err(()),
         }
     }
 }

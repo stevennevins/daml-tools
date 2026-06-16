@@ -76,7 +76,7 @@ The corpus source is a clone of digital-asset/daml at commit
 ## Verify commands
 
 Fast tier (no SDK): `npm test` (expected/ + idempotence over the binary) and
-`cargo test` (unit tests). Coverage metric: `cargo run --features dev-tools --bin coverage`.
+`cargo test` (unit tests). Coverage metric: `cargo run --features dev-tools --bin coverage -- original`.
 
 The real semantic bar is the desugar oracle — a formatted file must desugar
 byte-identically to the original. The default verifier runs a curated desugar

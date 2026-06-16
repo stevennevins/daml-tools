@@ -61,7 +61,10 @@ cat Foo.daml | daml-fmt        # stdin → stdout
 
 Exit codes: 0 ok, 1 `--check` found unformatted files, 2 error.
 
-## Tests
+## Workspace-Only Tests
+
+These commands require a full repository checkout. The published crate excludes
+the corpus, baselines, scripts, and contributor notes.
 
 Fast tier (no SDK, ~seconds — formats all 924 corpus files via the release
 binary, compares to the committed `expected/` baseline, checks idempotence):
@@ -83,10 +86,18 @@ tools/verify-rust.sh --desugar     # full-corpus desugar sweep
 The structural candidate metric (edit candidates over modeled constructs):
 
 ```sh
-cargo run --features dev-tools --bin coverage
+cargo run --features dev-tools --bin coverage -- original
 ```
 
-## Regenerating the baseline
+Parser round-trip dev tools are also workspace-only and require explicit input
+paths:
+
+```sh
+cargo run --features dev-tools --bin lossless-check -- original
+cargo run --features dev-tools --bin ast-check -- original
+```
+
+## Regenerating the Baseline
 
 `expected/` is a snapshot of this formatter's own output over `original/`.
 After a deliberate formatter change, regenerate it, review the diff, commit:
@@ -101,7 +112,8 @@ tools/gen-expected.sh
   normalization. `src/layout_ast.rs` — the AST-driven layout backend.
 - `src/bin/daml-fmt.rs` — the CLI (the only published binary). Dev-only bins
   behind the `dev-tools` feature: `coverage` (metric), `lossless-check` /
-  `ast-check` (parser round-trip checks).
+  `ast-check` (parser round-trip checks). The dev-tool bins require explicit
+  input paths because their default corpus is not included in the package.
 - `original/` — 924 corpus files from digital-asset/daml (Apache-2.0 upstream; some example files carry no per-file SPDX header), all
   verified to desugar clean. The formatting test cases.
 - `expected/` — the formatter's output over the corpus, the regression

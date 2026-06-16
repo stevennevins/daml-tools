@@ -6,7 +6,7 @@
 //! structural formatter: if it passes 924/924, the AST is faithful enough to
 //! format from.
 //!
-//! Usage: `ast-check <dir-or-file>...` (default: `original/`)
+//! Usage: `ast-check <dir-or-file>...`
 
 use daml_parser::ast_span::render_from_ast;
 use daml_parser::lexer::lex_with_trivia;
@@ -31,11 +31,11 @@ fn collect(path: &Path, out: &mut Vec<PathBuf>) {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let roots: Vec<PathBuf> = if args.is_empty() {
-        vec![PathBuf::from("original")]
-    } else {
-        args.iter().map(PathBuf::from).collect()
-    };
+    if args.is_empty() {
+        eprintln!("usage: ast-check <dir-or-file>...");
+        exit(2);
+    }
+    let roots: Vec<PathBuf> = args.iter().map(PathBuf::from).collect();
 
     let mut files = Vec::new();
     for r in &roots {

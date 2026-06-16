@@ -6,7 +6,6 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-homepage.workspace = true
 authors.workspace = true
 readme = "README.md"
 keywords = ["daml", "formatter", "fmt", "code-formatter", "smart-contracts"]
@@ -36,7 +35,7 @@ daml-parser.workspace = true
 # The corpus-harness bins below are dev tools (they read the unpublished
 # `original/` corpus). Gating them behind this off-by-default feature keeps
 # `cargo install daml-fmt` to the single public `daml-fmt` binary, while devs
-# can still `cargo run --features dev-tools --bin coverage`.
+# can still run them with explicit corpus paths.
 dev-tools = []
 
 [lib]

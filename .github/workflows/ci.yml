@@ -43,7 +43,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.87.0
       - uses: Swatinem/rust-cache@v2
-      - run: cargo check --workspace --locked
+      - name: workspace all targets and features
+        run: cargo check --workspace --all-targets --all-features --locked
+      - name: daml-lint library without optional features
+        run: cargo check -p daml-lint --no-default-features --locked
+      - name: daml-lint CLI feature only
+        run: cargo check -p daml-lint --no-default-features --features cli --locked
+      - name: daml-lint custom-rules feature only
+        run: cargo check -p daml-lint --no-default-features --features custom-rules --locked
 
   # License + advisory policy (see deny.toml).
   cargo-deny:
@@ -71,11 +78,9 @@ jobs:
         with:
           package: ${{ matrix.package }}
 
-  # Native release binaries per OS — the per-PR "it still builds a runnable CLI"
-  # gate. The full cross-target matrix (aarch64-linux, musl, x86_64-darwin) and
-  # the npm wrappers are deferred (no release workflow is committed yet): wire
-  # them with cargo-dist in a separate release workflow when you set up
-  # publishing. release-plz.toml configures the crates.io side.
+  # Native CLI binaries per OS — the per-PR "it still builds a runnable CLI"
+  # gate. Release assets are produced by release-artifacts.yml when a CLI tag is
+  # published.
   build:
     name: build (${{ matrix.target }})
     strategy:
@@ -102,4 +107,4 @@ jobs:
             target/${{ matrix.target }}/release/daml-fmt
             target/${{ matrix.target }}/release/daml-lint.exe
             target/${{ matrix.target }}/release/daml-fmt.exe
-          if-no-files-found: ignore
+          if-no-files-found: error

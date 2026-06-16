@@ -34,7 +34,7 @@ struct Cli {
 fn main() {
     let cli = Cli::parse();
 
-    let format = OutputFormat::from_str(&cli.format).unwrap_or_else(|| {
+    let format = cli.format.parse::<OutputFormat>().unwrap_or_else(|()| {
         eprintln!(
             "Unknown format '{}'. Use sarif, markdown, or json.",
             cli.format
@@ -110,8 +110,13 @@ fn main() {
         }
 
         for det in &detectors {
-            let findings = det.detect(&module);
-            all_findings.extend(findings);
+            match det.try_detect(&module) {
+                Ok(findings) => all_findings.extend(findings),
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(2);
+                }
+            }
         }
     }
 

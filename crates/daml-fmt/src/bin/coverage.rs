@@ -8,30 +8,46 @@
 //! produce multiple edits, and on the already-canonical corpus most modeled
 //! constructs are no-ops.
 //!
-//! Usage: coverage [--list]
+//! Usage: `coverage [--list] <dir-or-file>...`
 
 use daml_fmt::layout_ast::coverage;
 use std::path::{Path, PathBuf};
+use std::process::exit;
 
-fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
-    let mut entries: Vec<_> = std::fs::read_dir(dir)
-        .unwrap_or_else(|e| panic!("read_dir {}: {}", dir.display(), e))
-        .map(|e| e.unwrap().path())
-        .collect();
-    entries.sort();
-    for e in entries {
-        if e.is_dir() {
+fn collect(path: &Path, out: &mut Vec<PathBuf>) {
+    if path.is_dir() {
+        let mut entries: Vec<_> = std::fs::read_dir(path)
+            .unwrap_or_else(|e| panic!("read_dir {}: {}", path.display(), e))
+            .map(|e| e.unwrap().path())
+            .collect();
+        entries.sort();
+        for e in entries {
             collect(&e, out);
-        } else if e.extension().is_some_and(|x| x == "daml") {
-            out.push(e);
         }
+    } else if path.extension().is_some_and(|x| x == "daml") {
+        out.push(path.to_path_buf());
     }
 }
 
 fn main() {
-    let list = std::env::args().any(|a| a == "--list");
+    let mut list = false;
+    let mut roots = Vec::new();
+    for arg in std::env::args().skip(1) {
+        if arg == "--list" {
+            list = true;
+        } else {
+            roots.push(PathBuf::from(arg));
+        }
+    }
+    if roots.is_empty() {
+        eprintln!("usage: coverage [--list] <dir-or-file>...");
+        exit(2);
+    }
+
     let mut originals = Vec::new();
-    collect(Path::new("original"), &mut originals);
+    for root in &roots {
+        collect(root, &mut originals);
+    }
 
     let (mut candidates, mut modeled, mut files_with_candidates) = (0usize, 0usize, 0usize);
     for o in &originals {
