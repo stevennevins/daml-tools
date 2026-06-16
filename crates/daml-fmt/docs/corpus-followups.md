@@ -109,7 +109,8 @@ Corpus oracle:
 
 ```sh
 npm test
-tools/verify-rust.sh --desugar
+tools/verify-rust.sh
+tools/verify-rust.sh --desugar  # optional full-corpus desugar sweep
 ```
 
 Keep using temporary outputs for external corpora. Do not rewrite files under

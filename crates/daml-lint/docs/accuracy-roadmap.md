@@ -139,16 +139,13 @@ describing this round) and iterate until it reports 0 new high/medium findings
 and the full gauntlet is green.
 ```
 
-## Round 4 — PLANNED (AST-based types)
+## Round 4 — DONE (AST-based types)
 
-The type model is still a string round-trip: `daml-parser` renders each type to
-`type_text`, and `daml-lint` re-parses it with `DamlType::from_str`. Measured
-over the 924 corpus, that string matcher collapses real type applications
-(`Script ()` ×147) and function types (`Int -> Int` ×15) into opaque `Named`
-strings — a structural ceiling, not a tuning bug. The plan to parse types into a
-real `Type` node once (in the parser) and delete `from_str` is written up in
-[`typed-type-ast.md`](typed-type-ast.md). Design only; no parser code changed
-yet.
+The type model is no longer a string round-trip. `daml-parser` now populates an
+additive `Type` AST next to the lossless `type_text`, and `daml-lint` classifies
+types from that structured node through `DamlType::from_type`. The old
+`DamlType::from_str` string matcher and its helpers are deleted. The design and
+landing evidence live in [`typed-type-ast.md`](typed-type-ast.md).
 
 ## Known limitations (accepted — design choice)
 

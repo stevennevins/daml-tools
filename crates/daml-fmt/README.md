@@ -70,10 +70,12 @@ cargo test                # unit tests for the layout helpers
 ```
 
 The real semantic bar is the desugar oracle: the formatted file must desugar
-byte-identically to the original (`daml damlc desugar`). Run it with:
+byte-identically to the original (`daml damlc desugar`). The default verifier
+runs that oracle on a curated subset and keeps full-corpus idempotence:
 
 ```sh
-tools/verify-rust.sh --desugar     # needs Daml SDK 3.4.11 on PATH
+tools/verify-rust.sh               # needs Daml SDK 3.4.11 on PATH for desugar
+tools/verify-rust.sh --desugar     # full-corpus desugar sweep
 ```
 
 The coverage metric (how much of the corpus our rules canonically lay out):
@@ -103,7 +105,8 @@ tools/gen-expected.sh
 - `expected/` — the formatter's output over the corpus, the regression
   baseline (regenerate with `tools/gen-expected.sh`).
 - `corpus/` — manifests and `SCOREBOARD.md` (the target board).
-- `tools/` — `verify-rust.sh` (desugar + idempotence sweep), `gen-expected.sh`.
+- `tools/` — `verify-rust.sh` (desugar subset + idempotence by default; full
+  desugar with `--desugar`), `gen-expected.sh`.
 - `test/diff.js` — the differential harness (`npm test`).
 
 `CLAUDE.md` holds the full project plan, verification commands, and the

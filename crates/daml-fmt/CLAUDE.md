@@ -61,7 +61,8 @@ normalization (`normalize_gaps` in `src/lib.rs`).
 - `corpus/` — `SCOREBOARD.md` + manifests. `desugar-ok.txt` is the 924-file
   test manifest; `excluded-error-annotated.txt` / `desugar-fail.txt` are the
   corpus-construction filters.
-- `tools/verify-rust.sh` — idempotence (+ `--desugar` oracle) sweep.
+- `tools/verify-rust.sh` — idempotence plus default desugar subset; `--desugar`
+  runs the full-corpus oracle sweep.
 - `tools/gen-expected.sh` — regenerate `expected/` from the release binary.
 - `test/diff.js` — the SDK-free differential harness (`npm test`): formats all
   924 originals via the release binary, hard-fails on any diff vs `expected/`
@@ -78,9 +79,12 @@ Fast tier (no SDK): `npm test` (expected/ + idempotence over the binary) and
 `cargo test` (unit tests). Coverage metric: `cargo run --features dev-tools --bin coverage`.
 
 The real semantic bar is the desugar oracle — a formatted file must desugar
-byte-identically to the original. Requires Daml SDK 3.4.11 (`daml version`):
+byte-identically to the original. The default verifier runs a curated desugar
+subset plus full-corpus idempotence; full-corpus desugar remains explicit.
+Requires Daml SDK 3.4.11 (`daml version`):
 
-    tools/verify-rust.sh --desugar     # idempotence + desugar over the corpus
+    tools/verify-rust.sh               # idempotence + desugar subset
+    tools/verify-rust.sh --desugar     # full-corpus desugar sweep
 
 Desugar one file by hand (run from its directory; filename must match the
 module name):
@@ -111,19 +115,37 @@ re-run the sweeps, update `SCOREBOARD.md` + the corpus manifests, commit.
 
 Each new construct = a canonical column rule + verbatim content slicing,
 landed behind the gate, verified `--desugar` 924/924 + idempotent, with the
-coverage metric rising. Candidates, roughly easiest-first:
+coverage metric rising.
 
-- **let-in / `do let`**: bindings at `let_col + 4`, `in` at `let_col`; keep RHS
-  that opens a case/do/with verbatim.
-- **if/then/else** (multi-line): `then`/`else` at `if_col + 2`.
-- **case/of** (+ `\case`, `try` handlers): align alts; re-emit `->` spacing
-  (but never a guard `->`); inline `;`-separated alts verbatim.
-- **template / interface / choice bodies**: the 2-space ladder off the decl
-  keyword column. High value, but the corpus is internally inconsistent, so
-  pick one canonical style and prove it — don't assume the originals agree.
-- **with-construction** (`Con with`): multi-line fields at `with_col + 2`.
-  **Record UPDATES** (`expr with`) hang-align in the corpus — leave them
-  verbatim or model separately; do not force `+2`.
+Landed (each its own gated structural pass, iterated to a fixpoint,
+`--desugar`-clean + idempotent):
+
+- **do-block** + **`do let`**: statements to `do_col + 2`.
+- **if/then/else**: `then`/`else` to `if_col + 2`.
+- **case/of** (+ line-leading `\case`): alternatives to `case_col + 2`.
+- **let-in expression** (line-leading `let`): bindings to `let_col + 2`.
+- **`Con with` construction**: fields to `con_col + 2` (record UPDATES
+  `expr with` stay verbatim — they hang-align inconsistently).
+- **template / interface bodies** — the one STRUCTURED rule: a template's
+  `with`/`where` keywords go to `head + 2` and the field / signatory-choice-decl
+  blocks to `head + 4` (TWO different deltas, so a 4-space ladder collapses to
+  the canonical 2-space one — a uniform-shift attempt was reverted because it
+  left fields at `with + 4`); an interface's inline-`where` body sits at
+  `head + 2`. Choice `do`-bodies are canonicalized by the do-pass; a choice's
+  own internal 4-space ladder is only partly canonicalized (its header rides the
+  decl-block shift) — deeper recursion is future work.
+
+Note: the landed anchor for the single-block rules is `line_indent + 2`, NOT the
+`with_col + 2` / `let_col + 4` the earlier notes guessed — the corpus uses the
+line-indent ladder (e.g. `createCmd Foo with` at indent 6 has fields at 8), and
+the formatter follows the corpus, not the guess.
+
+Still candidates:
+
+- **deep choice-body canonicalization** (a choice's own `with`/`controller`/`do`
+  internal ladder), **`try`/`catch` handler layout** — left verbatim today.
+- **`let … in` mid-line / split**, **`case`/template `where` that would dedent
+  below offside**: left verbatim by guards (the gate would reject them anyway).
 - **guards** / **blank-line collapsing** (3+ → 2).
 
 Hard-won guidance for the structural rules: a per-line indent rule that isn't

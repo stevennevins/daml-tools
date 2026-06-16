@@ -25,12 +25,21 @@ The **AST formatter row is the shipped backend** (`src/layout_ast.rs`,
 `format_source` -> `format_ast`). It is OUR OWN design on the `daml-parser`
 crate (lexer → offside layout → recursive-descent AST), with **no LimeChain
 derivative** — the authorized port (`src/layout.rs`) was deleted once this
-landed. Mechanism: walk the AST, reindent `do`-block child lines to
-`do_col + 2`, apply the token-gated whitespace + colon-spacing normalization,
-and pass every unmodeled construct (case, with, where, guards, let-in, record
-updates, TypeDef, expression continuations) through VERBATIM. Every change is
-gated on the laid-out token stream (`same_tokens` via
-`daml_parser::layout::resolve_layout`), so it is desugar-safe BY CONSTRUCTION.
+landed. Mechanism: walk the AST and reindent each modeled construct's child
+lines to a canonical column, gated per pass on the laid-out token stream
+(`same_tokens` via `daml_parser::layout::resolve_layout`), so every accepted
+edit is desugar-safe BY CONSTRUCTION. Modeled (each its own gated pass, iterated
+to a fixpoint): `do`-blocks (including a `do` opening with `let`) → `do_col + 2`;
+`if`/`then`/`else` → `if_col + 2`; `case … of` alts → `case_col + 2`; `let … in`
+bindings (line-leading `let`) → `let_col + 2`; `Con with` construction fields →
+`con_col + 2`; and the one STRUCTURED rule, `template`/`interface` bodies
+(with/where keywords → `head + 2`, fields/decls → `head + 4`; interface body →
+`head + 2`). On top runs the token-gated whitespace + colon-spacing
+normalization. Still verbatim by design: record UPDATES (`expr with`),
+`try`/`catch` bodies, guards, `data`/TypeDef declarations, and expression
+continuations. Do-block coverage metric: 178 / 2841 reindented across the
+924-file corpus (was 165; `cargo run --bin coverage` — it counts do-blocks
+only, not the other constructs).
 
 Note: byte-match to a reference baseline is RETIRED as the metric. The
 formatter makes its own consistent
@@ -42,8 +51,9 @@ token-only heuristic kept that space as an undecidable edge case. The desugar
 oracle vouches it is meaning-preserving.
 
 Measure with `cargo run --bin coverage` (modeled-construct coverage; replaces
-the retired `score` bin) + `tools/verify-rust.sh --desugar` (the oracle) +
-`npm test` (SDK-free expected/ + idempotence over the Rust binary).
+the retired `score` bin) + `tools/verify-rust.sh` (default desugar subset and
+idempotence; `--desugar` for the full oracle) + `npm test` (SDK-free expected/
++ idempotence over the Rust binary).
 
 Reproduce: pristine vsix → /tmp dir (marketplace vspackage endpoint, gunzip,
 unzip), generate outputs with the corpus inputs, then run the parse +
