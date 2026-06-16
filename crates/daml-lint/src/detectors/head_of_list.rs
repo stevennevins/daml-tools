@@ -415,7 +415,7 @@ fn is_cons_head_binder(binder: &str) -> bool {
 
 /// True if the application spine's head is an unqualified query primitive.
 fn is_query_app(e: &Expr) -> bool {
-    matches!(e.app_head(), Expr::Var { name, qualifier: None, .. } if QUERY_FUNCS.contains(&name.as_str()))
+    matches!(e.application_head(), Expr::Var { name, qualifier: None, .. } if QUERY_FUNCS.contains(&name.as_str()))
 }
 
 /// `Some("head")` / `Some("last")` if `func` is that list head/tail selector,

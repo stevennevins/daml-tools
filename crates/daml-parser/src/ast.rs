@@ -256,8 +256,8 @@ pub enum DoStmt {
 
 /// Structured Daml type, parsed from the real token stream.
 ///
-/// Scoped to the forms the corpus actually contains; it exists so downstream
-/// analysis can tell a type *application* from a *function arrow* from an
+/// Scoped to the forms the corpus actually contains; it exists so consumers can
+/// tell a type *application* from a *function arrow* from an
 /// atomic constructor — a distinction a string matcher structurally cannot make.
 /// Every node carries a byte span so consumers can render exact source text from
 /// `(source, span)`.
@@ -284,8 +284,8 @@ pub enum Type {
     Var(String, Span),
     /// The unit type `()`.
     Unit(Span),
-    /// A constrained type `C a => T`: the context is dropped (no detector
-    /// reasons about constraints), the body `T` is kept.
+    /// A constrained type `C a => T`: the context is not modeled, the body `T`
+    /// is kept.
     Constrained(Box<Self>, Span),
 }
 
@@ -490,38 +490,6 @@ pub struct ImportDecl {
     pub span: Span,
 }
 
-/// One constructor alternative in a `data`/`newtype` declaration.
-///
-/// Additive analysis truth alongside the decl's opaque `keyword`/`name`; like
-/// [`Type`] it is span-bearing but never rendered, so it stays invisible to
-/// daml-fmt (which lays out from byte spans).
-///
-/// The structured form models the common corpus shapes (record `with`/`{}`
-/// constructors, positional constructors, enum alternatives). It is partial by
-/// design: rather than record a half-truth, the parser leaves a whole decl's
-/// `constructors` empty (opaque) when it meets a shape it does not model —
-/// infix constructors (`data T = Int :+: Int`), strictness bangs
-/// (`data T = T !Int`), GADT (`data T where`), and existential/context
-/// constructors (`forall a. MkT a`). One additional accepted gap keeps the
-/// *first* constructor only: a single-line record sum where each alternative is
-/// a `with` block (`data T = A with x : Int | B with y : Int`); the multi-line
-/// corpus form parses fully.
-#[derive(Debug, Clone)]
-pub struct DataConstructor {
-    pub name: String,
-    /// Record fields when the constructor uses record syntax
-    /// (`Asset with amount : Decimal` or `Foo { x : Int }`). Empty for
-    /// positional and nullary constructors.
-    pub fields: Vec<FieldDecl>,
-    /// Positional argument types for non-record constructors
-    /// (`Node Int Text` → `[Int, Text]`, `Money Decimal` → `[Decimal]`). Empty
-    /// for record and nullary constructors, or when the arguments did not parse
-    /// cleanly (the constructor is then recorded name-only).
-    pub arg_types: Vec<Type>,
-    pub pos: Pos,
-    pub span: Span,
-}
-
 #[derive(Debug, Clone)]
 pub enum Decl {
     Template(TemplateDecl),
@@ -531,16 +499,6 @@ pub enum Decl {
     TypeDef {
         keyword: String,
         name: String,
-        /// Constructors of a `data`/`newtype` declaration, structured. Empty for
-        /// `type` synonyms, `class`/`instance`/`exception`, and any body that
-        /// did not parse cleanly (the decl stays opaque, as before).
-        constructors: Vec<DataConstructor>,
-        /// Aliased type of a `type` synonym (`type Name = T`), structured.
-        /// `None` for non-synonyms or an unparseable right-hand side.
-        synonym: Option<Type>,
-        /// Class names from a `deriving (...)` clause, flattened. Empty when
-        /// there is no deriving clause.
-        deriving: Vec<String>,
         pos: Pos,
         span: Span,
     },
@@ -779,31 +737,23 @@ impl Expr {
 
     /// The head of an application spine: for `Foo.exercise cid X`, the
     /// `Foo.exercise` Var. For non-apps, the expression itself.
-    pub fn app_head(&self) -> &Self {
+    pub fn application_head(&self) -> &Self {
         match self {
-            Self::App { func, .. } => func.app_head(),
+            Self::App { func, .. } => func.application_head(),
             _ => self,
         }
     }
 
     /// Application arguments, empty for non-apps.
-    pub fn app_args(&self) -> &[Self] {
+    pub fn application_args(&self) -> &[Self] {
         match self {
             Self::App { args, .. } => args,
             _ => &[],
         }
     }
-
-    /// Is the head an unqualified variable with this exact name?
-    pub fn head_is(&self, name: &str) -> bool {
-        matches!(
-            self.app_head(),
-            Self::Var { qualifier: None, name: n, .. } if n == name
-        )
-    }
 }
 
-pub fn render_do_stmt(s: &DoStmt) -> String {
+fn render_do_stmt(s: &DoStmt) -> String {
     match s {
         DoStmt::Bind { pat, expr, .. } => format!("{} <- {}", pat.render(), expr.render()),
         DoStmt::Let { bindings, .. } => {
@@ -814,7 +764,7 @@ pub fn render_do_stmt(s: &DoStmt) -> String {
     }
 }
 
-pub fn render_binding(b: &Binding) -> String {
+fn render_binding(b: &Binding) -> String {
     let mut s = b.pat.render();
     for p in &b.params {
         s.push(' ');

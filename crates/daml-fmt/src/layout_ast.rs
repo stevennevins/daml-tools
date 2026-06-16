@@ -167,7 +167,7 @@ pub fn coverage(src: &str) -> (usize, usize) {
 
 fn modeled_construct_count(module: &Module) -> usize {
     let mut count = 0usize;
-    walk_module_exprs(module, &mut |e| match e {
+    walk_module_expressions(module, &mut |e| match e {
         Expr::Do { .. } | Expr::If { .. } | Expr::Case { .. } | Expr::LetIn { .. } => count += 1,
         Expr::Record { base, fields, .. }
             if matches!(base.as_ref(), Expr::Con { .. }) && !fields.is_empty() =>
@@ -215,38 +215,38 @@ fn reindent_do_blocks(src: &str, module: &Module) -> String {
 /// Compute the (non-zero) shift for each OUTERMOST, eligible do-block. Nested
 /// do-blocks are skipped — they ride along inside their parent's child region.
 fn do_block_edits(src: &str, module: &Module) -> Vec<Edit> {
-    let mut dos: Vec<Span> = Vec::new();
-    collect_do_spans(module, &mut dos);
+    let mut do_block_spans: Vec<Span> = Vec::new();
+    collect_do_block_spans(module, &mut do_block_spans);
     // Outermost first (smaller start, then larger end).
-    dos.sort_by(|a, b| a.start.cmp(&b.start).then(b.end.cmp(&a.end)));
+    do_block_spans.sort_by(|a, b| a.start.cmp(&b.start).then(b.end.cmp(&a.end)));
 
     let line_starts = line_start_table(src);
     let comments = comment_spans(src);
 
     let mut edits: Vec<Edit> = Vec::new();
     let mut accepted: Vec<Span> = Vec::new();
-    for d in dos {
+    for do_span in do_block_spans {
         // Skip a do-block nested in one we already accepted (it rides along).
         if accepted
             .iter()
-            .any(|a| a.start <= d.start && d.end <= a.end && *a != d)
+            .any(|a| a.start <= do_span.start && do_span.end <= a.end && *a != do_span)
         {
             continue;
         }
         // VERBATIM guards (plan): try/catch and do-`let` bodies are not modeled.
-        if do_block_is_verbatim(d, module) {
-            accepted.push(d); // claim the region so nested do-blocks stay verbatim too
+        if is_verbatim_do_block(do_span, module) {
+            accepted.push(do_span); // claim the region so nested do-blocks stay verbatim too
             continue;
         }
-        let do_line = line_of(&line_starts, d.start);
+        let do_line = line_of(&line_starts, do_span.start);
         let do_indent = indent_of(src, &line_starts, do_line);
         // First real (non-blank, non-comment) statement line after the do line.
         let Some(first_stmt_line) =
-            first_code_line_after(src, &line_starts, &comments, do_line, d.end)
+            first_code_line_after(src, &line_starts, &comments, do_line, do_span.end)
         else {
             continue; // inline `do stmt` — nothing on its own line; leave it
         };
-        accepted.push(d);
+        accepted.push(do_span);
         // Tab-indented bodies are left verbatim: we measure/emit only spaces,
         // so shifting would prepend spaces in front of tabs (silent mangling).
         if leading_has_tab(src, line_starts[first_stmt_line]) {
@@ -257,7 +257,7 @@ fn do_block_edits(src: &str, module: &Module) -> Vec<Edit> {
         if delta != 0 {
             edits.push(Edit {
                 child_start: line_starts[first_stmt_line],
-                block_end: d.end,
+                block_end: do_span.end,
                 delta,
             });
         }
@@ -276,18 +276,25 @@ fn do_block_edits(src: &str, module: &Module) -> Vec<Edit> {
 /// gate still rejects anything that would alter the laid-out token stream, and
 /// the full desugar sweep confirms no new non-equivalence. (Corpus citation:
 /// `sdk/compiler/damlc/tests/daml-test-files/ApplicativeDo.daml`.)
-fn do_block_is_verbatim(do_span: Span, module: &Module) -> bool {
+fn is_verbatim_do_block(do_span: Span, module: &Module) -> bool {
     let mut found = false;
     let mut verbatim = false;
-    visit_do(module, &mut |span, stmts| {
-        if span == do_span && !found {
+    walk_module_expressions(module, &mut |expr| {
+        if let Expr::Do { span, stmts, .. } = expr {
+            if *span != do_span || found {
+                return;
+            }
             found = true;
             let has_try = stmts.iter().any(|s| match s {
-                DoStmt::Bind { expr, .. } | DoStmt::Expr { expr, .. } => expr_contains_try(expr),
+                DoStmt::Bind { expr, .. } | DoStmt::Expr { expr, .. } => {
+                    contains_try_expression(expr)
+                }
                 // A `try` buried in a let-binding RHS counts too, so the
                 // "try/catch stays verbatim" rule holds uniformly rather than
                 // resting on the gate to catch it after the fact.
-                DoStmt::Let { bindings, .. } => bindings.iter().any(|b| expr_contains_try(&b.expr)),
+                DoStmt::Let { bindings, .. } => {
+                    bindings.iter().any(|b| contains_try_expression(&b.expr))
+                }
             });
             verbatim = has_try;
         }
@@ -295,14 +302,16 @@ fn do_block_is_verbatim(do_span: Span, module: &Module) -> bool {
     verbatim
 }
 
-fn expr_contains_try(e: &Expr) -> bool {
+fn contains_try_expression(e: &Expr) -> bool {
     match e {
         Expr::Try { .. } => true,
         Expr::App { func, args, .. } => {
-            expr_contains_try(func) || args.iter().any(expr_contains_try)
+            contains_try_expression(func) || args.iter().any(contains_try_expression)
         }
-        Expr::BinOp { lhs, rhs, .. } => expr_contains_try(lhs) || expr_contains_try(rhs),
-        Expr::Neg { expr, .. } | Expr::Lambda { body: expr, .. } => expr_contains_try(expr),
+        Expr::BinOp { lhs, rhs, .. } => {
+            contains_try_expression(lhs) || contains_try_expression(rhs)
+        }
+        Expr::Neg { expr, .. } | Expr::Lambda { body: expr, .. } => contains_try_expression(expr),
         _ => false,
     }
 }
@@ -417,127 +426,28 @@ fn first_code_line_after(
 
 // ---- AST walks -------------------------------------------------------------
 
-/// Visit every `Expr::Do` with (span, &stmts).
-fn visit_do(m: &Module, f: &mut impl FnMut(Span, &[DoStmt])) {
-    for d in &m.decls {
-        match d {
-            Decl::Function(fun) => {
-                for eq in &fun.equations {
-                    visit_do_expr(&eq.body, f);
-                    for (g, b) in &eq.guards {
-                        visit_do_expr(g, f);
-                        visit_do_expr(b, f);
-                    }
-                    for wb in &eq.where_bindings {
-                        visit_do_expr(&wb.expr, f);
-                    }
-                }
-            }
-            Decl::Template(t) => {
-                for b in &t.body {
-                    match b {
-                        TemplateBodyDecl::Choice(c) => {
-                            if let Some(body) = &c.body {
-                                visit_do_expr(body, f);
-                            }
-                        }
-                        TemplateBodyDecl::Ensure { expr, .. }
-                        | TemplateBodyDecl::Key { expr, .. }
-                        | TemplateBodyDecl::Maintainer { expr, .. } => visit_do_expr(expr, f),
-                        _ => {}
-                    }
-                }
-            }
-            _ => {}
+fn collect_do_block_spans(module: &Module, do_block_spans: &mut Vec<Span>) {
+    walk_module_expressions(module, &mut |expr| {
+        if let Expr::Do { span, .. } = expr {
+            do_block_spans.push(*span);
         }
-    }
-}
-
-fn visit_do_expr(e: &Expr, f: &mut impl FnMut(Span, &[DoStmt])) {
-    if let Expr::Do { span, stmts, .. } = e {
-        f(*span, stmts);
-    }
-    match e {
-        Expr::App { func, args, .. } => {
-            visit_do_expr(func, f);
-            args.iter().for_each(|a| visit_do_expr(a, f));
-        }
-        Expr::BinOp { lhs, rhs, .. } => {
-            visit_do_expr(lhs, f);
-            visit_do_expr(rhs, f);
-        }
-        Expr::Neg { expr, .. } | Expr::Lambda { body: expr, .. } => visit_do_expr(expr, f),
-        Expr::If {
-            cond,
-            then_branch,
-            else_branch,
-            ..
-        } => {
-            visit_do_expr(cond, f);
-            visit_do_expr(then_branch, f);
-            visit_do_expr(else_branch, f);
-        }
-        Expr::Case {
-            scrutinee, alts, ..
-        } => {
-            visit_do_expr(scrutinee, f);
-            alts.iter().for_each(|a| visit_do_expr(&a.body, f));
-        }
-        Expr::Do { stmts, .. } => {
-            for s in stmts {
-                match s {
-                    DoStmt::Bind { expr, .. } | DoStmt::Expr { expr, .. } => visit_do_expr(expr, f),
-                    DoStmt::Let { bindings, .. } => {
-                        bindings.iter().for_each(|b| visit_do_expr(&b.expr, f))
-                    }
-                }
-            }
-        }
-        Expr::LetIn { bindings, body, .. } => {
-            bindings.iter().for_each(|b| visit_do_expr(&b.expr, f));
-            visit_do_expr(body, f);
-        }
-        Expr::Record { base, fields, .. } => {
-            visit_do_expr(base, f);
-            for fa in fields {
-                if let Some(v) = &fa.value {
-                    visit_do_expr(v, f);
-                }
-            }
-        }
-        Expr::Tuple { items, .. } | Expr::List { items, .. } => {
-            items.iter().for_each(|it| visit_do_expr(it, f))
-        }
-        Expr::Try { body, handlers, .. } => {
-            visit_do_expr(body, f);
-            handlers.iter().for_each(|h| visit_do_expr(&h.body, f));
-        }
-        Expr::Section {
-            operand: Some(o), ..
-        } => visit_do_expr(o, f),
-        _ => {}
-    }
-}
-
-fn collect_do_spans(m: &Module, out: &mut Vec<Span>) {
-    visit_do(m, &mut |span, _stmts| out.push(span));
+    });
 }
 
 /// Visit every expression in the module, pre-order. The generic walker behind
-/// construct-specific rules (if/then/else, …); mirrors `visit_do`'s reach but
-/// yields every node, not just `Do`.
-fn walk_module_exprs(m: &Module, f: &mut impl FnMut(&Expr)) {
-    for d in &m.decls {
-        match d {
+/// construct-specific rules (do, if/then/else, ...).
+fn walk_module_expressions(module: &Module, f: &mut impl FnMut(&Expr)) {
+    for decl in &module.decls {
+        match decl {
             Decl::Function(fun) => {
                 for eq in &fun.equations {
-                    walk_expr(&eq.body, f);
+                    walk_expression(&eq.body, f);
                     for (g, b) in &eq.guards {
-                        walk_expr(g, f);
-                        walk_expr(b, f);
+                        walk_expression(g, f);
+                        walk_expression(b, f);
                     }
                     for wb in &eq.where_bindings {
-                        walk_expr(&wb.expr, f);
+                        walk_expression(&wb.expr, f);
                     }
                 }
             }
@@ -546,12 +456,12 @@ fn walk_module_exprs(m: &Module, f: &mut impl FnMut(&Expr)) {
                     match b {
                         TemplateBodyDecl::Choice(c) => {
                             if let Some(body) = &c.body {
-                                walk_expr(body, f);
+                                walk_expression(body, f);
                             }
                         }
                         TemplateBodyDecl::Ensure { expr, .. }
                         | TemplateBodyDecl::Key { expr, .. }
-                        | TemplateBodyDecl::Maintainer { expr, .. } => walk_expr(expr, f),
+                        | TemplateBodyDecl::Maintainer { expr, .. } => walk_expression(expr, f),
                         _ => {}
                     }
                 }
@@ -561,66 +471,70 @@ fn walk_module_exprs(m: &Module, f: &mut impl FnMut(&Expr)) {
     }
 }
 
-fn walk_expr(e: &Expr, f: &mut impl FnMut(&Expr)) {
-    f(e);
-    match e {
+fn walk_expression(expr: &Expr, f: &mut impl FnMut(&Expr)) {
+    f(expr);
+    match expr {
         Expr::App { func, args, .. } => {
-            walk_expr(func, f);
-            args.iter().for_each(|a| walk_expr(a, f));
+            walk_expression(func, f);
+            args.iter().for_each(|arg| walk_expression(arg, f));
         }
         Expr::BinOp { lhs, rhs, .. } => {
-            walk_expr(lhs, f);
-            walk_expr(rhs, f);
+            walk_expression(lhs, f);
+            walk_expression(rhs, f);
         }
-        Expr::Neg { expr, .. } | Expr::Lambda { body: expr, .. } => walk_expr(expr, f),
+        Expr::Neg { expr, .. } | Expr::Lambda { body: expr, .. } => walk_expression(expr, f),
         Expr::If {
             cond,
             then_branch,
             else_branch,
             ..
         } => {
-            walk_expr(cond, f);
-            walk_expr(then_branch, f);
-            walk_expr(else_branch, f);
+            walk_expression(cond, f);
+            walk_expression(then_branch, f);
+            walk_expression(else_branch, f);
         }
         Expr::Case {
             scrutinee, alts, ..
         } => {
-            walk_expr(scrutinee, f);
-            alts.iter().for_each(|a| walk_expr(&a.body, f));
+            walk_expression(scrutinee, f);
+            alts.iter().for_each(|alt| walk_expression(&alt.body, f));
         }
         Expr::Do { stmts, .. } => {
             for s in stmts {
                 match s {
-                    DoStmt::Bind { expr, .. } | DoStmt::Expr { expr, .. } => walk_expr(expr, f),
+                    DoStmt::Bind { expr, .. } | DoStmt::Expr { expr, .. } => {
+                        walk_expression(expr, f)
+                    }
                     DoStmt::Let { bindings, .. } => {
-                        bindings.iter().for_each(|b| walk_expr(&b.expr, f))
+                        bindings.iter().for_each(|b| walk_expression(&b.expr, f))
                     }
                 }
             }
         }
         Expr::LetIn { bindings, body, .. } => {
-            bindings.iter().for_each(|b| walk_expr(&b.expr, f));
-            walk_expr(body, f);
+            bindings.iter().for_each(|b| walk_expression(&b.expr, f));
+            walk_expression(body, f);
         }
         Expr::Record { base, fields, .. } => {
-            walk_expr(base, f);
+            walk_expression(base, f);
             for fa in fields {
                 if let Some(v) = &fa.value {
-                    walk_expr(v, f);
+                    walk_expression(v, f);
                 }
             }
         }
         Expr::Tuple { items, .. } | Expr::List { items, .. } => {
-            items.iter().for_each(|it| walk_expr(it, f))
+            items.iter().for_each(|item| walk_expression(item, f))
         }
         Expr::Try { body, handlers, .. } => {
-            walk_expr(body, f);
-            handlers.iter().for_each(|h| walk_expr(&h.body, f));
+            walk_expression(body, f);
+            handlers
+                .iter()
+                .for_each(|handler| walk_expression(&handler.body, f));
         }
         Expr::Section {
             operand: Some(o), ..
-        } => walk_expr(o, f),
+        } => walk_expression(o, f),
         _ => {}
     }
 }
@@ -663,7 +577,7 @@ fn if_edits(src: &str, module: &Module) -> Vec<Edit> {
 
     // (if_span, if_byte, cond_end, then_span, else_span), outermost first.
     let mut ifs: Vec<(Span, usize, usize, Span, Span)> = Vec::new();
-    walk_module_exprs(module, &mut |e| {
+    walk_module_expressions(module, &mut |e| {
         if let Expr::If {
             span,
             cond,
@@ -754,7 +668,7 @@ fn case_edits(src: &str, module: &Module) -> Vec<Edit> {
 
     // (case_span, first_alt_start, last_alt_end), outermost first.
     let mut cases: Vec<(Span, usize, usize)> = Vec::new();
-    walk_module_exprs(module, &mut |e| {
+    walk_module_expressions(module, &mut |e| {
         if let Expr::Case { span, alts, .. } = e {
             if let (Some(first), Some(last)) = (alts.first(), alts.last()) {
                 cases.push((*span, first.span.start, last.span.end));
@@ -820,7 +734,7 @@ fn letin_edits(src: &str, module: &Module) -> Vec<Edit> {
 
     // (letin_span, first_binding_start, last_binding_end), outermost first.
     let mut lets: Vec<(Span, usize, usize)> = Vec::new();
-    walk_module_exprs(module, &mut |e| {
+    walk_module_expressions(module, &mut |e| {
         if let Expr::LetIn { span, bindings, .. } = e {
             if let (Some(first), Some(last)) = (bindings.first(), bindings.last()) {
                 lets.push((*span, first.span.start, last.span.end));
@@ -897,7 +811,7 @@ fn con_with_edits(src: &str, module: &Module) -> Vec<Edit> {
 
     // (record_span, base_end, first_field_start, last_field_end), outermost first.
     let mut recs: Vec<(Span, usize, usize, usize)> = Vec::new();
-    walk_module_exprs(module, &mut |e| {
+    walk_module_expressions(module, &mut |e| {
         if let Expr::Record {
             span, base, fields, ..
         } = e

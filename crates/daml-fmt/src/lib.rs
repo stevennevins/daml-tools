@@ -31,7 +31,7 @@
 
 // AST-driven layout (our own pattern, NO LimeChain derivative). This is the
 // shipping backend. See src/layout_ast.rs.
-pub mod layout_ast;
+mod layout_ast;
 
 use daml_parser::lexer::{lex_with_trivia, Tok, TriviaKind};
 
@@ -60,6 +60,11 @@ pub fn lex_diagnostics(src: &str) -> Vec<String> {
 /// token stream, so it is desugar-safe by construction.
 pub fn format_source(src: &str) -> String {
     layout_ast::format_ast(src)
+}
+
+/// Count AST formatter structural edit candidates over modeled constructs.
+pub fn coverage(src: &str) -> (usize, usize) {
+    layout_ast::coverage(src)
 }
 
 /// Reconstruct `src`, normalizing gap whitespace. With `colon`, also drop
