@@ -15,7 +15,6 @@ use std::path::Path;
 /// Parse a DAML source file into a DamlModule IR. Never panics; parse
 /// problems degrade to partial structure. (Diagnostics-free entry point,
 /// used by tests and kept as the stable API.)
-#[allow(dead_code)]
 pub fn parse_daml(source: &str, file: &Path) -> DamlModule {
     parse_daml_with_diagnostics(source, file).0
 }
