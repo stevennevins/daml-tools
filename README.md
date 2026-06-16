@@ -43,6 +43,15 @@ cargo build --workspace
 cargo test  --workspace
 ```
 
+## Commit messages
+
+This repo uses Conventional Commits so release-plz can derive changelogs and
+version bumps. Enable the versioned commit hook in new checkouts with:
+
+```sh
+git config core.hooksPath .githooks
+```
+
 The parser/layout integration tests use a vendored
 [daml-finance](https://github.com/digital-asset/daml-finance) corpus under
 [`corpus/daml-finance/`](corpus/daml-finance/) (634 real `.daml` files), shared
