@@ -10,19 +10,20 @@
 //!      construct lands at `anchor_col + 2`: a `do`-block's statements to
 //!      `do_col + 2` (including a `do` that opens with `let`), an
 //!      `if`/`then`/`else`'s `then`/`else` clauses to `if_col + 2`, and a
-//!      `case … of`'s alternatives to `case_col + 2`. The anchor line itself is
-//!      never moved, which makes each rule a fixpoint: a second pass computes
-//!      delta 0. Children shift by one uniform delta, so the block's internal
-//!      structure (and any nested blocks) ride along.
+//!      `case … of`'s alternatives to `case_col + 2`, and a `let … in`
+//!      expression's bindings to `let_col + 2`. The anchor line itself is never
+//!      moved, which makes each rule a fixpoint: a second pass computes delta 0.
+//!      Children shift by one uniform delta, so the block's internal structure
+//!      (and any nested blocks) ride along.
 //!   3. Comments are sacred: comment lines are never measured-from and never
 //!      shifted (CLAUDE.md). Block-comment interiors are trivia, untouched.
 //!   4. Gate the whole candidate on `same_tokens` = identical LAID-OUT token
 //!      stream (offside virtuals included) ⇒ identical parse ⇒ identical
 //!      desugar. Any accepted reindent is desugar-safe BY CONSTRUCTION.
 //!   5. Fall back to the input (verbatim) when the gate rejects or a node is
-//!      not modeled. Unmodeled constructs (with, where, guards, `let … in`
-//!      expressions, record updates, TypeDef, expression continuations) pass
-//!      through verbatim — desugar-safe and lets us land one construct at a time.
+//!      not modeled. Unmodeled constructs (`with` construction, `where`, guards,
+//!      record updates, TypeDef, expression continuations) pass through verbatim
+//!      — desugar-safe and lets us land one construct at a time.
 //!
 //! On top of the structural pass we compose the proven, token-gated
 //! whitespace + colon-spacing normalization (`crate::normalize_gaps`).
@@ -49,7 +50,7 @@ pub fn format_ast(src: &str) -> String {
     // one's gate still converges within a single call (idempotence).
     let mut base = src.to_string();
     for _ in 0..MAX_STRUCTURAL_PASSES {
-        let next = gated_case_pass(&gated_if_pass(&gated_do_pass(&base)));
+        let next = gated_letin_pass(&gated_case_pass(&gated_if_pass(&gated_do_pass(&base))));
         if next == base {
             break;
         }
@@ -98,6 +99,17 @@ fn gated_if_pass(src: &str) -> String {
 fn gated_case_pass(src: &str) -> String {
     let (module, _) = parse_module(src);
     let r = reindent_cases(src, &module);
+    if r != src && same_tokens(src, &r) {
+        r
+    } else {
+        src.to_string()
+    }
+}
+
+/// `let … in` binding-block reindent of `src`, gated like the do-pass.
+fn gated_letin_pass(src: &str) -> String {
+    let (module, _) = parse_module(src);
+    let r = reindent_letins(src, &module);
     if r != src && same_tokens(src, &r) {
         r
     } else {
@@ -738,6 +750,83 @@ fn reindent_cases(src: &str, module: &Module) -> String {
     apply_shifts(src, &edits)
 }
 
+/// Reindent the binding block of a `let … in` EXPRESSION so the bindings land at
+/// `let_line_indent + 2` (the do/case convention). The bindings form a layout
+/// block opened after `let`; the whole block shifts by ONE uniform delta, so
+/// multi-line / multi-binding bodies ride along. `in` and the let body are left
+/// alone; `same_tokens` rejects any shift whose result would relayout the block
+/// (e.g. moving bindings off the `in` keyword's offside). Inline `let x = … in`
+/// (binding shares the `let` line) and tab-indented blocks stay verbatim.
+fn letin_edits(src: &str, module: &Module) -> Vec<Edit> {
+    let line_starts = line_start_table(src);
+
+    // (letin_span, first_binding_start, last_binding_end), outermost first.
+    let mut lets: Vec<(Span, usize, usize)> = Vec::new();
+    walk_module_exprs(module, &mut |e| {
+        if let Expr::LetIn { span, bindings, .. } = e {
+            if let (Some(first), Some(last)) = (bindings.first(), bindings.last()) {
+                lets.push((*span, first.span.start, last.span.end));
+            }
+        }
+    });
+    lets.sort_by(|a, b| a.0.start.cmp(&b.0.start).then(b.0.end.cmp(&a.0.end)));
+
+    let mut edits: Vec<Edit> = Vec::new();
+    let mut accepted: Vec<Span> = Vec::new();
+    for (let_span, first_bind, last_bind_end) in lets {
+        if accepted
+            .iter()
+            .any(|a| a.start <= let_span.start && let_span.end <= a.end && *a != let_span)
+        {
+            continue;
+        }
+        accepted.push(let_span);
+
+        let let_line = line_of(&line_starts, let_span.start);
+        let bind_line = line_of(&line_starts, first_bind);
+        // Inline `let x = … in …` (binding shares the let line): leave verbatim.
+        if bind_line <= let_line {
+            continue;
+        }
+        // Only canonicalize a LINE-LEADING `let`. For a mid-line `let` (`= let`,
+        // `$ let`, a guard's `let`) the `in` keyword stays at the let-keyword
+        // column while the bindings would anchor on the (smaller) line indent —
+        // a mismatch. Unlike do/case (whose `name = do`/`= case` line-indent
+        // convention is idiomatic), let-in needs `let` at line start for the
+        // `bindings = let_indent + 2`, `in = let_indent` shape to line up.
+        if src[line_starts[let_line]..let_span.start]
+            .chars()
+            .any(|c| c != ' ')
+        {
+            continue;
+        }
+        if leading_has_tab(src, line_starts[let_line])
+            || leading_has_tab(src, line_starts[bind_line])
+        {
+            continue;
+        }
+        let let_indent = indent_of(src, &line_starts, let_line);
+        let cur = indent_of(src, &line_starts, bind_line);
+        let delta = (let_indent + INDENT) - cur;
+        if delta != 0 {
+            edits.push(Edit {
+                child_start: line_starts[bind_line],
+                block_end: last_bind_end,
+                delta,
+            });
+        }
+    }
+    edits
+}
+
+fn reindent_letins(src: &str, module: &Module) -> String {
+    let edits = letin_edits(src, module);
+    if edits.is_empty() {
+        return src.to_string();
+    }
+    apply_shifts(src, &edits)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -904,6 +993,39 @@ mod tests {
             "f x = case x of\n  A -> case y of\n         P -> 1\n         Q -> 2\n  B -> 0\n";
         assert_eq!(out, want);
         assert_eq!(format_ast(&out), out); // idempotent
+    }
+
+    #[test]
+    fn letin_bindings_reindented_to_let_indent_plus_two() {
+        // `let` on its own line at col 2; bindings at col 6 move to col 4; `in`
+        // is left at col 2.
+        let src = "f =\n  let\n      x = 1\n      y = 2\n  in x + y\n";
+        let out = format_ast(src);
+        assert_eq!(out, "f =\n  let\n    x = 1\n    y = 2\n  in x + y\n");
+        assert_eq!(format_ast(&out), out); // idempotent
+    }
+
+    #[test]
+    fn letin_already_aligned_is_a_fixpoint() {
+        let src = "f =\n  let\n    x = 1\n    y = 2\n  in x + y\n";
+        assert_eq!(format_ast(src), src);
+    }
+
+    #[test]
+    fn inline_letin_is_untouched() {
+        // binding shares the `let` line — left verbatim.
+        let src = "f = let x = 1 in x\n";
+        assert_eq!(format_ast(src), src);
+    }
+
+    #[test]
+    fn mid_line_let_is_left_verbatim() {
+        // A `let` that does not start its line: the `in` stays at the keyword
+        // column while the bindings would anchor on the (smaller) line indent,
+        // which mismatches — so the rule leaves it alone rather than dedent the
+        // bindings left of `let`/`in`.
+        let src = "f x = let\n        a = 1\n        b = 2\n      in a + b\n";
+        assert_eq!(format_ast(src), src);
     }
 
     #[test]
