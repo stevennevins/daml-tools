@@ -2,7 +2,7 @@ use crate::detector::{Finding, Severity};
 use serde::Serialize;
 use serde_json::json;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
     Sarif,
     Markdown,
@@ -14,9 +14,9 @@ impl std::str::FromStr for OutputFormat {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "sarif" => Ok(OutputFormat::Sarif),
-            "markdown" | "md" => Ok(OutputFormat::Markdown),
-            "json" => Ok(OutputFormat::Json),
+            "sarif" => Ok(Self::Sarif),
+            "markdown" | "md" => Ok(Self::Markdown),
+            "json" => Ok(Self::Json),
             _ => Err(()),
         }
     }
@@ -141,7 +141,7 @@ fn format_sarif(findings: &[Finding], parse_errors: &[ParseError]) -> String {
     serde_json::to_string_pretty(&sarif).unwrap()
 }
 
-fn sarif_level(severity: &Severity) -> &'static str {
+const fn sarif_level(severity: &Severity) -> &'static str {
     match severity {
         Severity::Critical | Severity::High => "error",
         Severity::Medium => "warning",

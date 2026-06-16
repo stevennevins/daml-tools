@@ -7,9 +7,11 @@
 
 pub use crate::lexer::Pos;
 
-/// Byte span of an AST node: `[start, end)` into the original source, same
-/// basis as `Token::start`/`Token::end`. Covers every (non-virtual) token
-/// that belongs to the node — first token's `start` to last token's `end`.
+/// Byte span of an AST node.
+///
+/// `[start, end)` into the original source, same basis as `Token::start`/
+/// `Token::end`. Covers every (non-virtual) token that belongs to the node —
+/// first token's `start` to last token's `end`.
 ///
 /// Invariants the parser maintains (checked over the corpus by
 /// `render_from_ast`): a child's span is contained in its parent's span, and
@@ -22,21 +24,21 @@ pub struct Span {
 }
 
 impl Span {
-    pub fn new(start: usize, end: usize) -> Span {
-        Span { start, end }
+    pub const fn new(start: usize, end: usize) -> Self {
+        Self { start, end }
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.start >= self.end
     }
 
     /// `self` fully contains `other`.
-    pub fn contains(&self, other: &Span) -> bool {
+    pub const fn contains(&self, other: &Self) -> bool {
         self.start <= other.start && other.end <= self.end
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LitKind {
     Int,
     Decimal,
@@ -87,17 +89,17 @@ pub enum Pat {
     Con {
         qualifier: Option<String>,
         name: String,
-        args: Vec<Pat>,
+        args: Vec<Self>,
         pos: Pos,
         span: Span,
     },
     Tuple {
-        items: Vec<Pat>,
+        items: Vec<Self>,
         pos: Pos,
         span: Span,
     },
     List {
-        items: Vec<Pat>,
+        items: Vec<Self>,
         pos: Pos,
         span: Span,
     },
@@ -110,7 +112,7 @@ pub enum Pat {
     /// `name@pat`
     As {
         name: String,
-        pat: Box<Pat>,
+        pat: Box<Self>,
         pos: Pos,
         span: Span,
     },
@@ -146,40 +148,40 @@ pub enum Expr {
     },
     /// Application, flattened: `f a b c` is one App with three args.
     App {
-        func: Box<Expr>,
-        args: Vec<Expr>,
+        func: Box<Self>,
+        args: Vec<Self>,
         pos: Pos,
         span: Span,
     },
     /// Binary operator application with source-level operator text.
     BinOp {
         op: String,
-        lhs: Box<Expr>,
-        rhs: Box<Expr>,
+        lhs: Box<Self>,
+        rhs: Box<Self>,
         pos: Pos,
         span: Span,
     },
     /// Unary negation.
     Neg {
-        expr: Box<Expr>,
+        expr: Box<Self>,
         pos: Pos,
         span: Span,
     },
     Lambda {
         params: Vec<Pat>,
-        body: Box<Expr>,
+        body: Box<Self>,
         pos: Pos,
         span: Span,
     },
     If {
-        cond: Box<Expr>,
-        then_branch: Box<Expr>,
-        else_branch: Box<Expr>,
+        cond: Box<Self>,
+        then_branch: Box<Self>,
+        else_branch: Box<Self>,
         pos: Pos,
         span: Span,
     },
     Case {
-        scrutinee: Box<Expr>,
+        scrutinee: Box<Self>,
         alts: Vec<Alt>,
         pos: Pos,
         span: Span,
@@ -191,31 +193,31 @@ pub enum Expr {
     },
     LetIn {
         bindings: Vec<Binding>,
-        body: Box<Expr>,
+        body: Box<Self>,
         pos: Pos,
         span: Span,
     },
     /// `base with f = e, ...` — record construction when base is a Con,
     /// record update otherwise.
     Record {
-        base: Box<Expr>,
+        base: Box<Self>,
         fields: Vec<FieldAssign>,
         pos: Pos,
         span: Span,
     },
     Tuple {
-        items: Vec<Expr>,
+        items: Vec<Self>,
         pos: Pos,
         span: Span,
     },
     List {
-        items: Vec<Expr>,
+        items: Vec<Self>,
         pos: Pos,
         span: Span,
     },
     /// `try <body> catch <alts>`
     Try {
-        body: Box<Expr>,
+        body: Box<Self>,
         handlers: Vec<Alt>,
         pos: Pos,
         span: Span,
@@ -223,7 +225,7 @@ pub enum Expr {
     /// Right operator section like `(+ 1)` / left section `(1 +)`.
     Section {
         op: String,
-        operand: Option<Box<Expr>>,
+        operand: Option<Box<Self>>,
         left: bool,
         pos: Pos,
         span: Span,
@@ -252,11 +254,13 @@ pub enum DoStmt {
     Expr { expr: Expr, pos: Pos, span: Span },
 }
 
-/// Structured Daml type, parsed from the real token stream. Scoped to the forms
-/// the corpus actually contains; it exists so downstream analysis can tell a
-/// type *application* from a *function arrow* from an atomic constructor — a
-/// distinction a string matcher structurally cannot make. Every node carries a
-/// byte span so consumers can render exact source text from `(source, span)`.
+/// Structured Daml type, parsed from the real token stream.
+///
+/// Scoped to the forms the corpus actually contains; it exists so downstream
+/// analysis can tell a type *application* from a *function arrow* from an
+/// atomic constructor — a distinction a string matcher structurally cannot make.
+/// Every node carries a byte span so consumers can render exact source text from
+/// `(source, span)`.
 #[derive(Debug, Clone)]
 pub enum Type {
     /// Type constructor, possibly qualified: `Party`, `DA.Map.Map`.
@@ -269,46 +273,46 @@ pub enum Type {
     /// `Map Text Int`, `Script ()`. Type-level nat literals (the `10` in
     /// `Numeric 10`) are NOT types, so they are dropped from the arg list — a
     /// `Numeric 10` collapses to the bare head `Con "Numeric"`.
-    App(Box<Type>, Vec<Type>, Span),
+    App(Box<Self>, Vec<Self>, Span),
     /// List type `[T]`.
-    List(Box<Type>, Span),
+    List(Box<Self>, Span),
     /// Tuple type `(a, b, ...)`.
-    Tuple(Vec<Type>, Span),
+    Tuple(Vec<Self>, Span),
     /// Function type `a -> b` (right-associative).
-    Fun(Box<Type>, Box<Type>, Span),
+    Fun(Box<Self>, Box<Self>, Span),
     /// Lowercase type variable: `a`, `n`.
     Var(String, Span),
     /// The unit type `()`.
     Unit(Span),
     /// A constrained type `C a => T`: the context is dropped (no detector
     /// reasons about constraints), the body `T` is kept.
-    Constrained(Box<Type>, Span),
+    Constrained(Box<Self>, Span),
 }
 
 impl Type {
-    pub fn span(&self) -> Span {
+    pub const fn span(&self) -> Span {
         match self {
-            Type::Con { span, .. }
-            | Type::App(_, _, span)
-            | Type::List(_, span)
-            | Type::Tuple(_, span)
-            | Type::Fun(_, _, span)
-            | Type::Var(_, span)
-            | Type::Unit(span)
-            | Type::Constrained(_, span) => *span,
+            Self::Con { span, .. }
+            | Self::App(_, _, span)
+            | Self::List(_, span)
+            | Self::Tuple(_, span)
+            | Self::Fun(_, _, span)
+            | Self::Var(_, span)
+            | Self::Unit(span)
+            | Self::Constrained(_, span) => *span,
         }
     }
 
-    pub(crate) fn with_span(mut self, span: Span) -> Type {
+    pub(crate) const fn with_span(mut self, span: Span) -> Self {
         match &mut self {
-            Type::Con { span: s, .. }
-            | Type::App(_, _, s)
-            | Type::List(_, s)
-            | Type::Tuple(_, s)
-            | Type::Fun(_, _, s)
-            | Type::Var(_, s)
-            | Type::Unit(s)
-            | Type::Constrained(_, s) => *s = span,
+            Self::Con { span: s, .. }
+            | Self::App(_, _, s)
+            | Self::List(_, s)
+            | Self::Tuple(_, s)
+            | Self::Fun(_, _, s)
+            | Self::Var(_, s)
+            | Self::Unit(s)
+            | Self::Constrained(_, s) => *s = span,
         }
         self
     }
@@ -318,24 +322,24 @@ impl PartialEq for Type {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (
-                Type::Con {
+                Self::Con {
                     qualifier: aq,
                     name: an,
                     ..
                 },
-                Type::Con {
+                Self::Con {
                     qualifier: bq,
                     name: bn,
                     ..
                 },
             ) => aq == bq && an == bn,
-            (Type::App(ah, aa, _), Type::App(bh, ba, _)) => ah == bh && aa == ba,
-            (Type::List(a, _), Type::List(b, _)) => a == b,
-            (Type::Tuple(a, _), Type::Tuple(b, _)) => a == b,
-            (Type::Fun(al, ar, _), Type::Fun(bl, br, _)) => al == bl && ar == br,
-            (Type::Var(a, _), Type::Var(b, _)) => a == b,
-            (Type::Unit(_), Type::Unit(_)) => true,
-            (Type::Constrained(a, _), Type::Constrained(b, _)) => a == b,
+            (Self::App(ah, aa, _), Self::App(bh, ba, _)) => ah == bh && aa == ba,
+            (Self::List(a, _), Self::List(b, _)) => a == b,
+            (Self::Tuple(a, _), Self::Tuple(b, _)) => a == b,
+            (Self::Fun(al, ar, _), Self::Fun(bl, br, _)) => al == bl && ar == br,
+            (Self::Var(a, _), Self::Var(b, _)) => a == b,
+            (Self::Unit(_), Self::Unit(_)) => true,
+            (Self::Constrained(a, _), Self::Constrained(b, _)) => a == b,
             _ => false,
         }
     }
@@ -351,7 +355,7 @@ pub struct FieldDecl {
     pub span: Span,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Consuming {
     Consuming,
     NonConsuming,
@@ -486,9 +490,10 @@ pub struct ImportDecl {
     pub span: Span,
 }
 
-/// One alternative of a `data`/`newtype` declaration: a constructor with its
-/// payload. Additive analysis truth alongside the decl's opaque `keyword`/`name`;
-/// like [`Type`] it is span-bearing but never rendered, so it stays invisible to
+/// One constructor alternative in a `data`/`newtype` declaration.
+///
+/// Additive analysis truth alongside the decl's opaque `keyword`/`name`; like
+/// [`Type`] it is span-bearing but never rendered, so it stays invisible to
 /// daml-fmt (which lays out from byte spans).
 ///
 /// The structured form models the common corpus shapes (record `with`/`{}`
@@ -561,9 +566,11 @@ pub struct Module {
     pub decls: Vec<Decl>,
 }
 
-/// Why a [`ParseDiagnostic`] fired. Lets a consumer separate syntax the parser
-/// deliberately does not model (still safe, just unanalyzed) from a genuine
-/// malformation, a recursion-limit degradation, or a lexical error.
+/// Why a [`ParseDiagnostic`] fired.
+///
+/// Lets a consumer separate syntax the parser deliberately does not model (still
+/// safe, just unanalyzed) from a genuine malformation, a recursion-limit
+/// degradation, or a lexical error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiagnosticCategory {
     /// A whole declaration could not be parsed and was skipped to the next item.
@@ -583,13 +590,13 @@ pub enum DiagnosticCategory {
 
 impl DiagnosticCategory {
     /// Stable kebab-case tag for machine-readable output (JSON/SARIF) and logs.
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
-            DiagnosticCategory::SkippedDecl => "skipped-declaration",
-            DiagnosticCategory::Malformed => "malformed",
-            DiagnosticCategory::UnsupportedSyntax => "unsupported-syntax",
-            DiagnosticCategory::RecursionLimit => "recursion-limit",
-            DiagnosticCategory::Lex => "lexical-error",
+            Self::SkippedDecl => "skipped-declaration",
+            Self::Malformed => "malformed",
+            Self::UnsupportedSyntax => "unsupported-syntax",
+            Self::RecursionLimit => "recursion-limit",
+            Self::Lex => "lexical-error",
         }
     }
 }
@@ -607,69 +614,68 @@ pub struct ParseDiagnostic {
 }
 
 impl Expr {
-    pub fn pos(&self) -> Pos {
+    pub const fn pos(&self) -> Pos {
         match self {
-            Expr::Var { pos, .. }
-            | Expr::Con { pos, .. }
-            | Expr::Lit { pos, .. }
-            | Expr::App { pos, .. }
-            | Expr::BinOp { pos, .. }
-            | Expr::Neg { pos, .. }
-            | Expr::Lambda { pos, .. }
-            | Expr::If { pos, .. }
-            | Expr::Case { pos, .. }
-            | Expr::Do { pos, .. }
-            | Expr::LetIn { pos, .. }
-            | Expr::Record { pos, .. }
-            | Expr::Tuple { pos, .. }
-            | Expr::List { pos, .. }
-            | Expr::Try { pos, .. }
-            | Expr::Section { pos, .. }
-            | Expr::Error { pos, .. } => *pos,
+            Self::Var { pos, .. }
+            | Self::Con { pos, .. }
+            | Self::Lit { pos, .. }
+            | Self::App { pos, .. }
+            | Self::BinOp { pos, .. }
+            | Self::Neg { pos, .. }
+            | Self::Lambda { pos, .. }
+            | Self::If { pos, .. }
+            | Self::Case { pos, .. }
+            | Self::Do { pos, .. }
+            | Self::LetIn { pos, .. }
+            | Self::Record { pos, .. }
+            | Self::Tuple { pos, .. }
+            | Self::List { pos, .. }
+            | Self::Try { pos, .. }
+            | Self::Section { pos, .. }
+            | Self::Error { pos, .. } => *pos,
         }
     }
 
     /// Byte span covering the whole expression.
-    pub fn span(&self) -> Span {
+    pub const fn span(&self) -> Span {
         match self {
-            Expr::Var { span, .. }
-            | Expr::Con { span, .. }
-            | Expr::Lit { span, .. }
-            | Expr::App { span, .. }
-            | Expr::BinOp { span, .. }
-            | Expr::Neg { span, .. }
-            | Expr::Lambda { span, .. }
-            | Expr::If { span, .. }
-            | Expr::Case { span, .. }
-            | Expr::Do { span, .. }
-            | Expr::LetIn { span, .. }
-            | Expr::Record { span, .. }
-            | Expr::Tuple { span, .. }
-            | Expr::List { span, .. }
-            | Expr::Try { span, .. }
-            | Expr::Section { span, .. }
-            | Expr::Error { span, .. } => *span,
+            Self::Var { span, .. }
+            | Self::Con { span, .. }
+            | Self::Lit { span, .. }
+            | Self::App { span, .. }
+            | Self::BinOp { span, .. }
+            | Self::Neg { span, .. }
+            | Self::Lambda { span, .. }
+            | Self::If { span, .. }
+            | Self::Case { span, .. }
+            | Self::Do { span, .. }
+            | Self::LetIn { span, .. }
+            | Self::Record { span, .. }
+            | Self::Tuple { span, .. }
+            | Self::List { span, .. }
+            | Self::Try { span, .. }
+            | Self::Section { span, .. }
+            | Self::Error { span, .. } => *span,
         }
     }
 
     /// Render back to compact source-like text (raw-field compatibility).
     pub fn render(&self) -> String {
         match self {
-            Expr::Var {
+            Self::Var {
                 qualifier, name, ..
             }
-            | Expr::Con {
+            | Self::Con {
                 qualifier, name, ..
-            } => match qualifier {
-                Some(q) => format!("{}.{}", q, name),
-                None => name.clone(),
-            },
-            Expr::Lit { kind, text, .. } => match kind {
+            } => qualifier
+                .as_ref()
+                .map_or_else(|| name.clone(), |q| format!("{}.{}", q, name)),
+            Self::Lit { kind, text, .. } => match kind {
                 LitKind::Text => format!("{:?}", text),
                 LitKind::Char => format!("'{}'", text),
                 _ => text.clone(),
             },
-            Expr::App { func, args, .. } => {
+            Self::App { func, args, .. } => {
                 let mut s = func.render_atomic();
                 for a in args {
                     s.push(' ');
@@ -677,7 +683,7 @@ impl Expr {
                 }
                 s
             }
-            Expr::BinOp { op, lhs, rhs, .. } => {
+            Self::BinOp { op, lhs, rhs, .. } => {
                 if op == "." {
                     // Record projection / composition: `account.custodian`.
                     format!("{}.{}", lhs.render_atomic(), rhs.render_atomic())
@@ -685,12 +691,12 @@ impl Expr {
                     format!("{} {} {}", lhs.render_atomic(), op, rhs.render_atomic())
                 }
             }
-            Expr::Neg { expr, .. } => format!("-{}", expr.render_atomic()),
-            Expr::Lambda { params, body, .. } => {
+            Self::Neg { expr, .. } => format!("-{}", expr.render_atomic()),
+            Self::Lambda { params, body, .. } => {
                 let ps: Vec<String> = params.iter().map(|p| p.render()).collect();
                 format!("\\{} -> {}", ps.join(" "), body.render())
             }
-            Expr::If {
+            Self::If {
                 cond,
                 then_branch,
                 else_branch,
@@ -701,7 +707,7 @@ impl Expr {
                 then_branch.render(),
                 else_branch.render()
             ),
-            Expr::Case {
+            Self::Case {
                 scrutinee, alts, ..
             } => {
                 let arms: Vec<String> = alts
@@ -710,47 +716,49 @@ impl Expr {
                     .collect();
                 format!("case {} of {}", scrutinee.render(), arms.join("; "))
             }
-            Expr::Do { stmts, .. } => {
+            Self::Do { stmts, .. } => {
                 let body: Vec<String> = stmts.iter().map(render_do_stmt).collect();
                 format!("do {}", body.join("; "))
             }
-            Expr::LetIn { bindings, body, .. } => {
+            Self::LetIn { bindings, body, .. } => {
                 let bs: Vec<String> = bindings.iter().map(render_binding).collect();
                 format!("let {} in {}", bs.join("; "), body.render())
             }
-            Expr::Record { base, fields, .. } => {
+            Self::Record { base, fields, .. } => {
                 let fs: Vec<String> = fields
                     .iter()
-                    .map(|f| match &f.value {
-                        Some(v) => format!("{} = {}", f.name, v.render()),
-                        None => f.name.clone(),
+                    .map(|f| {
+                        f.value.as_ref().map_or_else(
+                            || f.name.clone(),
+                            |v| format!("{} = {}", f.name, v.render()),
+                        )
                     })
                     .collect();
                 format!("{} with {}", base.render_atomic(), fs.join("; "))
             }
-            Expr::Tuple { items, .. } => {
+            Self::Tuple { items, .. } => {
                 let xs: Vec<String> = items.iter().map(|e| e.render()).collect();
                 format!("({})", xs.join(", "))
             }
-            Expr::List { items, .. } => {
+            Self::List { items, .. } => {
                 let xs: Vec<String> = items.iter().map(|e| e.render()).collect();
                 format!("[{}]", xs.join(", "))
             }
-            Expr::Try { body, handlers, .. } => {
+            Self::Try { body, handlers, .. } => {
                 let hs: Vec<String> = handlers
                     .iter()
                     .map(|a| format!("{} -> {}", a.pat.render(), a.body.render()))
                     .collect();
                 format!("try {} catch {}", body.render(), hs.join("; "))
             }
-            Expr::Section {
+            Self::Section {
                 op, operand, left, ..
             } => match (operand, left) {
                 (Some(e), true) => format!("({} {})", e.render(), op),
                 (Some(e), false) => format!("({} {})", op, e.render()),
                 (None, _) => format!("({})", op),
             },
-            Expr::Error { raw, .. } => raw.clone(),
+            Self::Error { raw, .. } => raw.clone(),
         }
     }
 
@@ -758,30 +766,30 @@ impl Expr {
     /// application argument.
     fn render_atomic(&self) -> String {
         match self {
-            Expr::Var { .. }
-            | Expr::Con { .. }
-            | Expr::Lit { .. }
-            | Expr::Tuple { .. }
-            | Expr::List { .. }
-            | Expr::Section { .. }
-            | Expr::Error { .. } => self.render(),
+            Self::Var { .. }
+            | Self::Con { .. }
+            | Self::Lit { .. }
+            | Self::Tuple { .. }
+            | Self::List { .. }
+            | Self::Section { .. }
+            | Self::Error { .. } => self.render(),
             _ => format!("({})", self.render()),
         }
     }
 
     /// The head of an application spine: for `Foo.exercise cid X`, the
     /// `Foo.exercise` Var. For non-apps, the expression itself.
-    pub fn app_head(&self) -> &Expr {
+    pub fn app_head(&self) -> &Self {
         match self {
-            Expr::App { func, .. } => func.app_head(),
+            Self::App { func, .. } => func.app_head(),
             _ => self,
         }
     }
 
     /// Application arguments, empty for non-apps.
-    pub fn app_args(&self) -> &[Expr] {
+    pub fn app_args(&self) -> &[Self] {
         match self {
-            Expr::App { args, .. } => args,
+            Self::App { args, .. } => args,
             _ => &[],
         }
     }
@@ -790,7 +798,7 @@ impl Expr {
     pub fn head_is(&self, name: &str) -> bool {
         matches!(
             self.app_head(),
-            Expr::Var { qualifier: None, name: n, .. } if n == name
+            Self::Var { qualifier: None, name: n, .. } if n == name
         )
     }
 }
@@ -816,47 +824,46 @@ pub fn render_binding(b: &Binding) -> String {
 }
 
 impl Pat {
-    pub fn pos(&self) -> Pos {
+    pub const fn pos(&self) -> Pos {
         match self {
-            Pat::Var { pos, .. }
-            | Pat::Wild { pos, .. }
-            | Pat::Con { pos, .. }
-            | Pat::Tuple { pos, .. }
-            | Pat::List { pos, .. }
-            | Pat::Lit { pos, .. }
-            | Pat::As { pos, .. }
-            | Pat::Other { pos, .. } => *pos,
+            Self::Var { pos, .. }
+            | Self::Wild { pos, .. }
+            | Self::Con { pos, .. }
+            | Self::Tuple { pos, .. }
+            | Self::List { pos, .. }
+            | Self::Lit { pos, .. }
+            | Self::As { pos, .. }
+            | Self::Other { pos, .. } => *pos,
         }
     }
 
     /// Byte span covering the whole pattern.
-    pub fn span(&self) -> Span {
+    pub const fn span(&self) -> Span {
         match self {
-            Pat::Var { span, .. }
-            | Pat::Wild { span, .. }
-            | Pat::Con { span, .. }
-            | Pat::Tuple { span, .. }
-            | Pat::List { span, .. }
-            | Pat::Lit { span, .. }
-            | Pat::As { span, .. }
-            | Pat::Other { span, .. } => *span,
+            Self::Var { span, .. }
+            | Self::Wild { span, .. }
+            | Self::Con { span, .. }
+            | Self::Tuple { span, .. }
+            | Self::List { span, .. }
+            | Self::Lit { span, .. }
+            | Self::As { span, .. }
+            | Self::Other { span, .. } => *span,
         }
     }
 
     pub fn render(&self) -> String {
         match self {
-            Pat::Var { name, .. } => name.clone(),
-            Pat::Wild { .. } => "_".to_string(),
-            Pat::Con {
+            Self::Var { name, .. } => name.clone(),
+            Self::Wild { .. } => "_".to_string(),
+            Self::Con {
                 qualifier,
                 name,
                 args,
                 ..
             } => {
-                let head = match qualifier {
-                    Some(q) => format!("{}.{}", q, name),
-                    None => name.clone(),
-                };
+                let head = qualifier
+                    .as_ref()
+                    .map_or_else(|| name.clone(), |q| format!("{}.{}", q, name));
                 if args.is_empty() {
                     head
                 } else {
@@ -864,21 +871,21 @@ impl Pat {
                     format!("({} {})", head, parts.join(" "))
                 }
             }
-            Pat::Tuple { items, .. } => {
+            Self::Tuple { items, .. } => {
                 let xs: Vec<String> = items.iter().map(|p| p.render()).collect();
                 format!("({})", xs.join(", "))
             }
-            Pat::List { items, .. } => {
+            Self::List { items, .. } => {
                 let xs: Vec<String> = items.iter().map(|p| p.render()).collect();
                 format!("[{}]", xs.join(", "))
             }
-            Pat::Lit { kind, text, .. } => match kind {
+            Self::Lit { kind, text, .. } => match kind {
                 LitKind::Text => format!("{:?}", text),
                 LitKind::Char => format!("'{}'", text),
                 _ => text.clone(),
             },
-            Pat::As { name, pat, .. } => format!("{}@{}", name, pat.render()),
-            Pat::Other { raw, .. } => raw.clone(),
+            Self::As { name, pat, .. } => format!("{}@{}", name, pat.render()),
+            Self::Other { raw, .. } => raw.clone(),
         }
     }
 }

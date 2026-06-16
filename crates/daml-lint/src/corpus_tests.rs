@@ -72,10 +72,9 @@ fn expr_text(expr: &Expr) -> String {
         }
         | Expr::Con {
             qualifier, name, ..
-        } => match qualifier {
-            Some(q) => format!("{q}.{name}"),
-            None => name.clone(),
-        },
+        } => qualifier
+            .as_ref()
+            .map_or_else(|| name.clone(), |q| format!("{q}.{name}")),
         Expr::App { func, args, .. } => {
             let mut parts = Vec::with_capacity(args.len() + 1);
             parts.push(expr_text(func));

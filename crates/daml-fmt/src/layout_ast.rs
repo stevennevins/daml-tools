@@ -1,5 +1,7 @@
-//! AST-driven canonical layout — OUR OWN pattern, NOT a port of the LimeChain
-//! heuristic (no LimeChain code is consulted; design is from the daml-parser AST.
+//! AST-driven canonical layout.
+//!
+//! This is OUR OWN pattern, NOT a port of the LimeChain heuristic: no LimeChain
+//! code is consulted; design is from the daml-parser AST.
 //! We do NOT aim to match `expected/`: the formatter makes its own consistent
 //! layout decisions and may diverge from the LimeChain baseline). This is the
 //! shipping backend behind `format_source`.
@@ -146,10 +148,11 @@ fn gated_template_pass(src: &str) -> String {
     }
 }
 
-/// Count structural edit candidates over modeled AST constructs. This powers
-/// `bin/coverage`; unlike the original do-only metric, it covers every current
-/// AST layout family: do, if, case, let-in, constructor `with`, and
-/// template/interface bodies. This is not a normalized coverage ratio: one
+/// Count structural edit candidates over modeled AST constructs.
+///
+/// This powers `bin/coverage`; unlike the original do-only metric, it covers
+/// every current AST layout family: do, if, case, let-in, constructor `with`,
+/// and template/interface bodies. This is not a normalized coverage ratio: one
 /// construct can produce multiple edits.
 pub fn coverage(src: &str) -> (usize, usize) {
     let (module, _diags) = parse_module(src);
@@ -1013,7 +1016,7 @@ fn push_block_edit(
 
 /// Byte span of a template body declaration (the enum's variants each carry
 /// their own span).
-fn body_decl_span(d: &TemplateBodyDecl) -> Span {
+const fn body_decl_span(d: &TemplateBodyDecl) -> Span {
     match d {
         TemplateBodyDecl::Signatory { span, .. }
         | TemplateBodyDecl::Observer { span, .. }

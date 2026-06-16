@@ -62,11 +62,11 @@ pub enum Severity {
 impl std::fmt::Display for Severity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Severity::Critical => write!(f, "CRITICAL"),
-            Severity::High => write!(f, "HIGH"),
-            Severity::Medium => write!(f, "MEDIUM"),
-            Severity::Low => write!(f, "LOW"),
-            Severity::Info => write!(f, "INFO"),
+            Self::Critical => write!(f, "CRITICAL"),
+            Self::High => write!(f, "HIGH"),
+            Self::Medium => write!(f, "MEDIUM"),
+            Self::Low => write!(f, "LOW"),
+            Self::Info => write!(f, "INFO"),
         }
     }
 }
@@ -76,11 +76,11 @@ impl std::str::FromStr for Severity {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "critical" => Ok(Severity::Critical),
-            "high" => Ok(Severity::High),
-            "medium" => Ok(Severity::Medium),
-            "low" => Ok(Severity::Low),
-            "info" => Ok(Severity::Info),
+            "critical" => Ok(Self::Critical),
+            "high" => Ok(Self::High),
+            "medium" => Ok(Self::Medium),
+            "low" => Ok(Self::Low),
+            "info" => Ok(Self::Info),
             _ => Err(()),
         }
     }

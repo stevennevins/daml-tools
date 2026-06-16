@@ -35,12 +35,14 @@ pub mod layout_ast;
 
 use daml_parser::lexer::{lex_with_trivia, Tok, TriviaKind};
 
-/// Lexer diagnostics for `src`, one `line:col: message` string per error
-/// (e.g. unterminated string / block comment). Empty when the source lexes
-/// clean. The formatter still passes malformed input through verbatim
-/// (`format_source` is byte-safe); the CLI uses this to surface a non-zero
-/// exit + diagnostic so a formatter "success" is not mistaken for parse
-/// success. All 924 corpus files lex clean, so this never flags them.
+/// Lexer diagnostics for `src`.
+///
+/// Returns one `line:col: message` string per error (e.g. unterminated string /
+/// block comment). Empty when the source lexes clean. The formatter still passes
+/// malformed input through verbatim (`format_source` is byte-safe); the CLI uses
+/// this to surface a non-zero exit + diagnostic so a formatter "success" is not
+/// mistaken for parse success. All 924 corpus files lex clean, so this never
+/// flags them.
 pub fn lex_diagnostics(src: &str) -> Vec<String> {
     let (_tokens, _trivia, errors) = lex_with_trivia(src);
     errors
@@ -145,7 +147,7 @@ fn is_lone_colon(t: &Tok) -> bool {
     matches!(t, Tok::Op(op) if op == ":")
 }
 
-fn brace_delta(t: &Tok) -> i32 {
+const fn brace_delta(t: &Tok) -> i32 {
     match t {
         Tok::LBrace | Tok::LParen => 1,
         Tok::RBrace | Tok::RParen => -1,

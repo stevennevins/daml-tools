@@ -208,10 +208,10 @@ impl Parser {
         while self.toks.get(j).is_some_and(|t| t.is_virtual()) {
             j += 1;
         }
-        match self.toks.get(j) {
-            Some(t) => crate::ast::Span::new(t.start, t.end),
-            None => crate::ast::Span::new(self.src_len, self.src_len),
-        }
+        self.toks.get(j).map_or_else(
+            || crate::ast::Span::new(self.src_len, self.src_len),
+            |t| crate::ast::Span::new(t.start, t.end),
+        )
     }
 
     /// Skip tokens until the end of the current block item: a VSemi or
@@ -445,10 +445,9 @@ impl Parser {
                 self.bump();
                 let name = match self.peek() {
                     Some(Tok::UpperId { qualifier, name }) => {
-                        let n = match qualifier {
-                            Some(q) => format!("{}.{}", q, name),
-                            None => name.clone(),
-                        };
+                        let n = qualifier
+                            .as_ref()
+                            .map_or_else(|| name.clone(), |q| format!("{}.{}", q, name));
                         self.bump();
                         n
                     }
@@ -636,10 +635,11 @@ impl Parser {
         if self.eat_keyword("with") {
             (fields, _) = self.field_block();
         }
-        let mut body = Vec::new();
-        if self.eat_keyword("where") {
-            body = self.template_body();
-        }
+        let body = if self.eat_keyword("where") {
+            self.template_body()
+        } else {
+            Vec::new()
+        };
         Some(TemplateDecl {
             name,
             fields,
@@ -811,10 +811,9 @@ impl Parser {
         let start = self.i;
         let pos = self.pos();
         let name = match self.peek() {
-            Some(Tok::UpperId { qualifier, name }) => match qualifier {
-                Some(q) => format!("{}.{}", q, name),
-                None => name.clone(),
-            },
+            Some(Tok::UpperId { qualifier, name }) => qualifier
+                .as_ref()
+                .map_or_else(|| name.clone(), |q| format!("{}.{}", q, name)),
             _ => return Ok(None),
         };
         self.bump();
@@ -903,10 +902,11 @@ impl Parser {
             loop {
                 match self.peek() {
                     Some(Tok::UpperId { qualifier, name }) => {
-                        names.push(match qualifier {
-                            Some(q) => format!("{}.{}", q, name),
-                            None => name.clone(),
-                        });
+                        names.push(
+                            qualifier
+                                .as_ref()
+                                .map_or_else(|| name.clone(), |q| format!("{}.{}", q, name)),
+                        );
                         self.bump();
                     }
                     Some(Tok::RParen) => {
@@ -921,10 +921,11 @@ impl Parser {
                 }
             }
         } else if let Some(Tok::UpperId { qualifier, name }) = self.peek() {
-            names.push(match qualifier {
-                Some(q) => format!("{}.{}", q, name),
-                None => name.clone(),
-            });
+            names.push(
+                qualifier
+                    .as_ref()
+                    .map_or_else(|| name.clone(), |q| format!("{}.{}", q, name)),
+            );
             self.bump();
         }
         names
@@ -997,11 +998,10 @@ impl Parser {
                 self.bump();
                 let expr_start = self.i;
                 let expr = self.expr();
-                let mut ty = None;
-                if self.eat_op(":") {
+                let ty = if self.eat_op(":") {
                     let ty_start = self.i;
                     self.skip_to_item_end();
-                    ty = parse_type_tokens(&self.toks[ty_start..self.i]);
+                    parse_type_tokens(&self.toks[ty_start..self.i])
                 } else {
                     // The expression parser consumes `: Type` annotations;
                     // recover the key type from the last top-level colon.
@@ -1015,11 +1015,10 @@ impl Parser {
                             _ => {}
                         }
                     }
-                    if let Some(j) = colon {
-                        ty = parse_type_tokens(&self.toks[j + 1..self.i]);
-                    }
+                    let ty = colon.and_then(|j| parse_type_tokens(&self.toks[j + 1..self.i]));
                     self.skip_to_item_end();
-                }
+                    ty
+                };
                 TemplateBodyDecl::Key {
                     expr,
                     ty,
@@ -1040,28 +1039,28 @@ impl Parser {
             Some("choice")
             | Some("nonconsuming")
             | Some("preconsuming")
-            | Some("postconsuming") => match self.choice_decl() {
-                Some(c) => TemplateBodyDecl::Choice(c),
-                None => {
+            | Some("postconsuming") => self.choice_decl().map_or_else(
+                || {
                     self.skip_to_item_end();
                     TemplateBodyDecl::Other {
                         raw: self.slice_text(start),
                         span: self.node_span(start),
                         pos,
                     }
-                }
-            },
-            Some("interface") => match self.interface_instance_decl() {
-                Some(ii) => TemplateBodyDecl::InterfaceInstance(ii),
-                None => {
+                },
+                TemplateBodyDecl::Choice,
+            ),
+            Some("interface") => self.interface_instance_decl().map_or_else(
+                || {
                     self.skip_to_item_end();
                     TemplateBodyDecl::Other {
                         raw: self.slice_text(start),
                         span: self.node_span(start),
                         pos,
                     }
-                }
-            },
+                },
+                TemplateBodyDecl::InterfaceInstance,
+            ),
             Some("controller") => {
                 // Legacy Daml 1.x `controller <party> can` choice blocks are
                 // not analyzed — fail loud instead of silently dropping the
@@ -1111,12 +1110,13 @@ impl Parser {
             return None;
         }
         let name = self.upper_name()?;
-        let mut return_ty = None;
-        if self.eat_op(":") {
+        let return_ty = if self.eat_op(":") {
             let ty_start = self.i;
             self.skip_type_tokens();
-            return_ty = parse_type_tokens(&self.toks[ty_start..self.i]);
-        }
+            parse_type_tokens(&self.toks[ty_start..self.i])
+        } else {
+            None
+        };
         let mut params = Vec::new();
         let mut dangling = false;
         if self.eat_keyword("with") {
@@ -1318,10 +1318,11 @@ impl Parser {
             return None;
         }
         let interface_name = self.upper_name()?;
-        let mut for_template = String::new();
-        if self.eat_keyword("for") {
-            for_template = self.upper_name().unwrap_or_default();
-        }
+        let for_template = if self.eat_keyword("for") {
+            self.upper_name().unwrap_or_default()
+        } else {
+            String::new()
+        };
         let mut methods = Vec::new();
         if self.eat_keyword("where") && (self.eat(&Tok::VLBrace) || self.eat(&Tok::LBrace)) {
             loop {
@@ -1460,10 +1461,11 @@ impl Parser {
             }
         }
         let (body, guards) = self.equation_rhs()?;
-        let mut where_bindings = Vec::new();
-        if self.eat_keyword("where") {
-            where_bindings = self.binding_block();
-        }
+        let where_bindings = if self.eat_keyword("where") {
+            self.binding_block()
+        } else {
+            Vec::new()
+        };
         self.skip_to_item_end();
         Some(Decl::Function(FunctionDecl {
             name,
@@ -2019,14 +2021,10 @@ impl Parser {
                 Some(Tok::Backtick) => {
                     // `e `div` e` — infix function application.
                     let name = match self.peek_at(1) {
-                        Some(Tok::LowerId { qualifier, name }) => match qualifier {
-                            Some(q) => format!("{}.{}", q, name),
-                            None => name.clone(),
-                        },
-                        Some(Tok::UpperId { qualifier, name }) => match qualifier {
-                            Some(q) => format!("{}.{}", q, name),
-                            None => name.clone(),
-                        },
+                        Some(Tok::LowerId { qualifier, name })
+                        | Some(Tok::UpperId { qualifier, name }) => qualifier
+                            .as_ref()
+                            .map_or_else(|| name.clone(), |q| format!("{}.{}", q, name)),
                         _ => break,
                     };
                     if self.peek_at(2) != Some(&Tok::Backtick) {
@@ -2039,11 +2037,9 @@ impl Parser {
             if prec < min_prec {
                 break;
             }
+            self.bump();
             if op.starts_with('`') {
                 self.bump();
-                self.bump();
-                self.bump();
-            } else {
                 self.bump();
             }
             let next_min = if right_assoc { prec } else { prec + 1 };
@@ -2084,9 +2080,7 @@ impl Parser {
             // Record syntax binds tighter than application:
             // `create Foo with x = 1` applies create to (Foo with {x = 1}).
             if self.at_keyword("with") {
-                let target = if let Some(last) = args.pop() {
-                    last
-                } else {
+                let target = args.pop().unwrap_or_else(|| {
                     std::mem::replace(
                         &mut head,
                         Expr::Error {
@@ -2095,7 +2089,7 @@ impl Parser {
                             span: Span::default(),
                         },
                     )
-                };
+                });
                 self.bump(); // with
                 let fields = self.record_fields();
                 let tpos = target.pos();
@@ -2318,18 +2312,15 @@ impl Parser {
             return false;
         }
         // Tight on the right: an unqualified lowercase field abuts the dot.
-        match self.toks.get(self.i + 1) {
-            Some(t) => {
-                matches!(
-                    &t.tok,
-                    Tok::LowerId {
-                        qualifier: None,
-                        ..
-                    }
-                ) && t.start == dot.end
-            }
-            None => false,
-        }
+        self.toks.get(self.i + 1).is_some_and(|t| {
+            matches!(
+                &t.tok,
+                Tok::LowerId {
+                    qualifier: None,
+                    ..
+                }
+            ) && t.start == dot.end
+        })
     }
 
     fn atom(&mut self, allow_do: bool) -> Option<Expr> {
@@ -3206,10 +3197,9 @@ pub fn render_tokens(toks: &[Token]) -> String {
     for t in toks {
         let (text, no_space_before, no_space_after): (String, bool, bool) = match &t.tok {
             Tok::LowerId { qualifier, name } | Tok::UpperId { qualifier, name } => (
-                match qualifier {
-                    Some(q) => format!("{}.{}", q, name),
-                    None => name.clone(),
-                },
+                qualifier
+                    .as_ref()
+                    .map_or_else(|| name.clone(), |q| format!("{}.{}", q, name)),
                 false,
                 false,
             ),

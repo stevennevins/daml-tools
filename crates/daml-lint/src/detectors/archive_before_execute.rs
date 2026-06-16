@@ -64,7 +64,7 @@ impl ArchiveBeforeExecute {
                     catch_body,
                     ..
                 } => {
-                    for a in pending.drain(..) {
+                    for a in std::mem::take(&mut pending) {
                         findings.push(self.finding(file, &a, span.line));
                     }
                     // Each branch is its own scope (catches nested archive-then-try).
@@ -126,10 +126,9 @@ fn expr_text(expr: &Expr) -> String {
         }
         | Expr::Con {
             qualifier, name, ..
-        } => match qualifier {
-            Some(q) => format!("{q}.{name}"),
-            None => name.clone(),
-        },
+        } => qualifier
+            .as_ref()
+            .map_or_else(|| name.clone(), |q| format!("{q}.{name}")),
         Expr::Lit { value, .. } => value.clone(),
         Expr::App { func, args, .. } => {
             let mut parts = Vec::with_capacity(args.len() + 1);

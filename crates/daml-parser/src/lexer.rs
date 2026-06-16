@@ -12,7 +12,7 @@ pub struct Pos {
     pub column: usize,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Tok {
     /// Lowercase-initial identifier, possibly qualified: `foo`, `Map.lookup`.
     LowerId {
@@ -47,7 +47,7 @@ pub enum Tok {
     VSemi,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
     pub tok: Tok,
     pub pos: Pos,
@@ -61,15 +61,16 @@ pub struct Token {
 impl Token {
     /// Layout-inserted tokens carry no source bytes (they are zero-width);
     /// AST node-span computation skips them so spans tile the real source.
-    pub fn is_virtual(&self) -> bool {
+    pub const fn is_virtual(&self) -> bool {
         matches!(self.tok, Tok::VLBrace | Tok::VRBrace | Tok::VSemi)
     }
 }
 
-/// Source text the lexer consumes but the parser never sees. Carries exact
-/// byte spans so a printer can re-attach comments to nearby AST nodes (which
-/// already have positions) and reproduce the original bytes.
-#[derive(Debug, Clone, PartialEq)]
+/// Source text the lexer consumes but the parser never sees.
+///
+/// Carries exact byte spans so a printer can re-attach comments to nearby AST
+/// nodes (which already have positions) and reproduce the original bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TriviaKind {
     /// `-- ...` to end of line (newline not included).
     LineComment,
@@ -81,7 +82,7 @@ pub enum TriviaKind {
     BlankLines(usize),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Trivia {
     pub kind: TriviaKind,
     /// Exact source slice (delimiters included; empty for `BlankLines`).
@@ -99,7 +100,7 @@ pub struct LexError {
     pub pos: Pos,
 }
 
-fn is_symbol_char(c: char) -> bool {
+const fn is_symbol_char(c: char) -> bool {
     matches!(
         c,
         '!' | '#'
@@ -170,10 +171,12 @@ pub fn lex_with_trivia(source: &str) -> (Vec<Token>, Vec<Trivia>, Vec<LexError>)
     (lexer.tokens, trivia, lexer.errors)
 }
 
-/// Reconstruct the source from token and trivia spans. `Ok` only when the
-/// spans tile the file — every non-whitespace byte inside exactly one token
-/// or comment span — in which case the result is byte-identical to `source`.
-/// This is the lossless-trivia oracle for the formatter.
+/// Reconstruct the source from token and trivia spans.
+///
+/// `Ok` only when the spans tile the file — every non-whitespace byte inside
+/// exactly one token or comment span — in which case the result is
+/// byte-identical to `source`. This is the lossless-trivia oracle for the
+/// formatter.
 pub fn render_lossless(
     source: &str,
     tokens: &[Token],
@@ -298,7 +301,7 @@ impl<'a> Lexer<'a> {
         Some(c)
     }
 
-    fn pos(&self) -> Pos {
+    const fn pos(&self) -> Pos {
         Pos {
             line: self.line,
             column: self.column,
@@ -638,7 +641,7 @@ impl<'a> Lexer<'a> {
     }
 }
 
-fn unescape(c: char) -> char {
+const fn unescape(c: char) -> char {
     match c {
         'n' => '\n',
         't' => '\t',
@@ -651,9 +654,9 @@ fn unescape(c: char) -> char {
 impl Tok {
     /// The identifier text if this is an unqualified lowercase identifier —
     /// how the parser checks for (contextual) keywords.
-    pub fn keyword(&self) -> Option<&str> {
+    pub const fn keyword(&self) -> Option<&str> {
         match self {
-            Tok::LowerId {
+            Self::LowerId {
                 qualifier: None,
                 name,
             } => Some(name.as_str()),
@@ -666,7 +669,7 @@ impl Tok {
     }
 
     pub fn is_op(&self, op: &str) -> bool {
-        matches!(self, Tok::Op(o) if o == op)
+        matches!(self, Self::Op(o) if o == op)
     }
 }
 

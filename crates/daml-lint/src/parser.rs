@@ -15,10 +15,12 @@ pub(crate) fn parse_daml(source: &str, file: &Path) -> DamlModule {
     parse_daml_with_diagnostics(source, file).0
 }
 
-/// A parse diagnostic for the caller to report. `end_column` is present when
-/// the offending span sits on a single line (most tokens); `category` is the
-/// parser's recovery classification (`skipped-declaration`, `malformed`,
-/// `unsupported-syntax`, `recursion-limit`, `lexical-error`).
+/// A parse diagnostic for the caller to report.
+///
+/// `end_column` is present when the offending span sits on a single line (most
+/// tokens); `category` is the parser's recovery classification
+/// (`skipped-declaration`, `malformed`, `unsupported-syntax`, `recursion-limit`,
+/// `lexical-error`).
 #[derive(Debug)]
 pub struct Diagnostic {
     pub line: usize,
@@ -99,7 +101,7 @@ fn span_at(file: &Path, pos: ast::Pos) -> Span {
     }
 }
 
-fn src_pos(pos: ast::Pos) -> SrcPos {
+const fn src_pos(pos: ast::Pos) -> SrcPos {
     SrcPos {
         line: pos.line,
         column: pos.column,
@@ -110,10 +112,7 @@ fn src_pos(pos: ast::Pos) -> SrcPos {
 /// could not structure the type) degrades to `Unknown` — the same opaque bucket
 /// the old string matcher's fallthrough produced, and one no detector acts on.
 fn lower_type(ty: Option<&ast::Type>) -> DamlType {
-    match ty {
-        Some(t) => DamlType::from_type(t),
-        None => DamlType::Unknown,
-    }
+    ty.map_or(DamlType::Unknown, DamlType::from_type)
 }
 
 // ----- expressions -------------------------------------------------------
@@ -350,10 +349,7 @@ fn lower_choice(c: &ast::ChoiceDecl, file: &Path, source_map: &SourceMap<'_>) ->
         })
         .collect();
 
-    let body = match &c.body {
-        Some(expr) => statements_of_expr(expr),
-        None => Vec::new(),
-    };
+    let body = c.body.as_ref().map_or_else(Vec::new, statements_of_expr);
 
     Choice {
         name: c.name.clone(),
@@ -419,10 +415,10 @@ fn statements_of_expr(expr: &ast::Expr) -> Vec<Statement> {
 }
 
 fn other_statement(expr: &ast::Expr, binder: Option<&ast::Pat>) -> Statement {
-    let raw = match binder {
-        Some(p) => format!("{} <- {}", p.render(), expr.render()),
-        None => expr.render(),
-    };
+    let raw = binder.map_or_else(
+        || expr.render(),
+        |p| format!("{} <- {}", p.render(), expr.render()),
+    );
     Statement::Other {
         raw,
         expr: lower_expr(expr),
@@ -570,15 +566,15 @@ fn subst_expr(
             name,
             span,
             ..
-        } => match subst.get(name.as_str()) {
-            Some(arg) => repoint(arg, call_pos),
-            None => E::Var {
+        } => subst.get(name.as_str()).map_or_else(
+            || E::Var {
                 qualifier: None,
                 name: name.clone(),
                 pos: call_pos,
                 span: *span,
             },
-        },
+            |arg| repoint(arg, call_pos),
+        ),
         E::App {
             func, args, span, ..
         } => E::App {
@@ -885,10 +881,12 @@ fn classify_app(
         return false;
     }
     let arg_expr = |i: usize| {
-        args.get(i).map(lower_expr).unwrap_or(Expr::Unknown {
-            raw: String::new(),
-            span: src_pos(expr.pos()),
-        })
+        args.get(i)
+            .map(lower_expr)
+            .unwrap_or_else(|| Expr::Unknown {
+                raw: String::new(),
+                span: src_pos(expr.pos()),
+            })
     };
     let binder_name = binder.map(|p| p.render());
     let span = src_pos(expr.pos());
@@ -990,10 +988,9 @@ fn template_name_of(arg: Option<&ast::Expr>) -> String {
         Some(ast::Expr::Record { base, .. }) => template_name_of(Some(base)),
         Some(ast::Expr::Con {
             qualifier, name, ..
-        }) => match qualifier {
-            Some(q) => format!("{}.{}", q, name),
-            None => name.clone(),
-        },
+        }) => qualifier
+            .as_ref()
+            .map_or_else(|| name.clone(), |q| format!("{}.{}", q, name)),
         Some(ast::Expr::Var { name, .. }) if name == "this" => "this".to_string(),
         _ => String::new(),
     }
@@ -1004,10 +1001,9 @@ fn choice_name_of(arg: Option<&ast::Expr>) -> String {
         Some(ast::Expr::Record { base, .. }) => choice_name_of(Some(base)),
         Some(ast::Expr::Con {
             qualifier, name, ..
-        }) => match qualifier {
-            Some(q) => format!("{}.{}", q, name),
-            None => name.clone(),
-        },
+        }) => qualifier
+            .as_ref()
+            .map_or_else(|| name.clone(), |q| format!("{}.{}", q, name)),
         Some(ast::Expr::App { func, .. }) => choice_name_of(Some(func)),
         _ => String::new(),
     }

@@ -2,14 +2,14 @@ use daml_parser::ast::{Span as ParserSpan, Type};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct Span {
     pub file: PathBuf,
     pub line: usize,
     pub column: usize,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct SourceSpan {
     pub file: PathBuf,
     pub line: usize,
@@ -100,21 +100,21 @@ pub enum TypeNode {
         span: SourceSpan,
     },
     App {
-        head: Box<TypeNode>,
-        args: Vec<TypeNode>,
+        head: Box<Self>,
+        args: Vec<Self>,
         span: SourceSpan,
     },
     List {
-        inner: Box<TypeNode>,
+        inner: Box<Self>,
         span: SourceSpan,
     },
     Tuple {
-        items: Vec<TypeNode>,
+        items: Vec<Self>,
         span: SourceSpan,
     },
     Fun {
-        param: Box<TypeNode>,
-        result: Box<TypeNode>,
+        param: Box<Self>,
+        result: Box<Self>,
         span: SourceSpan,
     },
     Var {
@@ -125,53 +125,53 @@ pub enum TypeNode {
         span: SourceSpan,
     },
     Constrained {
-        body: Box<TypeNode>,
+        body: Box<Self>,
         span: SourceSpan,
     },
 }
 
 impl TypeNode {
-    pub(crate) fn from_type(t: &Type, source_map: &SourceMap<'_>) -> TypeNode {
+    pub(crate) fn from_type(t: &Type, source_map: &SourceMap<'_>) -> Self {
         let span = || source_map.source_span(t.span());
         match t {
             Type::Con {
                 qualifier, name, ..
-            } => TypeNode::Con {
+            } => Self::Con {
                 qualifier: qualifier.clone(),
                 name: name.clone(),
                 span: span(),
             },
-            Type::App(head, args, _) => TypeNode::App {
-                head: Box::new(TypeNode::from_type(head, source_map)),
+            Type::App(head, args, _) => Self::App {
+                head: Box::new(Self::from_type(head, source_map)),
                 args: args
                     .iter()
-                    .map(|arg| TypeNode::from_type(arg, source_map))
+                    .map(|arg| Self::from_type(arg, source_map))
                     .collect(),
                 span: span(),
             },
-            Type::List(inner, _) => TypeNode::List {
-                inner: Box::new(TypeNode::from_type(inner, source_map)),
+            Type::List(inner, _) => Self::List {
+                inner: Box::new(Self::from_type(inner, source_map)),
                 span: span(),
             },
-            Type::Tuple(items, _) => TypeNode::Tuple {
+            Type::Tuple(items, _) => Self::Tuple {
                 items: items
                     .iter()
-                    .map(|item| TypeNode::from_type(item, source_map))
+                    .map(|item| Self::from_type(item, source_map))
                     .collect(),
                 span: span(),
             },
-            Type::Fun(param, result, _) => TypeNode::Fun {
-                param: Box::new(TypeNode::from_type(param, source_map)),
-                result: Box::new(TypeNode::from_type(result, source_map)),
+            Type::Fun(param, result, _) => Self::Fun {
+                param: Box::new(Self::from_type(param, source_map)),
+                result: Box::new(Self::from_type(result, source_map)),
                 span: span(),
             },
-            Type::Var(name, _) => TypeNode::Var {
+            Type::Var(name, _) => Self::Var {
                 name: name.clone(),
                 span: span(),
             },
-            Type::Unit(_) => TypeNode::Unit { span: span() },
-            Type::Constrained(body, _) => TypeNode::Constrained {
-                body: Box::new(TypeNode::from_type(body, source_map)),
+            Type::Unit(_) => Self::Unit { span: span() },
+            Type::Constrained(body, _) => Self::Constrained {
+                body: Box::new(Self::from_type(body, source_map)),
                 span: span(),
             },
         }
@@ -187,11 +187,11 @@ pub enum DamlType {
     Bool,
     Date,
     Time,
-    ContractId(Box<DamlType>),
-    List(Box<DamlType>),
-    Optional(Box<DamlType>),
-    TextMap(Box<DamlType>),
-    Map(Box<DamlType>, Box<DamlType>),
+    ContractId(Box<Self>),
+    List(Box<Self>),
+    Optional(Box<Self>),
+    TextMap(Box<Self>),
+    Map(Box<Self>, Box<Self>),
     Named(String),
     Unit,
     Unknown,
@@ -204,28 +204,28 @@ impl DamlType {
     /// (application vs arrow vs atom), so unlike the old string reparse it can
     /// never confuse `Script ()` (an application) or `Int -> Int` (a function)
     /// for one opaque `Named`.
-    pub fn from_type(t: &Type) -> DamlType {
+    pub fn from_type(t: &Type) -> Self {
         match t {
             Type::Con {
                 qualifier, name, ..
-            } => DamlType::con(qualifier.as_deref(), name),
+            } => Self::con(qualifier.as_deref(), name),
             Type::App(head, args, _) => match head.as_ref() {
                 Type::Con {
                     qualifier, name, ..
-                } => DamlType::apply(qualifier.as_deref(), name, args),
+                } => Self::apply(qualifier.as_deref(), name, args),
                 // Application with a non-constructor head (a type variable, a
                 // function): nothing classifies these — opaque.
-                _ => DamlType::Unknown,
+                _ => Self::Unknown,
             },
-            Type::List(inner, _) => DamlType::List(Box::new(DamlType::from_type(inner))),
-            Type::Unit(_) => DamlType::Unit,
+            Type::List(inner, _) => Self::List(Box::new(Self::from_type(inner))),
+            Type::Unit(_) => Self::Unit,
             // A constraint context carries nothing a detector reasons about;
             // classify by the body.
-            Type::Constrained(body, _) => DamlType::from_type(body),
+            Type::Constrained(body, _) => Self::from_type(body),
             // Tuples, arrows and bare type variables carry no money/collection
             // meaning — the buckets the old matcher lumped into Unknown or a
             // misleading Named. Now they are *known* to be these shapes.
-            Type::Tuple(_, _) | Type::Fun(_, _, _) | Type::Var(_, _) => DamlType::Unknown,
+            Type::Tuple(_, _) | Type::Fun(_, _, _) | Type::Var(_, _) => Self::Unknown,
         }
     }
 
@@ -233,11 +233,8 @@ impl DamlType {
     /// qualifier so a user type stays fully spelled (`Lib.Mod.Imported`, not
     /// `Imported`) — matching how the old string matcher carried the qualified
     /// text. No detector reads the name; it is rule-facing data only.
-    fn named(qualifier: Option<&str>, name: &str) -> DamlType {
-        DamlType::Named(match qualifier {
-            Some(q) => format!("{q}.{name}"),
-            None => name.to_string(),
-        })
+    fn named(qualifier: Option<&str>, name: &str) -> Self {
+        Self::Named(qualifier.map_or_else(|| name.to_string(), |q| format!("{q}.{name}")))
     }
 
     /// A nullary constructor: the scalar builtins, the `Numeric`/`Decimal` money
@@ -251,20 +248,20 @@ impl DamlType {
     /// collection (`MyMod.Map`) would also be classified as that collection.
     /// That is unidiomatic and absent from the corpus; the heuristic favors
     /// catching the real aliased collections.
-    fn con(qualifier: Option<&str>, name: &str) -> DamlType {
+    fn con(qualifier: Option<&str>, name: &str) -> Self {
         match name {
-            "Party" => DamlType::Party,
-            "Text" => DamlType::Text,
-            "Decimal" => DamlType::Decimal,
-            "Int" => DamlType::Int,
-            "Bool" => DamlType::Bool,
-            "Date" => DamlType::Date,
-            "Time" => DamlType::Time,
+            "Party" => Self::Party,
+            "Text" => Self::Text,
+            "Decimal" => Self::Decimal,
+            "Int" => Self::Int,
+            "Bool" => Self::Bool,
+            "Date" => Self::Date,
+            "Time" => Self::Time,
             // `Decimal` is exactly `Numeric 10`; the whole fixed-point family is
             // the money type the monetary detectors care about. A bare `Numeric`
             // is `Numeric <nat>` with the nat literal dropped by the parser.
-            "Numeric" => DamlType::Decimal,
-            _ => DamlType::named(qualifier, name),
+            "Numeric" => Self::Decimal,
+            _ => Self::named(qualifier, name),
         }
     }
 
@@ -274,57 +271,50 @@ impl DamlType {
     /// so unbounded-fields flags it. Any other applied constructor (`Foo Bar`)
     /// is opaque `Named` carrying the head (application args are not part of the
     /// name — no detector reads it).
-    fn apply(qualifier: Option<&str>, name: &str, args: &[Type]) -> DamlType {
-        let first = || {
-            args.first()
-                .map(DamlType::from_type)
-                .unwrap_or(DamlType::Unknown)
-        };
+    fn apply(qualifier: Option<&str>, name: &str, args: &[Type]) -> Self {
+        let first = || args.first().map(Self::from_type).unwrap_or(Self::Unknown);
         match name {
-            "ContractId" => DamlType::ContractId(Box::new(first())),
-            "Optional" => DamlType::Optional(Box::new(first())),
-            "TextMap" => DamlType::TextMap(Box::new(first())),
+            "ContractId" => Self::ContractId(Box::new(first())),
+            "Optional" => Self::Optional(Box::new(first())),
+            "TextMap" => Self::TextMap(Box::new(first())),
             // The fixed-point money family: `Numeric n`.
-            "Numeric" => DamlType::Decimal,
+            "Numeric" => Self::Decimal,
             // Unbounded keyed collections: key + value when both are present.
             "Map" | "GenMap" => {
                 let k = first();
-                let v = args
-                    .get(1)
-                    .map(DamlType::from_type)
-                    .unwrap_or(DamlType::Unknown);
-                DamlType::Map(Box::new(k), Box::new(v))
+                let v = args.get(1).map(Self::from_type).unwrap_or(Self::Unknown);
+                Self::Map(Box::new(k), Box::new(v))
             }
             // No dedicated Set variant; model as an unbounded collection (List).
-            "Set" => DamlType::List(Box::new(first())),
-            _ => DamlType::named(qualifier, name),
+            "Set" => Self::List(Box::new(first())),
+            _ => Self::named(qualifier, name),
         }
     }
 
-    pub fn is_decimal(&self) -> bool {
-        matches!(self, DamlType::Decimal)
+    pub const fn is_decimal(&self) -> bool {
+        matches!(self, Self::Decimal)
     }
 
-    pub fn is_text(&self) -> bool {
-        matches!(self, DamlType::Text)
+    pub const fn is_text(&self) -> bool {
+        matches!(self, Self::Text)
     }
 
-    pub fn is_textmap(&self) -> bool {
-        matches!(self, DamlType::TextMap(_))
+    pub const fn is_textmap(&self) -> bool {
+        matches!(self, Self::TextMap(_))
     }
 
-    pub fn is_list(&self) -> bool {
-        matches!(self, DamlType::List(_))
+    pub const fn is_list(&self) -> bool {
+        matches!(self, Self::List(_))
     }
 
-    pub fn is_map(&self) -> bool {
-        matches!(self, DamlType::Map(_, _))
+    pub const fn is_map(&self) -> bool {
+        matches!(self, Self::Map(_, _))
     }
 
     pub fn is_unbounded(&self) -> bool {
         match self {
             // An `Optional Text` / `Optional [a]` is still unbounded when present.
-            DamlType::Optional(inner) => inner.is_unbounded(),
+            Self::Optional(inner) => inner.is_unbounded(),
             _ => self.is_text() || self.is_textmap() || self.is_list() || self.is_map(),
         }
     }
@@ -333,7 +323,7 @@ impl DamlType {
 /// Lightweight source position for expression-level nodes (1-based). The
 /// enclosing module fixes the file; repeating the path on every node would
 /// bloat the JSON handed to rule scripts.
-#[derive(Debug, Clone, Copy, Serialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 pub struct SrcPos {
     pub line: usize,
     pub column: usize,
@@ -363,35 +353,35 @@ pub enum Expr {
     },
     /// Application, flattened: `f a b` has two args.
     App {
-        func: Box<Expr>,
-        args: Vec<Expr>,
+        func: Box<Self>,
+        args: Vec<Self>,
         span: SrcPos,
     },
     /// Binary operator with source-level operator text (`+`, `/`, `&&`,
     /// `` `div` `` for backtick application, `..` for ranges).
     BinOp {
         op: String,
-        lhs: Box<Expr>,
-        rhs: Box<Expr>,
+        lhs: Box<Self>,
+        rhs: Box<Self>,
         span: SrcPos,
     },
     Neg {
-        expr: Box<Expr>,
+        expr: Box<Self>,
         span: SrcPos,
     },
     Lambda {
         params: Vec<String>,
-        body: Box<Expr>,
+        body: Box<Self>,
         span: SrcPos,
     },
     If {
-        cond: Box<Expr>,
-        then_branch: Box<Expr>,
-        else_branch: Box<Expr>,
+        cond: Box<Self>,
+        then_branch: Box<Self>,
+        else_branch: Box<Self>,
         span: SrcPos,
     },
     Case {
-        scrutinee: Box<Expr>,
+        scrutinee: Box<Self>,
         alts: Vec<CaseAlt>,
         span: SrcPos,
     },
@@ -402,21 +392,21 @@ pub enum Expr {
     },
     LetIn {
         bindings: Vec<LetBinding>,
-        body: Box<Expr>,
+        body: Box<Self>,
         span: SrcPos,
     },
     /// Record construction or update: `Foo with x = 1`, `this with owner`.
     Record {
-        base: Box<Expr>,
+        base: Box<Self>,
         fields: Vec<RecordField>,
         span: SrcPos,
     },
     Tuple {
-        items: Vec<Expr>,
+        items: Vec<Self>,
         span: SrcPos,
     },
     List {
-        items: Vec<Expr>,
+        items: Vec<Self>,
         span: SrcPos,
     },
     /// Anything without a structured encoding (operator sections,
@@ -460,7 +450,7 @@ impl Expr {
     /// these are *guaranteed* to hold: anything under `||`, `not (...)`, or an
     /// `if` is returned as one opaque leaf, so it can never masquerade as a
     /// guarantee.
-    pub(crate) fn conjuncts(&self) -> Vec<&Expr> {
+    pub(crate) fn conjuncts(&self) -> Vec<&Self> {
         fn go<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
             match e {
                 Expr::BinOp { op, lhs, rhs, .. } if op == "&&" => {
@@ -480,16 +470,17 @@ impl Expr {
     /// anything that is not a variable / constructor / projection chain.
     pub(crate) fn ref_string(&self) -> Option<String> {
         match self {
-            Expr::Var {
+            Self::Var {
                 name, qualifier, ..
             }
-            | Expr::Con {
+            | Self::Con {
                 name, qualifier, ..
-            } => Some(match qualifier {
-                Some(q) => format!("{}.{}", q, name),
-                None => name.clone(),
-            }),
-            Expr::BinOp { op, lhs, rhs, .. } if op == "." => {
+            } => Some(
+                qualifier
+                    .as_ref()
+                    .map_or_else(|| name.clone(), |q| format!("{}.{}", q, name)),
+            ),
+            Self::BinOp { op, lhs, rhs, .. } if op == "." => {
                 Some(format!("{}.{}", lhs.ref_string()?, rhs.ref_string()?))
             }
             _ => None,
@@ -500,16 +491,14 @@ impl Expr {
     /// `this.<name>` / `self.<name>` projection (the implicit-record forms a
     /// choice body may use for a template field).
     pub(crate) fn refers_to(&self, name: &str) -> bool {
-        match self.ref_string() {
-            Some(s) => s == name || strip_implicit_self(&s) == strip_implicit_self(name),
-            None => false,
-        }
+        self.ref_string()
+            .is_some_and(|s| s == name || strip_implicit_self(&s) == strip_implicit_self(name))
     }
 
     /// True if this is a numeric literal equal to zero (`0`, `0.0`, `0.`).
     pub(crate) fn is_zero_lit(&self) -> bool {
         match self {
-            Expr::Lit { kind, value, .. } if kind == "Int" || kind == "Decimal" => {
+            Self::Lit { kind, value, .. } if kind == "Int" || kind == "Decimal" => {
                 let t = value.trim();
                 !t.is_empty() && t.bytes().all(|b| b == b'0' || b == b'.') && t.contains('0')
             }
@@ -521,7 +510,7 @@ impl Expr {
     /// or a strictly-positive floor like `0.01`). Negative literals are spelled
     /// `Neg(Lit)`, so a bare `Lit` is always non-negative.
     pub(crate) fn is_nonzero_numeric_lit(&self) -> bool {
-        matches!(self, Expr::Lit { kind, .. } if kind == "Int" || kind == "Decimal")
+        matches!(self, Self::Lit { kind, .. } if kind == "Int" || kind == "Decimal")
             && !self.is_zero_lit()
     }
 
@@ -533,7 +522,7 @@ impl Expr {
     /// negative literals so they cannot pose as a `>= 0` or `== positive` bound.
     pub(crate) fn is_nonzero_numeric_divisor(&self) -> bool {
         match self {
-            Expr::Neg { expr, .. } => expr.is_nonzero_numeric_divisor(),
+            Self::Neg { expr, .. } => expr.is_nonzero_numeric_divisor(),
             _ => self.is_nonzero_numeric_lit(),
         }
     }
@@ -541,22 +530,22 @@ impl Expr {
     /// True if this is a non-negative numeric literal (`0`, `0.01`, `100.0`).
     /// Negative literals are spelled `Neg(Lit)` and do not match.
     pub(crate) fn is_nonneg_numeric_lit(&self) -> bool {
-        matches!(self, Expr::Lit { kind, .. } if kind == "Int" || kind == "Decimal")
+        matches!(self, Self::Lit { kind, .. } if kind == "Int" || kind == "Decimal")
     }
 
     /// Best-effort source-ish rendering, for evidence / messages only.
     pub(crate) fn render_text(&self) -> String {
         match self {
-            Expr::Var { .. } | Expr::Con { .. } => self.ref_string().unwrap_or_default(),
-            Expr::Lit { value, .. } => value.clone(),
-            Expr::Neg { expr, .. } => format!("-{}", expr.render_text()),
-            Expr::BinOp { op, lhs, rhs, .. } if op == "." => {
+            Self::Var { .. } | Self::Con { .. } => self.ref_string().unwrap_or_default(),
+            Self::Lit { value, .. } => value.clone(),
+            Self::Neg { expr, .. } => format!("-{}", expr.render_text()),
+            Self::BinOp { op, lhs, rhs, .. } if op == "." => {
                 format!("{}.{}", lhs.render_text(), rhs.render_text())
             }
-            Expr::BinOp { op, lhs, rhs, .. } => {
+            Self::BinOp { op, lhs, rhs, .. } => {
                 format!("{} {} {}", lhs.render_text(), op, rhs.render_text())
             }
-            Expr::App { func, args, .. } => {
+            Self::App { func, args, .. } => {
                 let mut s = func.render_text();
                 for a in args {
                     s.push(' ');
@@ -564,17 +553,17 @@ impl Expr {
                 }
                 s
             }
-            Expr::Tuple { items, .. } => format!("({})", render_join(items, ", ")),
-            Expr::List { items, .. } => format!("[{}]", render_join(items, ", ")),
-            Expr::Unknown { raw, .. } => raw.clone(),
+            Self::Tuple { items, .. } => format!("({})", render_join(items, ", ")),
+            Self::List { items, .. } => format!("[{}]", render_join(items, ", ")),
+            Self::Unknown { raw, .. } => raw.clone(),
             _ => "…".to_string(),
         }
     }
 
     /// The head of an application spine: `f a b` → `f`, `query @T x` → `query`.
-    pub(crate) fn app_head(&self) -> &Expr {
+    pub(crate) fn app_head(&self) -> &Self {
         match self {
-            Expr::App { func, .. } => func.app_head(),
+            Self::App { func, .. } => func.app_head(),
             other => other,
         }
     }
@@ -837,10 +826,9 @@ pub(crate) fn statement_exprs(s: &Statement) -> Vec<&Expr> {
         Statement::Fetch { cid, .. } => vec![cid],
         Statement::Archive { cid, .. } => vec![cid],
         Statement::Create { argument, .. } => vec![argument],
-        Statement::Exercise { cid, argument, .. } => match argument {
-            Some(a) => vec![cid, a],
-            None => vec![cid],
-        },
+        Statement::Exercise { cid, argument, .. } => argument
+            .as_ref()
+            .map_or_else(|| vec![cid], |a| vec![cid, a]),
         Statement::Other { expr, .. } => vec![expr],
         // A Branch's only direct expression is the case scrutinee; the arm
         // bodies (and the expressions therein) are reached through the body
@@ -1080,8 +1068,10 @@ pub struct Choice {
     pub span: Span,
 }
 
-/// Do-statement classification. Structured payloads (`value`,
-/// `condition_expr`, `cid`, `argument`) are the rule-facing parse tree.
+/// Do-statement classification.
+///
+/// Structured payloads (`value`, `condition_expr`, `cid`, `argument`) are the
+/// rule-facing parse tree.
 /// `Other.raw` is the deliberate raw-source form for statements with no
 /// structured encoding.
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -1121,8 +1111,8 @@ pub enum Statement {
         span: SrcPos,
     },
     TryCatch {
-        try_body: Vec<Statement>,
-        catch_body: Vec<Statement>,
+        try_body: Vec<Self>,
+        catch_body: Vec<Self>,
         span: SrcPos,
     },
     /// An `if`/`case` whose branches are NOT flattened into the parent sequence:

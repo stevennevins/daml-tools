@@ -380,7 +380,7 @@ fn binder_and_value(s: &Statement) -> Option<(&str, &Expr)> {
 }
 
 /// The 1-based source line of a binding statement.
-fn stmt_line(s: &Statement) -> usize {
+const fn stmt_line(s: &Statement) -> usize {
     match s {
         Statement::Other { span, .. } | Statement::Let { span, .. } => span.line,
         _ => 0,
@@ -400,14 +400,11 @@ fn is_plain_identifier(name: &str) -> bool {
 /// head and discards the tail: `(:: x _)`. A tail-binding cons (`(:: x rest)`)
 /// is proper iteration and is NOT matched.
 fn is_cons_head_binder(binder: &str) -> bool {
-    let inner = match binder
-        .trim()
+    let trimmed = binder.trim();
+    let inner = trimmed
         .strip_prefix('(')
         .and_then(|s| s.strip_suffix(')'))
-    {
-        Some(i) => i.trim(),
-        None => binder.trim(),
-    };
+        .map_or_else(|| trimmed, str::trim);
     let rest = match inner.strip_prefix("::") {
         Some(r) => r.trim(),
         None => return false,

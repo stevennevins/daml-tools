@@ -221,7 +221,7 @@ pub fn resolve_layout(tokens: Vec<Token>) -> Vec<Token> {
     out
 }
 
-fn virtual_tok(tok: Tok, pos: Pos) -> Token {
+const fn virtual_tok(tok: Tok, pos: Pos) -> Token {
     // Layout tokens have no source bytes; zero-width span keeps the
     // lossless render (which skips them anyway) honest.
     Token {
@@ -248,12 +248,9 @@ mod tests {
                 Tok::VLBrace => "{".to_string(),
                 Tok::VRBrace => "}".to_string(),
                 Tok::VSemi => ";".to_string(),
-                Tok::LowerId { qualifier, name } | Tok::UpperId { qualifier, name } => {
-                    match qualifier {
-                        Some(q) => format!("{}.{}", q, name),
-                        None => name.clone(),
-                    }
-                }
+                Tok::LowerId { qualifier, name } | Tok::UpperId { qualifier, name } => qualifier
+                    .as_ref()
+                    .map_or_else(|| name.clone(), |q| format!("{}.{}", q, name)),
                 Tok::Op(o) => o.clone(),
                 Tok::IntLit(n) | Tok::DecimalLit(n) => n.clone(),
                 Tok::StringLit(s) => format!("{:?}", s),
