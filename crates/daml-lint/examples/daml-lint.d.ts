@@ -256,8 +256,10 @@ interface DamlModule {
   source: string;
 }
 
-/** Report a finding at a node's span, or at an explicit 1-based line number. */
+/** Report a finding at a node's span, or at an explicit 1-based line number.
+ *  `evidence`, when supplied, is used in reports instead of the source line. */
 declare function report(
   node: { span: Span } | { span: SrcPos } | number,
-  message: string
+  message: string,
+  evidence?: string
 ): void;

@@ -158,8 +158,9 @@ Visitors (define any subset, at least one):
 | `check(m)` | once per module | `ir_version`, `name`, `file`, `imports`, `templates`, `interfaces`, `functions`, `source` |
 
 Report findings with `report(node, message)` (location taken from the node's
-`span`) or `report(line, message)`. The rule's `SEVERITY` applies to all its
-findings. Node shapes are declared in
+`span`) or `report(line, message)`. Pass `report(node, message, evidence)` when
+the report should show structural evidence instead of the source line. The
+rule's `SEVERITY` applies to all its findings. Node shapes are declared in
 [examples/daml-lint.d.ts](examples/daml-lint.d.ts) and mirror the IR in
 [src/ir.rs](src/ir.rs); statement nodes in `body` are objects keyed by kind,
 e.g. `"Create" in stmt`.

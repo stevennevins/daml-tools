@@ -1,0 +1,16 @@
+{
+  "name": "daml-lint-rules",
+  "version": "0.2.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "build:rules": "esbuild rules/missing-ensure-decimal.ts rules/unbounded-fields.ts --bundle --format=esm --target=es2020 --tree-shaking=false --outdir=rules",
+    "check:rules": "npm run build:rules && git diff --exit-code -- rules"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

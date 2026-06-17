@@ -9,6 +9,9 @@ pub mod script;
 pub mod unbounded_fields;
 pub mod unguarded_division;
 
+#[cfg(all(test, feature = "custom-rules"))]
+mod builtin_script_tests;
+
 use crate::detector::Detector;
 use archive_before_execute::ArchiveBeforeExecute;
 use ensure_decimal::MissingEnsureDecimal;
