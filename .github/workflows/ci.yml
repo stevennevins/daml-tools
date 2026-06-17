@@ -32,6 +32,16 @@ jobs:
         run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked
       - name: test
         run: cargo test --workspace --all-features --locked
+      - name: daml-lint generated rules are current
+        working-directory: crates/daml-lint
+        run: npm ci && npm run check:rules
+      - name: daml-lint feature split tests
+        run: |
+          cargo test -p daml-lint --no-default-features --lib --locked
+          cargo test -p daml-lint --no-default-features --features js-runtime --lib --locked
+          cargo test -p daml-lint --no-default-features --features custom-rules --lib --locked
+          cargo test -p daml-lint --no-default-features --features cli,js-runtime --locked
+          cargo test -p daml-lint --no-default-features --features cli,js-runtime,custom-rules --locked
       - name: daml-fmt differential (924 corpus files, no SDK)
         working-directory: crates/daml-fmt
         run: node test/diff.js
@@ -47,10 +57,14 @@ jobs:
         run: cargo check --workspace --all-targets --all-features --locked
       - name: daml-lint library without optional features
         run: cargo check -p daml-lint --no-default-features --locked
-      - name: daml-lint CLI feature only
-        run: cargo check -p daml-lint --no-default-features --features cli --locked
+      - name: daml-lint JS runtime feature only
+        run: cargo check -p daml-lint --no-default-features --features js-runtime --locked
       - name: daml-lint custom-rules feature only
         run: cargo check -p daml-lint --no-default-features --features custom-rules --locked
+      - name: daml-lint CLI without custom rules
+        run: cargo check -p daml-lint --no-default-features --features cli,js-runtime --locked
+      - name: daml-lint CLI with custom rules
+        run: cargo check -p daml-lint --no-default-features --features cli,js-runtime,custom-rules --locked
 
   # License + advisory policy (see deny.toml).
   cargo-deny:
