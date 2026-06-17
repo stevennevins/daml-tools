@@ -131,6 +131,8 @@ in TypeScript against [examples/daml-lint.d.ts](examples/daml-lint.d.ts) for
 type checking and autocomplete:
 
 ```typescript
+import type { Template } from "./daml-lint";
+
 const NAME = "template-requires-ensure";
 const SEVERITY = "medium";
 const DESCRIPTION = "Every template must declare an ensure clause";   // optional
@@ -140,15 +142,20 @@ function on_template(template: Template): void {
     report(template, `Template '${template.name}' has no ensure clause`);
   }
 }
+
+globalThis.__daml_lint_rule = { NAME, SEVERITY, DESCRIPTION, on_template };
 ```
 
 then compile to the JavaScript file you pass to `--rules`:
 
 ```sh
-npx esbuild my-rule.ts --outfile=my-rule.js   # or tsc
+npx esbuild my-rule.ts --bundle --outfile=my-rule.js
 ```
 
-(Plain JavaScript rules work directly — the compile step is only for TypeScript.)
+Type-only imports are erased by the build. Runtime helper imports must be
+bundled because the rule engine runs JavaScript without `import`, `require`,
+filesystem, or network APIs. Plain JavaScript rules work directly — the compile
+step is only for TypeScript.
 
 Visitors (define any subset, at least one):
 

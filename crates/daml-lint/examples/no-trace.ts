@@ -1,6 +1,8 @@
+import type { DamlModule } from "./daml-lint";
+
 // Flag leftover debug trace calls — a simple banned-token rule written
 // as a whole-module check over the raw source.
-// Compile: npx esbuild no-trace.ts --outfile=no-trace.js
+// Compile: npx esbuild no-trace.ts --bundle --outfile=no-trace.js
 
 const NAME = "no-trace";
 const SEVERITY = "low";
@@ -23,3 +25,5 @@ function check(m: DamlModule): void {
     }
   });
 }
+
+globalThis.__daml_lint_rule = { NAME, SEVERITY, DESCRIPTION, check };

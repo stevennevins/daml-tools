@@ -1,3 +1,4 @@
+import type { DamlModule, EnsureClause, Expr, SrcPos, Statement } from "../examples/daml-lint";
 import {
   childExprs,
   conjuncts,

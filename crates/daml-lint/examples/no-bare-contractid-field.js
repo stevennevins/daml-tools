@@ -1,7 +1,9 @@
 // Compiled from TypeScript; pass this JavaScript file to daml-lint --rules.
-const NAME = "no-bare-contractid-field";
-const SEVERITY = "low";
-const DESCRIPTION = "Template fields holding ContractIds risk dangling references";
+
+// examples/no-bare-contractid-field.ts
+var NAME = "no-bare-contractid-field";
+var SEVERITY = "low";
+var DESCRIPTION = "Template fields holding ContractIds risk dangling references";
 function containsContractId(ty) {
   if (ty === null) {
     return false;
@@ -34,3 +36,4 @@ function on_field(field, template) {
     );
   }
 }
+globalThis.__daml_lint_rule = { NAME, SEVERITY, DESCRIPTION, on_field };

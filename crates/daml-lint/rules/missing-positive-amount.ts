@@ -1,3 +1,4 @@
+import type { Choice, Expr, Statement, Template } from "../examples/daml-lint";
 import {
   expressionGuaranteesNonempty,
   expressionGuaranteesStrictPositive,
