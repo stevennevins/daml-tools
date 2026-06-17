@@ -56,4 +56,4 @@ jobs:
           fi
       - name: Publish package
         working-directory: crates/daml-lint/lint-plugin
-        run: npm publish --access public --provenance
+        run: npm publish --access public
