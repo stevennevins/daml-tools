@@ -83,8 +83,9 @@ The `js-runtime` feature enables the QuickJS-backed runtime used by shipped
 built-ins. The `custom-rules` feature enables loading user-provided rule files
 through `--rules` when the runtime is also enabled. Shipped built-ins are
 authored in TypeScript and embedded as generated JavaScript; no TypeScript
-toolchain is required at runtime. The `cli` feature exists for the `daml-lint`
-binary.
+toolchain is required at runtime. The shipped detectors are registered through
+`create_builtin_detectors()` rather than exposed as individual Rust detector
+modules. The `cli` feature exists for the `daml-lint` binary.
 
 ## Usage
 

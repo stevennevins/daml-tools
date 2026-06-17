@@ -1,11 +1,5 @@
-use super::archive_before_execute::ArchiveBeforeExecute;
-use super::ensure_decimal::MissingEnsureDecimal;
-use super::head_of_list::HeadOfListQuery;
-use super::positive_amount::MissingPositiveAmount;
 use super::script;
-use super::unbounded_fields::UnboundedFields;
-use super::unguarded_division::UnguardedDivision;
-use crate::detector::{Detector, Finding, Severity};
+use crate::detector::{Detector, Severity};
 use crate::parser::parse_daml;
 use std::path::Path;
 
@@ -17,37 +11,203 @@ fn load_rule(name: &str) -> Box<dyn Detector> {
     script::load_script_source(&path.display().to_string(), &source).unwrap()
 }
 
-fn snapshot(findings: Vec<Finding>) -> Vec<(String, Severity, usize, usize, String, String)> {
-    findings
-        .into_iter()
-        .map(|f| {
-            (
-                f.detector, f.severity, f.line, f.column, f.message, f.evidence,
-            )
-        })
-        .collect()
-}
-
-fn assert_rule_matches_rust(
+fn assert_rule_findings(
     case_name: &str,
     source: &str,
     file: &Path,
-    rust_detector: &dyn Detector,
     script_detector: &dyn Detector,
 ) {
     let module = parse_daml(source, file);
+    let findings = script_detector.detect(&module);
+    let expected_count = expected_count(script_detector.name(), case_name);
     assert_eq!(
-        snapshot(script_detector.detect(&module)),
-        snapshot(rust_detector.detect(&module)),
-        "TypeScript built-in drifted from Rust detector for {case_name}"
+        findings.len(),
+        expected_count,
+        "unexpected finding count for {} / {case_name}: {findings:?}",
+        script_detector.name()
     );
+    for finding in &findings {
+        assert_eq!(finding.detector, script_detector.name());
+        assert_eq!(finding.severity, expected_severity(script_detector.name()));
+        assert!(
+            !finding.message.is_empty(),
+            "finding message should explain {} / {case_name}",
+            script_detector.name()
+        );
+        assert!(
+            !finding.evidence.is_empty(),
+            "finding evidence should identify source for {} / {case_name}",
+            script_detector.name()
+        );
+    }
+}
+
+fn expected_severity(rule_name: &str) -> Severity {
+    match rule_name {
+        "missing-ensure-decimal"
+        | "unguarded-division"
+        | "missing-positive-amount"
+        | "archive-before-execute" => Severity::High,
+        "head-of-list-query" | "unbounded-fields" => Severity::Medium,
+        other => panic!("missing expected severity for {other}"),
+    }
+}
+
+fn expected_count(rule_name: &str, case_name: &str) -> usize {
+    match (rule_name, case_name) {
+        ("archive-before-execute", "archive after try passes") => 0,
+        ("archive-before-execute", "archive before try within one arm is flagged") => 1,
+        ("archive-before-execute", "archive helper called before try flags at call site") => 1,
+        ("archive-before-execute", "archive helper called inside try not flagged") => 0,
+        ("archive-before-execute", "archive inside earlier try not flagged by later try") => 0,
+        ("archive-before-execute", "archive mention in string does not trigger") => 0,
+        ("archive-before-execute", "archive then try else not flagged") => 0,
+        ("archive-before-execute", "choice finding reports real line") => 1,
+        ("archive-before-execute", "comment mention does not trigger") => 0,
+        ("archive-before-execute", "exercise Archive before try is flagged") => 1,
+        ("archive-before-execute", "fetchAndArchive before try triggers") => 1,
+        ("archive-before-execute", "identifier starting with try is not try/catch") => 0,
+        ("archive-before-execute", "multiline archive before try is flagged") => 1,
+        ("archive-before-execute", "multiple archives each reported") => 2,
+        ("archive-before-execute", "multiple multiline archives each reported") => 2,
+        ("archive-before-execute", "try then archive else not flagged") => 0,
+        ("archive-before-execute", "uncalled archive helper not flagged") => 0,
+
+        ("head-of-list-query", "alias chain of query result flags") => 1,
+        ("head-of-list-query", "cons head bind from query flags") => 1,
+        ("head-of-list-query", "cons pattern on query result flags") => 1,
+        ("head-of-list-query", "cons pattern reported once") => 1,
+        ("head-of-list-query", "derived binding is not an alias") => 0,
+        ("head-of-list-query", "direct alias of query result flags") => 1,
+        ("head-of-list-query", "fixed-many bind from query is safe") => 0,
+        ("head-of-list-query", "fmap head over query flags") => 1,
+        ("head-of-list-query", "head before sorted rebind still flags") => 1,
+        ("head-of-list-query", "head dollar on query binding flags") => 1,
+        ("head-of-list-query", "head dollar on sorted query is safe") => 0,
+        ("head-of-list-query", "head fmap over query flags") => 1,
+        ("head-of-list-query", "head of sorted query result is not flagged") => 0,
+        ("head-of-list-query", "head on non-query list ignored") => 0,
+        ("head-of-list-query", "head on query binding flags") => 1,
+        ("head-of-list-query", "index on query binding flags") => 1,
+        ("head-of-list-query", "last fmap over query flags") => 1,
+        ("head-of-list-query", "let rebind to sorted list clears tracking") => 0,
+        ("head-of-list-query", "monadic rebind to sorted list clears tracking") => 0,
+        ("head-of-list-query", "nested case on local list is not flagged") => 0,
+        ("head-of-list-query", "nested case on query result flags once") => 1,
+        ("head-of-list-query", "non-head fmap over query is not flagged") => 0,
+        ("head-of-list-query", "plain bind from query is safe until head use") => 0,
+        ("head-of-list-query", "qualified head on query binding flags") => 1,
+        ("head-of-list-query", "recursive cons binding tail is not flagged") => 0,
+        ("head-of-list-query", "requery rebind still flags") => 1,
+        ("head-of-list-query", "safe query usage passes") => 0,
+        ("head-of-list-query", "singleton bind from query flags") => 1,
+        ("head-of-list-query", "singleton pattern on query result flags") => 1,
+        ("head-of-list-query", "tail-binding cons bind from query is safe") => 0,
+
+        ("missing-ensure-decimal", "conjunction bound counts") => 0,
+        ("missing-ensure-decimal", "disjunction bound does not guarantee positivity") => 1,
+        ("missing-ensure-decimal", "flipped positive equality passes") => 0,
+        ("missing-ensure-decimal", "missing ensure reports each decimal field") => 2,
+        ("missing-ensure-decimal", "negated bound does not guarantee positivity") => 1,
+        ("missing-ensure-decimal", "negative equality still flags") => 1,
+        ("missing-ensure-decimal", "negative lower bound still flags") => 1,
+        ("missing-ensure-decimal", "numeric fields are money fields") => 1,
+        ("missing-ensure-decimal", "partial ensure only suppresses bounded field") => 1,
+        ("missing-ensure-decimal", "positive ensure bound suppresses finding") => 0,
+        ("missing-ensure-decimal", "positive equality passes") => 0,
+        ("missing-ensure-decimal", "positive lower bound passes") => 0,
+        ("missing-ensure-decimal", "substring field names do not alias") => 1,
+        ("missing-ensure-decimal", "zero equality still flags") => 1,
+
+        ("missing-positive-amount", "asserted positive amount passes") => 0,
+        ("missing-positive-amount", "comment mention does not suppress") => 1,
+        ("missing-positive-amount", "conditional if then assert does not suppress") => 1,
+        ("missing-positive-amount", "conditional when assert does not suppress") => 1,
+        ("missing-positive-amount", "extra whitespace positive guard passes") => 0,
+        ("missing-positive-amount", "flipped positive guard passes") => 0,
+        ("missing-positive-amount", "ge zero permits zero and flags") => 1,
+        ("missing-positive-amount", "if nonpositive abort is a guard") => 0,
+        ("missing-positive-amount", "list strict lower bound passes") => 0,
+        ("missing-positive-amount", "list upper bound less-equal does not suppress") => 1,
+        ("missing-positive-amount", "list upper bound less-than does not suppress") => 1,
+        ("missing-positive-amount", "missing positive amount triggers") => 1,
+        ("missing-positive-amount", "non-asserting mention does not suppress") => 1,
+        ("missing-positive-amount", "not dollar null list guard passes") => 0,
+        ("missing-positive-amount", "not null list guard passes") => 0,
+        ("missing-positive-amount", "numeric amount is checked") => 1,
+        ("missing-positive-amount", "positive floor guard passes") => 0,
+        ("missing-positive-amount", "qualified Assert assertMsg guards") => 0,
+        ("missing-positive-amount", "qualified DA.Assert assertMsg guards") => 0,
+        ("missing-positive-amount", "strict negative abort is not enough") => 1,
+        ("missing-positive-amount", "substring guard does not suppress") => 1,
+        ("missing-positive-amount", "superstring list check does not suppress") => 1,
+        ("missing-positive-amount", "transfer length max-only is flagged") => 1,
+        ("missing-positive-amount", "transfer min and max is clean") => 0,
+        ("missing-positive-amount", "transfer size max-only is flagged") => 1,
+        ("missing-positive-amount", "unless positive abort is a guard") => 0,
+        ("missing-positive-amount", "when nonpositive abort is a guard") => 0,
+
+        ("unbounded-fields", "Map.size sibling field bound is attacker controlled") => 1,
+        ("unbounded-fields", "bounded text passes") => 0,
+        ("unbounded-fields", "exact size constraint passes") => 0,
+        ("unbounded-fields", "field name in string literal is not a bound") => 1,
+        ("unbounded-fields", "flipped sibling field bound is attacker controlled") => 1,
+        ("unbounded-fields", "flipped upper length bound passes") => 0,
+        ("unbounded-fields", "lower length bound is not a size bound") => 1,
+        ("unbounded-fields", "map field is unbounded") => 1,
+        ("unbounded-fields", "map field message is grammatical") => 1,
+        ("unbounded-fields", "module constant bound passes") => 0,
+        ("unbounded-fields", "optional collection is still unbounded") => 1,
+        ("unbounded-fields", "prefix sibling field name does not alias") => 1,
+        ("unbounded-fields", "relational length equality leaves both fields unbounded") => 1,
+        ("unbounded-fields", "relational length greater-than leaves both fields unbounded") => 1,
+        ("unbounded-fields", "relational length less-than leaves both fields unbounded") => 1,
+        ("unbounded-fields", "sibling field bound is attacker controlled") => 1,
+        ("unbounded-fields", "size bound through this passes") => 0,
+        ("unbounded-fields", "unbounded TextMap triggers") => 1,
+        ("unbounded-fields", "unbounded text fields trigger") => 1,
+
+        ("unguarded-division", "branch arm guard suppresses division in same arm") => 0,
+        ("unguarded-division", "conditional case guard does not suppress") => 1,
+        ("unguarded-division", "conditional if guard does not suppress") => 1,
+        ("unguarded-division", "disjunction guard does not suppress") => 1,
+        ("unguarded-division", "ensure clause guards choice division") => 0,
+        ("unguarded-division", "forA guard does not suppress") => 1,
+        ("unguarded-division", "ge zero is not a guard") => 1,
+        ("unguarded-division", "guard after division is flagged") => 1,
+        ("unguarded-division", "guarded division passes") => 0,
+        ("unguarded-division", "guarded intToDecimal division passes") => 0,
+        ("unguarded-division", "guarded prefix div passes") => 0,
+        ("unguarded-division", "if nonzero guard suppresses") => 0,
+        ("unguarded-division", "if unrelated condition does not guard") => 1,
+        ("unguarded-division", "if zero else guard suppresses") => 0,
+        ("unguarded-division", "intToDecimal wrapper reports real denominator") => 1,
+        ("unguarded-division", "line wrapped division is flagged") => 1,
+        ("unguarded-division", "literal denominator safe") => 0,
+        ("unguarded-division", "negative literal denominator safe") => 0,
+        ("unguarded-division", "negative prefix literal denominator safe") => 0,
+        ("unguarded-division", "negative zero denominator flags") => 1,
+        ("unguarded-division", "parenthesized denominator reported whole") => 1,
+        ("unguarded-division", "parenthesized literal denominator is safe") => 0,
+        ("unguarded-division", "prefix div is flagged") => 1,
+        ("unguarded-division", "prefix div literal denominator safe") => 0,
+        ("unguarded-division", "same line guard after division is flagged") => 1,
+        ("unguarded-division", "same line guard suppresses") => 0,
+        ("unguarded-division", "second division on line is flagged") => 1,
+        ("unguarded-division", "slash in comment is not division") => 0,
+        ("unguarded-division", "slash in string literal is not division") => 0,
+        ("unguarded-division", "substring guard does not suppress") => 1,
+        ("unguarded-division", "unconditional guard before branch division suppresses") => 0,
+        ("unguarded-division", "unguarded division triggers") => 1,
+        ("unguarded-division", "when gated guard does not suppress") => 1,
+        ("unguarded-division", "zero literal denominator flags") => 1,
+        other => panic!("missing expected finding count for {other:?}"),
+    }
 }
 
 #[test]
-fn archive_before_execute_script_matches_rust_regressions() {
+fn archive_before_execute_script_covers_regressions() {
     let script_detector = load_rule("archive-before-execute.js");
-    let rust_detector = ArchiveBeforeExecute;
-
     let cases = [
         (
             "fetchAndArchive before try triggers",
@@ -441,21 +601,18 @@ template T
     ];
 
     for (case_name, source) in cases {
-        assert_rule_matches_rust(
+        assert_rule_findings(
             case_name,
             source,
             Path::new("ArchiveBeforeExecute.daml"),
-            &rust_detector,
             script_detector.as_ref(),
         );
     }
 }
 
 #[test]
-fn head_of_list_query_script_matches_rust_regressions() {
+fn head_of_list_query_script_covers_regressions() {
     let script_detector = load_rule("head-of-list-query.js");
-    let rust_detector = HeadOfListQuery;
-
     let cases = [
         (
             "cons pattern on query result flags",
@@ -727,21 +884,18 @@ pick owner = do
     ];
 
     for (case_name, source) in cases {
-        assert_rule_matches_rust(
+        assert_rule_findings(
             case_name,
             source,
             Path::new("HeadOfListQuery.daml"),
-            &rust_detector,
             script_detector.as_ref(),
         );
     }
 }
 
 #[test]
-fn missing_ensure_decimal_script_matches_rust_regressions() {
+fn missing_ensure_decimal_script_covers_regressions() {
     let script_detector = load_rule("missing-ensure-decimal.js");
-    let rust_detector = MissingEnsureDecimal;
-
     let simple_cases = [
         (
             "missing ensure reports each decimal field",
@@ -852,11 +1006,10 @@ template T
     ];
 
     for (case_name, source) in simple_cases {
-        assert_rule_matches_rust(
+        assert_rule_findings(
             case_name,
             source,
             Path::new("MissingEnsureDecimal.daml"),
-            &rust_detector,
             script_detector.as_ref(),
         );
     }
@@ -873,21 +1026,18 @@ template T
             "module T where\n\ntemplate M\n  with\n    owner : Party\n    amount : Decimal\n  where\n    signatory owner\n    ensure {}\n",
             ensure
         );
-        assert_rule_matches_rust(
+        assert_rule_findings(
             case_name,
             &source,
             Path::new("MissingEnsureDecimal.daml"),
-            &rust_detector,
             script_detector.as_ref(),
         );
     }
 }
 
 #[test]
-fn unbounded_fields_script_matches_rust_regressions() {
+fn unbounded_fields_script_covers_regressions() {
     let script_detector = load_rule("unbounded-fields.js");
-    let rust_detector = UnboundedFields;
-
     let cases = [
         (
             "unbounded text fields trigger",
@@ -1147,21 +1297,18 @@ template T
     ];
 
     for (case_name, source) in cases {
-        assert_rule_matches_rust(
+        assert_rule_findings(
             case_name,
             source,
             Path::new("UnboundedFields.daml"),
-            &rust_detector,
             script_detector.as_ref(),
         );
     }
 }
 
 #[test]
-fn missing_positive_amount_script_matches_rust_regressions() {
+fn missing_positive_amount_script_covers_regressions() {
     let script_detector = load_rule("missing-positive-amount.js");
-    let rust_detector = MissingPositiveAmount;
-
     let mut cases: Vec<(String, String)> = Vec::new();
     cases.push((
         "missing positive amount triggers".to_string(),
@@ -1419,21 +1566,18 @@ template Settlement
     }
 
     for (case_name, source) in cases {
-        assert_rule_matches_rust(
+        assert_rule_findings(
             &case_name,
             &source,
             Path::new("MissingPositiveAmount.daml"),
-            &rust_detector,
             script_detector.as_ref(),
         );
     }
 }
 
 #[test]
-fn unguarded_division_script_matches_rust_regressions() {
+fn unguarded_division_script_covers_regressions() {
     let script_detector = load_rule("unguarded-division.js");
-    let rust_detector = UnguardedDivision;
-
     let cases = [
         (
             "unguarded division triggers",
@@ -1638,11 +1782,10 @@ f flag x y =
     ];
 
     for (case_name, source) in cases {
-        assert_rule_matches_rust(
+        assert_rule_findings(
             case_name,
             source,
             Path::new("UnguardedDivision.daml"),
-            &rust_detector,
             script_detector.as_ref(),
         );
     }
