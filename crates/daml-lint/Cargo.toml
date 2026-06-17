@@ -1,6 +1,6 @@
 [package]
 name = "daml-lint"
-version = "0.2.0"
+version = "0.2.1"
 description = "Static analysis scanner for Daml smart contracts"
 edition.workspace = true
 rust-version.workspace = true
