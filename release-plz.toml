@@ -14,6 +14,10 @@ git_release_enable = true
 # Don't run `cargo update` when preparing release PRs; keep the committed
 # Cargo.lock as-is and leave external dependency bumps to dependabot.
 dependencies_update = false
+# Only semver-relevant Conventional Commits prepare release PRs. This keeps
+# docs/ci/chore-only changes from creating crate releases just because they
+# touched files that Cargo packages under a crate directory.
+release_commits = "^((feat|fix|perf|refactor|security)(\\([^)]+\\))?!?|[A-Za-z]+(\\([^)]+\\))!):"
 
 [[package]]
 name = "daml-parser"

@@ -23,7 +23,13 @@ GitHub secrets.
 
 ## Review the release PR
 
-Release-plz opens a `chore: release` PR after changes land on `main`.
+Release-plz opens a `chore: release` PR after semver-relevant changes land on
+`main`. Normal `docs:`, `ci:`, and `chore:` commits do not prepare releases;
+`feat:`, `fix:`, `perf:`, `refactor:`, `security:`, and breaking `!` commits
+do.
+
+For `daml-lint` release PRs, the Release-plz workflow also syncs the npm
+plugin package metadata into the release PR.
 
 Before merging it, verify:
 
@@ -34,8 +40,8 @@ Before merging it, verify:
   new `@daml-tools/lint-plugin` version.
 - CI is green.
 
-The `daml-lint` CI check fails if the npm package version does not match the
-`daml-lint` crate version.
+The `daml-lint` CI check fails if the npm package version or template
+dependency does not match the `daml-lint` crate version.
 
 ## Merge the release PR
 
