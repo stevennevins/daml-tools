@@ -971,17 +971,17 @@ function check(m) {
     #[cfg(feature = "custom-rules")]
     #[test]
     fn test_demo_scripts_load() {
-        assert!(load_script(Path::new("examples/template-requires-ensure.js")).is_ok());
+        assert!(load_script(Path::new("examples/dist/template-requires-ensure.js")).is_ok());
         assert!(load_script(Path::new(
-            "examples/consuming-choice-signatory-controller.js"
+            "examples/dist/consuming-choice-signatory-controller.js"
         ))
         .is_ok());
-        assert!(load_script(Path::new("examples/no-trace.js")).is_ok());
-        assert!(load_script(Path::new("examples/no-create-in-nonconsuming.js")).is_ok());
-        assert!(load_script(Path::new("examples/no-bare-contractid-field.js")).is_ok());
-        assert!(load_script(Path::new("examples/unqualified-da-import.js")).is_ok());
-        assert!(load_script(Path::new("examples/function-ledger-actions.js")).is_ok());
-        assert!(load_script(Path::new("examples/choice-param-shadows-field.js")).is_ok());
+        assert!(load_script(Path::new("examples/dist/no-trace.js")).is_ok());
+        assert!(load_script(Path::new("examples/dist/no-create-in-nonconsuming.js")).is_ok());
+        assert!(load_script(Path::new("examples/dist/no-bare-contractid-field.js")).is_ok());
+        assert!(load_script(Path::new("examples/dist/unqualified-da-import.js")).is_ok());
+        assert!(load_script(Path::new("examples/dist/function-ledger-actions.js")).is_ok());
+        assert!(load_script(Path::new("examples/dist/choice-param-shadows-field.js")).is_ok());
     }
 
     // Regression (audit finding 19): the shipped unguarded-division-ast example
@@ -991,7 +991,7 @@ function check(m) {
     #[cfg(feature = "custom-rules")]
     #[test]
     fn test_example_unguarded_division_flags_conditional_assert() {
-        let det = load_script(Path::new("examples/unguarded-division-ast.js")).unwrap();
+        let det = load_script(Path::new("examples/dist/unguarded-division-ast.js")).unwrap();
         let source = r#"module CondFn where
 
 template T
@@ -1024,7 +1024,7 @@ template T
     #[cfg(feature = "custom-rules")]
     #[test]
     fn test_example_unguarded_division_respects_unconditional_assert() {
-        let det = load_script(Path::new("examples/unguarded-division-ast.js")).unwrap();
+        let det = load_script(Path::new("examples/dist/unguarded-division-ast.js")).unwrap();
         let source = r#"module Safe where
 
 template T
@@ -1053,7 +1053,7 @@ template T
     #[test]
     fn test_example_signatory_controller_flags_lookalike_field() {
         let det = load_script(Path::new(
-            "examples/consuming-choice-signatory-controller.js",
+            "examples/dist/consuming-choice-signatory-controller.js",
         ))
         .unwrap();
         let source = r#"module SigFP where
@@ -1083,7 +1083,7 @@ template Bar
     #[test]
     fn test_example_signatory_controller_allows_signatory_this() {
         let det = load_script(Path::new(
-            "examples/consuming-choice-signatory-controller.js",
+            "examples/dist/consuming-choice-signatory-controller.js",
         ))
         .unwrap();
         let source = r#"module SigOk where
@@ -1112,7 +1112,7 @@ template Baz
     #[cfg(feature = "custom-rules")]
     #[test]
     fn test_example_no_create_in_nonconsuming_descends_branch_arms() {
-        let det = load_script(Path::new("examples/no-create-in-nonconsuming.js")).unwrap();
+        let det = load_script(Path::new("examples/dist/no-create-in-nonconsuming.js")).unwrap();
         let source = r#"module BranchCreate where
 
 template T
@@ -1140,7 +1140,7 @@ template T
     #[cfg(feature = "custom-rules")]
     #[test]
     fn test_example_function_ledger_actions_descends_branch_arms() {
-        let det = load_script(Path::new("examples/function-ledger-actions.js")).unwrap();
+        let det = load_script(Path::new("examples/dist/function-ledger-actions.js")).unwrap();
         let source = r#"module BranchLedger where
 
 template T
@@ -1167,7 +1167,7 @@ branchArchive cid flag = do
     #[cfg(feature = "custom-rules")]
     #[test]
     fn test_example_no_trace_ignores_block_comment() {
-        let det = load_script(Path::new("examples/no-trace.js")).unwrap();
+        let det = load_script(Path::new("examples/dist/no-trace.js")).unwrap();
         let source = r#"module BlockComment where
 
 {- This module used to call trace for debugging.
@@ -1184,7 +1184,7 @@ foo = 1
     #[cfg(feature = "custom-rules")]
     #[test]
     fn test_example_no_trace_ignores_string_literal() {
-        let det = load_script(Path::new("examples/no-trace.js")).unwrap();
+        let det = load_script(Path::new("examples/dist/no-trace.js")).unwrap();
         let source = r#"module Trace2 where
 
 msg : Text
@@ -1199,7 +1199,7 @@ msg = "please trace this transaction"
     #[cfg(feature = "custom-rules")]
     #[test]
     fn test_example_no_trace_still_flags_real_call() {
-        let det = load_script(Path::new("examples/no-trace.js")).unwrap();
+        let det = load_script(Path::new("examples/dist/no-trace.js")).unwrap();
         let source = r#"module RealTrace where
 
 foo : Int -> Int

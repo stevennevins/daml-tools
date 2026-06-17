@@ -3,7 +3,7 @@ import { renderText } from "../rules/_helpers";
 
 // Consuming choices should have at least one controller who is a signatory.
 // Needs cross-referencing two structured AST node lists.
-// Compile: npx esbuild consuming-choice-signatory-controller.ts --bundle --outfile=consuming-choice-signatory-controller.js
+// Compile: npx esbuild examples/consuming-choice-signatory-controller.ts --bundle --outfile=examples/dist/consuming-choice-signatory-controller.js
 
 const NAME = "consuming-choice-signatory-controller";
 const SEVERITY = "medium";

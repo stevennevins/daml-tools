@@ -1,8 +1,8 @@
-// TypeScript contract for daml-lint custom rule authoring.
+// Type definitions for daml-lint custom rule authoring packages.
 //
-// Examples and built-in rules use these types while authoring TypeScript.
-// Bundle the rule to JavaScript before passing it to daml-lint --rules.
-// Node shapes mirror src/ir.rs.
+// Import these types from the published package when writing external custom
+// rules, compile TypeScript to bundled JavaScript, and pass the .js file to
+// daml-lint --rules. Node shapes mirror daml-lint src/ir.rs.
 //
 // v3: nodes carry structured expression and type ASTs. Compatibility-only raw
 // fields and rendered party-name lists from v1/v2 have been removed.
@@ -256,9 +256,9 @@ export interface DamlModule {
   source: string;
 }
 
-export type RuleSeverity = "critical" | "high" | "medium" | "low" | "info";
+export type DamlLintRuleSeverity = "critical" | "high" | "medium" | "low" | "info";
 
-export type RuleVisitorModule = {
+export type DamlLintRuleVisitorModule = {
   on_template: (template: Template) => void;
   on_choice: (choice: Choice, template: Template) => void;
   on_field: (field: Field, template: Template) => void;
@@ -268,23 +268,23 @@ export type RuleVisitorModule = {
   check: (module: DamlModule) => void;
 };
 
-export type RuleVisitor = {
-  [Name in keyof RuleVisitorModule]: Pick<RuleVisitorModule, Name> &
-    Partial<Omit<RuleVisitorModule, Name>>;
-}[keyof RuleVisitorModule];
+export type DamlLintRuleVisitor = {
+  [Name in keyof DamlLintRuleVisitorModule]: Pick<DamlLintRuleVisitorModule, Name> &
+    Partial<Omit<DamlLintRuleVisitorModule, Name>>;
+}[keyof DamlLintRuleVisitorModule];
 
-export type RuleModule = {
+export type DamlLintRuleModule = {
   NAME: string;
-  SEVERITY: RuleSeverity;
+  SEVERITY: DamlLintRuleSeverity;
   DESCRIPTION?: string;
-} & RuleVisitor;
+} & DamlLintRuleVisitor;
 
-export type ReportTarget = { span: Span } | { span: SrcPos } | number;
+export type DamlLintReportTarget = { span: Span } | { span: SrcPos } | number;
 
 declare global {
-  var __daml_lint_rule: RuleModule | undefined;
+  var __daml_lint_rule: DamlLintRuleModule | undefined;
 
   /** Report a finding at a node's span, or at an explicit 1-based line number.
    *  `evidence`, when supplied, is used in reports instead of the source line. */
-  function report(node: ReportTarget, message: string, evidence?: string): void;
+  function report(node: DamlLintReportTarget, message: string, evidence?: string): void;
 }

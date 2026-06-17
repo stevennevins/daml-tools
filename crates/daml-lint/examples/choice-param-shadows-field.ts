@@ -3,7 +3,7 @@ import type { Choice, Template } from "./daml-lint";
 // A choice parameter named identically to a template field silently shadows
 // it inside the choice body — `amount` may not be the amount you think.
 // Exercises choice.parameters cross-referenced against template.fields.
-// Compile: npx esbuild choice-param-shadows-field.ts --bundle --outfile=choice-param-shadows-field.js
+// Compile: npx esbuild examples/choice-param-shadows-field.ts --bundle --outfile=examples/dist/choice-param-shadows-field.js
 
 const NAME = "choice-param-shadows-field";
 const SEVERITY = "medium";

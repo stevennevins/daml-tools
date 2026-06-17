@@ -4,7 +4,7 @@ import { walkBodyStatements } from "../rules/_helpers";
 // Nonconsuming choices that create contracts can be exercised repeatedly on
 // the same contract, fanning out unbounded copies. Walks choice body
 // statements, recursing into try/catch blocks.
-// Compile: npx esbuild no-create-in-nonconsuming.ts --bundle --outfile=no-create-in-nonconsuming.js
+// Compile: npx esbuild examples/no-create-in-nonconsuming.ts --bundle --outfile=examples/dist/no-create-in-nonconsuming.js
 
 const NAME = "no-create-in-nonconsuming";
 const SEVERITY = "medium";

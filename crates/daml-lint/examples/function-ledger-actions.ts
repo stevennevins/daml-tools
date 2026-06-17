@@ -4,7 +4,7 @@ import { walkBodyStatements } from "../rules/_helpers";
 // Top-level functions that archive or exercise contracts hide ledger
 // mutations outside any choice, making authorization harder to audit.
 // Exercises on_function and the Archive/Exercise statement variants.
-// Compile: npx esbuild function-ledger-actions.ts --bundle --outfile=function-ledger-actions.js
+// Compile: npx esbuild examples/function-ledger-actions.ts --bundle --outfile=examples/dist/function-ledger-actions.js
 
 const NAME = "function-ledger-actions";
 const SEVERITY = "info";
