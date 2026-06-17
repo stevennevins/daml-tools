@@ -60,20 +60,24 @@ README: [`crates/daml-lint/README.md`](../../crates/daml-lint/README.md)
 | Feature | Default | Enables |
 |---------|---------|---------|
 | `cli` | Yes | The clap-based `daml-lint` binary dependency. |
-| `custom-rules` | Yes | JavaScript AST rules through the QuickJS runtime. |
-| `default` | Yes | `cli` and `custom-rules`. |
+| `js-runtime` | Yes | QuickJS-backed rule runtime for shipped built-ins. |
+| `custom-rules` | Yes | User-provided JavaScript AST rule-file loading through `--rules` when `js-runtime` is enabled. |
+| `default` | Yes | `cli`, `js-runtime`, and `custom-rules`. |
 
-The `daml-lint` binary requires both `cli` and `custom-rules`. With
-`default-features = false`, the crate provides the library, built-in detectors,
-and rule-facing IR without pulling in clap or QuickJS.
+The `daml-lint` binary requires both `cli` and `js-runtime`. The
+`custom-rules` feature enables the external rule-file loading surface; it does
+not enable QuickJS by itself. Shipped built-ins are authored in TypeScript and
+embedded as generated JavaScript; no TypeScript toolchain is required at
+runtime. With `default-features = false`, the crate provides parser lowering
+and the rule-facing IR without pulling in clap or QuickJS.
 
 ### Public modules
 
 | Module | Description |
 |--------|-------------|
 | `detector` | Detector trait, `Finding`, `Severity`, `DetectError`, and severity parsing. |
-| `detectors` | Built-in detector modules and `create_builtin_detectors`. |
-| `detectors::script` | JavaScript custom-rule detector support when `custom-rules` is enabled. |
+| `detectors` | Built-in detector registration through `create_builtin_detectors` when `js-runtime` is enabled. |
+| `detectors::script` | JavaScript rule runtime support when `js-runtime` is enabled; file loading is available with `custom-rules`. |
 | `ir` | Rule-facing Daml intermediate representation. |
 | `parser` | Lowering from `daml-parser` AST to the linter IR, including parse diagnostics. |
 | `reporter` | Markdown, JSON, and SARIF report formatting plus exit-code support. |

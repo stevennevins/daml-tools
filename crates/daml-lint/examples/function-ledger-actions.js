@@ -1,9 +1,7 @@
-// Compiled from function-ledger-actions.ts — this is the file you pass to --rules.
-
+// Compiled from TypeScript; pass this JavaScript file to daml-lint --rules.
 const NAME = "function-ledger-actions";
 const SEVERITY = "info";
-const DESCRIPTION = "Top-level functions performing archive/exercise — verify authorization is audited";
-
+const DESCRIPTION = "Top-level functions performing archive/exercise \u2014 verify authorization is audited";
 function ledgerActions(stmts) {
   const found = [];
   for (const stmt of stmts) {
@@ -14,18 +12,18 @@ function ledgerActions(stmts) {
       found.push("exercise");
     }
     if ("TryCatch" in stmt) {
-      found.push(...ledgerActions(stmt.TryCatch.try_body), ...ledgerActions(stmt.TryCatch.catch_body));
+      const tc = stmt.TryCatch;
+      found.push(...ledgerActions(tc.try_body), ...ledgerActions(tc.catch_body));
     }
-    // An if/case keeps its arms as separate scopes; descend into each.
     if ("Branch" in stmt) {
-      for (const arm of stmt.Branch.arms) {
-        found.push(...ledgerActions(arm));
+      const br = stmt.Branch;
+      for (const arm of br.arms) {
+        found.push(...ledgerActions(arm.body));
       }
     }
   }
   return found;
 }
-
 function on_function(fn) {
   const actions = ledgerActions(fn.body);
   if (actions.length > 0) {

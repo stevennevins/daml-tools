@@ -22,9 +22,9 @@ function ledgerActions(stmts: Statement[]): string[] {
     }
     // An if/case keeps its arms as separate scopes; descend into each.
     if ("Branch" in stmt) {
-      const br = (stmt as { Branch: { arms: Statement[][] } }).Branch;
+      const br = stmt.Branch;
       for (const arm of br.arms) {
-        found.push(...ledgerActions(arm));
+        found.push(...ledgerActions(arm.body));
       }
     }
   }

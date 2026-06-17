@@ -2,6 +2,7 @@ use crate::detector::{parse_severity, DetectError, Detector, Finding, Severity};
 use crate::ir::DamlModule;
 use rquickjs::{CatchResultExt, Context, Ctx, Function, Object, Runtime, Value};
 use std::cell::RefCell;
+#[cfg(feature = "custom-rules")]
 use std::path::Path;
 use std::rc::Rc;
 
@@ -11,7 +12,7 @@ use std::rc::Rc;
 /// and subscribes to AST node types by defining visitor functions. Each
 /// visitor receives the node as an object mirroring the IR (src/ir.rs), with
 /// a `span` carrying line/column. Findings are reported with
-/// `report(node, msg)` or `report(line, msg)`.
+/// `report(node, msg)`, `report(line, msg)`, or `report(node, msg, evidence)`.
 ///
 /// const NAME = "no-foo-template";
 /// const SEVERITY = "medium";
@@ -94,10 +95,14 @@ fn parse_node<'js>(ctx: &Ctx<'js>, rule: &str, json: String) -> Result<Value<'js
         .map_err(|e| format!("rule '{}': {}", rule, e))
 }
 
+#[cfg(feature = "custom-rules")]
 pub fn load_script(path: &Path) -> Result<Box<dyn Detector>, String> {
     let source = std::fs::read_to_string(path)
         .map_err(|e| format!("could not read rules script {}: {}", path.display(), e))?;
+    load_script_source(&path.display().to_string(), &source)
+}
 
+pub(crate) fn load_script_source(label: &str, source: &str) -> Result<Box<dyn Detector>, String> {
     let (rt, interrupt_count) = new_runtime()?;
     let context = Context::full(&rt).map_err(|e| e.to_string())?;
     let loaded = context.with(|ctx| {
@@ -105,20 +110,12 @@ pub fn load_script(path: &Path) -> Result<Box<dyn Detector>, String> {
         register_report(&ctx, Rc::new(RefCell::new(Vec::new())))?;
         ctx.eval::<(), _>(source.as_bytes())
             .catch(&ctx)
-            .map_err(|e| format!("invalid rules script {}: {}", path.display(), e))?;
+            .map_err(|e| format!("invalid rules script {}: {}", label, e))?;
 
-        let name = read_const(&ctx, "NAME").ok_or_else(|| {
-            format!(
-                "rules script {}: missing `const NAME = \"...\"`",
-                path.display()
-            )
-        })?;
-        let severity_str = read_const(&ctx, "SEVERITY").ok_or_else(|| {
-            format!(
-                "rules script {}: missing `const SEVERITY = \"...\"`",
-                path.display()
-            )
-        })?;
+        let name = read_const(&ctx, "NAME")
+            .ok_or_else(|| format!("rules script {}: missing `const NAME = \"...\"`", label))?;
+        let severity_str = read_const(&ctx, "SEVERITY")
+            .ok_or_else(|| format!("rules script {}: missing `const SEVERITY = \"...\"`", label))?;
         let severity = parse_severity(&severity_str).ok_or_else(|| {
             format!(
                 "rule '{}': unknown severity '{}'. Use critical, high, medium, low, or info.",
@@ -142,34 +139,47 @@ pub fn load_script(path: &Path) -> Result<Box<dyn Detector>, String> {
         Ok((name, severity, description))
     });
     let (name, severity, description) = loaded?;
-    let _ = source;
     Ok(Box::new(ScriptDetector {
         name,
         severity,
         description,
-        path: path.display().to_string(),
+        path: label.to_string(),
         _runtime: rt,
         context,
         interrupt_count,
     }) as Box<dyn Detector>)
 }
 
-/// (line, column, message) reported by the script.
-type Reported = Rc<RefCell<Vec<(usize, usize, String)>>>;
+/// (line, column, message, explicit evidence) reported by the script.
+type Reported = Rc<RefCell<Vec<(usize, usize, String, Option<String>)>>>;
 
 fn json<T: serde::Serialize>(v: &T) -> String {
     serde_json::to_string(v).expect("IR types always serialize")
 }
 
 fn register_report(ctx: &Ctx<'_>, sink: Reported) -> Result<(), String> {
-    let report = Function::new(ctx.clone(), move |arg: Value<'_>, message: String| {
-        let (line, column) = location_of(&arg);
-        sink.borrow_mut().push((line, column, message));
-    })
+    let report_impl = Function::new(
+        ctx.clone(),
+        move |arg: Value<'_>, message: String, evidence: Option<String>| {
+            let (line, column) = location_of(&arg);
+            sink.borrow_mut().push((line, column, message, evidence));
+        },
+    )
     .map_err(|e| e.to_string())?;
     ctx.globals()
-        .set("report", report)
-        .map_err(|e| e.to_string())
+        .set("__daml_lint_report", report_impl)
+        .map_err(|e| e.to_string())?;
+    ctx.eval::<(), _>(
+        br#"
+globalThis.report = function(arg, message, evidence) {
+  if (arguments.length < 3) {
+    return globalThis.__daml_lint_report(arg, message, null);
+  }
+  return globalThis.__daml_lint_report(arg, message, evidence);
+};
+"#,
+    )
+    .map_err(|e| e.to_string())
 }
 
 /// First argument of report(): a node object (location from its span) or a
@@ -250,20 +260,22 @@ impl ScriptDetector {
         let findings = reported
             .borrow()
             .iter()
-            .map(|(line, column, message)| Finding {
+            .map(|(line, column, message, evidence)| Finding {
                 detector: self.name.clone(),
                 severity: self.severity,
                 file: module.file.clone(),
                 line: *line,
                 column: *column,
                 message: message.clone(),
-                evidence: module
-                    .source
-                    .lines()
-                    .nth(line.saturating_sub(1))
-                    .unwrap_or("")
-                    .trim()
-                    .to_string(),
+                evidence: evidence.clone().unwrap_or_else(|| {
+                    module
+                        .source
+                        .lines()
+                        .nth(line.saturating_sub(1))
+                        .unwrap_or("")
+                        .trim()
+                        .to_string()
+                }),
             })
             .collect();
         Ok(findings)
@@ -301,15 +313,7 @@ mod tests {
     use std::path::Path;
 
     fn load_script_from_str(label: &str, script: &str) -> Result<Box<dyn Detector>, String> {
-        let path = std::env::temp_dir().join(format!(
-            "daml-lint-test-{}-{}.js",
-            label,
-            std::process::id()
-        ));
-        std::fs::write(&path, script).unwrap();
-        let result = load_script(&path);
-        std::fs::remove_file(&path).ok();
-        result
+        load_script_source(label, script)
     }
 
     const TEMPLATE_NO_ENSURE: &str = r#"module Test where
@@ -350,6 +354,26 @@ function on_template(template) {
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].detector, "template-requires-ensure");
         assert!(findings[0].message.contains("Iou"));
+    }
+
+    #[test]
+    fn test_report_accepts_explicit_evidence() {
+        let det = load_script_from_str(
+            "explicit-evidence",
+            r#"
+const NAME = "explicit-evidence";
+const SEVERITY = "low";
+
+function on_template(template) {
+    report(template, "template evidence test", "custom evidence");
+}
+"#,
+        )
+        .unwrap();
+        let module = parse_daml(TEMPLATE_NO_ENSURE, Path::new("Test.daml"));
+        let findings = det.detect(&module);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].evidence, "custom evidence");
     }
 
     #[test]
@@ -944,6 +968,7 @@ function check(m) {
         }
     }
 
+    #[cfg(feature = "custom-rules")]
     #[test]
     fn test_demo_scripts_load() {
         assert!(load_script(Path::new("examples/template-requires-ensure.js")).is_ok());
@@ -963,6 +988,7 @@ function check(m) {
     // rule must flag `100.0 / n` when the only `assert (n /= 0.0)` lives inside
     // an `if` branch — when the branch is not taken the assert never runs, so
     // `n` can be 0. The branch-lifted assert must not count as a prior guard.
+    #[cfg(feature = "custom-rules")]
     #[test]
     fn test_example_unguarded_division_flags_conditional_assert() {
         let det = load_script(Path::new("examples/unguarded-division-ast.js")).unwrap();
@@ -995,6 +1021,7 @@ template T
 
     // Counter-case for finding 19: an unconditional do-block assert still
     // suppresses (no false positive introduced by the fix).
+    #[cfg(feature = "custom-rules")]
     #[test]
     fn test_example_unguarded_division_respects_unconditional_assert() {
         let det = load_script(Path::new("examples/unguarded-division-ast.js")).unwrap();
@@ -1022,6 +1049,7 @@ template T
     // ordinary party field whose NAME merely starts with "signatory" (e.g.
     // `signatoryParty`) is NOT signatory-controlled — the loose startsWith
     // substring match gave a false all-clear. It must flag.
+    #[cfg(feature = "custom-rules")]
     #[test]
     fn test_example_signatory_controller_flags_lookalike_field() {
         let det = load_script(Path::new(
@@ -1051,6 +1079,7 @@ template Bar
     // Counter-case for finding 20: the legitimate flexible-controller forms
     // `controller signatory this` and `controller signatory this, obs` (both
     // serialize the keyword as exactly "signatory this") still suppress.
+    #[cfg(feature = "custom-rules")]
     #[test]
     fn test_example_signatory_controller_allows_signatory_this() {
         let det = load_script(Path::new(
@@ -1080,8 +1109,62 @@ template Baz
         assert!(det.detect(&module).is_empty());
     }
 
+    #[cfg(feature = "custom-rules")]
+    #[test]
+    fn test_example_no_create_in_nonconsuming_descends_branch_arms() {
+        let det = load_script(Path::new("examples/no-create-in-nonconsuming.js")).unwrap();
+        let source = r#"module BranchCreate where
+
+template T
+  with
+    p : Party
+  where
+    signatory p
+
+    nonconsuming choice Fork : ContractId T
+      with
+        flag : Bool
+      controller p
+      do
+        if flag then do
+          create this
+        else do
+          create this
+"#;
+        let module = parse_daml(source, Path::new("BranchCreate.daml"));
+        let findings = det.detect(&module);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].message.contains("Fork"));
+    }
+
+    #[cfg(feature = "custom-rules")]
+    #[test]
+    fn test_example_function_ledger_actions_descends_branch_arms() {
+        let det = load_script(Path::new("examples/function-ledger-actions.js")).unwrap();
+        let source = r#"module BranchLedger where
+
+template T
+  with
+    p : Party
+  where
+    signatory p
+
+branchArchive : ContractId T -> Bool -> Update ()
+branchArchive cid flag = do
+  if flag then do
+    archive cid
+  else do
+    archive cid
+"#;
+        let module = parse_daml(source, Path::new("BranchLedger.daml"));
+        let findings = det.detect(&module);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].message.contains("branchArchive"));
+    }
+
     // Regression (audit finding 27): `trace` inside a `{- ... -}` block comment
     // is not executable code and must not be flagged.
+    #[cfg(feature = "custom-rules")]
     #[test]
     fn test_example_no_trace_ignores_block_comment() {
         let det = load_script(Path::new("examples/no-trace.js")).unwrap();
@@ -1098,6 +1181,7 @@ foo = 1
 
     // Regression (audit finding 28): `trace` as a word inside a Text literal is
     // not a Debug.trace call and must not be flagged.
+    #[cfg(feature = "custom-rules")]
     #[test]
     fn test_example_no_trace_ignores_string_literal() {
         let det = load_script(Path::new("examples/no-trace.js")).unwrap();
@@ -1112,6 +1196,7 @@ msg = "please trace this transaction"
 
     // Counter-case for findings 27/28: a real `trace` call is still flagged, so
     // the comment/string stripping did not blind the rule.
+    #[cfg(feature = "custom-rules")]
     #[test]
     fn test_example_no_trace_still_flags_real_call() {
         let det = load_script(Path::new("examples/no-trace.js")).unwrap();

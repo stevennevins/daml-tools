@@ -108,13 +108,6 @@ const fn src_pos(pos: ast::Pos) -> SrcPos {
     }
 }
 
-/// Classify a parsed type into the rule-facing `DamlType`. `None` (the parser
-/// could not structure the type) degrades to `Unknown` — the same opaque bucket
-/// the old string matcher's fallthrough produced, and one no detector acts on.
-fn lower_type(ty: Option<&ast::Type>) -> DamlType {
-    ty.map_or(DamlType::Unknown, DamlType::from_type)
-}
-
 // ----- expressions -------------------------------------------------------
 
 fn lower_expr(e: &ast::Expr) -> Expr {
@@ -252,7 +245,6 @@ fn lower_template(t: &ast::TemplateDecl, file: &Path, source_map: &SourceTextMap
         .map(|f| Field {
             name: f.name.clone(),
             type_: f.ty.as_ref().map(|ty| TypeNode::from_type(ty, source_map)),
-            daml_type: lower_type(f.ty.as_ref()),
             span: span_at(file, f.pos),
         })
         .collect();
@@ -348,7 +340,6 @@ fn lower_choice(c: &ast::ChoiceDecl, file: &Path, source_map: &SourceTextMap<'_>
         .map(|f| Field {
             name: f.name.clone(),
             type_: f.ty.as_ref().map(|ty| TypeNode::from_type(ty, source_map)),
-            daml_type: lower_type(f.ty.as_ref()),
             span: span_at(file, f.pos),
         })
         .collect();
@@ -1052,9 +1043,15 @@ template SimpleHolding
         assert_eq!(t.name, "SimpleHolding");
         assert_eq!(t.fields.len(), 2);
         assert_eq!(t.fields[0].name, "admin");
-        assert!(matches!(t.fields[0].daml_type, DamlType::Party));
+        assert!(matches!(
+            &t.fields[0].type_,
+            Some(TypeNode::Con { name, .. }) if name == "Party"
+        ));
         assert_eq!(t.fields[1].name, "amount");
-        assert!(t.fields[1].daml_type.is_decimal());
+        assert!(matches!(
+            &t.fields[1].type_,
+            Some(TypeNode::Con { name, .. }) if name == "Decimal"
+        ));
         assert!(t.ensure_clause.is_some());
         assert!(matches!(
             &t.ensure_clause.as_ref().unwrap().expr,
@@ -1092,7 +1089,10 @@ template OpenMiningRound
         assert_eq!(t.name, "OpenMiningRound");
         assert!(t.ensure_clause.is_none());
         assert_eq!(t.fields.len(), 3);
-        assert!(t.fields[1].daml_type.is_decimal());
+        assert!(matches!(
+            &t.fields[1].type_,
+            Some(TypeNode::Con { name, .. }) if name == "Decimal"
+        ));
     }
 
     #[test]

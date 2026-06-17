@@ -71,7 +71,7 @@ The default features build the published CLI and custom-rule engine:
 daml-lint = "0.2"
 ```
 
-Library consumers that only need the built-in detectors and rule-facing IR can
+Library consumers that only need parser lowering and the rule-facing IR can
 avoid the CLI parser and QuickJS runtime:
 
 ```toml
@@ -79,8 +79,13 @@ avoid the CLI parser and QuickJS runtime:
 daml-lint = { version = "0.2", default-features = false }
 ```
 
-Enable `custom-rules` only when you need JavaScript AST rules from library code.
-The `cli` feature exists for the `daml-lint` binary.
+The `js-runtime` feature enables the QuickJS-backed runtime used by shipped
+built-ins. The `custom-rules` feature enables loading user-provided rule files
+through `--rules` when the runtime is also enabled. Shipped built-ins are
+authored in TypeScript and embedded as generated JavaScript; no TypeScript
+toolchain is required at runtime. The shipped detectors are registered through
+`create_builtin_detectors()` rather than exposed as individual Rust detector
+modules. The `cli` feature exists for the `daml-lint` binary.
 
 ## Usage
 
@@ -158,8 +163,9 @@ Visitors (define any subset, at least one):
 | `check(m)` | once per module | `ir_version`, `name`, `file`, `imports`, `templates`, `interfaces`, `functions`, `source` |
 
 Report findings with `report(node, message)` (location taken from the node's
-`span`) or `report(line, message)`. The rule's `SEVERITY` applies to all its
-findings. Node shapes are declared in
+`span`) or `report(line, message)`. Pass `report(node, message, evidence)` when
+the report should show structural evidence instead of the source line. The
+rule's `SEVERITY` applies to all its findings. Node shapes are declared in
 [examples/daml-lint.d.ts](examples/daml-lint.d.ts) and mirror the IR in
 [src/ir.rs](src/ir.rs); statement nodes in `body` are objects keyed by kind,
 e.g. `"Create" in stmt`.
@@ -220,8 +226,9 @@ Examples:
 - [examples/no-trace.ts](examples/no-trace.ts) — banned-token check over raw source lines
 - [examples/unguarded-division-ast.ts](examples/unguarded-division-ast.ts) — expression-level analysis on the typed AST (division denominators vs prior assertions)
 
-Each example ships with its compiled `.js` next to it — that's the file
-`--rules` takes.
+Each example is authored in TypeScript and ships with its compiled `.js` next
+to it — that's the file `--rules` takes. Run `npm run build:examples` from this
+crate to refresh those generated files.
 
 To check that a rule script parses without running a scan, point the tool at a nonexistent path — rule errors are reported before file discovery. (A valid script then prints `No .daml files found.`, which also exits 2 — go by the message, not the exit code.)
 
