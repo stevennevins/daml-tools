@@ -67,9 +67,30 @@ warning. If no `.daml` files are found, the command exits `2`.
 | `-f`, `--format <FORMAT>` | Output format. Accepted values: `markdown`, `md`, `json`, `sarif`. Default: `markdown`. |
 | `-o`, `--output <FILE>` | Write the report to a file instead of stdout. |
 | `--fail-on <SEVERITY>` | Minimum finding severity that causes exit `1`. Accepted values: `critical`, `high`, `medium`, `low`, `info`. Default: `high`. |
+| `-c`, `--config <FILE>` | Load a JSON config file with plugins and rule settings. Default discovery: `.daml-lint.json` in the current directory. Requires the `custom-rules` feature. |
 | `--rules <FILE>` | Load a JavaScript custom rule file. Repeatable. Requires the `custom-rules` feature. |
 | `-h`, `--help` | Show clap-generated help. |
 | `-V`, `--version` | Show the crate version. |
+
+### Config file
+
+`.daml-lint.json` can enable installed plugin rules, disable rules, and override
+rule severities:
+
+```json
+{
+  "plugins": ["template"],
+  "rules": {
+    "missing-ensure-decimal": "off",
+    "template/template-requires-ensure": ["medium", { "allowEmptyEnsure": false }]
+  }
+}
+```
+
+Plugin names resolve to npm packages with the `daml-lint-plugin-` prefix, so
+`template` resolves to `daml-lint-plugin-template`. Configured plugin rules are
+reported as `plugin/rule`. Rule options are exposed to the JavaScript rule as
+global `CONFIG`.
 
 ### Output formats
 
@@ -93,8 +114,9 @@ Built-in detectors are registered by
 | `head-of-list-query` | Medium | Query result is consumed with a head-of-list pattern or operation where result ordering is nondeterministic. |
 | `unbounded-fields` | Medium | `Text`, `TextMap`, or list fields lack an `ensure` size bound. |
 
-Custom rule names must not collide with built-in detector names or with each
-other.
+Custom rule names passed through `--rules` must not collide with built-in
+detector names or with each other. Installed plugin rules are namespaced by the
+plugin name.
 
 ### Parse diagnostics
 

@@ -19,6 +19,18 @@ fn temp_file(name: &str, contents: &str) -> std::path::PathBuf {
     path
 }
 
+fn temp_dir(name: &str) -> std::path::PathBuf {
+    let id = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!(
+        "daml-lint-cli-{}-{}-{}",
+        std::process::id(),
+        id,
+        name
+    ));
+    std::fs::create_dir_all(&path).unwrap();
+    path
+}
+
 fn clean_file() -> std::path::PathBuf {
     temp_file(
         "clean.daml",
@@ -40,6 +52,169 @@ template Holding
         create this with owner = newOwner
 "#,
     )
+}
+
+#[test]
+#[cfg(feature = "custom-rules")]
+fn installed_plugin_manifest_rule_can_be_enabled_from_config() {
+    let project = temp_dir("plugin-project");
+    std::fs::create_dir_all(project.join("node_modules/daml-lint-plugin-template/dist")).unwrap();
+    std::fs::write(
+        project.join(".daml-lint.json"),
+        r#"{
+  "plugins": ["template"],
+  "rules": {
+    "template/template-name-blocklist": ["medium", { "names": ["Iou"] }]
+  }
+}
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        project.join("node_modules/daml-lint-plugin-template/package.json"),
+        r#"{
+  "name": "daml-lint-plugin-template",
+  "version": "1.0.0",
+  "damlLint": {
+    "rules": {
+      "template-name-blocklist": "dist/template-name-blocklist.js"
+    }
+  }
+}
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        project.join("node_modules/daml-lint-plugin-template/dist/template-name-blocklist.js"),
+        r#"
+const NAME = "template-name-blocklist";
+const SEVERITY = "low";
+
+function on_template(template) {
+  const config = typeof CONFIG === "object" && CONFIG !== null ? CONFIG : {};
+  const names = Array.isArray(config.names) ? config.names : [];
+  if (names.includes(template.name)) {
+    report(template, `Template '${template.name}' is blocked by config`);
+  }
+}
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        project.join("Iou.daml"),
+        r#"module Iou where
+
+template Iou
+  with
+    owner : Party
+  where
+    signatory owner
+    ensure True
+"#,
+    )
+    .unwrap();
+
+    let output = cmd()
+        .current_dir(&project)
+        .arg("Iou.daml")
+        .arg("--fail-on")
+        .arg("medium")
+        .output()
+        .unwrap();
+    std::fs::remove_dir_all(&project).ok();
+
+    assert_eq!(output.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("MEDIUM"), "stdout was:\n{stdout}");
+    assert!(
+        stdout.contains("template/template-name-blocklist"),
+        "stdout was:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("blocked by config"),
+        "stdout was:\n{stdout}"
+    );
+}
+
+#[test]
+#[cfg(feature = "custom-rules")]
+fn config_can_disable_builtin_rule() {
+    let project = temp_dir("disabled-builtin-project");
+    std::fs::write(
+        project.join(".daml-lint.json"),
+        r#"{
+  "rules": {
+    "missing-ensure-decimal": "off"
+  }
+}
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        project.join("Iou.daml"),
+        r#"module Iou where
+
+template Iou
+  with
+    issuer : Party
+    amount : Decimal
+  where
+    signatory issuer
+"#,
+    )
+    .unwrap();
+
+    let output = cmd()
+        .current_dir(&project)
+        .arg("Iou.daml")
+        .arg("--fail-on")
+        .arg("info")
+        .output()
+        .unwrap();
+    std::fs::remove_dir_all(&project).ok();
+
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("No findings."));
+}
+
+#[test]
+#[cfg(feature = "custom-rules")]
+fn config_unknown_enabled_rule_exits_two() {
+    let project = temp_dir("unknown-rule-project");
+    std::fs::write(
+        project.join(".daml-lint.json"),
+        r#"{
+  "rules": {
+    "unknown-rule": "medium"
+  }
+}
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        project.join("Clean.daml"),
+        r#"module Clean where
+
+template Holding
+  with
+    owner : Party
+  where
+    signatory owner
+    ensure True
+"#,
+    )
+    .unwrap();
+
+    let output = cmd()
+        .current_dir(&project)
+        .arg("Clean.daml")
+        .output()
+        .unwrap();
+    std::fs::remove_dir_all(&project).ok();
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("unknown-rule"), "stderr was:\n{stderr}");
 }
 
 #[test]

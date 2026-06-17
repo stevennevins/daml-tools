@@ -61,12 +61,12 @@ README: [`crates/daml-lint/README.md`](../../crates/daml-lint/README.md)
 |---------|---------|---------|
 | `cli` | Yes | The clap-based `daml-lint` binary dependency. |
 | `js-runtime` | Yes | QuickJS-backed rule runtime for shipped built-ins. |
-| `custom-rules` | Yes | User-provided JavaScript AST rule-file loading through `--rules` when `js-runtime` is enabled. |
+| `custom-rules` | Yes | User-provided JavaScript AST rule loading through `--rules` and configured plugin packages when `js-runtime` is enabled. |
 | `default` | Yes | `cli`, `js-runtime`, and `custom-rules`. |
 
 The `daml-lint` binary requires both `cli` and `js-runtime`. The
-`custom-rules` feature enables the external rule-file loading surface; it does
-not enable QuickJS by itself. Shipped built-ins are authored in TypeScript and
+`custom-rules` feature enables the external rule loading surface; it does not
+enable QuickJS by itself. Shipped built-ins are authored in TypeScript and
 embedded as generated JavaScript; no TypeScript toolchain is required at
 runtime. With `default-features = false`, the crate provides parser lowering
 and the rule-facing IR without pulling in clap or QuickJS.

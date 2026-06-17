@@ -132,6 +132,69 @@ pub trait Detector {
     }
 }
 
+/// Detector wrapper that can rename a rule and/or override finding severity.
+pub struct ConfiguredDetector {
+    inner: Box<dyn Detector>,
+    name_override: Option<String>,
+    severity_override: Option<Severity>,
+}
+
+impl ConfiguredDetector {
+    pub fn new(
+        inner: Box<dyn Detector>,
+        name_override: Option<String>,
+        severity_override: Option<Severity>,
+    ) -> Self {
+        Self {
+            inner,
+            name_override,
+            severity_override,
+        }
+    }
+
+    fn apply_overrides(&self, mut findings: Vec<Finding>) -> Vec<Finding> {
+        let name = self.name().to_string();
+        let severity = self.severity();
+        for finding in &mut findings {
+            if self.name_override.is_some() {
+                finding.detector = name.clone();
+            }
+            if self.severity_override.is_some() {
+                finding.severity = severity;
+            }
+        }
+        findings
+    }
+}
+
+impl Detector for ConfiguredDetector {
+    fn name(&self) -> &str {
+        self.name_override
+            .as_deref()
+            .unwrap_or_else(|| self.inner.name())
+    }
+
+    fn severity(&self) -> Severity {
+        self.severity_override
+            .unwrap_or_else(|| self.inner.severity())
+    }
+
+    fn description(&self) -> &str {
+        self.inner.description()
+    }
+
+    fn detect(&self, module: &DamlModule) -> Vec<Finding> {
+        self.apply_overrides(self.inner.detect(module))
+    }
+
+    fn try_detect(&self, module: &DamlModule) -> Result<Vec<Finding>, DetectError> {
+        self.inner
+            .try_detect(module)
+            .map(|findings| self.apply_overrides(findings))
+            .map_err(|e| DetectError::new(self.name(), e.message().to_string()))
+    }
+}
+
 /// Returns the first detector name that appears more than once, if any.
 pub fn find_duplicate_detector_name(detectors: &[Box<dyn Detector>]) -> Option<String> {
     let mut seen = std::collections::HashSet::new();
