@@ -21,3 +21,6 @@ function on_template(template: Template): void {
     );
   }
 }
+
+// QuickJS discovers rule metadata and visitors by evaluating these names.
+globalThis.__daml_lint_rule = { NAME, SEVERITY, DESCRIPTION, on_template };

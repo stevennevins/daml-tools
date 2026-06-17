@@ -32,6 +32,13 @@ export function isUnboundedType(typeNode: TypeNode | null): boolean {
   return head === "TextMap" || head === "Map" || head === "GenMap" || head === "Set";
 }
 
+export function isListType(typeNode: TypeNode | null): boolean {
+  if (typeNode === null) return false;
+  const unwrapped = unwrapConstrainedType(typeNode);
+  if ("List" in unwrapped) return true;
+  return "App" in unwrapped && typeHeadName(unwrapped.App.head) === "Set";
+}
+
 export function typeDisplay(typeNode: TypeNode | null): string {
   if (typeNode === null) return "unbounded";
   const unwrapped = unwrapConstrainedType(typeNode);
@@ -121,8 +128,33 @@ export function isNonnegativeBound(condition: Expr, name: string): boolean {
   return false;
 }
 
+export function isNonzeroBound(condition: Expr, name: string): boolean {
+  if (!("BinOp" in condition)) return false;
+  const { op, lhs, rhs } = condition.BinOp;
+  if (op === ">") return refersTo(lhs, name) && isZeroLiteral(rhs);
+  if (op === "<") return refersTo(rhs, name) && isZeroLiteral(lhs);
+  if (op === "/=" || op === "!=") {
+    return (refersTo(lhs, name) && isZeroLiteral(rhs)) || (refersTo(rhs, name) && isZeroLiteral(lhs));
+  }
+  return false;
+}
+
+export function isStrictPositiveBound(condition: Expr, name: string): boolean {
+  if (!("BinOp" in condition)) return false;
+  const { op, lhs, rhs } = condition.BinOp;
+  if (op === ">") return refersTo(lhs, name) && isNonnegativeNumericLiteral(rhs);
+  if (op === ">=") return refersTo(lhs, name) && isNonzeroNumericLiteral(rhs);
+  if (op === "<") return refersTo(rhs, name) && isNonnegativeNumericLiteral(lhs);
+  if (op === "<=") return refersTo(rhs, name) && isNonzeroNumericLiteral(lhs);
+  return false;
+}
+
 export function expressionGuaranteesNonnegative(condition: Expr, name: string): boolean {
   return conjuncts(condition).some((part) => isNonnegativeBound(part, name));
+}
+
+export function expressionGuaranteesStrictPositive(condition: Expr, name: string): boolean {
+  return conjuncts(condition).some((part) => isStrictPositiveBound(part, name));
 }
 
 function isSizeCall(func: Expr, args: Expr[], name: string): boolean {
@@ -166,4 +198,134 @@ function isSizeUpperBound(condition: Expr, name: string, fieldNames: string[]): 
 
 export function expressionHasSizeUpperBound(condition: Expr, name: string, fieldNames: string[]): boolean {
   return conjuncts(condition).some((part) => isSizeUpperBound(part, name, fieldNames));
+}
+
+function isNullApp(expr: Expr, name: string): boolean {
+  return ("App" in expr
+    && "Var" in expr.App.func
+    && expr.App.func.Var.name === "null"
+    && expr.App.args.length === 1
+    && refersTo(expr.App.args[0], name))
+    || ("BinOp" in expr
+      && expr.BinOp.op === "$"
+      && "Var" in expr.BinOp.lhs
+      && expr.BinOp.lhs.Var.name === "null"
+      && refersTo(expr.BinOp.rhs, name));
+}
+
+function isNonemptyBound(condition: Expr, name: string): boolean {
+  if ("BinOp" in condition) {
+    const { op, lhs, rhs } = condition.BinOp;
+    if (op === ">") return isSizeApp(lhs, name) && isZeroLiteral(rhs);
+    if (op === ">=") return isSizeApp(lhs, name) && isNonzeroNumericLiteral(rhs);
+    if (op === "<") return isSizeApp(rhs, name) && isZeroLiteral(lhs);
+    if (op === "<=") return isSizeApp(rhs, name) && isNonzeroNumericLiteral(lhs);
+    if (op === "/=" || op === "!=") {
+      return (isSizeApp(lhs, name) && isZeroLiteral(rhs)) || (isSizeApp(rhs, name) && isZeroLiteral(lhs));
+    }
+    if (op === "$") return "Var" in lhs && lhs.Var.name === "not" && isNullApp(rhs, name);
+  }
+  return "App" in condition
+    && "Var" in condition.App.func
+    && condition.App.func.Var.name === "not"
+    && condition.App.args.length === 1
+    && isNullApp(condition.App.args[0], name);
+}
+
+export function expressionGuaranteesNonempty(condition: Expr, name: string): boolean {
+  return conjuncts(condition).some((part) => isNonemptyBound(part, name));
+}
+
+function isCeilingOperand(expr: Expr): boolean {
+  return isNonnegativeNumericLiteral(expr) || refString(expr) !== null;
+}
+
+export function expressionHasSizeCeilingBound(condition: Expr, name: string): boolean {
+  return conjuncts(condition).some((part) => {
+    if (!("BinOp" in part)) return false;
+    const { op, lhs, rhs } = part.BinOp;
+    if (op === "<" || op === "<=") return isSizeApp(lhs, name) && isCeilingOperand(rhs);
+    if (op === ">" || op === ">=") return isSizeApp(rhs, name) && isCeilingOperand(lhs);
+    return false;
+  });
+}
+
+export function statementExprs(statement: Statement): Expr[] {
+  if ("Let" in statement) return [statement.Let.value];
+  if ("Assert" in statement) return [statement.Assert.condition_expr];
+  if ("Fetch" in statement) return [statement.Fetch.cid];
+  if ("Archive" in statement) return [statement.Archive.cid];
+  if ("Create" in statement) return [statement.Create.argument];
+  if ("Exercise" in statement) {
+    return statement.Exercise.argument === null
+      ? [statement.Exercise.cid]
+      : [statement.Exercise.cid, statement.Exercise.argument];
+  }
+  if ("Other" in statement) return [statement.Other.expr];
+  if ("Branch" in statement) return statement.Branch.scrutinee === null ? [] : [statement.Branch.scrutinee];
+  return [];
+}
+
+export function childExprs(expr: Expr): Expr[] {
+  if ("App" in expr) return [expr.App.func, ...expr.App.args];
+  if ("BinOp" in expr) return [expr.BinOp.lhs, expr.BinOp.rhs];
+  if ("Neg" in expr) return [expr.Neg.expr];
+  if ("Lambda" in expr) return [expr.Lambda.body];
+  if ("If" in expr) return [expr.If.cond, expr.If.then_branch, expr.If.else_branch];
+  if ("Case" in expr) return [expr.Case.scrutinee, ...expr.Case.alts.map((alt) => alt.body)];
+  if ("LetIn" in expr) return [...expr.LetIn.bindings.map((binding) => binding.value), expr.LetIn.body];
+  if ("Record" in expr) return [expr.Record.base, ...expr.Record.fields.flatMap((field) => field.value === null ? [] : [field.value])];
+  if ("Tuple" in expr) return expr.Tuple.items;
+  if ("List" in expr) return expr.List.items;
+  return [];
+}
+
+function walkExpression(expr: Expr, visit: (expr: Expr) => void): void {
+  visit(expr);
+  if ("DoBlock" in expr) walkBodyExprs(expr.DoBlock.statements, visit);
+  for (const child of childExprs(expr)) walkExpression(child, visit);
+}
+
+export function forEachSubexpr(expr: Expr, visit: (expr: Expr) => void): void {
+  walkExpression(expr, visit);
+}
+
+export function walkBodyExprs(statements: Statement[], visit: (expr: Expr) => void): void {
+  for (const statement of statements) {
+    for (const expr of statementExprs(statement)) walkExpression(expr, visit);
+    if ("TryCatch" in statement) {
+      walkBodyExprs(statement.TryCatch.try_body, visit);
+      walkBodyExprs(statement.TryCatch.catch_body, visit);
+    } else if ("Branch" in statement) {
+      for (const arm of statement.Branch.arms) walkBodyExprs(arm.body, visit);
+    }
+  }
+}
+
+export function walkUnconditionalStatements(statements: Statement[], visit: (statement: Statement) => void): void {
+  for (const statement of statements) {
+    visit(statement);
+    if ("TryCatch" in statement) {
+      walkUnconditionalStatements(statement.TryCatch.try_body, visit);
+      walkUnconditionalStatements(statement.TryCatch.catch_body, visit);
+    }
+  }
+}
+
+export function walkBodyStatements(statements: Statement[], visit: (statement: Statement) => void): void {
+  for (const statement of statements) {
+    visit(statement);
+    if ("TryCatch" in statement) {
+      walkBodyStatements(statement.TryCatch.try_body, visit);
+      walkBodyStatements(statement.TryCatch.catch_body, visit);
+    } else if ("Branch" in statement) {
+      for (const arm of statement.Branch.arms) walkBodyStatements(arm.body, visit);
+    }
+    for (const expr of statementExprs(statement)) walkNestedDoStatements(expr, visit);
+  }
+}
+
+function walkNestedDoStatements(expr: Expr, visit: (statement: Statement) => void): void {
+  if ("DoBlock" in expr) walkBodyStatements(expr.DoBlock.statements, visit);
+  for (const child of childExprs(expr)) walkNestedDoStatements(child, visit);
 }

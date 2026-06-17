@@ -8,14 +8,6 @@ function typeHeadName(typeNode) {
   if ("App" in unwrapped) return typeHeadName(unwrapped.App.head);
   return null;
 }
-function isMoneyType(typeNode) {
-  if (typeNode === null) return false;
-  const unwrapped = unwrapConstrainedType(typeNode);
-  if ("Con" in unwrapped) {
-    return unwrapped.Con.name === "Decimal" || unwrapped.Con.name === "Numeric";
-  }
-  return "App" in unwrapped && typeHeadName(unwrapped.App.head) === "Numeric";
-}
 function isUnboundedType(typeNode) {
   if (typeNode === null) return false;
   const unwrapped = unwrapConstrainedType(typeNode);
@@ -70,43 +62,8 @@ function conjuncts(expr) {
   }
   return [expr];
 }
-function isZeroLiteral(expr) {
-  if (!("Lit" in expr) || expr.Lit.kind !== "Int" && expr.Lit.kind !== "Decimal") return false;
-  const value = expr.Lit.value.trim();
-  return value.length > 0 && value.includes("0") && /^[0.]+$/.test(value);
-}
-function isNonzeroNumericLiteral(expr) {
-  return "Lit" in expr && (expr.Lit.kind === "Int" || expr.Lit.kind === "Decimal") && !isZeroLiteral(expr);
-}
 function isNonnegativeNumericLiteral(expr) {
   return "Lit" in expr && (expr.Lit.kind === "Int" || expr.Lit.kind === "Decimal");
-}
-function renderText(expr) {
-  if ("Var" in expr || "Con" in expr) return refString(expr) ?? "";
-  if ("Lit" in expr) return expr.Lit.value;
-  if ("Neg" in expr) return `-${renderText(expr.Neg.expr)}`;
-  if ("BinOp" in expr && expr.BinOp.op === ".") {
-    return `${renderText(expr.BinOp.lhs)}.${renderText(expr.BinOp.rhs)}`;
-  }
-  if ("BinOp" in expr) return `${renderText(expr.BinOp.lhs)} ${expr.BinOp.op} ${renderText(expr.BinOp.rhs)}`;
-  if ("App" in expr) return [renderText(expr.App.func), ...expr.App.args.map(renderText)].join(" ");
-  if ("Tuple" in expr) return `(${expr.Tuple.items.map(renderText).join(", ")})`;
-  if ("List" in expr) return `[${expr.List.items.map(renderText).join(", ")}]`;
-  if ("Unknown" in expr) return expr.Unknown.raw;
-  return "...";
-}
-function isNonnegativeBound(condition, name) {
-  if (!("BinOp" in condition)) return false;
-  const { op, lhs, rhs } = condition.BinOp;
-  if (op === ">" || op === ">=") return refersTo(lhs, name) && isNonnegativeNumericLiteral(rhs);
-  if (op === "<" || op === "<=") return refersTo(rhs, name) && isNonnegativeNumericLiteral(lhs);
-  if (op === "==") {
-    return refersTo(lhs, name) && isNonzeroNumericLiteral(rhs) || refersTo(rhs, name) && isNonzeroNumericLiteral(lhs);
-  }
-  return false;
-}
-function expressionGuaranteesNonnegative(condition, name) {
-  return conjuncts(condition).some((part) => isNonnegativeBound(part, name));
 }
 function isSizeCall(func, args, name) {
   return "Var" in func && (func.Var.name === "length" || func.Var.name === "size") && args.length === 1 && refersTo(args[0], name);
@@ -162,3 +119,4 @@ function on_template(template) {
     `Fields without size bounds: ${unguardedNames.join(", ")}`
   );
 }
+globalThis.__daml_lint_rule = { NAME, SEVERITY, DESCRIPTION, on_template };

@@ -1,4 +1,5 @@
 use super::ensure_decimal::MissingEnsureDecimal;
+use super::positive_amount::MissingPositiveAmount;
 use super::script;
 use super::unbounded_fields::UnboundedFields;
 use crate::detector::{Detector, Finding, Severity};
@@ -454,6 +455,278 @@ template T
             case_name,
             source,
             Path::new("UnboundedFields.daml"),
+            &rust_detector,
+            script_detector.as_ref(),
+        );
+    }
+}
+
+#[test]
+fn missing_positive_amount_script_matches_rust_regressions() {
+    let script_detector = load_rule("missing-positive-amount.js");
+    let rust_detector = MissingPositiveAmount;
+
+    let mut cases: Vec<(String, String)> = Vec::new();
+    cases.push((
+        "missing positive amount triggers".to_string(),
+        r#"module Test where
+
+template Token
+  with
+    owner : Party
+  where
+    signatory owner
+
+    choice Transfer : ContractId Token
+      with
+        amount : Decimal
+        newOwner : Party
+      controller owner
+      do
+        create this with owner = newOwner
+"#
+        .to_string(),
+    ));
+    cases.push((
+        "asserted positive amount passes".to_string(),
+        r#"module Test where
+
+template Token
+  with
+    owner : Party
+  where
+    signatory owner
+
+    choice Transfer : ContractId Token
+      with
+        amount : Decimal
+        newOwner : Party
+      controller owner
+      do
+        assertMsg "amount must be positive" (amount > 0.0)
+        create this with owner = newOwner
+"#
+        .to_string(),
+    ));
+
+    for (case_name, guard_line, ty) in [
+        (
+            "ge zero permits zero and flags",
+            "assertMsg \"nn\" (amount >= 0.0)",
+            "Decimal",
+        ),
+        (
+            "flipped positive guard passes",
+            "assertMsg \"pos\" (0.0 < amount)",
+            "Decimal",
+        ),
+        (
+            "substring guard does not suppress",
+            "assertMsg \"x\" (xamount > 0.0)",
+            "Decimal",
+        ),
+        (
+            "comment mention does not suppress",
+            "-- amount > 0 is checked elsewhere",
+            "Decimal",
+        ),
+        ("numeric amount is checked", "pure ()", "Numeric 10"),
+        (
+            "when nonpositive abort is a guard",
+            "when (amount <= 0.0) (abort \"must be positive\")",
+            "Decimal",
+        ),
+        (
+            "unless positive abort is a guard",
+            "unless (amount > 0.0) (abort \"bad\")",
+            "Decimal",
+        ),
+        (
+            "strict negative abort is not enough",
+            "when (amount < 0.0) (abort \"bad\")",
+            "Decimal",
+        ),
+        (
+            "if nonpositive abort is a guard",
+            "if amount <= 0.0 then abort \"bad\" else pure ()",
+            "Decimal",
+        ),
+        (
+            "extra whitespace positive guard passes",
+            "assertMsg \"pos\" (amount  >  0.0)",
+            "Decimal",
+        ),
+        (
+            "positive floor guard passes",
+            "assertMsg \"floor\" (amount >= 0.01)",
+            "Decimal",
+        ),
+        (
+            "non-asserting mention does not suppress",
+            "let isPos = amount > 0.0",
+            "Decimal",
+        ),
+        (
+            "qualified DA.Assert assertMsg guards",
+            "DA.Assert.assertMsg \"p\" (amount > 0.0)",
+            "Decimal",
+        ),
+        (
+            "qualified Assert assertMsg guards",
+            "Assert.assertMsg \"p\" (amount > 0.0)",
+            "Decimal",
+        ),
+        (
+            "conditional when assert does not suppress",
+            "when isLarge (assertMsg \"p\" (amount > 0.0))",
+            "Decimal",
+        ),
+    ] {
+        cases.push((
+            case_name.to_string(),
+            format!(
+                r#"module Test where
+
+template Token
+  with
+    owner : Party
+  where
+    signatory owner
+
+    choice Transfer : ()
+      with
+        amount : {ty}
+      controller owner
+      do
+        {guard_line}
+        pure ()
+"#
+            ),
+        ));
+    }
+
+    cases.push((
+        "conditional if then assert does not suppress".to_string(),
+        r#"module Test where
+
+template Token
+  with
+    owner : Party
+  where
+    signatory owner
+
+    choice Transfer : ()
+      with
+        amount : Decimal
+        flag : Bool
+      controller owner
+      do
+        if flag
+          then assertMsg "pos" (amount > 0.0)
+          else pure ()
+        create this with owner = owner
+"#
+        .to_string(),
+    ));
+
+    for (case_name, guard_line, extra_param) in [
+        (
+            "list upper bound less-than does not suppress",
+            "assertMsg \"max\" (length inputHoldingCids < 10)",
+            "",
+        ),
+        (
+            "list upper bound less-equal does not suppress",
+            "assertMsg \"max\" (length inputHoldingCids <= 10)",
+            "",
+        ),
+        (
+            "list strict lower bound passes",
+            "assertMsg \"ne\" (length inputHoldingCids > 0)",
+            "",
+        ),
+        (
+            "superstring list check does not suppress",
+            "assertMsg \"ne\" (not (null inputHoldingCidsBackup))",
+            "        inputHoldingCidsBackup : [ContractId Token]\n",
+        ),
+        (
+            "not null list guard passes",
+            "assertMsg \"ne\" (not (null inputHoldingCids))",
+            "",
+        ),
+        (
+            "not dollar null list guard passes",
+            "assertMsg \"ne\" (not $ null inputHoldingCids)",
+            "",
+        ),
+    ] {
+        cases.push((
+            case_name.to_string(),
+            format!(
+                r#"module Test where
+
+template Batch
+  with
+    owner : Party
+  where
+    signatory owner
+
+    choice Exec : ()
+      with
+        inputHoldingCids : [ContractId Token]
+{extra_param}      controller owner
+      do
+        {guard_line}
+        pure ()
+"#
+            ),
+        ));
+    }
+
+    for (case_name, guard_line) in [
+        (
+            "transfer length max-only is flagged",
+            "assertMsg \"max\" (length transfer.inputHoldingCids < maxNumInputs)",
+        ),
+        (
+            "transfer size max-only is flagged",
+            "assertMsg \"max\" (maxNumInputs > size transfer.inputHoldingCids)",
+        ),
+        (
+            "transfer min and max is clean",
+            "assertMsg \"ne\" (length transfer.inputHoldingCids > 0 && length transfer.inputHoldingCids < maxNumInputs)",
+        ),
+    ] {
+        cases.push((
+            case_name.to_string(),
+            format!(
+                r#"module Test where
+
+template Settlement
+  with
+    owner : Party
+    transfer : TransferData
+  where
+    signatory owner
+
+    choice Execute : ()
+      with
+        ctx : Context
+      controller owner
+      do
+        {guard_line}
+        pure ()
+"#
+            ),
+        ));
+    }
+
+    for (case_name, source) in cases {
+        assert_rule_matches_rust(
+            &case_name,
+            &source,
+            Path::new("MissingPositiveAmount.daml"),
             &rust_detector,
             script_detector.as_ref(),
         );

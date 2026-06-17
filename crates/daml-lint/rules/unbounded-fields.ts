@@ -29,3 +29,6 @@ function on_template(template: Template): void {
     `Fields without size bounds: ${unguardedNames.join(", ")}`,
   );
 }
+
+// QuickJS discovers rule metadata and visitors by evaluating these names.
+globalThis.__daml_lint_rule = { NAME, SEVERITY, DESCRIPTION, on_template };
