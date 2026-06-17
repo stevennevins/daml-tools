@@ -24,9 +24,9 @@ module DA.BigNumeric (
   ) where
 
 import GHC.Types (
-      primitive
-    , BigNumeric
-    , RoundingMode(..)
+  primitive
+  , BigNumeric
+  , RoundingMode(..)
   )
 import Prelude hiding (round)
 

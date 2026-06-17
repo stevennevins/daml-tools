@@ -44,7 +44,6 @@ simpleAsset = script do
   newCash <- submit alice do exerciseCmd cash Transfer with newOwner = bob
   submit bank do exerciseCmd newCash Archive
 
-
 doubleSpend = script do
   alice <- allocateParty "Alice"
   bob <- allocateParty "Bob"
@@ -70,7 +69,6 @@ doubleSpend = script do
 -- SNIPPET-double-spend-END
   assert $ isLeft result
 
-
 stealAsset = script do
   alice <- allocateParty "Alice"
   bob <- allocateParty "Bob"
@@ -91,7 +89,6 @@ stealAsset = script do
     pure ()
 
   assert $ isLeft result
-
 
 projectionReflect = script do
   alice <- allocateParty "Alice"

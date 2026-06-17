@@ -7,9 +7,9 @@ module Com.Acme.Templates where
 
 data BarKey =
   BarKey
-    with
-      p: Party
-      t: Text
+  with
+    p: Party
+    t: Text
 
 template Bar
   with

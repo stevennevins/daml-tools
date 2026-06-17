@@ -6,7 +6,6 @@
 module Intro.Asset.Role where
 -- PRAGMA_END
 
-
 -- IMPORT_BEGIN
 import Intro.Asset
 -- IMPORT_END

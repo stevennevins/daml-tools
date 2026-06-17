@@ -13,7 +13,7 @@ All rows measured with the same harness over the same 924-file corpus
 | LimeChain damlfmt 0.0.5 (pristine) | 420 | 372 | 48 | 504 | 0 | 920/924 |
 | LimeChain + grug patches (2026-06-12) | 921 | 921 | 0 | 3 | 0 | 924/924 |
 | daml-fmt LimeChain-port-on-daml-lint (2026-06-13) | 924 | 924 | 0 | 0 | 0 | 924/924 |
-| **daml-fmt AST formatter — own pattern (2026-06-13)** | **924** | **924** | **0** | **0** | **0** | **924/924** |
+| **daml-fmt AST formatter — own pattern (2026-06-16)** | **924** | **924** | **0** | **0** | **0** | **924/924** |
 
 The pristine row is the published tool's true quality; its VS Code extension
 hides the failures by refusing edits that fail its own desugar check.
@@ -29,25 +29,27 @@ landed. Mechanism: walk the AST and reindent each modeled construct's child
 lines to a canonical column, gated per pass on the laid-out token stream
 (`same_tokens` via `daml_parser::layout::resolve_layout`), so every accepted
 edit is desugar-safe BY CONSTRUCTION. Modeled (each its own gated pass, iterated
-to a fixpoint): `do`-blocks (including a `do` opening with `let`) → `do_col + 2`;
-`if`/`then`/`else` → `if_col + 2`; `case … of` alts → `case_col + 2`; `let … in`
-bindings (line-leading `let`) → `let_col + 2`; `Con with` construction fields →
-`con_col + 2`; and the one STRUCTURED rule, `template`/`interface` bodies
-(with/where keywords → `head + 2`, fields/decls → `head + 4`; interface body →
-`head + 2`). On top runs the token-gated whitespace + colon-spacing
-normalization. Still verbatim by design: record UPDATES (`expr with`),
-`try`/`catch` bodies, guards, `data`/TypeDef declarations, and expression
-continuations. Structural candidate metric:
+to a fixpoint): module/export/import continuations; `do`-blocks (including a
+`do` opening with `let`) → `do_col + 2`; `if`/`then`/`else` → `if_col + 2`;
+`case … of` alts → `case_col + 2`; `let … in` bindings (line-leading `let`) →
+`let_col + 2`; `Con with` construction fields and record-update fields; the one
+STRUCTURED rule, `template`/`interface` bodies (with/where keywords →
+`head + 2`, fields/decls → `head + 4`; interface body → `head + 2`); choice
+internals; `data`/type/exception declaration ladders; class/instance head-line
+`where` bodies aligned to their established body column; function
+guards/where bindings; `try`/`catch` handlers; and explicit tuple/list
+continuations. On top runs the token-gated whitespace + colon-spacing +
+blank-line normalization. Broader expression wrapping remains conservative.
+Structural candidate metric:
 `cd crates/daml-fmt && cargo run --features dev-tools --bin coverage -- original` reports
-635 structural edit candidates / 5605 modeled constructs across the 924-file
-corpus (201 files with candidates). The metric covers do-blocks, if/case/let-in,
-constructor `with`, and template/interface bodies. This is not a percentage:
-one construct can produce multiple edits, and canonical constructs produce none.
+1949 structural edit candidates / 8256 modeled constructs across the 924-file
+corpus (313 files with candidates). This is not a percentage: one construct can
+produce multiple edits, and canonical constructs produce none.
 
 Note: byte-match to a reference baseline is RETIRED as the metric. The
 formatter makes its own consistent
 layout decisions and DIVERGES from the LimeChain `expected/` — `expected/` is
-now a snapshot of THIS formatter's output (regenerated 2026-06-13). One
+now a snapshot of THIS formatter's output (regenerated 2026-06-16). One
 deliberate divergence worth recording: `default modify : T` now normalizes its
 colon like any other type-annotation colon (`default modify: T`); the old
 token-only heuristic kept that space as an undecidable edge case. The desugar

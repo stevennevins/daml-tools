@@ -86,7 +86,6 @@ exerciseStaticChoice cidV1 =
   let cidV2 = coerceContractId @V1.SignatoryObserverChangesTemplate @V2.SignatoryObserverChangesTemplate cidV1
   in exerciseCmd cidV2 V2.InvalidUpgradeStakeholdersCall
 
-
 -- Given a function that maps a set of 3 parties to the pre-upgrade and post-upgrade signatory set
 -- and the same for observers
 -- along side an expected result flag (success or failure), test the upgrade behaviour

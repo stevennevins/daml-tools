@@ -54,9 +54,9 @@ pub fn lex_diagnostics(src: &str) -> Vec<String> {
 /// Format Daml source.
 ///
 /// Delegates to the AST-driven backend (`layout_ast::format_ast`): an
-/// own-design canonical layout that reindents `do`-blocks, applies the
-/// token-gated whitespace + colon-spacing normalization, and passes every
-/// unmodeled construct through verbatim. Every change is gated on the offside
+/// own-design canonical layout that reindents modeled AST constructs, applies
+/// token-gated whitespace/blank-line/colon-spacing normalization, and passes
+/// unmodeled constructs through verbatim. Every change is gated on the offside
 /// token stream, so it is desugar-safe by construction.
 pub fn format_source(src: &str) -> String {
     layout_ast::format_ast(src)
@@ -128,7 +128,7 @@ fn rewrite(src: &str, colon: bool) -> String {
             // collapse same-line space(s) after a canonicalized colon to one
             out.push(' ');
         } else {
-            out.push_str(&strip_trailing_ws(gap));
+            out.push_str(&collapse_blank_lines(&strip_trailing_ws(gap)));
         }
         out.push_str(&src[start..end]);
         prev = end;
@@ -142,7 +142,7 @@ fn rewrite(src: &str, colon: bool) -> String {
     if !tail.chars().all(char::is_whitespace) {
         return src.to_string();
     }
-    out.push_str(&strip_trailing_ws(tail));
+    out.push_str(&collapse_blank_lines(&strip_trailing_ws(tail)));
 
     normalize_final_newline(&mut out);
     out
@@ -183,6 +183,34 @@ fn strip_trailing_ws(gap: &str) -> String {
             out.push(c);
             i += 1;
         }
+    }
+    out
+}
+
+/// Collapse interior blank-line runs to at most one blank line (two line
+/// endings), preserving LF vs CRLF inside the whitespace-only gap.
+fn collapse_blank_lines(gap: &str) -> String {
+    let mut out = String::with_capacity(gap.len());
+    let mut i = 0;
+    let mut newline_run = 0usize;
+    while i < gap.len() {
+        let rest = &gap[i..];
+        let (line_ending, width) = if rest.starts_with("\r\n") {
+            ("\r\n", 2)
+        } else if rest.starts_with('\n') {
+            ("\n", 1)
+        } else {
+            let ch = rest.chars().next().expect("non-empty rest");
+            out.push(ch);
+            newline_run = 0;
+            i += ch.len_utf8();
+            continue;
+        };
+        newline_run += 1;
+        if newline_run <= 2 {
+            out.push_str(line_ending);
+        }
+        i += width;
     }
     out
 }
@@ -298,5 +326,11 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n")
         );
+    }
+
+    #[test]
+    fn interior_blank_runs_collapse_to_one_blank_line() {
+        let src = "module M where\n\n\n\nx = 1\n";
+        assert_eq!(format_source(src), "module M where\n\nx = 1\n");
     }
 }

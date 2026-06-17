@@ -27,7 +27,6 @@ multiplyWith18_v2 xx =
   multiplyThreeNumbers 3 6 xx
 -- PARTIAL_LAMBDA_END
 
-
 -- HIGHER_ORDER_START
 applyFilter (filter : Int -> Int -> Bool)
     (x : Int)

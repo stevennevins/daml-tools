@@ -4,7 +4,6 @@
 -- DEL-4390: module search path must be adjusted if top module is in a
 -- subdirectory. Test: compile this file which imports a module from above.
 
-
 module Subdir.Examples where
 
 import Examples()

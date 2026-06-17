@@ -1,7 +1,6 @@
 -- Copyright (c) 2025 Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
 
-
 module Cash where
 
 import Daml.Script
@@ -82,7 +81,6 @@ template LockPoA
       controller issuer, owner
       do create cash with locker; lockMaturity = Some lockMaturity
 
-
 type CashTransferRequestId = ContractId CashTransferRequest
 
 template CashTransferRequest
@@ -110,7 +108,6 @@ template CashTransferRequest
       controller receiver
       do whenSome lockMaturity assertAfter
          create Cash with lockMaturity = None, ..
-
 
 cashSplitMay: Party -> CashId -> Decimal -> Update (CashId, Optional CashId)
 cashSplitMay owner cashCid splitAmount = do

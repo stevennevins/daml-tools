@@ -150,7 +150,6 @@ template SimpleMultiParty
       controller p1, p2
       do pure "Hello multi-party"
 
-
 template Composite
   with p1: Party
   where
@@ -161,7 +160,6 @@ template Composite
       do cid <- create Simple with p = p1
          cid2 <- exercise cid Hello
          pure "hello"
-
 
 ccreate: Party -> Commands (ContractId Simple)
 ccreate p =
@@ -177,14 +175,11 @@ test_screateAndExerciseComposit = script do
   cid <- submit alice $ createCmd Composite with p1 = alice
   submit alice $ exerciseCmd cid First
 
-
-
 variantMatch: Optional Int -> Int
 variantMatch mbX =
   case mbX of
     Some x -> x
     None -> 0
-
 
 listMatch: [Text] -> Text
 listMatch l =
@@ -212,14 +207,12 @@ test_sgetTimeTest: Script Time
 test_sgetTimeTest = script do
   getTime
 
-
 -- Moves the scenario time forward to the specified time.
 passTo: Time -> Script ()
 passTo (t: Time) = script do
   now: Time <- getTime
   assert {- TODO "passTo can only go forward in time"-} (now < t)
   passTime (subTime t now)
-
 
 template GetTimeHelper
   with
@@ -236,7 +229,6 @@ test_getTimeTest = script do
   setTime $ datetime 2017 Jun 16 0 0 0
   submit alice $ createAndExerciseCmd (GetTimeHelper alice) GetTimeExe
 
-
 template TypeWithParameters
   with
     p: Party
@@ -252,7 +244,6 @@ test_typeWithParameters: Script (ContractId TypeWithParameters)
 test_typeWithParameters = script do
   alice <- allocateParty "Alice"
   submit alice $ createCmd TypeWithParameters with p = alice; v = Some 42
-
 
 template RelativeFetchHelper
   with
@@ -289,8 +280,6 @@ test_exponentiation: Script ()
 test_exponentiation = script do
   assertS (3 ^ 5 == 243)
 
-
-
 template PayOut
   with
     receiver: Party
@@ -298,7 +287,6 @@ template PayOut
   where
     signatory receiver
     signatory giver
-
 
 template CallablePayout
   with
@@ -314,8 +302,6 @@ template CallablePayout
       with newReceiver: Party
       controller receiver
       do create this with receiver = newReceiver
-
-
 
 test_payoutTest: Script (ContractId CallablePayout)
 test_payoutTest = script do
@@ -371,12 +357,12 @@ template FetcherByKey
     signatory p
 
     nonconsuming choice Fetch: WithKey
-        with
-          n: Int
-        controller p
-        do
-          (_, c) <- fetchByKey @WithKey (p, n)
-          pure c
+      with
+        n: Int
+      controller p
+      do
+        (_, c) <- fetchByKey @WithKey (p, n)
+        pure c
 
 template LookerUpByKey
   with p: Party
@@ -384,11 +370,11 @@ template LookerUpByKey
     signatory p
 
     nonconsuming choice Lookup: Optional (ContractId WithKey)
-        with
-          n: Int
-        controller p
-        do
-          lookupByKey @WithKey (p, n)
+      with
+        n: Int
+      controller p
+      do
+        lookupByKey @WithKey (p, n)
 
 template FailedFetchByKey
   with
@@ -442,7 +428,6 @@ template Fetcher
       with cid: ContractId Fetched
       controller fetcher
       do fetch cid
-
 
 template Forkable
   with

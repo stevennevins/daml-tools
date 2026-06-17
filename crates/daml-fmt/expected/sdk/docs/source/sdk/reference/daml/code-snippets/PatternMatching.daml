@@ -19,7 +19,6 @@ optionalIntegerToTextTest =
       x = Some 3
     optionalIntegerToText x === "The content of the box is 3"
 
-
 tmp =
   let
     l = [1, 2, 3]

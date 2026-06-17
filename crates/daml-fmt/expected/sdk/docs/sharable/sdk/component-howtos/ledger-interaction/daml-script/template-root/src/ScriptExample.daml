@@ -109,7 +109,6 @@ test = do
   assertEq [Some $ AssetInfo "A Coin"] (map snd aliceAssets)
 -- TEST_INTERFACE_END
 
-
 -- INITIALIZE_USER_BEGIN
 initializeUser: Script ()
 initializeUser = do

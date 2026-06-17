@@ -67,5 +67,5 @@ liftFailedCommandToFailureStatus act = tryCommands act >>= either (failWithStatu
         message = getErrorMessage errMessage
         meta = TextMap.fromList
           [ ("commandName", getCommandName cmdName)
-          , ("className", getErrorClassName className)
+            , ("className", getErrorClassName className)
           ]

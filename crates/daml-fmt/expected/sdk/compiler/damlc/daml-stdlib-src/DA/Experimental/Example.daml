@@ -3,8 +3,8 @@
 
 -- | HIDE
 module DA.Experimental.Example(
-    answer
-) where
+  answer
+  ) where
 
 import GHC.Types (primitive)
 

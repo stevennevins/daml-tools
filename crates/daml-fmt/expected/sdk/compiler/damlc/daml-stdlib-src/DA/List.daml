@@ -99,7 +99,7 @@ module DA.List
   , uniqueBy
   , uniqueOn
   )
-where
+  where
 
 import DA.Optional
 import DA.Tuple
@@ -296,7 +296,7 @@ dropSuffix a b = fromOptional b $ stripSuffix a b
 stripPrefix: Eq a => [a] -> [a] -> Optional [a]
 stripPrefix [] ys = Some ys
 stripPrefix (x :: xs) (y :: ys)
-   | x == y = stripPrefix xs ys
+  | x == y = stripPrefix xs ys
 stripPrefix _ _ = None
 
 -- | Return the prefix of the second list if its suffix matches the
@@ -480,7 +480,7 @@ foldr1 f xs = fromSomeNote "foldr1: empty list" (foldr mf None xs)
 repeatedly: ([a] -> (b, [a])) -> [a] -> [b]
 repeatedly _ [] = []
 repeatedly f as = b :: repeatedly f as'
-    where (b, as') = f as
+  where (b, as') = f as
 
 -- | Splits a list into chunks of length @n@.
 -- @n@ must be strictly greater than zero.
@@ -534,7 +534,6 @@ deleteBy eq x (y::ys)    = if x `eq` y then ys else y :: deleteBy eq x ys
 -- ```
 singleton: a -> [a]
 singleton x = [x]
-
 
 -- | List index (subscript) operator, starting from 0.
 --   For example, `xs !! 2` returns the third element in `xs`.

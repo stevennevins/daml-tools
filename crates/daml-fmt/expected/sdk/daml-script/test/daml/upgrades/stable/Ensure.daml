@@ -65,9 +65,9 @@ contents: |
 main: TestTree
 main = tests
   [ ("Fails if the ensure clause changes such that V1 is not longer valid", ensureClauseBecomesInvalid)
-  , ("Fails if the ensure clause changes such that V1 is not longer valid, exercise by interface", ensureClauseBecomesInvalidDynamic)
-  , ("Succeeds when implicitly creating a V1 contract such that the ensure clause only passes in V2", onlyV2EnsureClauseRequiredForImplicitUpgrade)
-  , ("Fails when explicitly calling a V1 choice on a V2 contract that doesn't pass the ensure clause in V1", ensureClauseDowngradeToNoLongerValid)
+    , ("Fails if the ensure clause changes such that V1 is not longer valid, exercise by interface", ensureClauseBecomesInvalidDynamic)
+    , ("Succeeds when implicitly creating a V1 contract such that the ensure clause only passes in V2", onlyV2EnsureClauseRequiredForImplicitUpgrade)
+    , ("Fails when explicitly calling a V1 choice on a V2 contract that doesn't pass the ensure clause in V1", ensureClauseDowngradeToNoLongerValid)
   ]
 
 testForPreconditionFailed

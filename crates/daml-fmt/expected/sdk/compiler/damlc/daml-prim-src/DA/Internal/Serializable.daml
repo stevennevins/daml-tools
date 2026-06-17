@@ -4,8 +4,8 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 -- | HIDE
 module DA.Internal.Serializable (
-    Serializable (..),
-) where
+  Serializable (..),
+  ) where
 
 import GHC.Types ()
 

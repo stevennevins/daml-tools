@@ -23,16 +23,16 @@ template Test
   where
     signatory p
     choice Call: ()
-        controller p
-        do
-            m <-
-                try do
-                    create (MyTemplate p)
-                    pure ""
-                catch
-                    PreconditionFailed msg ->
-                        pure msg
-            m === "Template precondition violated: MyTemplate {p = 'Alice'}"
+      controller p
+      do
+        m <-
+            try do
+                create (MyTemplate p)
+                pure ""
+            catch
+              PreconditionFailed msg ->
+                  pure msg
+        m === "Template precondition violated: MyTemplate {p = 'Alice'}"
 
 test = script do
   p <- allocatePartyByHint (PartyIdHint "Alice")

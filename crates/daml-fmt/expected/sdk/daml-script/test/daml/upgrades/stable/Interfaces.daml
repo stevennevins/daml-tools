@@ -208,20 +208,20 @@ interfacesV3 = getPackageId "interfaces-3.0.0"
 main: TestTree
 main = tests
   [ ("Calling an interface choice uses the highest version implementation at command level by default", defaultHighestVersionChoiceImplementationCommand)
-  , ("Calling an interface choice uses the highest version implementation at choice body level by default", defaultHighestVersionChoiceImplementationUpdate)
-  , ("Package map preference is used for interface implementation selection at command level", interfaceChoicePackagePreferenceCommand)
-  , ("Package map preference is used for interface implementation selection at choice body level", interfaceChoicePackagePreferenceUpdate)
-  , ("Multiple interface exercises use their respective package preference entries at command level", multipleInterfaceChoicePackagePreferenceCommand)
-  , ("Multiple interface exercises use their respective package preference entries at choice body level", multipleInterfaceChoicePackagePreferenceUpdate)
-  , ("queryInterfaceContractId works as intended in the presence of upgraded packages", queryInterfaceUpgrades)
-  , ("fetchFromInterface works as intended in the presence of upgraded packages", fetchFromInterfaceUpgrades)
-  , ("Calling a new interface choice uses the highest version implementation at command level by default", defaultHighestVersionChoiceImplementationForNewInterfaceCommand)
-  , ("Calling a new interface choice uses the highest version implementation at choice body level by default", defaultHighestVersionChoiceImplementationForNewInterfaceUpdate)
-  , ("Package map preference is used for new interface implementation selection at command level", newInterfaceChoicePackagePreferenceCommand)
-  , ("Package map preference is used for new interface implementation selection at choice body level", newInterfaceChoicePackagePreferenceUpdate)
-  , ("queryInterfaceContractId works as intended in the presence of upgraded packages with new interface instances", queryNewInterfaceUpgrades)
-  , ("fetchFromInterface works as intended in the presence of upgraded packages with new interface instances", fetchFromNewInterfaceUpgrades)
-  , ("Can fetch interface from V1 contract when V1 unvetted", fetchWithoutV1)
+    , ("Calling an interface choice uses the highest version implementation at choice body level by default", defaultHighestVersionChoiceImplementationUpdate)
+    , ("Package map preference is used for interface implementation selection at command level", interfaceChoicePackagePreferenceCommand)
+    , ("Package map preference is used for interface implementation selection at choice body level", interfaceChoicePackagePreferenceUpdate)
+    , ("Multiple interface exercises use their respective package preference entries at command level", multipleInterfaceChoicePackagePreferenceCommand)
+    , ("Multiple interface exercises use their respective package preference entries at choice body level", multipleInterfaceChoicePackagePreferenceUpdate)
+    , ("queryInterfaceContractId works as intended in the presence of upgraded packages", queryInterfaceUpgrades)
+    , ("fetchFromInterface works as intended in the presence of upgraded packages", fetchFromInterfaceUpgrades)
+    , ("Calling a new interface choice uses the highest version implementation at command level by default", defaultHighestVersionChoiceImplementationForNewInterfaceCommand)
+    , ("Calling a new interface choice uses the highest version implementation at choice body level by default", defaultHighestVersionChoiceImplementationForNewInterfaceUpdate)
+    , ("Package map preference is used for new interface implementation selection at command level", newInterfaceChoicePackagePreferenceCommand)
+    , ("Package map preference is used for new interface implementation selection at choice body level", newInterfaceChoicePackagePreferenceUpdate)
+    , ("queryInterfaceContractId works as intended in the presence of upgraded packages with new interface instances", queryNewInterfaceUpgrades)
+    , ("fetchFromInterface works as intended in the presence of upgraded packages with new interface instances", fetchFromNewInterfaceUpgrades)
+    , ("Can fetch interface from V1 contract when V1 unvetted", fetchWithoutV1)
   ]
 
 setupAliceAndInterface: Script (Party, ContractId I)
@@ -251,8 +251,8 @@ setupAliceAndV3NewInterface = do
 setupAliceAndNewInterfaceFunctions: [Script (Party, ContractId INew)]
 setupAliceAndNewInterfaceFunctions =
   [ setupAliceAndV1NewInterface
-  , setupAliceAndV2NewInterface
-  , setupAliceAndV3NewInterface
+    , setupAliceAndV2NewInterface
+    , setupAliceAndV3NewInterface
   ]
 
 defaultHighestVersionChoiceImplementationCommand: Test

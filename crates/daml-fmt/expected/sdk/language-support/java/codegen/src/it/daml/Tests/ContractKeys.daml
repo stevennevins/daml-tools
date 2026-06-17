@@ -7,9 +7,9 @@ module Tests.ContractKeys where
 
 data PartyAndInt =
   PartyAndInt
-    with
-      party: Party
-      int: Int
+  with
+    party: Party
+    int: Int
 
 template NoKey
   with

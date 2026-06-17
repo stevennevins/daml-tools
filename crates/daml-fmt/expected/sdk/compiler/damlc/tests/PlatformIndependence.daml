@@ -42,4 +42,4 @@ template Asset
       controller owner
       do incompletePattternMatch Baz
          create this with
-          owner = newOwner
+           owner = newOwner

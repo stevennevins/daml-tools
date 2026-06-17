@@ -129,7 +129,7 @@ module Daml.Script
   , CryptoErrorType (..)
 
   , -- Upgrades features
-    PackageId (..)
+  PackageId (..)
   , packagePreference
   ) where
 

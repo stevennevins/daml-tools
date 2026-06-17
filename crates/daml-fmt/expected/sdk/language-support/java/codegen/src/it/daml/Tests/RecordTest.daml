@@ -1,7 +1,6 @@
 -- Copyright (c) 2025 Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
 
-
 module Tests.RecordTest where
 
 data MyRecord = MyRecord
@@ -21,24 +20,23 @@ data MyRecord = MyRecord
     nestedVariant: NestedVariant
   deriving (Eq, Show)
 
-
 data ParametricRecord x y = ParametricRecord
-    with
-        fieldX1: x
-        fieldX2: x
-        fieldY: y
-        fieldInt: Int
+  with
+    fieldX1: x
+    fieldX2: x
+    fieldY: y
+    fieldInt: Int
   deriving (Eq, Show)
 
 data OuterRecord x y = OuterRecord
-    with
-        inner: ParametricRecord x y
-        innerFixed: ParametricRecord Int Text
+  with
+    inner: ParametricRecord x y
+    innerFixed: ParametricRecord Int Text
   deriving (Eq, Show)
 
 data NestedRecord = NestedRecord
   with
-     value: Int
+    value: Int
   deriving (Eq, Show)
 
 data NestedVariant = Nested Int
@@ -51,13 +49,13 @@ template Foo
     signatory owner
 
 data ParametrizedContractId a = ParametrizedContractId
-    with
-        parametrizedContractId: ContractId a
+  with
+    parametrizedContractId: ContractId a
   deriving (Eq, Show)
 
 data FixedContractId = FixedContractId
-    with
-        fixedContractId: ParametrizedContractId Foo
+  with
+    fixedContractId: ParametrizedContractId Foo
   deriving (Eq, Show)
 
 data UsesNumType t x

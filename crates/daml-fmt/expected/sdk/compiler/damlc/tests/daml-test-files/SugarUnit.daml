@@ -12,7 +12,7 @@ import Daml.Script
 import DA.Assert
 
 data Foo a = Foo a
-    deriving (Eq, Show)
+  deriving (Eq, Show)
 
 joinFoo ffx =
     -- The desugaring of this nested pattern produces a `GHC.Tuple.Unit`.

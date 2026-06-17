@@ -39,11 +39,11 @@ contents: |
 main: TestTree
 main = tests
   [ ("Succeeds explicitly calling a new V2 choice on a V1 contract", explicitNewV2ChoiceV1Contract)
-  , ("Succeeds implicitly calling a new V2 choice on a V1 contract", implicitNewV2ChoiceV1Contract)
+    , ("Succeeds implicitly calling a new V2 choice on a V1 contract", implicitNewV2ChoiceV1Contract)
   , -- These cases should not be possible once upload time checks are implemented
     ("Succeeds explicitly calling a removed V1 choice on a V2 contract", explicitRemovedV1ChoiceV2Contract)
-  , ("Fails implicitly calling a removed V1 choice on a V2 contract, as V2 is selected", implicitRemovedV1ChoiceV2Contract)
-  , ("Fails implicitly calling a removed V1 choice on a V1 contract, as V2 is selected", implicitRemovedV1ChoiceV1Contract)
+    , ("Fails implicitly calling a removed V1 choice on a V2 contract, as V2 is selected", implicitRemovedV1ChoiceV2Contract)
+    , ("Fails implicitly calling a removed V1 choice on a V1 contract, as V2 is selected", implicitRemovedV1ChoiceV1Contract)
   ]
 
 genericUpgradeTest

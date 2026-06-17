@@ -1,11 +1,9 @@
 -- Copyright (c) 2025 Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
 
-
 module ObligableErrors where
 
 import Daml.Script
-
 
 template Payout
   with
@@ -37,7 +35,6 @@ template CallablePayout
     choice CallablePayout_Call: ContractId Payout
       controller receiver
       do create Payout with giver; receiver; amount
-
 
 callPayout = script do
   receiver <- allocateParty "Bob"

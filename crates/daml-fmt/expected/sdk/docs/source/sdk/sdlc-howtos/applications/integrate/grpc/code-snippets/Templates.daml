@@ -1,7 +1,6 @@
 -- Copyright (c) 2025 Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
 
-
 module Templates where
 
 import Daml.Script
@@ -9,8 +8,8 @@ import Daml.Script
 -- BEGIN_SIMPLE_TEMPLATE
 data MySimpleTemplateKey =
   MySimpleTemplateKey
-    with
-      party: Party
+  with
+    party: Party
 
 template MySimpleTemplate
   with
@@ -23,10 +22,10 @@ template MySimpleTemplate
 -- END_SIMPLE_TEMPLATE
 
     choice MyChoice
-        : ()
-        with parameter: Int
-        controller owner
-        do return ()
+      : ()
+      with parameter: Int
+      controller owner
+      do return ()
 
 emptyTemplateTest = script do
   alice <- allocateParty "Alice"

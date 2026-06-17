@@ -24,7 +24,7 @@ module UpgradeTestLib (
   module Daml.Script,
   module Daml.Script.Internal,
   module DA.Assert,
-) where
+  ) where
 
 import Daml.Script
 import Daml.Script.Internal
@@ -72,8 +72,8 @@ test: Script () -> Test
 test act TestState { runMode, testPath } = do
   debugRaw $ T.unwords
     [ "Testing:"
-    , "[" <> show runMode <> "]"
-    , T.intercalate " - " (reverse testPath)
+      , "[" <> show runMode <> "]"
+      , T.intercalate " - " (reverse testPath)
     ]
   act
 
@@ -121,17 +121,17 @@ broken (name, act) = ("(BROKEN) " <> name, brokenScript act)
 brokenOnCanton: (Text, Test) -> (Text, Test)
 brokenOnCanton (name, act) =
   ( "(BROKEN ON CANTON) " <> name
-  , \testState -> case testState.runMode of
-    Canton -> brokenScript act testState
-    _ -> act testState
+    , \testState -> case testState.runMode of
+      Canton -> brokenScript act testState
+      _ -> act testState
   )
 
 brokenOnIDELedger: (Text, Test) -> (Text, Test)
 brokenOnIDELedger (name, act) =
   ( "(BROKEN ON IDE-LEDGER) " <> name
-  , \testState -> case testState.runMode of
-    IdeLedger -> brokenScript act testState
-    _ -> act testState
+    , \testState -> case testState.runMode of
+      IdeLedger -> brokenScript act testState
+      _ -> act testState
   )
 
 waitForCid: (Template t, HasEnsure t) => Party -> ContractId t -> Script ()

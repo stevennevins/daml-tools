@@ -70,7 +70,7 @@ queryContractId p c = fmap (\(anyTpl, _, _) -> fromSome (fromAnyTemplate anyTpl)
 -- Queries a Disclosure for a given ContractId. Same performance caveats apply as to `queryContractId`.
 queryDisclosure: forall t p. (Template t, IsParties p) => HasCallStack => p -> ContractId t -> Script (Optional Disclosure)
 queryDisclosure p c = fmap (\(_, tplId, blob) -> Disclosure tplId cid blob) <$> queryContractId_ p c
- where
+  where
     cid = coerceContractId c
 
 -- | HIDE

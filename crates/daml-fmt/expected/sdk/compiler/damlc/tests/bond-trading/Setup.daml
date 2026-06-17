@@ -94,7 +94,6 @@ marketSetupJobExample acme = script do
     issuer = acme
     entries
 
-
 setupExample = script do
   setDate 2018 May 14
 
@@ -120,7 +119,6 @@ setupExampleFull = script do
     forA_ r.bondCids $ (flip exerciseCmd) Bond.Accept
     forA_ r.cashCids $ (flip exerciseCmd) Cash.Accept
     pure ()
-
 
 main = script do
   setupExampleFull

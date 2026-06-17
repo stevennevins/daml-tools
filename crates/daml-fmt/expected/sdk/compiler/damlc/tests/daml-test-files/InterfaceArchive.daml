@@ -14,19 +14,19 @@ interface Iface
     viewtype EmptyInterfaceView
     getOwner: Party
     choice IChoice: ()
-        controller getOwner this
-        do pure ()
+      controller getOwner this
+      do pure ()
 
 template Tplt
   with
     owner: Party
   where
     choice TChoiceConsuming: ()
-        controller owner
-        do pure ()
+      controller owner
+      do pure ()
     nonconsuming choice TChoiceNonconsuming: ()
-        controller owner
-        do pure ()
+      controller owner
+      do pure ()
     signatory owner
     interface instance Iface for Tplt where
       view = EmptyInterfaceView

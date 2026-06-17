@@ -1,7 +1,6 @@
 -- Copyright (c) 2025 Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
 
-
 module Account where
 
 import Daml.Script
@@ -88,7 +87,6 @@ template Order with
         receiverCashId <- exerciseByKey @Account account Withdraw with amount = shipment.price
         retailerCashId <- exercise receiverCashId Transfer with newOwner = shipment.retailer
         pure (shipmentId, retailerCashId)
-
 
 test = script do
   alice <- allocateParty "Alice"

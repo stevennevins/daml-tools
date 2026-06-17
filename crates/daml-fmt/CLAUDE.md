@@ -10,15 +10,19 @@ the `daml-parser` pipeline (lexer → offside-rule layout →
 recursive-descent AST). Over the 924-file corpus it is **924/924
 desugar-equivalent and 924/924 idempotent**.
 
-It models a few constructs canonically and passes everything else through
-verbatim. Today: `do`-block indentation, trailing-whitespace + single final
-newline, and type-annotation colon spacing (`x : T` → `x: T`). It makes its own
-consistent decisions; it does not target any other formatter's output. The
-`expected/` tree is a snapshot of *this* formatter's output, used as the
-regression baseline.
+It models a guarded set of constructs canonically and passes everything else
+through verbatim. Today: module/import continuations, `do` blocks, `if`/`case`/
+`let-in`, constructor `with` fields, record-update fields, template/interface
+bodies, choice internals, declaration ladders, guards/where bindings,
+`try`/`catch`, explicit tuple/list continuations, trailing-whitespace +
+blank-line/final-newline normalization, and type-annotation colon spacing
+(`x : T` → `x: T`). It makes its own consistent decisions; it does not target any
+other formatter's output. The `expected/` tree is a snapshot of *this*
+formatter's output, used as the regression baseline.
 
-Compiler diagnostic fixtures with `-- @ ... range=LINE:COL-LINE:COL`
-comments are left byte-for-byte unchanged. Those comments are exact source
+Compiler diagnostic and LF query fixtures with source-location expectations
+(`-- @ ... range=LINE:COL-LINE:COL`, `.location`, `start_line`, `start_col`,
+etc.) are left byte-for-byte unchanged. Those comments are exact source
 location expectations, so even desugar-safe spacing edits can make the fixture
 wrong.
 
@@ -54,7 +58,8 @@ normalization (`normalize_gaps` in `src/lib.rs`).
 - `src/lib.rs` — `format_source` (the entry point; delegates to the AST
   backend) and `normalize_gaps` (the shared whitespace/colon pass).
 - `src/layout_ast.rs` — the AST-driven layout backend (`format_ast`), the
-  `do`-block rule, comment-awareness, and the `same_tokens` gate. Unit-tested.
+  structural layout rules, comment-awareness, and the `same_tokens` gate.
+  Unit-tested.
 - `src/bin/daml-fmt.rs` — the CLI (`<file...>`, `-w`, `--check`, stdin).
 - `src/bin/coverage.rs` — structural edit candidates over modeled constructs.
 - `src/bin/lossless-check.rs`, `src/bin/ast-check.rs` — parser round-trip
@@ -109,7 +114,8 @@ re-run the sweeps, update `SCOREBOARD.md` + the corpus manifests, commit.
   block's indentation from a comment line; block-comment interiors pass through
   byte-for-byte.
 - **Source-location expectations are sacred:** files containing compiler
-  diagnostic `-- @ ... range=...` comments stay byte-for-byte unchanged.
+  diagnostic `-- @ ... range=...` comments or LF source-location queries stay
+  byte-for-byte unchanged.
 - **Never dedent an originally-indented line to column 0** — column 0 closes
   every layout block.
 - **Content comes from spans, never re-assembled AST fields** (dotted updates,
@@ -128,19 +134,31 @@ Landed (each its own gated structural pass, iterated to a fixpoint,
 `--desugar`-clean + idempotent):
 
 - **do-block** + **`do let`**: statements to `do_col + 2`.
+- **module/export/import continuations**: continuation lines to the declaration
+  or import head indentation + 2.
 - **if/then/else**: `then`/`else` to `if_col + 2`.
 - **case/of** (+ line-leading `\case`): alternatives to `case_col + 2`.
 - **let-in expression** (line-leading `let`): bindings to `let_col + 2`.
-- **`Con with` construction**: fields to `con_col + 2` (record UPDATES
-  `expr with` stay verbatim — they hang-align inconsistently).
+- **`Con with` construction** and **record updates**: fields to the head column
+  + 2 while preserving field content from spans.
 - **template / interface bodies** — the one STRUCTURED rule: a template's
   `with`/`where` keywords go to `head + 2` and the field / signatory-choice-decl
   blocks to `head + 4` (TWO different deltas, so a 4-space ladder collapses to
   the canonical 2-space one — a uniform-shift attempt was reverted because it
   left fields at `with + 4`); an interface's inline-`where` body sits at
-  `head + 2`. Choice `do`-bodies are canonicalized by the do-pass; a choice's
-  own internal 4-space ladder is only partly canonicalized (its header rides the
-  decl-block shift) — deeper recursion is future work.
+  `head + 2`.
+- **choice internals**: split return signatures, `with`, parameters,
+  `controller`, `observer`, and `do` ladders.
+- **declaration ladders**: `data`/type/exception continuations, plus
+  class/instance head-line `where` bodies aligned to their established body
+  column so pragmas and members stay in the same layout block.
+- **function guards / where bindings**: line-leading guards and `where` blocks
+  to the function head column + 2.
+- **`try`/`catch`**: body and handler lines to the `try` head column + 2.
+- **explicit tuple/list continuations**: item lines under multi-line tuple/list
+  syntax to the expression head column + 2.
+- **gap normalization**: strips trailing whitespace, collapses interior blank
+  runs to one blank line, and enforces a single final newline.
 
 Note: the landed anchor for the single-block rules is `line_indent + 2`, NOT the
 `with_col + 2` / `let_col + 4` the earlier notes guessed — the corpus uses the
@@ -149,11 +167,12 @@ the formatter follows the corpus, not the guess.
 
 Still candidates:
 
-- **deep choice-body canonicalization** (a choice's own `with`/`controller`/`do`
-  internal ladder), **`try`/`catch` handler layout** — left verbatim today.
+- **broader expression wrapping**: long applications, infix chains, lambdas, and
+  inline forms remain conservative.
 - **`let … in` mid-line / split**, **`case`/template `where` that would dedent
   below offside**: left verbatim by guards (the gate would reject them anyway).
-- **guards** / **blank-line collapsing** (3+ → 2).
+- **format-organizing transforms** such as import sorting/grouping are out of
+  scope for the current formatter; it only changes safe layout.
 
 Hard-won guidance for the structural rules: a per-line indent rule that isn't
 offside-aware breaks desugar (a naive `line_indent + 2` dedents blocks below

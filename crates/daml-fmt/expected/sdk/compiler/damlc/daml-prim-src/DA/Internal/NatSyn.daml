@@ -7,7 +7,7 @@
 -- | HIDE
 module DA.Internal.NatSyn (
   NatSyn
-) where
+  ) where
 
 import GHC.Types (Nat)
 

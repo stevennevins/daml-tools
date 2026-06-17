@@ -14,8 +14,8 @@ template T1
     signatory party
 
     nonconsuming choice C1: Bool
-     controller party
-        do pure False
+      controller party
+      do pure False
 
 run1: Dep.Script ()
 run1 = Dep.run
