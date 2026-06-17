@@ -1,7 +1,4 @@
-import type { Template } from "./daml-lint";
-
-// Every template must declare an ensure clause.
-// Compile: npx esbuild examples/template-requires-ensure.ts --bundle --outfile=examples/dist/template-requires-ensure.js
+import type { DamlLintRuleModule, Template } from "@daml-tools/lint-plugin";
 
 const NAME = "template-requires-ensure";
 const SEVERITY = "medium";
@@ -13,4 +10,5 @@ function on_template(template: Template): void {
   }
 }
 
-globalThis.__daml_lint_rule = { NAME, SEVERITY, DESCRIPTION, on_template };
+const rule: DamlLintRuleModule = { NAME, SEVERITY, DESCRIPTION, on_template };
+globalThis.__daml_lint_rule = rule;

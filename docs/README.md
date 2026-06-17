@@ -11,6 +11,7 @@ who need to move between `daml-parser`, `daml-lint`, and `daml-fmt`.
 Use the tutorial when you want a guided first pass through the tools:
 
 - [Run the tools on a small Daml module](tutorials/first-run.md)
+- [Write a daml-lint custom rule](tutorials/write-a-daml-lint-custom-rule.md)
 
 ## How-to guides
 
@@ -27,6 +28,7 @@ surfaces:
 
 - [CLI reference](reference/cli.md)
 - [Crate reference](reference/crates.md)
+- [daml-lint custom rule contract](reference/daml-lint-custom-rule-contract.md)
 
 ## Explanation
 
@@ -34,3 +36,4 @@ Use explanation pages when you want the reasoning behind the repo structure:
 
 - [Workspace architecture](explanation/workspace-architecture.md)
 - [Formatter verification model](explanation/formatter-verification.md)
+- [daml-lint rule authoring model](explanation/daml-lint-rule-authoring.md)

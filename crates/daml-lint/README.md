@@ -21,10 +21,16 @@ that fail to parse degrade to partial structure with a diagnostic on stderr
 The workspace docs split task guides, reference, and design background:
 
 - [Scan Daml source](../../docs/how-to/scan-daml.md) for CLI usage patterns
+- [Write a custom rule](../../docs/tutorials/write-a-daml-lint-custom-rule.md)
+  for a guided first external rule
+- [Custom rule contract](../../docs/reference/daml-lint-custom-rule-contract.md)
+  for the JavaScript runtime contract and TypeScript types
 - [CLI reference](../../docs/reference/cli.md) for options, output formats, and
   exit codes
 - [Crate reference](../../docs/reference/crates.md) for features and public
   modules
+- [Rule authoring model](../../docs/explanation/daml-lint-rule-authoring.md)
+  for why TypeScript authoring is bundled to JavaScript
 - [Workspace architecture](../../docs/explanation/workspace-architecture.md)
   for how `daml-lint` uses `daml-parser`
 
@@ -128,7 +134,9 @@ A rule is TypeScript/JavaScript (executed by an embedded QuickJS engine):
 constants for metadata, plus visitor functions named after the node types you
 care about — like solhint's `ContractDefinition(node)` callbacks. Write rules
 in TypeScript against [examples/daml-lint.d.ts](examples/daml-lint.d.ts) for
-type checking and autocomplete:
+type checking and autocomplete. The `globalThis.__daml_lint_rule` assignment is
+the TypeScript-checked rule object; the current runtime still discovers
+top-level metadata constants and visitor `function` declarations:
 
 ```typescript
 import type { Template } from "./daml-lint";
@@ -149,7 +157,7 @@ globalThis.__daml_lint_rule = { NAME, SEVERITY, DESCRIPTION, on_template };
 then compile to the JavaScript file you pass to `--rules`:
 
 ```sh
-npx esbuild my-rule.ts --bundle --outfile=my-rule.js
+npx esbuild my-rule.ts --bundle --outfile=dist/my-rule.js
 ```
 
 Type-only imports are erased by the build. Runtime helper imports must be
@@ -233,9 +241,9 @@ Examples:
 - [examples/no-trace.ts](examples/no-trace.ts) — banned-token check over raw source lines
 - [examples/unguarded-division-ast.ts](examples/unguarded-division-ast.ts) — expression-level analysis on the typed AST (division denominators vs prior assertions)
 
-Each example is authored in TypeScript and ships with its compiled `.js` next
-to it — that's the file `--rules` takes. Run `npm run build:examples` from this
-crate to refresh those generated files.
+Each example is authored in TypeScript and ships with its compiled `.js` under
+[examples/dist/](examples/dist/) - that's the file `--rules` takes. Run
+`npm run build:examples` from this crate to refresh those generated files.
 
 To check that a rule script parses without running a scan, point the tool at a nonexistent path — rule errors are reported before file discovery. (A valid script then prints `No .daml files found.`, which also exits 2 — go by the message, not the exit code.)
 

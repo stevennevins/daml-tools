@@ -3,7 +3,7 @@ import type { Field, Template, TypeNode } from "./daml-lint";
 // Templates storing raw ContractId fields (or Optional/List of them) risk
 // stale references: the pointed-to contract can be archived underneath.
 // Exercises on_field with structured TypeNode narrowing.
-// Compile: npx esbuild no-bare-contractid-field.ts --bundle --outfile=no-bare-contractid-field.js
+// Compile: npx esbuild examples/no-bare-contractid-field.ts --bundle --outfile=examples/dist/no-bare-contractid-field.js
 
 const NAME = "no-bare-contractid-field";
 const SEVERITY = "low";

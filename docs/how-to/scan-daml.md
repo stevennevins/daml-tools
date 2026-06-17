@@ -81,6 +81,21 @@ Pass JavaScript rule files with repeatable `--rules` options:
 daml-lint ./daml/ --rules my-rule.js --rules another-rule.js
 ```
 
+For a TypeScript rule, type-check and bundle it before scanning:
+
+```sh
+npm pkg set type=module
+npm install --save-dev @daml-tools/lint-plugin typescript esbuild
+npx tsc --noEmit
+npx esbuild src/template-requires-ensure.ts --bundle --format=esm --target=es2020 --outfile=dist/template-requires-ensure.js
+daml-lint ./daml/ --rules dist/template-requires-ensure.js --fail-on medium
+```
+
+The bundled JavaScript must expose top-level `const NAME`, `const SEVERITY`,
+an optional `const DESCRIPTION`, and at least one top-level visitor `function`.
+Assigning `globalThis.__daml_lint_rule` gives TypeScript a rule object to
+validate, but it does not replace the current runtime discovery contract.
+
 ## Use in CI
 
 A typical CI scan writes SARIF and fails on high findings or higher:
@@ -104,4 +119,6 @@ scan again.
 ## Related
 
 - [`daml-lint` crate README](../../crates/daml-lint/README.md)
+- [Write a custom rule](../tutorials/write-a-daml-lint-custom-rule.md)
+- [Custom rule contract](../reference/daml-lint-custom-rule-contract.md)
 - [CLI reference](../reference/cli.md)

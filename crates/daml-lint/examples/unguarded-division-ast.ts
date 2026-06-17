@@ -7,7 +7,7 @@ import type { Choice, Expr, SrcPos, Statement, Template } from "./daml-lint";
 // Finds division expressions in choice bodies and reports them unless a
 // preceding statement asserts the denominator non-zero / positive, or an
 // enclosing `if denom /= 0 then ...` guards it.
-// Compile: npx esbuild unguarded-division-ast.ts --bundle --outfile=unguarded-division-ast.js
+// Compile: npx esbuild examples/unguarded-division-ast.ts --bundle --outfile=examples/dist/unguarded-division-ast.js
 
 const NAME = "unguarded-division-ast";
 const SEVERITY = "high";
