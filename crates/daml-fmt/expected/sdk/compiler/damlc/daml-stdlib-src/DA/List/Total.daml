@@ -16,10 +16,10 @@ module DA.List.Total
   , minimumOn
   , maximumOn
   )
-where
+  where
 
 import DA.List hiding (foldBalanced1, head, tail, init, last, foldl1, foldr1,
-                       (!!), minimumBy, maximumBy, minimumOn, maximumOn)
+  (!!), minimumBy, maximumBy, minimumOn, maximumOn)
 
 import qualified DA.List
 

@@ -1,3 +1,5 @@
+import type { Choice, Expr, SrcPos, Statement, Template } from "./daml-lint";
+
 // The acceptance test for the expression AST: reimplements the
 // unguarded-division builtin as a custom rule using ONLY typed nodes —
 // no body_raw, no raw, no string matching on source text.
@@ -5,7 +7,7 @@
 // Finds division expressions in choice bodies and reports them unless a
 // preceding statement asserts the denominator non-zero / positive, or an
 // enclosing `if denom /= 0 then ...` guards it.
-// Compile: npx esbuild unguarded-division-ast.ts --outfile=unguarded-division-ast.js
+// Compile: npx esbuild examples/unguarded-division-ast.ts --bundle --outfile=examples/dist/unguarded-division-ast.js
 
 const NAME = "unguarded-division-ast";
 const SEVERITY = "high";
@@ -168,3 +170,5 @@ function checkStatements(stmts: Statement[], choiceName: string): void {
 function on_choice(choice: Choice, _template: Template): void {
   checkStatements(choice.body, choice.name);
 }
+
+globalThis.__daml_lint_rule = { NAME, SEVERITY, DESCRIPTION, on_choice };

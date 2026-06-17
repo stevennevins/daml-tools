@@ -1,5 +1,6 @@
 # Rust build output (shared workspace target dir)
 /target
+**/target/
 
 # rustfmt backups
 **/*.rs.bk

@@ -10,15 +10,15 @@
 
 module DesugarWarnings where
 
-incompleteCase: Optional a -> a
+incompleteCase : Optional a -> a
 incompleteCase ox = case ox of
   Some x -> x
 
-incompleteGuard: Int -> Int
+incompleteGuard : Int -> Int
 incompleteGuard n
   | n < 0 = negate n
 
-overlapping: Optional a -> a -> a
+overlapping : Optional a -> a -> a
 overlapping ox y = case ox of
   Some x -> x
   Some _ -> y

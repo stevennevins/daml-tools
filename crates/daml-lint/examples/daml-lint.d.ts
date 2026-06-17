@@ -1,14 +1,14 @@
-// Type definitions for daml-lint custom rule scripts.
+// TypeScript contract for daml-lint custom rule authoring.
 //
-// Write rules in TypeScript against these types, compile to JavaScript
-// (e.g. `npx esbuild my-rule.ts --outfile=my-rule.js`), and pass the .js
-// file to daml-lint --rules. Node shapes mirror src/ir.rs.
+// Examples and built-in rules use these types while authoring TypeScript.
+// Bundle the rule to JavaScript before passing it to daml-lint --rules.
+// Node shapes mirror src/ir.rs.
 //
 // v3: nodes carry structured expression and type ASTs. Compatibility-only raw
 // fields and rendered party-name lists from v1/v2 have been removed.
 
 /** Span of a declaration-level node (template, choice, field, ...). */
-interface Span {
+export interface Span {
   file: string;
   line: number;
   column: number;
@@ -19,7 +19,7 @@ interface Span {
  *  `start`/`end` are UTF-16 code-unit offsets into `module.source`, so
  *  `module.source.slice(span.start, span.end)` returns the exact source text.
  *  `byte_start`/`byte_end` preserve the parser's UTF-8 byte-span basis. */
-interface SourceSpan extends Span {
+export interface SourceSpan extends Span {
   start: number;
   end: number;
   byte_start: number;
@@ -28,7 +28,7 @@ interface SourceSpan extends Span {
 
 /** Position of an expression-level node. 1-based; the file is the
  *  enclosing module's. */
-interface SrcPos {
+export interface SrcPos {
   line: number;
   column: number;
 }
@@ -36,7 +36,7 @@ interface SrcPos {
 /** Structured DAML type AST. Source spans support diagnostics and exact
  *  `module.source` slicing. Unknown/unparseable types are represented as null
  *  at the field that carries the type. */
-type TypeNode =
+export type TypeNode =
   | { Con: { qualifier: string | null; name: string; span: SourceSpan } }
   | { App: { head: TypeNode; args: TypeNode[]; span: SourceSpan } }
   | { List: { inner: TypeNode; span: SourceSpan } }
@@ -62,7 +62,7 @@ type TypeNode =
  *    spreads have value: null.
  *  - Unknown: no structured encoding (operator sections, comprehension
  *    qualifiers, recovered parse errors); raw preserves source text. */
-type Expr =
+export type Expr =
   | { Var: { name: string; qualifier: string | null; span: SrcPos } }
   | { Con: { name: string; qualifier: string | null; span: SrcPos } }
   | { Lit: { kind: "Int" | "Decimal" | "Text" | "Char"; value: string; span: SrcPos } }
@@ -79,31 +79,31 @@ type Expr =
   | { List: { items: Expr[]; span: SrcPos } }
   | { Unknown: { raw: string; span: SrcPos } };
 
-interface CaseAlt {
+export interface CaseAlt {
   /** Pattern rendered to source text: "Some x", "[]", "_". */
   pattern: string;
   body: Expr;
 }
 
-interface LetBinding {
+export interface LetBinding {
   /** Bound name; for function bindings includes parameters ("go x"). */
   name: string;
   value: Expr;
 }
 
-interface RecordField {
+export interface RecordField {
   name: string;
   /** null for punned fields (`Iou with owner`) and `..` spreads. */
   value: Expr | null;
 }
 
-interface Field {
+export interface Field {
   name: string;
   type_: TypeNode | null;
   span: Span;
 }
 
-interface EnsureClause {
+export interface EnsureClause {
   expr: Expr;
   span: Span;
 }
@@ -119,7 +119,7 @@ interface EnsureClause {
  *  statements, in source order. An `if`/`case` is surfaced as a `Branch`
  *  whose `arms` are each their own statement scope (exactly one runs), so a
  *  rule must descend into `arms` to see effects inside a branch. */
-type Statement =
+export type Statement =
   | {
       Let: {
         name: string;
@@ -173,12 +173,12 @@ type Statement =
 
 /** One arm of a `Branch`: the matched case pattern (null for `if` arms) and the
  *  arm's own statement scope. */
-interface BranchArm {
+export interface BranchArm {
   pattern: string | null;
   body: Statement[];
 }
 
-interface Choice {
+export interface Choice {
   name: string;
   consuming: boolean;
   controller_exprs: Expr[];
@@ -190,14 +190,14 @@ interface Choice {
   span: Span;
 }
 
-interface InterfaceInstance {
+export interface InterfaceInstance {
   interface_name: string;
   /** Implemented method names, in declaration order. */
   methods: string[];
   span: Span;
 }
 
-interface Template {
+export interface Template {
   name: string;
   fields: Field[];
   signatory_exprs: Expr[];
@@ -213,14 +213,14 @@ interface Template {
   span: Span;
 }
 
-interface InterfaceMethod {
+export interface InterfaceMethod {
   name: string;
   type_: TypeNode | null;
   span: Span;
 }
 
 /** A DAML interface declaration. Visited via on_interface. */
-interface DamlInterface {
+export interface DamlInterface {
   name: string;
   /** Interfaces this interface requires (`requires Lockable.I`). */
   requires: string[];
@@ -230,7 +230,7 @@ interface DamlInterface {
   span: Span;
 }
 
-interface DamlFunction {
+export interface DamlFunction {
   name: string;
   /** Declared type signature, if present. */
   type_signature: TypeNode | null;
@@ -238,14 +238,14 @@ interface DamlFunction {
   span: Span;
 }
 
-interface Import {
+export interface Import {
   module_name: string;
   qualified: boolean;
   alias: string | null;
   span: Span;
 }
 
-interface DamlModule {
+export interface DamlModule {
   ir_version: 3;
   name: string;
   file: string;
@@ -256,8 +256,35 @@ interface DamlModule {
   source: string;
 }
 
-/** Report a finding at a node's span, or at an explicit 1-based line number. */
-declare function report(
-  node: { span: Span } | { span: SrcPos } | number,
-  message: string
-): void;
+export type RuleSeverity = "critical" | "high" | "medium" | "low" | "info";
+
+export type RuleVisitorModule = {
+  on_template: (template: Template) => void;
+  on_choice: (choice: Choice, template: Template) => void;
+  on_field: (field: Field, template: Template) => void;
+  on_function: (fn: DamlFunction) => void;
+  on_import: (imp: Import) => void;
+  on_interface: (iface: DamlInterface) => void;
+  check: (module: DamlModule) => void;
+};
+
+export type RuleVisitor = {
+  [Name in keyof RuleVisitorModule]: Pick<RuleVisitorModule, Name> &
+    Partial<Omit<RuleVisitorModule, Name>>;
+}[keyof RuleVisitorModule];
+
+export type RuleModule = {
+  NAME: string;
+  SEVERITY: RuleSeverity;
+  DESCRIPTION?: string;
+} & RuleVisitor;
+
+export type ReportTarget = { span: Span } | { span: SrcPos } | number;
+
+declare global {
+  var __daml_lint_rule: RuleModule | undefined;
+
+  /** Report a finding at a node's span, or at an explicit 1-based line number.
+   *  `evidence`, when supplied, is used in reports instead of the source line. */
+  function report(node: ReportTarget, message: string, evidence?: string): void;
+}

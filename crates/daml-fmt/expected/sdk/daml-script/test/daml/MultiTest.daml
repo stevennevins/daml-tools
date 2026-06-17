@@ -63,14 +63,13 @@ listKnownPartiesTest = do
   parties2' <- listKnownPartiesOn (ParticipantName "participant1")
   pure
     ( map toTuple $ sortOn party (parties1' \\ parties1)
-    , map toTuple $ sortOn party (parties2' \\ parties2)
+      , map toTuple $ sortOn party (parties2' \\ parties2)
     )
- where
-  toTuple PartyDetails{party, isLocal} = (head $ splitOn "::" (partyToText party), isLocal)
+  where
+    toTuple PartyDetails{party, isLocal} = (head $ splitOn "::" (partyToText party), isLocal)
 
 tries: Int
 tries = 60
-
 
 waitForCid: (Template t, HasEnsure t) => Int -> Party -> ContractId t -> Script ()
 waitForCid tries p cid
@@ -83,7 +82,6 @@ waitForCid tries p cid
         waitForCid (tries - 1) p cid
       Some _ -> pure ()
   where delay = seconds 1
-
 
 template Box with
     s: Party

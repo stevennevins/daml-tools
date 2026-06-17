@@ -1,32 +1,23 @@
+import type { Choice, Statement, Template } from "./daml-lint";
+import { walkBodyStatements } from "../rules/_helpers";
+
 // Nonconsuming choices that create contracts can be exercised repeatedly on
 // the same contract, fanning out unbounded copies. Walks choice body
 // statements, recursing into try/catch blocks.
-// Compile: npx esbuild no-create-in-nonconsuming.ts --outfile=no-create-in-nonconsuming.js
+// Compile: npx esbuild examples/no-create-in-nonconsuming.ts --bundle --outfile=examples/dist/no-create-in-nonconsuming.js
 
 const NAME = "no-create-in-nonconsuming";
 const SEVERITY = "medium";
 const DESCRIPTION = "Nonconsuming choices should not create contracts";
 
 function creates(stmts: Statement[]): boolean {
-  for (const stmt of stmts) {
+  let found = false;
+  walkBodyStatements(stmts, (stmt) => {
     if ("Create" in stmt) {
-      return true;
+      found = true;
     }
-    if ("TryCatch" in stmt) {
-      const tc = (stmt as { TryCatch: { try_body: Statement[]; catch_body: Statement[] } }).TryCatch;
-      if (creates(tc.try_body) || creates(tc.catch_body)) {
-        return true;
-      }
-    }
-    // An if/case keeps its arms as separate scopes; a create may be in any arm.
-    if ("Branch" in stmt) {
-      const br = (stmt as { Branch: { arms: Statement[][] } }).Branch;
-      if (br.arms.some(creates)) {
-        return true;
-      }
-    }
-  }
-  return false;
+  });
+  return found;
 }
 
 function on_choice(choice: Choice, template: Template): void {
@@ -37,3 +28,5 @@ function on_choice(choice: Choice, template: Template): void {
     );
   }
 }
+
+globalThis.__daml_lint_rule = { NAME, SEVERITY, DESCRIPTION, on_choice };

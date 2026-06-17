@@ -1,0 +1,9 @@
+module MissingEnsure where
+
+template Iou
+  with
+    issuer : Party
+    owner : Party
+  where
+    signatory issuer
+    observer owner

@@ -49,6 +49,14 @@ fn help_exits_successfully() {
     assert!(String::from_utf8_lossy(&output.stdout).contains("Static analysis scanner"));
 }
 
+#[cfg(not(feature = "custom-rules"))]
+#[test]
+fn help_omits_rules_when_custom_rules_disabled() {
+    let output = cmd().arg("--help").output().unwrap();
+    assert!(output.status.success());
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("--rules"));
+}
+
 #[test]
 fn clean_file_exits_zero() {
     let path = clean_file();
@@ -96,6 +104,7 @@ fn parse_error_exits_three() {
 }
 
 #[test]
+#[cfg(feature = "custom-rules")]
 fn custom_rule_runtime_error_exits_two() {
     let path = clean_file();
     let rule = temp_file(

@@ -98,7 +98,6 @@ template DummyFactory
          rest <- create DummyWithParam with operator
          return ()
 
-
 data OptionalInteger = SomeInteger Int | NoInteger
   deriving (Eq, Show)
 
@@ -283,7 +282,6 @@ template BranchingControllers
       controller ctrl this
       do return ()
 
-
 template PayOut
   with
     receiver: Party
@@ -291,7 +289,6 @@ template PayOut
   where
     signatory receiver
     signatory giver
-
 
 template CallablePayout
   with
@@ -518,21 +515,21 @@ template Witnesses
     -- need to use new choice syntax for the controller to not
     -- be an observer
     choice WitnessesChoice: ()
-     controller p_actor
-     do
-      return ()
+      controller p_actor
+      do
+       return ()
 
     -- need to use new choice syntax for the controller to not
     -- be an observer
     nonconsuming choice WitnessesNonConsumingChoice: ()
-     controller p_actor
-     do
-      return ()
+      controller p_actor
+      do
+       return ()
 
     nonconsuming choice WitnessesCreateNewWitnesses: ContractId Witnesses
-     controller p_actor
-     do
-      create this with p_signatory = p_actor
+      controller p_actor
+      do
+       create this with p_signatory = p_actor
 
 -- Contract used to divulge instances of Witnesses to the actor
 -- of witnesses. Otherwise we cannot exercise!
@@ -704,7 +701,6 @@ template WithKeyFetcher
         contractId: ContractId WithKey
       controller p2
       do fetch contractId
-
 
 template WithKeyDivulgenceHelper
   with

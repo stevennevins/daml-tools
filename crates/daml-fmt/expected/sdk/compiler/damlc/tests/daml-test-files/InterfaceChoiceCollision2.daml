@@ -14,5 +14,5 @@ interface Interface requires InterfaceChoiceCollision1.Interface where
   getOwner: Party
 
   choice MyArchive: ()
-      controller getOwner this
-      do pure ()
+    controller getOwner this
+    do pure ()

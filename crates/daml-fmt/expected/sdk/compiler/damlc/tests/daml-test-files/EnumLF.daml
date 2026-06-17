@@ -11,7 +11,7 @@
 module EnumLF where
 
 data Color = Red | Green | Blue
-    deriving (Eq, Show)
+  deriving (Eq, Show)
 
 red: Color
 red = Red

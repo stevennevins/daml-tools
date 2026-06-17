@@ -9,28 +9,28 @@
 //! Uniform mechanism (the architecture the prototype validated):
 //!   1. Walk the AST; every node carries a byte `Span`.
 //!   2. For a layout block, reindent ONLY the block's child lines so the anchor
-//!      construct lands at `anchor_col + 2`: a `do`-block's statements to
-//!      `do_col + 2` (including a `do` that opens with `let`), an
-//!      `if`/`then`/`else`'s `then`/`else` clauses to `if_col + 2`, a
-//!      `case … of`'s alternatives to `case_col + 2`, a `let … in` expression's
-//!      bindings to `let_col + 2`, and a `Con with` construction's fields to
-//!      `con_col + 2`. The anchor line itself is never moved, which makes each
-//!      rule a fixpoint: a second pass computes delta 0. Children shift by one
-//!      uniform delta, so the block's internal structure (and any nested blocks)
-//!      ride along. A `template`/`interface` body is the one STRUCTURED rule: a
-//!      template's `with`/`where` keywords go to `head_col + 2` and the field /
-//!      signatory-choice-decl blocks to `head_col + 4` (two different deltas),
-//!      so a 4-space ladder collapses to the canonical 2-space one; an
-//!      interface's inline-`where` body sits at `head_col + 2`.
+//!      construct lands at its canonical column. Current passes cover
+//!      module/import continuations, choices, declarations, guards/where
+//!      bindings, record updates, `try`/`catch`, explicit tuple/list
+//!      continuations, `do`, `if`, `case`, `let-in`, constructor `with`, and
+//!      template/interface bodies. The anchor line itself is never moved, which
+//!      makes each rule a fixpoint: a second pass computes delta 0. Children
+//!      shift by one uniform delta, so the block's internal structure (and any
+//!      nested blocks) ride along. A `template`/`interface` body is the one
+//!      STRUCTURED rule: a template's `with`/`where` keywords go to
+//!      `head_col + 2` and the field / signatory-choice-decl blocks to
+//!      `head_col + 4` (two different deltas), so a 4-space ladder collapses to
+//!      the canonical 2-space one; an interface's inline-`where` body sits at
+//!      `head_col + 2`.
 //!   3. Comments are sacred: comment lines are never measured-from and never
 //!      shifted (CLAUDE.md). Block-comment interiors are trivia, untouched.
 //!   4. Gate the whole candidate on `same_tokens` = identical LAID-OUT token
 //!      stream (offside virtuals included) ⇒ identical parse ⇒ identical
 //!      desugar. Any accepted reindent is desugar-safe BY CONSTRUCTION.
 //!   5. Fall back to the input (verbatim) when the gate rejects or a node is
-//!      not modeled. Unmodeled constructs (guards, record UPDATES (`expr with`),
-//!      `data` declarations, TypeDef, expression continuations) pass through
-//!      verbatim — desugar-safe and lets us land one construct at a time.
+//!      not modeled. Broader expression wrapping and layout-organizing rewrites
+//!      still pass through verbatim — safe, and lets us land one construct family
+//!      at a time.
 //!
 //! On top of the structural pass we compose the proven, token-gated
 //! whitespace + colon-spacing normalization (`crate::normalize_gaps`).
@@ -52,14 +52,29 @@ const MAX_STRUCTURAL_PASSES: usize = 6;
 /// Format with the AST-driven structural reindents, then the gap normalization;
 /// every step is gated for desugar-safety.
 pub fn format_ast(src: &str) -> String {
-    // Step 1: structural reindent (do-blocks, then if/then/else), each its own
-    // gated pass. Iterate to a fixpoint so a later pass that unblocks an earlier
-    // one's gate still converges within a single call (idempotence).
+    if has_source_location_expectation(src) {
+        return src.to_string();
+    }
+
+    // Step 1: structural reindent, each family as its own gated pass. Iterate to
+    // a fixpoint so a later pass that unblocks an earlier one's gate still
+    // converges within a single call (idempotence).
     let mut base = src.to_string();
     for _ in 0..MAX_STRUCTURAL_PASSES {
-        let next = gated_template_pass(&gated_con_with_pass(&gated_letin_pass(&gated_case_pass(
-            &gated_if_pass(&gated_do_pass(&base)),
-        ))));
+        let mut next = base.clone();
+        next = gated_module_pass(&next);
+        next = gated_template_pass(&next);
+        next = gated_choice_pass(&next);
+        next = gated_type_def_pass(&next);
+        next = gated_guard_pass(&next);
+        next = gated_record_update_pass(&next);
+        next = gated_try_pass(&next);
+        next = gated_continuation_pass(&next);
+        next = gated_do_pass(&next);
+        next = gated_if_pass(&next);
+        next = gated_case_pass(&next);
+        next = gated_letin_pass(&next);
+        next = gated_con_with_pass(&next);
         if next == base {
             break;
         }
@@ -148,6 +163,83 @@ fn gated_template_pass(src: &str) -> String {
     }
 }
 
+/// Module headers and import/export-list continuations.
+fn gated_module_pass(src: &str) -> String {
+    let (module, _) = parse_module(src);
+    let r = reindent_modules_and_imports(src, &module);
+    if r != src && same_tokens(src, &r) {
+        r
+    } else {
+        src.to_string()
+    }
+}
+
+/// Choice signature/parameter/controller/observer/body ladders.
+fn gated_choice_pass(src: &str) -> String {
+    let (module, _) = parse_module(src);
+    let r = reindent_choices(src, &module);
+    if r != src && same_tokens(src, &r) {
+        r
+    } else {
+        src.to_string()
+    }
+}
+
+/// Top-level `data`/`type`/`class`/`instance`/`exception` declaration ladders.
+fn gated_type_def_pass(src: &str) -> String {
+    let (module, _) = parse_module(src);
+    let r = reindent_type_defs(src, &module);
+    if r != src && same_tokens(src, &r) {
+        r
+    } else {
+        src.to_string()
+    }
+}
+
+/// Guard bars and their bodies in function equations.
+fn gated_guard_pass(src: &str) -> String {
+    let (module, _) = parse_module(src);
+    let r = reindent_guards(src, &module);
+    if r != src && same_tokens(src, &r) {
+        r
+    } else {
+        src.to_string()
+    }
+}
+
+/// Record UPDATE field blocks (`expr with`) distinct from constructor `Con with`.
+fn gated_record_update_pass(src: &str) -> String {
+    let (module, _) = parse_module(src);
+    let r = reindent_record_updates(src, &module);
+    if r != src && same_tokens(src, &r) {
+        r
+    } else {
+        src.to_string()
+    }
+}
+
+/// `try`/`catch` body and handler ladders.
+fn gated_try_pass(src: &str) -> String {
+    let (module, _) = parse_module(src);
+    let r = reindent_tries(src, &module);
+    if r != src && same_tokens(src, &r) {
+        r
+    } else {
+        src.to_string()
+    }
+}
+
+/// Existing multiline expression continuations inside explicit delimiters.
+fn gated_continuation_pass(src: &str) -> String {
+    let (module, _) = parse_module(src);
+    let r = reindent_continuations(src, &module);
+    if r != src && same_tokens(src, &r) {
+        r
+    } else {
+        src.to_string()
+    }
+}
+
 /// Count structural edit candidates over modeled AST constructs.
 ///
 /// This powers `bin/coverage`; unlike the original do-only metric, it covers
@@ -157,6 +249,13 @@ fn gated_template_pass(src: &str) -> String {
 pub fn coverage(src: &str) -> (usize, usize) {
     let (module, _diags) = parse_module(src);
     let candidates = do_block_edits(src, &module).len()
+        + module_edits(src, &module).len()
+        + choice_edits(src, &module).len()
+        + type_def_edits(src, &module).len()
+        + guard_edits(src, &module).len()
+        + record_update_edits(src, &module).len()
+        + try_edits(src, &module).len()
+        + continuation_edits(src, &module).len()
         + if_edits(src, &module).len()
         + case_edits(src, &module).len()
         + letin_edits(src, &module).len()
@@ -180,9 +279,11 @@ fn modeled_construct_count(module: &Module) -> usize {
         match d {
             Decl::Template(t) if !t.fields.is_empty() || !t.body.is_empty() => count += 1,
             Decl::Interface(i) if !i.methods.is_empty() || !i.choices.is_empty() => count += 1,
+            Decl::TypeDef { .. } => count += 1,
             _ => {}
         }
     }
+    count += module.imports.iter().filter(|i| !i.span.is_empty()).count();
     count
 }
 
@@ -192,6 +293,19 @@ fn same_tokens(a: &str, b: &str) -> bool {
     let la = resolve_layout(lex_with_trivia(a).0);
     let lb = resolve_layout(lex_with_trivia(b).0);
     la.len() == lb.len() && la.iter().zip(&lb).all(|(x, y)| x.tok == y.tok)
+}
+
+fn has_source_location_expectation(src: &str) -> bool {
+    src.lines()
+        .filter(|line| line.trim_start().starts_with("-- @"))
+        .any(|line| {
+            line.contains("range=")
+                || line.contains(".location")
+                || line.contains("start_line")
+                || line.contains("start_col")
+                || line.contains("end_line")
+                || line.contains("end_col")
+        })
 }
 
 /// One reindent: shift every child line in `[child_start, block_end)` by `delta`.
@@ -233,11 +347,6 @@ fn do_block_edits(src: &str, module: &Module) -> Vec<Edit> {
         {
             continue;
         }
-        // VERBATIM guards (plan): try/catch and do-`let` bodies are not modeled.
-        if is_verbatim_do_block(do_span, module) {
-            accepted.push(do_span); // claim the region so nested do-blocks stay verbatim too
-            continue;
-        }
         let do_line = line_of(&line_starts, do_span.start);
         let do_indent = indent_of(src, &line_starts, do_line);
         // First real (non-blank, non-comment) statement line after the do line.
@@ -263,57 +372,6 @@ fn do_block_edits(src: &str, module: &Module) -> Vec<Edit> {
         }
     }
     edits
-}
-
-/// Is this do-block one of the shapes we deliberately leave verbatim?
-/// - try/catch body (`do ... try ... catch ...`): handler layout is its own
-///   problem; the plan keeps it verbatim. (`code-snippets-dev/Exceptions.daml`)
-///
-/// A `do` whose first statement is a `let` is NOT verbatim: the uniform-delta
-/// reindent shifts the whole block (the `let` line and its continuation
-/// bindings alike) by one amount, so the let-block's internal offside alignment
-/// rides along unchanged — exactly as nested do-blocks do. The `same_tokens`
-/// gate still rejects anything that would alter the laid-out token stream, and
-/// the full desugar sweep confirms no new non-equivalence. (Corpus citation:
-/// `sdk/compiler/damlc/tests/daml-test-files/ApplicativeDo.daml`.)
-fn is_verbatim_do_block(do_span: Span, module: &Module) -> bool {
-    let mut found = false;
-    let mut verbatim = false;
-    walk_module_expressions(module, &mut |expr| {
-        if let Expr::Do { span, stmts, .. } = expr {
-            if *span != do_span || found {
-                return;
-            }
-            found = true;
-            let has_try = stmts.iter().any(|s| match s {
-                DoStmt::Bind { expr, .. } | DoStmt::Expr { expr, .. } => {
-                    contains_try_expression(expr)
-                }
-                // A `try` buried in a let-binding RHS counts too, so the
-                // "try/catch stays verbatim" rule holds uniformly rather than
-                // resting on the gate to catch it after the fact.
-                DoStmt::Let { bindings, .. } => {
-                    bindings.iter().any(|b| contains_try_expression(&b.expr))
-                }
-            });
-            verbatim = has_try;
-        }
-    });
-    verbatim
-}
-
-fn contains_try_expression(e: &Expr) -> bool {
-    match e {
-        Expr::Try { .. } => true,
-        Expr::App { func, args, .. } => {
-            contains_try_expression(func) || args.iter().any(contains_try_expression)
-        }
-        Expr::BinOp { lhs, rhs, .. } => {
-            contains_try_expression(lhs) || contains_try_expression(rhs)
-        }
-        Expr::Neg { expr, .. } | Expr::Lambda { body: expr, .. } => contains_try_expression(expr),
-        _ => false,
-    }
 }
 
 /// Shift the leading-space indentation of every code line whose first content
@@ -420,6 +478,38 @@ fn first_code_line_after(
             return Some(l);
         }
         l += 1;
+    }
+    None
+}
+
+fn next_code_line_starts_with_keyword(
+    src: &str,
+    line_starts: &[usize],
+    comments: &[(usize, usize)],
+    after_line: usize,
+    keyword: &str,
+) -> Option<usize> {
+    let mut l = after_line + 1;
+    while l < line_starts.len() {
+        let ls = line_starts[l];
+        let le = *line_starts.get(l + 1).unwrap_or(&src.len());
+        let line = &src[ls..le];
+        let cur = line.len() - line.trim_start_matches(' ').len();
+        let trimmed = line[cur..].trim_end();
+        if line.trim().is_empty() || is_comment_line(comments, ls + cur) {
+            l += 1;
+            continue;
+        }
+        return trimmed
+            .strip_prefix(keyword)
+            .is_some_and(|rest| {
+                rest.is_empty()
+                    || rest
+                        .chars()
+                        .next()
+                        .is_some_and(|c| !c.is_ascii_alphanumeric() && c != '_')
+            })
+            .then_some(l);
     }
     None
 }
@@ -554,9 +644,9 @@ fn find_keyword(
     let mut i = 0;
     while let Some(rel) = hay[i..].find(kw) {
         let at = i + rel;
-        let before_ok = at == 0 || !bytes[at - 1].is_ascii_alphanumeric();
+        let before_ok = at == 0 || !is_ident_byte(bytes[at - 1]);
         let after = at + kw.len();
-        let after_ok = after >= hay.len() || !bytes[after].is_ascii_alphanumeric();
+        let after_ok = after >= hay.len() || !is_ident_byte(bytes[after]);
         let abs = from + at;
         if before_ok && after_ok && !is_comment_line(comments, abs) {
             return Some(abs);
@@ -801,10 +891,10 @@ fn reindent_letins(src: &str, module: &Module) -> String {
 
 /// Reindent the field block of a `Con with …` record CONSTRUCTION so the fields
 /// land at `construction_line_indent + 2`. Only constructions (base is a bare
-/// constructor `Con`) are touched — record UPDATES (`expr with …`) hang-align
-/// inconsistently in the corpus and are left verbatim, as are inline and
-/// tab-indented blocks. The field block shifts by ONE uniform delta (so nested
-/// values ride along) and `same_tokens` gates it. Mirrors the case rule.
+/// constructor `Con`) are touched here; record UPDATES (`expr with …`) are handled
+/// by their own gated pass. Inline and tab-indented blocks stay verbatim. The
+/// field block shifts by ONE uniform delta (so nested values ride along) and
+/// `same_tokens` gates it. Mirrors the case rule.
 fn con_with_edits(src: &str, module: &Module) -> Vec<Edit> {
     let line_starts = line_start_table(src);
     let comments = comment_spans(src);
@@ -859,7 +949,19 @@ fn con_with_edits(src: &str, module: &Module) -> Vec<Edit> {
         }
         let rec_indent = indent_of(src, &line_starts, rec_line);
         let cur = indent_of(src, &line_starts, field_line);
-        let delta = (rec_indent + INDENT) - cur;
+        let target = rec_indent + INDENT;
+        if next_code_line_starts_with_keyword(
+            src,
+            &line_starts,
+            &comments,
+            line_of(&line_starts, last_field_end.saturating_sub(1)),
+            "where",
+        )
+        .is_some_and(|next_line| indent_of(src, &line_starts, next_line) <= target)
+        {
+            continue;
+        }
+        let delta = target - cur;
         if delta != 0 {
             edits.push(Edit {
                 child_start: line_starts[field_line],
@@ -1096,6 +1198,695 @@ fn reindent_templates(src: &str, module: &Module) -> String {
     apply_shifts(src, &edits)
 }
 
+// ---- module / import continuations ------------------------------------------
+
+fn module_edits(src: &str, module: &Module) -> Vec<Edit> {
+    let line_starts = line_start_table(src);
+    let comments = comment_spans(src);
+    let mut edits = Vec::new();
+
+    if !module.header.is_empty() {
+        push_continuation_lines(
+            &mut edits,
+            src,
+            &line_starts,
+            &comments,
+            module.header,
+            INDENT,
+        );
+    }
+    for imp in &module.imports {
+        push_continuation_lines(&mut edits, src, &line_starts, &comments, imp.span, INDENT);
+    }
+    edits
+}
+
+fn reindent_modules_and_imports(src: &str, module: &Module) -> String {
+    let edits = module_edits(src, module);
+    if edits.is_empty() {
+        return src.to_string();
+    }
+    apply_shifts(src, &edits)
+}
+
+fn push_continuation_lines(
+    edits: &mut Vec<Edit>,
+    src: &str,
+    ls: &[usize],
+    comments: &[(usize, usize)],
+    span: Span,
+    offset: i64,
+) {
+    let head_line = line_of(ls, span.start);
+    let target = indent_of(src, ls, head_line) + offset;
+    let mut line = head_line + 1;
+    while line < ls.len() && ls[line] < span.end {
+        push_code_line_edit(edits, src, ls, comments, line, target);
+        line += 1;
+    }
+}
+
+// ---- choice internals --------------------------------------------------------
+
+fn collect_choices<'a>(module: &'a Module, choices: &mut Vec<&'a ChoiceDecl>) {
+    for decl in &module.decls {
+        match decl {
+            Decl::Template(t) => {
+                for body in &t.body {
+                    if let TemplateBodyDecl::Choice(c) = body {
+                        choices.push(c);
+                    }
+                }
+            }
+            Decl::Interface(i) => choices.extend(i.choices.iter()),
+            _ => {}
+        }
+    }
+    choices.sort_by(|a, b| {
+        a.span
+            .start
+            .cmp(&b.span.start)
+            .then(b.span.end.cmp(&a.span.end))
+    });
+}
+
+fn choice_edits(src: &str, module: &Module) -> Vec<Edit> {
+    let line_starts = line_start_table(src);
+    let comments = comment_spans(src);
+    let mut choices = Vec::new();
+    collect_choices(module, &mut choices);
+
+    let mut edits = Vec::new();
+    for c in choices {
+        let choice_line = line_of(&line_starts, c.span.start);
+        if leading_has_tab(src, line_starts[choice_line]) {
+            continue;
+        }
+        let choice_indent = indent_of(src, &line_starts, choice_line);
+        let clause_target = choice_indent + INDENT;
+        let nested_target = choice_indent + 2 * INDENT;
+
+        if let Some(ty) = &c.return_ty {
+            if let Some(colon) = find_symbol(src, c.span.start, ty.span().start, ":", &comments) {
+                push_span_block_edit(
+                    &mut edits,
+                    &line_starts,
+                    src,
+                    colon,
+                    ty.span().end,
+                    clause_target,
+                );
+            }
+        }
+
+        if let (Some(first), Some(last)) = (c.params.first(), c.params.last()) {
+            let kw_from = c.return_ty.as_ref().map_or(c.span.start, |t| t.span().end);
+            if let Some(w) = find_keyword(src, kw_from, first.span.start, "with", &comments) {
+                let with_line = line_of(&line_starts, w);
+                let first_param_line = line_of(&line_starts, first.span.start);
+                if first_param_line == with_line {
+                    push_span_block_edit(
+                        &mut edits,
+                        &line_starts,
+                        src,
+                        w,
+                        last.span.end,
+                        clause_target,
+                    );
+                } else {
+                    push_line_edit(&mut edits, &line_starts, src, with_line, clause_target);
+                    push_block_edit(
+                        &mut edits,
+                        &line_starts,
+                        src,
+                        first.span.start,
+                        last.span.end,
+                        nested_target,
+                        choice_line,
+                    );
+                }
+            }
+        }
+
+        if let (Some(first), Some(last)) = (c.observers.first(), c.observers.last()) {
+            if let Some(k) =
+                find_keyword(src, c.span.start, first.span().start, "observer", &comments)
+            {
+                push_span_block_edit(
+                    &mut edits,
+                    &line_starts,
+                    src,
+                    k,
+                    last.span().end,
+                    clause_target,
+                );
+            }
+        }
+        if let (Some(first), Some(last)) = (c.controllers.first(), c.controllers.last()) {
+            if let Some(k) = find_keyword(
+                src,
+                c.span.start,
+                first.span().start,
+                "controller",
+                &comments,
+            ) {
+                push_span_block_edit(
+                    &mut edits,
+                    &line_starts,
+                    src,
+                    k,
+                    last.span().end,
+                    clause_target,
+                );
+            }
+        }
+
+        if let Some(body) = &c.body {
+            push_span_block_edit(
+                &mut edits,
+                &line_starts,
+                src,
+                body.span().start,
+                body.span().end,
+                clause_target,
+            );
+        }
+    }
+    edits
+}
+
+fn reindent_choices(src: &str, module: &Module) -> String {
+    let edits = choice_edits(src, module);
+    if edits.is_empty() {
+        return src.to_string();
+    }
+    apply_shifts(src, &edits)
+}
+
+// ---- top-level type/data/class/instance/exception declarations ---------------
+
+fn type_def_edits(src: &str, module: &Module) -> Vec<Edit> {
+    let line_starts = line_start_table(src);
+    let comments = comment_spans(src);
+    let mut edits = Vec::new();
+    for decl in &module.decls {
+        let Decl::TypeDef { span, .. } = decl else {
+            continue;
+        };
+        let head_line = line_of(&line_starts, span.start);
+        if leading_has_tab(src, line_starts[head_line]) {
+            continue;
+        }
+        let head_indent = indent_of(src, &line_starts, head_line);
+        let head_has_with = line_contains_word(src, &line_starts, head_line, "with");
+        let mut in_with = head_has_with;
+        let mut with_body_target = if head_has_with {
+            first_body_anchor_indent_after(src, &line_starts, &comments, head_line, span.end)
+                .unwrap_or(head_indent + INDENT)
+        } else {
+            head_indent + 2 * INDENT
+        };
+        let head_has_where = line_contains_word(src, &line_starts, head_line, "where");
+        let mut in_where = head_has_where;
+        let mut where_body_target = if head_has_where {
+            first_body_anchor_indent_after(src, &line_starts, &comments, head_line, span.end)
+                .unwrap_or(head_indent + INDENT)
+        } else {
+            head_indent + INDENT
+        };
+        let mut after_variant = line_contains_symbol(src, &line_starts, head_line, "=");
+        let mut after_bar_variant = false;
+
+        let mut line = head_line + 1;
+        while line < line_starts.len() && line_starts[line] < span.end {
+            let Some(trimmed) = code_line_trimmed(src, &line_starts, &comments, line) else {
+                line += 1;
+                continue;
+            };
+            let target = if starts_with_word(trimmed, "where") {
+                in_with = false;
+                in_where = true;
+                where_body_target = head_indent + 2 * INDENT;
+                after_variant = false;
+                Some(head_indent + INDENT)
+            } else if starts_with_word(trimmed, "with") {
+                let target = if after_bar_variant {
+                    head_indent + 2 * INDENT
+                } else {
+                    head_indent + INDENT
+                };
+                in_with = true;
+                in_where = false;
+                with_body_target = target + INDENT;
+                after_variant = false;
+                after_bar_variant = false;
+                Some(target)
+            } else if trimmed.starts_with('=') || trimmed.starts_with('|') {
+                in_with = false;
+                in_where = false;
+                after_variant = true;
+                after_bar_variant = trimmed.starts_with('|');
+                Some(head_indent + INDENT)
+            } else if starts_with_word(trimmed, "deriving") {
+                in_with = false;
+                in_where = false;
+                after_variant = false;
+                after_bar_variant = false;
+                Some(head_indent + INDENT)
+            } else if in_with {
+                Some(with_body_target)
+            } else if in_where {
+                Some(where_body_target)
+            } else if after_variant {
+                Some(head_indent + INDENT)
+            } else {
+                None
+            };
+            if let Some(target) = target {
+                push_code_line_edit(&mut edits, src, &line_starts, &comments, line, target);
+            }
+            line += 1;
+        }
+    }
+    edits
+}
+
+fn first_body_anchor_indent_after(
+    src: &str,
+    ls: &[usize],
+    comments: &[(usize, usize)],
+    after_line: usize,
+    block_end: usize,
+) -> Option<i64> {
+    let mut line = after_line + 1;
+    while line < ls.len() && ls[line] < block_end {
+        if leading_has_tab(src, ls[line]) {
+            return None;
+        }
+        let end = *ls.get(line + 1).unwrap_or(&src.len());
+        let text = &src[ls[line]..end];
+        let cur = text.len() - text.trim_start_matches(' ').len();
+        let trimmed = text[cur..].trim_end();
+        if trimmed.is_empty() {
+            line += 1;
+            continue;
+        }
+        if is_comment_line(comments, ls[line] + cur) && !trimmed.starts_with("{-#") {
+            line += 1;
+            continue;
+        }
+        return Some(indent_of(src, ls, line));
+    }
+    None
+}
+
+fn reindent_type_defs(src: &str, module: &Module) -> String {
+    let edits = type_def_edits(src, module);
+    if edits.is_empty() {
+        return src.to_string();
+    }
+    apply_shifts(src, &edits)
+}
+
+// ---- function guards and where-bindings --------------------------------------
+
+fn guard_edits(src: &str, module: &Module) -> Vec<Edit> {
+    let line_starts = line_start_table(src);
+    let comments = comment_spans(src);
+    let mut edits = Vec::new();
+    for decl in &module.decls {
+        let Decl::Function(fun) = decl else {
+            continue;
+        };
+        for eq in &fun.equations {
+            let eq_line = line_of(&line_starts, eq.span.start);
+            if leading_has_tab(src, line_starts[eq_line]) {
+                continue;
+            }
+            let guard_target = indent_of(src, &line_starts, eq_line) + INDENT;
+            let mut cursor = eq.span.start;
+            for (guard, body) in &eq.guards {
+                if let Some(pipe) = find_symbol(src, cursor, guard.span().start, "|", &comments) {
+                    push_span_block_edit(
+                        &mut edits,
+                        &line_starts,
+                        src,
+                        pipe,
+                        body.span().end,
+                        guard_target,
+                    );
+                }
+                cursor = body.span().end;
+            }
+            if let (Some(first), Some(last)) = (eq.where_bindings.first(), eq.where_bindings.last())
+            {
+                if let Some(w) = find_keyword(src, cursor, first.span.start, "where", &comments) {
+                    push_span_block_edit(
+                        &mut edits,
+                        &line_starts,
+                        src,
+                        w,
+                        w + "where".len(),
+                        guard_target,
+                    );
+                    push_block_edit(
+                        &mut edits,
+                        &line_starts,
+                        src,
+                        first.span.start,
+                        last.span.end,
+                        guard_target + INDENT,
+                        eq_line,
+                    );
+                }
+            }
+        }
+    }
+    edits
+}
+
+fn reindent_guards(src: &str, module: &Module) -> String {
+    let edits = guard_edits(src, module);
+    if edits.is_empty() {
+        return src.to_string();
+    }
+    apply_shifts(src, &edits)
+}
+
+// ---- record updates ----------------------------------------------------------
+
+fn record_update_edits(src: &str, module: &Module) -> Vec<Edit> {
+    let line_starts = line_start_table(src);
+    let comments = comment_spans(src);
+    let mut recs: Vec<(Span, usize, usize, usize)> = Vec::new();
+    walk_module_expressions(module, &mut |e| {
+        if let Expr::Record {
+            span, base, fields, ..
+        } = e
+        {
+            if matches!(base.as_ref(), Expr::Con { .. }) {
+                return;
+            }
+            if let (Some(first), Some(last)) = (fields.first(), fields.last()) {
+                recs.push((*span, base.span().end, first.span.start, last.span.end));
+            }
+        }
+    });
+    recs.sort_by(|a, b| a.0.start.cmp(&b.0.start).then(b.0.end.cmp(&a.0.end)));
+
+    let mut edits = Vec::new();
+    for (rec_span, base_end, first_field, last_field_end) in recs {
+        let rec_line = line_of(&line_starts, rec_span.start);
+        let field_line = line_of(&line_starts, first_field);
+        if field_line <= rec_line || leading_has_tab(src, line_starts[rec_line]) {
+            continue;
+        }
+        let Some(w) = find_keyword(src, base_end, first_field, "with", &comments) else {
+            continue;
+        };
+        let with_line = line_of(&line_starts, w);
+        let rec_indent = indent_of(src, &line_starts, rec_line);
+        let field_target = if with_line > rec_line {
+            push_line_edit(
+                &mut edits,
+                &line_starts,
+                src,
+                with_line,
+                rec_indent + INDENT,
+            );
+            rec_indent + 2 * INDENT
+        } else {
+            rec_indent + INDENT
+        };
+        push_block_edit(
+            &mut edits,
+            &line_starts,
+            src,
+            first_field,
+            last_field_end,
+            field_target,
+            rec_line,
+        );
+    }
+    edits
+}
+
+fn reindent_record_updates(src: &str, module: &Module) -> String {
+    let edits = record_update_edits(src, module);
+    if edits.is_empty() {
+        return src.to_string();
+    }
+    apply_shifts(src, &edits)
+}
+
+// ---- try/catch ---------------------------------------------------------------
+
+fn try_edits(src: &str, module: &Module) -> Vec<Edit> {
+    let line_starts = line_start_table(src);
+    let comments = comment_spans(src);
+    let mut tries: Vec<(Span, Span, Vec<Span>)> = Vec::new();
+    walk_module_expressions(module, &mut |e| {
+        if let Expr::Try {
+            span,
+            body,
+            handlers,
+            ..
+        } = e
+        {
+            tries.push((
+                *span,
+                body.span(),
+                handlers.iter().map(|h| h.span).collect(),
+            ));
+        }
+    });
+    tries.sort_by(|a, b| a.0.start.cmp(&b.0.start).then(b.0.end.cmp(&a.0.end)));
+
+    let mut edits = Vec::new();
+    for (try_span, body_span, handlers) in tries {
+        let try_line = line_of(&line_starts, try_span.start);
+        if leading_has_tab(src, line_starts[try_line]) {
+            continue;
+        }
+        let try_col = src[line_starts[try_line]..try_span.start].chars().count() as i64;
+        let nested_target = try_col + INDENT;
+        push_block_edit(
+            &mut edits,
+            &line_starts,
+            src,
+            body_span.start,
+            body_span.end,
+            nested_target,
+            try_line,
+        );
+        if let Some(first_handler) = handlers.first() {
+            if let Some(catch) =
+                find_keyword(src, body_span.end, first_handler.start, "catch", &comments)
+            {
+                push_span_block_edit(
+                    &mut edits,
+                    &line_starts,
+                    src,
+                    catch,
+                    catch + "catch".len(),
+                    try_col,
+                );
+            }
+        }
+        if let (Some(first), Some(last)) = (handlers.first(), handlers.last()) {
+            push_block_edit(
+                &mut edits,
+                &line_starts,
+                src,
+                first.start,
+                last.end,
+                nested_target,
+                try_line,
+            );
+        }
+    }
+    edits
+}
+
+fn reindent_tries(src: &str, module: &Module) -> String {
+    let edits = try_edits(src, module);
+    if edits.is_empty() {
+        return src.to_string();
+    }
+    apply_shifts(src, &edits)
+}
+
+// ---- expression continuations ------------------------------------------------
+
+fn continuation_edits(src: &str, module: &Module) -> Vec<Edit> {
+    let line_starts = line_start_table(src);
+    let comments = comment_spans(src);
+    let mut edits = Vec::new();
+    walk_module_expressions(module, &mut |e| match e {
+        Expr::Tuple { span, items, .. } | Expr::List { span, items, .. } => {
+            push_item_continuations(
+                &mut edits,
+                src,
+                &line_starts,
+                &comments,
+                *span,
+                items.iter().map(Expr::span),
+            );
+        }
+        _ => {}
+    });
+    edits
+}
+
+fn push_item_continuations(
+    edits: &mut Vec<Edit>,
+    src: &str,
+    ls: &[usize],
+    comments: &[(usize, usize)],
+    span: Span,
+    items: impl Iterator<Item = Span>,
+) {
+    let head_line = line_of(ls, span.start);
+    let target = indent_of(src, ls, head_line) + INDENT;
+    for item in items {
+        let item_line = line_of(ls, item.start);
+        if item_line <= head_line {
+            continue;
+        }
+        let mut first = item.start;
+        let line_start = ls[item_line];
+        if let Some(comma) = src[line_start..item.start].rfind(',') {
+            first = line_start + comma;
+        }
+        if is_comment_line(comments, first) {
+            continue;
+        }
+        push_span_block_edit(edits, ls, src, first, item.end, target);
+    }
+}
+
+fn reindent_continuations(src: &str, module: &Module) -> String {
+    let edits = continuation_edits(src, module);
+    if edits.is_empty() {
+        return src.to_string();
+    }
+    apply_shifts(src, &edits)
+}
+
+// ---- shared line-edit helpers ------------------------------------------------
+
+fn push_span_block_edit(
+    edits: &mut Vec<Edit>,
+    ls: &[usize],
+    src: &str,
+    first_byte: usize,
+    end_byte: usize,
+    target: i64,
+) {
+    let first_line = line_of(ls, first_byte);
+    if src[ls[first_line]..first_byte].chars().any(|c| c != ' ') {
+        return;
+    }
+    if leading_has_tab(src, ls[first_line]) {
+        return;
+    }
+    let delta = target - indent_of(src, ls, first_line);
+    if delta != 0 {
+        edits.push(Edit {
+            child_start: ls[first_line],
+            block_end: end_byte,
+            delta,
+        });
+    }
+}
+
+fn push_code_line_edit(
+    edits: &mut Vec<Edit>,
+    src: &str,
+    ls: &[usize],
+    comments: &[(usize, usize)],
+    line: usize,
+    target: i64,
+) {
+    if code_line_trimmed(src, ls, comments, line).is_none() || leading_has_tab(src, ls[line]) {
+        return;
+    }
+    push_line_edit(edits, ls, src, line, target);
+}
+
+fn code_line_trimmed<'a>(
+    src: &'a str,
+    ls: &[usize],
+    comments: &[(usize, usize)],
+    line: usize,
+) -> Option<&'a str> {
+    let start = *ls.get(line)?;
+    let end = *ls.get(line + 1).unwrap_or(&src.len());
+    let text = &src[start..end];
+    let cur = text.len() - text.trim_start_matches(' ').len();
+    let trimmed = text[cur..].trim_end();
+    if trimmed.is_empty() || is_comment_line(comments, start + cur) {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
+fn starts_with_word(s: &str, word: &str) -> bool {
+    s.strip_prefix(word).is_some_and(|rest| {
+        rest.is_empty()
+            || rest
+                .chars()
+                .next()
+                .is_some_and(|c| !c.is_ascii_alphanumeric() && c != '_' && c != '\'')
+    })
+}
+
+fn line_contains_word(src: &str, ls: &[usize], line: usize, word: &str) -> bool {
+    let end = *ls.get(line + 1).unwrap_or(&src.len());
+    let line_text = &src[ls[line]..end];
+    let mut i = 0;
+    while let Some(rel) = line_text[i..].find(word) {
+        let at = i + rel;
+        let before_ok = at == 0 || !is_ident_byte(line_text.as_bytes()[at - 1]);
+        let after = at + word.len();
+        let after_ok = after >= line_text.len() || !is_ident_byte(line_text.as_bytes()[after]);
+        if before_ok && after_ok {
+            return true;
+        }
+        i = at + 1;
+    }
+    false
+}
+
+const fn is_ident_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_' || b == b'\''
+}
+
+fn line_contains_symbol(src: &str, ls: &[usize], line: usize, symbol: &str) -> bool {
+    let end = *ls.get(line + 1).unwrap_or(&src.len());
+    src[ls[line]..end].contains(symbol)
+}
+
+fn find_symbol(
+    src: &str,
+    from: usize,
+    to: usize,
+    symbol: &str,
+    comments: &[(usize, usize)],
+) -> Option<usize> {
+    let hay = &src[from..to.min(src.len())];
+    let mut i = 0;
+    while let Some(rel) = hay[i..].find(symbol) {
+        let abs = from + i + rel;
+        if !is_comment_line(comments, abs) {
+            return Some(abs);
+        }
+        i += rel + symbol.len();
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1126,6 +1917,18 @@ mod tests {
         let src = "f = do\n      pure ()\n";
         let out = format_ast(src);
         assert_eq!(out, "f = do\n  pure ()\n");
+    }
+
+    #[test]
+    fn source_range_expectation_files_stay_byte_exact() {
+        let src = "module M where\n-- @ WARN range=3:8-3:9; x\nfoo : Int\nfoo = 1\n";
+        assert_eq!(format_ast(src), src);
+    }
+
+    #[test]
+    fn source_location_query_files_stay_byte_exact() {
+        let src = "-- @QUERY-LF .location.range | (.start_line == 8 and .start_col == 9)\n\n\nmodule Locations where\nfoo : Int\nfoo = 1\n";
+        assert_eq!(format_ast(src), src);
     }
 
     #[test]
@@ -1174,10 +1977,12 @@ mod tests {
     }
 
     #[test]
-    fn do_block_with_try_stays_verbatim() {
-        // try/catch handler layout is still deliberately left verbatim.
+    fn do_block_with_try_is_reindented() {
+        // A do-block containing try/catch is now owned by the do and try passes.
         let src = "f = do\n      _ <- try foo catch _ -> bar\n      pure ()\n";
-        assert_eq!(format_ast(src), src);
+        let out = format_ast(src);
+        assert_eq!(out, "f = do\n  _ <- try foo catch _ -> bar\n  pure ()\n");
+        assert_eq!(format_ast(&out), out);
     }
 
     #[test]
@@ -1297,11 +2102,12 @@ mod tests {
     }
 
     #[test]
-    fn record_update_stays_verbatim() {
-        // base is an expression (`this`), not a bare constructor: an update,
-        // which hangs-aligns inconsistently in the corpus — leave it alone.
+    fn record_update_fields_are_reindented() {
+        // base is an expression (`this`), not a bare constructor: an update.
         let src = "f this p = this with\n      owner = p\n";
-        assert_eq!(format_ast(src), src);
+        let out = format_ast(src);
+        assert_eq!(out, "f this p = this with\n  owner = p\n");
+        assert_eq!(format_ast(&out), out);
     }
 
     #[test]
@@ -1317,6 +2123,16 @@ mod tests {
     fn inline_con_with_is_untouched() {
         let src = "f = Asset with issuer = a; owner = b\n";
         assert_eq!(format_ast(src), src);
+    }
+
+    #[test]
+    fn con_with_before_where_keeps_fields_inside_expression() {
+        let src = "module M where\nquery : T\nquery = lift $ QueryACS with\n    parties = p\n    tplId = t\n  where\n    convert = x\n";
+        let out = format_ast(src);
+        assert_eq!(
+            out,
+            "module M where\nquery: T\nquery = lift $ QueryACS with\n    parties = p\n    tplId = t\n  where\n    convert = x\n"
+        );
     }
 
     #[test]
@@ -1380,6 +2196,105 @@ mod tests {
         // bindings left of `let`/`in`.
         let src = "f x = let\n        a = 1\n        b = 2\n      in a + b\n";
         assert_eq!(format_ast(src), src);
+    }
+
+    #[test]
+    fn choice_internal_ladder_is_canonicalized() {
+        let src = "template T\n  with\n    p: Party\n  where\n    choice C\n          : ()\n          with\n              arg: Text\n          observer p\n          controller p\n          do\n              pure ()\n";
+        let out = format_ast(src);
+        let want = "template T\n  with\n    p: Party\n  where\n    choice C\n      : ()\n      with\n        arg: Text\n      observer p\n      controller p\n      do\n        pure ()\n";
+        assert_eq!(out, want);
+        assert_eq!(format_ast(&out), out);
+    }
+
+    #[test]
+    fn choice_keyword_scan_ignores_identifier_fragments() {
+        let src = "template T\n  with\n    p: Party\n  where\n    choice C\n          : ()\n          with\n              observer_name: Party\n          observer p\n          controller p\n          do\n              pure ()\n";
+        let out = format_ast(src);
+        let want = "template T\n  with\n    p: Party\n  where\n    choice C\n      : ()\n      with\n        observer_name: Party\n      observer p\n      controller p\n      do\n        pure ()\n";
+        assert_eq!(out, want);
+        assert_eq!(format_ast(&out), out);
+    }
+
+    #[test]
+    fn type_def_ladders_are_canonicalized() {
+        let src = "data Color = Grey\n           | RGB\n                with r: Int\n           deriving (Eq, Show)\n\nexception E\n      with\n          msg: Text\n      where\n          message msg\n";
+        let out = format_ast(src);
+        let want = "data Color = Grey\n  | RGB\n    with r: Int\n  deriving (Eq, Show)\n\nexception E\n  with\n    msg: Text\n  where\n    message msg\n";
+        assert_eq!(out, want);
+        assert_eq!(format_ast(&out), out);
+    }
+
+    #[test]
+    fn data_record_with_ladder_keeps_with_above_fields() {
+        let src =
+            "data ReceiverAmount = ReceiverAmount\n    with\n      receiver : Party\n      amount : Decimal\n";
+        let out = format_ast(src);
+        let want =
+            "data ReceiverAmount = ReceiverAmount\n  with\n    receiver: Party\n    amount: Decimal\n";
+        assert_eq!(out, want);
+        assert_eq!(format_ast(&out), out);
+    }
+
+    #[test]
+    fn inline_data_record_with_braces_keeps_body_column() {
+        let src = "data Data = Data with\n  { dummy : ()\n  , srcLoc : SrcLoc\n  }\n";
+        assert_eq!(format_ast(src), src);
+    }
+
+    #[test]
+    fn class_where_body_with_comments_keeps_body_indent() {
+        let src = "class ActionState s m | m -> s where\n  {-# MINIMAL get, (put | modify) #-}\n  -- | Fetch the current value.\n  get : m s\n\n  -- | Set the value.\n  put : s -> m ()\n  put = modify . const\n";
+        let out = format_ast(src);
+        let want = "class ActionState s m | m -> s where\n  {-# MINIMAL get, (put | modify) #-}\n  -- | Fetch the current value.\n  get: m s\n\n  -- | Set the value.\n  put: s -> m ()\n  put = modify . const\n";
+        assert_eq!(out, want);
+        assert_eq!(format_ast(&out), out);
+    }
+
+    #[test]
+    fn class_where_body_with_indented_pragma_keeps_pragma_indent() {
+        let src = "class Foo t where\n    {-# MINIMAL foo1 | foo2 #-}\n\n    foo1 : t -> Int\n    foo1 x = foo1 x + 1\n";
+        let out = format_ast(src);
+        let want = "class Foo t where\n    {-# MINIMAL foo1 | foo2 #-}\n\n    foo1: t -> Int\n    foo1 x = foo1 x + 1\n";
+        assert_eq!(out, want);
+        assert_eq!(format_ast(&out), out);
+    }
+
+    #[test]
+    fn guards_and_where_bindings_are_canonicalized() {
+        let src =
+            "f x\n      | x > 0 = g\n               x\n      | otherwise = 0\n      where\n          g y = y\n";
+        let out = format_ast(src);
+        let want = "f x\n  | x > 0 = g\n           x\n  | otherwise = 0\n  where\n    g y = y\n";
+        assert_eq!(out, want);
+        assert_eq!(format_ast(&out), out);
+    }
+
+    #[test]
+    fn multiline_try_catch_is_canonicalized() {
+        let src = "f = try\n        foo\n      catch\n        _ -> bar\n";
+        let out = format_ast(src);
+        let want = "f = try\n      foo\n    catch\n      _ -> bar\n";
+        assert_eq!(out, want);
+        assert_eq!(format_ast(&out), out);
+    }
+
+    #[test]
+    fn explicit_list_continuations_are_canonicalized() {
+        let src = "x = [ 1\n      , 2\n      , 3 ]\n";
+        let out = format_ast(src);
+        let want = "x = [ 1\n  , 2\n  , 3 ]\n";
+        assert_eq!(out, want);
+        assert_eq!(format_ast(&out), out);
+    }
+
+    #[test]
+    fn module_and_import_continuations_are_canonicalized() {
+        let src = "module M\n      ( f\n      , g\n      ) where\n\nimport DA.Map\n      ( Map\n      )\n";
+        let out = format_ast(src);
+        let want = "module M\n  ( f\n  , g\n  ) where\n\nimport DA.Map\n  ( Map\n  )\n";
+        assert_eq!(out, want);
+        assert_eq!(format_ast(&out), out);
     }
 
     #[test]

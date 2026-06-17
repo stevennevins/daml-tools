@@ -39,7 +39,6 @@ eval = \case
   Num2 x -> x
   Plus x y -> x+y
 
-
 main = script do
   (Rec with x = 5).x === 5
 

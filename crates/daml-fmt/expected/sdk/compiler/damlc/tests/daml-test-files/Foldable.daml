@@ -33,11 +33,11 @@ testFoldl = script do
   23 === foldl1 (\a b -> (a + (2 * b))) rrl
   41 === foldr1 (\a b -> (a + (2 * b))) rl
   29 === foldr1 (\a b -> (a + (2 * b))) rrl
- where
-   ll = RC 3 (RC 5 (RC 7 RN))
-   rll = RC 7 (RC 5 (RC 3 RN))
-   rl = LC (LC (LC LN 3) 5) 7
-   rrl = LC (LC (LC LN 7) 5) 3
+  where
+    ll = RC 3 (RC 5 (RC 7 RN))
+    rll = RC 7 (RC 5 (RC 3 RN))
+    rl = LC (LC (LC LN 3) 5) 7
+    rrl = LC (LC (LC LN 7) 5) 3
 
 testToList = script do
   []  === toList (RN @())

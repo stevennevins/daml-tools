@@ -34,7 +34,6 @@ template FeatureSuggestion with
       controller employee
       do pure ()
 
-
 test = script do
   drWho <- allocateParty "Dr Who"
   founders@[eric, shaul, yuval] <- mapA allocateParty ["Eric", "Shaul", "Yuval"]

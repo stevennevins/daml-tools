@@ -5,7 +5,7 @@
 -- Use these with care. No stability guarantees are given for them across SDK upgrades.
 module Daml.Script.Internal
   ( -- Testing
-    CommandName (..)
+  CommandName (..)
   , ErrorClassName (..)
   , ErrorMessage (..)
   , tryCommands
@@ -13,7 +13,7 @@ module Daml.Script.Internal
   , liftFailedCommandToFailureStatus
 
   , -- Packages
-    PackageName (..)
+  PackageName (..)
   , listVettedPackages
   , listAllPackages
   , vetPackages
@@ -22,19 +22,19 @@ module Daml.Script.Internal
   , unvetPackagesOnParticipant
 
   , -- Party Management
-    allocateReplicatedPartyOn
+  allocateReplicatedPartyOn
   , allocateReplicatedPartyWithHintOn
 
     -- Exceptions
   , throwAnyException
 
   , -- Internal submit error
-    ContractNotFoundAdditionalInfo
+  ContractNotFoundAdditionalInfo
   , isNotActive
   , DevErrorType (..)
 
   , -- Deprecated. Should be removed soon
-    trySubmitConcurrently
+  trySubmitConcurrently
   ) where
 
 import Daml.Script.Internal.Questions

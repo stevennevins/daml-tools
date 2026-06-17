@@ -12,11 +12,11 @@ import DA.Exception
 import DA.Maybe
 
 exception MyException with
-    m: Text
+    m : Text
   where
     message m
 
-exprTest: Update ()
+exprTest : Update ()
 exprTest = do
   try pure 1
   catch GeneralError _ -> pure 2
@@ -24,14 +24,14 @@ exprTest = do
   throw $ GeneralError "error"
 
   let err = ArithmeticError "Can't add!"
-      anyErr: AnyException
+      anyErr : AnyException
       anyErr = error "only care about type"
 
   pure ()
 
 -- @ WARN range=36:12-36:20; fromJust; Deprecated
 -- @ WARN range=36:23-36:27; Just; Deprecated
-existingWarningsStillWork: Update ()
+existingWarningsStillWork : Update ()
 existingWarningsStillWork = do
   let _a = fromJust $ Just 1
   pure ()

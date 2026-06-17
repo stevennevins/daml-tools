@@ -52,7 +52,6 @@ contract_manipulation_test = do
   newAccountCid =/= accountCid
 -- CONTRACT_MANIPULATION_END
 
-
 -- STALE_CONTRACT_ID_BEGIN
 data Cash = Cash with
   currency: Text

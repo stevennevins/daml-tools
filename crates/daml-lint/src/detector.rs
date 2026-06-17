@@ -143,7 +143,7 @@ pub fn find_duplicate_detector_name(detectors: &[Box<dyn Detector>]) -> Option<S
     None
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "js-runtime"))]
 mod tests {
     use super::*;
 

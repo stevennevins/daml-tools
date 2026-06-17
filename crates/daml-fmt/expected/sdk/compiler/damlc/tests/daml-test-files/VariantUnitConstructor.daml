@@ -12,10 +12,10 @@ data Foo = Foo1 ()
 
 -- This should result in warning for Bar1.
 data Bar
-    = Bar1 ()
-    | Bar2
+  = Bar1 ()
+  | Bar2
 
 -- This should result in warning for Baz1 and Baz2.
 data Baz
-    = Baz1 ()
-    | Baz2 ()
+  = Baz1 ()
+  | Baz2 ()

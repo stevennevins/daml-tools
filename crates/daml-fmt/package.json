@@ -5,6 +5,7 @@
   "private": true,
   "license": "AGPL-3.0-only",
   "scripts": {
+    "audit": "node tools/audit-samples.js",
     "test": "node test/diff.js"
   },
   "engines": {

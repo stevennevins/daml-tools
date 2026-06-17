@@ -157,7 +157,6 @@ template Helper
           lookupKey
         cid === expectedCid
 
-
 lookupTest = script do
 
   -- Put four parties in the four possible relationships with a `Keyed`
@@ -194,7 +193,6 @@ lookupTest = script do
   mcid <- submit sig do
     Helper sig `createAndExerciseCmd` LookupByKey sig
   mcid === Some keyedCid
-
 
   -- Stakeholder can fetch
   (cid, l) <- submit obs do

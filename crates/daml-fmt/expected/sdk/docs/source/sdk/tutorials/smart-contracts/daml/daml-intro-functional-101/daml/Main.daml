@@ -10,7 +10,6 @@ increment: Int -> Int
 increment n = n + 1
 -- INCREMENT_END
 
-
 -- ADD_SIG_BEGIN
 add: Additive a => a -> a -> a
 -- ADD_SIG_END

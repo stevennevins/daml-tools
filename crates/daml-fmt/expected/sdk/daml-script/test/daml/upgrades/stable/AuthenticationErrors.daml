@@ -351,62 +351,62 @@ main = tests
   [ subtree "should reject field renaming"
     [ subtree "in fetches"
       [ ("from choice body" , fieldRenamingFetchChoiceBody)
-      , ("of local contract", fieldRenamingFetchLocal)
+        , ("of local contract", fieldRenamingFetchLocal)
       ]
-    , subtree "in exercises"
-      [ ("in command", fieldRenamingExerciseCommand)
-      , ("from choice body", fieldRenamingExerciseChoiceBody)
-      , ("of local contract", fieldRenamingExerciseLocal)
-      ]
-    , subtree "in interface exercises"
-      [ ("in command", fieldRenamingExerciseInterfaceCommand)
-      , ("from choice body", fieldRenamingExerciseInterfaceChoiceBody)
-      , ("of local contract", fieldRenamingExerciseInterfaceLocal)
-      ]
+      , subtree "in exercises"
+        [ ("in command", fieldRenamingExerciseCommand)
+          , ("from choice body", fieldRenamingExerciseChoiceBody)
+          , ("of local contract", fieldRenamingExerciseLocal)
+        ]
+      , subtree "in interface exercises"
+        [ ("in command", fieldRenamingExerciseInterfaceCommand)
+          , ("from choice body", fieldRenamingExerciseInterfaceChoiceBody)
+          , ("of local contract", fieldRenamingExerciseInterfaceLocal)
+        ]
     ]
-  , subtree "should reject variant rank change"
-    [ subtree "in fetches"
-      [ ("from choice body", variantRankChangeFetchChoiceBody)
-      , ("of local contract", variantRankChangeFetchLocal)
+    , subtree "should reject variant rank change"
+      [ subtree "in fetches"
+        [ ("from choice body", variantRankChangeFetchChoiceBody)
+          , ("of local contract", variantRankChangeFetchLocal)
+        ]
+        , subtree "in exercises"
+          [ ("in command", variantRankChangeExerciseCommand)
+            , ("from choice body", variantRankChangeExerciseChoiceBody)
+            , ("of local contract", variantRankChangeExerciseLocal)
+          ]
+        , subtree "in interface exercises"
+          [ ("in command", variantRankChangeExerciseInterfaceCommand)
+            , ("from choice body", variantRankChangeExerciseInterfaceChoiceBody)
+            , ("of local contract", variantRankChangeExerciseInterfaceLocal)
+          ]
       ]
-    , subtree "in exercises"
-      [ ("in command", variantRankChangeExerciseCommand)
-      , ("from choice body", variantRankChangeExerciseChoiceBody)
-      , ("of local contract", variantRankChangeExerciseLocal)
+    , subtree "should reject enum rank change"
+      [ subtree "in fetches"
+        [ ("from choice body", enumRankChangeFetchChoiceBody)
+          , ("of local contract", enumRankChangeFetchLocal)
+        ]
+        , subtree "in exercises"
+          [ ("in command", enumRankChangeExerciseCommand)
+            , ("from choice body", enumRankChangeExerciseChoiceBody)
+            , ("of local contract", enumRankChangeExerciseLocal)
+          ]
+        , subtree "in interface exercises"
+          [ ("in command", enumRankChangeExerciseInterfaceCommand)
+            , ("from choice body", enumRankChangeExerciseInterfaceChoiceBody)
+            , ("of local contract", enumRankChangeExerciseInterfaceLocal)
+          ]
       ]
-    , subtree "in interface exercises"
-      [ ("in command", variantRankChangeExerciseInterfaceCommand)
-      , ("from choice body", variantRankChangeExerciseInterfaceChoiceBody)
-      , ("of local contract", variantRankChangeExerciseInterfaceLocal)
+    , subtree "should reject template renaming"
+      [ subtree "in fetches"
+        [ ("from choice body", templateRenamingFetchChoiceBody)
+          , ("of local contract", templateRenamingFetchLocal)
+        ]
+        , subtree "in exercises"
+          [ ("from choice body", templateRenamingExerciseChoiceBody)
+            , ("of local contract", templateRenamingExerciseLocal)
+          ]
       ]
-    ]
-  , subtree "should reject enum rank change"
-    [ subtree "in fetches"
-      [ ("from choice body", enumRankChangeFetchChoiceBody)
-      , ("of local contract", enumRankChangeFetchLocal)
-      ]
-    , subtree "in exercises"
-      [ ("in command", enumRankChangeExerciseCommand)
-      , ("from choice body", enumRankChangeExerciseChoiceBody)
-      , ("of local contract", enumRankChangeExerciseLocal)
-      ]
-    , subtree "in interface exercises"
-      [ ("in command", enumRankChangeExerciseInterfaceCommand)
-      , ("from choice body", enumRankChangeExerciseInterfaceChoiceBody)
-      , ("of local contract", enumRankChangeExerciseInterfaceLocal)
-      ]
-    ]
-  , subtree "should reject template renaming"
-    [ subtree "in fetches"
-      [ ("from choice body", templateRenamingFetchChoiceBody)
-      , ("of local contract", templateRenamingFetchLocal)
-      ]
-    , subtree "in exercises"
-      [ ("from choice body", templateRenamingExerciseChoiceBody)
-      , ("of local contract", templateRenamingExerciseLocal)
-      ]
-    ]
-  , ("should authenticate contracts with a local contract ID in their payload", templateWithContractIdPayload)
+    , ("should authenticate contracts with a local contract ID in their payload", templateWithContractIdPayload)
   ]
 
 --- Utils ---

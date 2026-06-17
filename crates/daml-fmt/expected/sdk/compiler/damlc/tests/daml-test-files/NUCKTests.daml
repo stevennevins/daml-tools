@@ -110,7 +110,6 @@ exerciseByMultiple = script do
   a `submit` createCmd (WithKey a "global 1")
   a `submit` createCmd (WithKey a "global 2")
 
-
   (pl1, pl1') <- (actAs a <> discloseMany [disclosed1, disclosed2]) `submit`
     do
       createCmd (WithKey a "local 1")
@@ -165,7 +164,6 @@ lookupNByKeyMultiple = script do
     createCmd (WithKey a "local 2")
     queries <- createAndExerciseCmd (Helper a) PerformAndPassLookupNByKey with n = 5
     pure $ map (\(_cid, contract) -> contract.payload) queries
-
 
   payloads === ["local 2", "local 1", "disclosed 1", "disclosed 2", "global 2"]
 

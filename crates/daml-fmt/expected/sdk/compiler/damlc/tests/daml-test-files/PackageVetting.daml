@@ -10,19 +10,19 @@ import Daml.Script.Internal
 import PackageAModule
 import DA.Assert
 
-packageA: PackageName
+packageA : PackageName
 packageA = PackageName "package-vetting-package-a" "1.0.0"
 
-packageB: PackageName
+packageB : PackageName
 packageB = PackageName "package-vetting-package-b" "1.0.0"
 
-canUseImportedPackage: Script ()
+canUseImportedPackage : Script ()
 canUseImportedPackage = script do
   alice <- allocateParty "Alice"
   alice `submit` createCmd PackageATemplate with p = alice
   pure ()
 
-canUseReVettedPackage: Script ()
+canUseReVettedPackage : Script ()
 canUseReVettedPackage = script do
   alice <- allocateParty "Alice"
   unvetPackages [packageA]
@@ -31,7 +31,7 @@ canUseReVettedPackage = script do
   pure ()
 
 -- @ ERROR range=35:1-35:25; Failed to find package
-cannotUseUnvettedPackage: Script ()
+cannotUseUnvettedPackage : Script ()
 cannotUseUnvettedPackage = script do
   alice <- allocateParty "Alice"
   unvetPackages [packageA]
@@ -39,7 +39,7 @@ cannotUseUnvettedPackage = script do
   pure ()
 
 -- @ ERROR range=43:1-43:30; Failed to find package
-cannotExerciseUnvettedPackage: Script ()
+cannotExerciseUnvettedPackage : Script ()
 cannotExerciseUnvettedPackage = script do
   alice <- allocateParty "Alice"
   cid <- alice `submit` createCmd PackageATemplate with p = alice
@@ -47,25 +47,25 @@ cannotExerciseUnvettedPackage = script do
   alice `submit` exerciseCmd cid Call
   pure ()
 
-hasAllOf: Eq a => [a] -> [a] -> Bool
+hasAllOf : Eq a => [a] -> [a] -> Bool
 hasAllOf as = all (`elem` as)
 
-hasNoneOf: Eq a => [a] -> [a] -> Bool
+hasNoneOf : Eq a => [a] -> [a] -> Bool
 hasNoneOf as = not . any (`elem` as)
 
-assertPackages: Script [PackageName] -> [PackageName] -> [PackageName] -> Script ()
+assertPackages : Script [PackageName] -> [PackageName] -> [PackageName] -> Script ()
 assertPackages getPackages expected notExpected = script do
   packages <- getPackages
   assertMsg ("Expected " <> show expected <> " to be a subset of " <> show packages <> ", but it wasn't.") $ packages `hasAllOf` expected
   assertMsg ("Expected none of " <> show notExpected <> " to be in " <> show packages <> ", but some were.") $ packages `hasNoneOf` notExpected
 
-assertVettedPackages: [PackageName] -> [PackageName] -> Script ()
+assertVettedPackages : [PackageName] -> [PackageName] -> Script ()
 assertVettedPackages = assertPackages listVettedPackages
 
-assertAllPackages: Script ()
+assertAllPackages : Script ()
 assertAllPackages = assertPackages listAllPackages [packageA, packageB] []
 
-listPackagesIsCorrect: Script ()
+listPackagesIsCorrect : Script ()
 listPackagesIsCorrect = script do
   -- Good starting position
   assertVettedPackages [packageA, packageB] []

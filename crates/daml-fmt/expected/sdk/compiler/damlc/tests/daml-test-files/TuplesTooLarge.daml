@@ -6,5 +6,5 @@
 -- | Check that warning is emitted if tuple of size > 5 is used
 module TuplesTooLarge where
 
-t6: (Int, Int, Int, Int, Int, Int)
+t6 : (Int, Int, Int, Int, Int, Int)
 t6 = (1, 2, 3, 4, 5, 6)

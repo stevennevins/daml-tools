@@ -1,21 +1,20 @@
 -- Copyright (c) 2025 Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
 
-
 module Tests.VariantTest where
 
 data VariantItem x = EmptyVariant
-                   | PrimVariant Int
-                   | RecordVariant with x: Int
-                   | RecordVariantRecord with y: VariantItem Int
-                   | ParameterizedRecordVariant with x1: x, x2: x, x3: [x]
-                   | CustomVariant Custom
-                   | CustomParametricVariant (CustomParametric x)
+  | PrimVariant Int
+  | RecordVariant with x: Int
+  | RecordVariantRecord with y: VariantItem Int
+  | ParameterizedRecordVariant with x1: x, x2: x, x3: [x]
+  | CustomVariant Custom
+  | CustomParametricVariant (CustomParametric x)
   deriving (Eq, Show)
 
 data StarKindVariant = EmptySK
-                     | ParameterizedRecordSK with x1: Int, x2: Text, x3: [Int]
-                     | CustomSK Custom
+  | ParameterizedRecordSK with x1: Int, x2: Text, x3: [Int]
+  | CustomSK Custom
   deriving (Eq, Show)
 
 data Custom = Custom {}

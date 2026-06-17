@@ -16,6 +16,24 @@ daml-lint lowers that AST to a rule-facing IR and runs detectors over it. Files
 that fail to parse degrade to partial structure with a diagnostic on stderr
 (`file:line:col`); a scan never aborts on bad input.
 
+## Documentation
+
+The workspace docs split task guides, reference, and design background:
+
+- [Scan Daml source](../../docs/how-to/scan-daml.md) for CLI usage patterns
+- [Write a custom rule](../../docs/tutorials/write-a-daml-lint-custom-rule.md)
+  for a guided first external rule
+- [Custom rule contract](../../docs/reference/daml-lint-custom-rule-contract.md)
+  for the JavaScript runtime contract and TypeScript types
+- [CLI reference](../../docs/reference/cli.md) for options, output formats, and
+  exit codes
+- [Crate reference](../../docs/reference/crates.md) for features and public
+  modules
+- [Rule authoring model](../../docs/explanation/daml-lint-rule-authoring.md)
+  for why TypeScript authoring is bundled to JavaScript
+- [Workspace architecture](../../docs/explanation/workspace-architecture.md)
+  for how `daml-lint` uses `daml-parser`
+
 ## Detectors
 
 | Detector | Severity | Description |
@@ -56,19 +74,24 @@ The default features build the published CLI and custom-rule engine:
 
 ```toml
 [dependencies]
-daml-lint = "0.1"
+daml-lint = "0.2"
 ```
 
-Library consumers that only need the built-in detectors and rule-facing IR can
+Library consumers that only need parser lowering and the rule-facing IR can
 avoid the CLI parser and QuickJS runtime:
 
 ```toml
 [dependencies]
-daml-lint = { version = "0.1", default-features = false }
+daml-lint = { version = "0.2", default-features = false }
 ```
 
-Enable `custom-rules` only when you need JavaScript AST rules from library code.
-The `cli` feature exists for the `daml-lint` binary.
+The `js-runtime` feature enables the QuickJS-backed runtime used by shipped
+built-ins. The `custom-rules` feature enables loading user-provided rule files
+through `--rules` when the runtime is also enabled. Shipped built-ins are
+authored in TypeScript and embedded as generated JavaScript; no TypeScript
+toolchain is required at runtime. The shipped detectors are registered through
+`create_builtin_detectors()` rather than exposed as individual Rust detector
+modules. The `cli` feature exists for the `daml-lint` binary.
 
 ## Usage
 
@@ -111,9 +134,13 @@ A rule is TypeScript/JavaScript (executed by an embedded QuickJS engine):
 constants for metadata, plus visitor functions named after the node types you
 care about — like solhint's `ContractDefinition(node)` callbacks. Write rules
 in TypeScript against [examples/daml-lint.d.ts](examples/daml-lint.d.ts) for
-type checking and autocomplete:
+type checking and autocomplete. The `globalThis.__daml_lint_rule` assignment is
+the TypeScript-checked rule object; the current runtime still discovers
+top-level metadata constants and visitor `function` declarations:
 
 ```typescript
+import type { Template } from "./daml-lint";
+
 const NAME = "template-requires-ensure";
 const SEVERITY = "medium";
 const DESCRIPTION = "Every template must declare an ensure clause";   // optional
@@ -123,15 +150,20 @@ function on_template(template: Template): void {
     report(template, `Template '${template.name}' has no ensure clause`);
   }
 }
+
+globalThis.__daml_lint_rule = { NAME, SEVERITY, DESCRIPTION, on_template };
 ```
 
 then compile to the JavaScript file you pass to `--rules`:
 
 ```sh
-npx esbuild my-rule.ts --outfile=my-rule.js   # or tsc
+npx esbuild my-rule.ts --bundle --outfile=dist/my-rule.js
 ```
 
-(Plain JavaScript rules work directly — the compile step is only for TypeScript.)
+Type-only imports are erased by the build. Runtime helper imports must be
+bundled because the rule engine runs JavaScript without `import`, `require`,
+filesystem, or network APIs. Plain JavaScript rules work directly — the compile
+step is only for TypeScript.
 
 Visitors (define any subset, at least one):
 
@@ -146,8 +178,9 @@ Visitors (define any subset, at least one):
 | `check(m)` | once per module | `ir_version`, `name`, `file`, `imports`, `templates`, `interfaces`, `functions`, `source` |
 
 Report findings with `report(node, message)` (location taken from the node's
-`span`) or `report(line, message)`. The rule's `SEVERITY` applies to all its
-findings. Node shapes are declared in
+`span`) or `report(line, message)`. Pass `report(node, message, evidence)` when
+the report should show structural evidence instead of the source line. The
+rule's `SEVERITY` applies to all its findings. Node shapes are declared in
 [examples/daml-lint.d.ts](examples/daml-lint.d.ts) and mirror the IR in
 [src/ir.rs](src/ir.rs); statement nodes in `body` are objects keyed by kind,
 e.g. `"Create" in stmt`.
@@ -208,8 +241,9 @@ Examples:
 - [examples/no-trace.ts](examples/no-trace.ts) — banned-token check over raw source lines
 - [examples/unguarded-division-ast.ts](examples/unguarded-division-ast.ts) — expression-level analysis on the typed AST (division denominators vs prior assertions)
 
-Each example ships with its compiled `.js` next to it — that's the file
-`--rules` takes.
+Each example is authored in TypeScript and ships with its compiled `.js` under
+[examples/dist/](examples/dist/) - that's the file `--rules` takes. Run
+`npm run build:examples` from this crate to refresh those generated files.
 
 To check that a rule script parses without running a scan, point the tool at a nonexistent path — rule errors are reported before file discovery. (A valid script then prints `No .daml files found.`, which also exits 2 — go by the message, not the exit code.)
 
@@ -254,7 +288,7 @@ provenance and licensing.
 ## Public API Stability
 
 `daml-lint` is pre-1.0. The CLI exit codes and documented feature flags are the
-stable user contract for 0.1.x. The rule-facing IR is intentionally public for
+stable user contract for 0.2.x. The rule-facing IR is intentionally public for
 custom rules and library users, but it may gain structure in 0.x minor releases;
 custom rules should check `ir_version` and match typed nodes rather than raw
 source substrings. Detector result types such as `Finding`, `Severity`, and

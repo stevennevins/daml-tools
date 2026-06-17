@@ -1,32 +1,31 @@
 -- Copyright (c) 2025 Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
 
-
 module Tests.OptionalTest where
 
 data MyOptionalRecord = MyOptionalRecord
-    with
-        intOpt: Optional Int
-        unitOpt: Optional ()
+  with
+    intOpt: Optional Int
+    unitOpt: Optional ()
   deriving (Eq, Show)
 
 data NestedOptionalRecord = NestedOptionalRecord
-    with
-        outerOptional: Optional (Optional (Optional Int))
+  with
+    outerOptional: Optional (Optional (Optional Int))
   deriving (Eq, Show)
 
 data MyOptionalListRecord = MyOptionalListRecord
-    with
-        list: Optional [Int]
+  with
+    list: Optional [Int]
   deriving (Eq, Show)
 
 data MyListOfOptionalsRecord = MyListOfOptionalsRecord
-    with
-        list: [Optional Int]
+  with
+    list: [Optional Int]
   deriving (Eq, Show)
 
 data OptionalVariant x = OptionalParametricVariant (Optional x)
-                       | OptionalPrimVariant (Optional Int)
+  | OptionalPrimVariant (Optional Int)
   deriving (Eq, Show)
 
 -- Not part of the test but the codegen filters out

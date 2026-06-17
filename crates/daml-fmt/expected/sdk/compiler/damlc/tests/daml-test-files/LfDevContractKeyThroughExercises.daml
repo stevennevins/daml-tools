@@ -33,13 +33,13 @@ template KeyOps
 
     nonconsuming choice
       LookupGivenKey: Optional (ContractId BasicKey)
-        with
-          actor: Party
-          keyMaintainers: Set Party
-        controller actor
-          do
-            assert $ S.member actor signatories
-            lookupByKey @BasicKey keyMaintainers
+      with
+        actor: Party
+        keyMaintainers: Set Party
+      controller actor
+      do
+        assert $ S.member actor signatories
+        lookupByKey @BasicKey keyMaintainers
 
 -- @LEDGER run LfDevContractKeyThroughExercises.EXPECTED.ledger
 run = script do

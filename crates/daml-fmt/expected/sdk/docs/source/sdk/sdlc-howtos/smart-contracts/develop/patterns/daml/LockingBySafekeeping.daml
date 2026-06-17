@@ -1,9 +1,7 @@
 -- Copyright (c) 2025 Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
 
-
 {-# LANGUAGE PartialTypeSignatures #-}
-
 
 module LockingBySafekeeping where
 
@@ -71,7 +69,6 @@ template LockRequest
         lockCid <- create LockedCoinV2 with locker; maturity; coin
         return LockResult {coinCid; lockCid}
 -- END_LOCK_REQUEST_TEMPLATE
-
 
 locking: Script (ContractId Coin)  -- test
 locking =

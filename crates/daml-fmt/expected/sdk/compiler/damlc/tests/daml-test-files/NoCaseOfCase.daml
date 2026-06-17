@@ -20,7 +20,7 @@ import Daml.Script
 --
 -- We're curently translating join points to simple lets. Hence, this
 -- code would always blow up, even when @x == False@ and @y == Some _@.
-f: Bool -> Optional Int -> Int
+f : Bool -> Optional Int -> Int
 f x y = case case x of { True -> None; False -> y } of
   None -> error "this should not happen"
   Some z -> z

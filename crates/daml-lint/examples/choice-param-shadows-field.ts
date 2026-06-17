@@ -1,7 +1,9 @@
+import type { Choice, Template } from "./daml-lint";
+
 // A choice parameter named identically to a template field silently shadows
 // it inside the choice body — `amount` may not be the amount you think.
 // Exercises choice.parameters cross-referenced against template.fields.
-// Compile: npx esbuild choice-param-shadows-field.ts --outfile=choice-param-shadows-field.js
+// Compile: npx esbuild examples/choice-param-shadows-field.ts --bundle --outfile=examples/dist/choice-param-shadows-field.js
 
 const NAME = "choice-param-shadows-field";
 const SEVERITY = "medium";
@@ -18,3 +20,5 @@ function on_choice(choice: Choice, template: Template): void {
     }
   }
 }
+
+globalThis.__daml_lint_rule = { NAME, SEVERITY, DESCRIPTION, on_choice };

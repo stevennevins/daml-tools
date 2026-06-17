@@ -1,6 +1,8 @@
+import type { Import } from "./daml-lint";
+
 // Unqualified imports of DA collection modules pull names like `lookup`,
 // `insert`, and `null` into scope, shadowing Prelude. Exercises on_import.
-// Compile: npx esbuild unqualified-da-import.ts --outfile=unqualified-da-import.js
+// Compile: npx esbuild examples/unqualified-da-import.ts --bundle --outfile=examples/dist/unqualified-da-import.js
 
 const NAME = "unqualified-da-import";
 const SEVERITY = "low";
@@ -13,3 +15,5 @@ function on_import(imp: Import): void {
     report(imp, `Import '${imp.module_name}' unqualified — its names shadow Prelude; use 'import qualified ${imp.module_name}'`);
   }
 }
+
+globalThis.__daml_lint_rule = { NAME, SEVERITY, DESCRIPTION, on_import };

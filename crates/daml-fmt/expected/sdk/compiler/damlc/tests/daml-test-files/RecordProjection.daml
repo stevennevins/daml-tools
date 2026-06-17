@@ -13,7 +13,6 @@ data Bar = Bar with quux: Int
 foo: Foo
 foo = Foo with quux = 1
 
-
 -- @QUERY-LF $pkg | .modules[] | .values[] | select(.name_with_type | lf::get_value_name($pkg) == ["dotSyntax"]) | .expr | lf::norm_interned($pkg) | .rec_proj | (lf::get_field($pkg) == "quux") and (.tycon.tycon | lf::get_dotted_name($pkg) == ["Foo"])
 dotSyntax: Int
 dotSyntax = foo.quux

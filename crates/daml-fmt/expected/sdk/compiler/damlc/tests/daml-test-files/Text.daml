@@ -27,11 +27,11 @@ testLength = script do
   3 === T.length "abc"
 
 testTrim = script do
-  trim "  digital asset  " === "digital asset"
+     trim "  digital asset  " === "digital asset"
 
 testReplace = script do
-  replace "el" "_" "Hello Bella" === "H_lo B_la"
-  replace "el" "e" "Hello"       === "Helo"
+    replace "el" "_" "Hello Bella" === "H_lo B_la"
+    replace "el" "e" "Hello"       === "Helo"
 
 testLines = script do
   [] === lines ""
@@ -52,20 +52,20 @@ testUnwords = script do
   unwords ["one", "two"] === "one two"
 
 testLinesBy = script do
-  linesBy (== "a") "aabbaca"  === ["","","bb","c"]
-  linesBy (== "a") "aabbacaa" === ["","","bb","c",""]
-  assert $ null $ linesBy (== "a") ""
-  linesBy (== "a") "a"        === [""]
-  linesBy (== ":") "::xyz:abc::123::" === ["","","xyz","abc","","123",""]
-  linesBy (== ",") "my,list,here" === ["my","list","here"]
+    linesBy (== "a") "aabbaca"  === ["","","bb","c"]
+    linesBy (== "a") "aabbacaa" === ["","","bb","c",""]
+    assert $ null $ linesBy (== "a") ""
+    linesBy (== "a") "a"        === [""]
+    linesBy (== ":") "::xyz:abc::123::" === ["","","xyz","abc","","123",""]
+    linesBy (== ",") "my,list,here" === ["my","list","here"]
 
 testWordsBy = script do
-  wordsBy (== "a") "aabbaca"  === ["bb","c"]
-  wordsBy (== "a") "aabbacaa" === ["bb","c"]
-  assert $ null $ wordsBy (== "a") ""
-  assert $ null $ wordsBy (== "a") "a"
-  wordsBy (== ":") "::xyz:abc::123::" === ["xyz","abc","123"]
-  wordsBy (== ",") "my,list,here" === ["my","list","here"]
+    wordsBy (== "a") "aabbaca"  === ["bb","c"]
+    wordsBy (== "a") "aabbacaa" === ["bb","c"]
+    assert $ null $ wordsBy (== "a") ""
+    assert $ null $ wordsBy (== "a") "a"
+    wordsBy (== ":") "::xyz:abc::123::" === ["xyz","abc","123"]
+    wordsBy (== ",") "my,list,here" === ["my","list","here"]
 
 testIntercalate = script do
   "1, 2, 3" === intercalate ", " ["1", "2", "3"]
@@ -74,23 +74,23 @@ testIntercalate = script do
   "" === intercalate ", " []
 
 testDropPrefix = script do
-  dropPrefix "Mr. " "Mr. Men" === "Men"
-  dropPrefix "Mr. " "Dr. Men" === "Dr. Men"
+    dropPrefix "Mr. " "Mr. Men" === "Men"
+    dropPrefix "Mr. " "Dr. Men" === "Dr. Men"
 
 testDropSuffix = script do
-  dropSuffix "!" "Hello World!"  === "Hello World"
-  dropSuffix "!" "Hello World!!" === "Hello World!"
-  dropSuffix "!" "Hello World."  === "Hello World."
+    dropSuffix "!" "Hello World!"  === "Hello World"
+    dropSuffix "!" "Hello World!!" === "Hello World!"
+    dropSuffix "!" "Hello World."  === "Hello World."
 
 testStripSuffix = script do
-  stripSuffix "bar" "foobar" === Some "foo"
-  stripSuffix ""    "baz"    === Some "baz"
-  assert $ isNone $ stripSuffix "foo" "quux"
+    stripSuffix "bar" "foobar" === Some "foo"
+    stripSuffix ""    "baz"    === Some "baz"
+    assert $ isNone $ stripSuffix "foo" "quux"
 
 testStripPrefix = script do
-  stripPrefix "foo" "foobar" === Some "bar"
-  stripPrefix ""    "baz"    === Some "baz"
-  assert $ isNone $ stripPrefix "foo" "quux"
+    stripPrefix "foo" "foobar" === Some "bar"
+    stripPrefix ""    "baz"    === Some "baz"
+    assert $ isNone $ stripPrefix "foo" "quux"
 
 testIsPrefixOf = script do
   True === isPrefixOf "ab" "abcdef"
@@ -305,8 +305,8 @@ testNuls = script do
   T.splitOn "\0" "Hello\0World" === ["Hello","World"]
 
 testCodePoints = script do
-  T.toCodePoints "Hello" === [72, 101, 108, 108, 111]
-  T.fromCodePoints [87, 111, 114, 108, 100] === "World"
+    T.toCodePoints "Hello" === [72, 101, 108, 108, 111]
+    T.fromCodePoints [87, 111, 114, 108, 100] === "World"
 
 testAsciiToLower = script do
   T.asciiToLower "HELLO WORLD" === "hello world"

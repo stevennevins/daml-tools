@@ -8,30 +8,30 @@ module DA.Date.Types
   ) where
 
 data DayOfWeek
-    = Monday
-    | Tuesday
-    | Wednesday
-    | Thursday
-    | Friday
-    | Saturday
-    | Sunday
-    deriving (Serializable)
+  = Monday
+  | Tuesday
+  | Wednesday
+  | Thursday
+  | Friday
+  | Saturday
+  | Sunday
+  deriving (Serializable)
 
 -- | The `Month` type represents a month in the Gregorian calendar.
 --
 -- Note that, while `Month` has an `Enum` instance, the `toEnum` and `fromEnum`
 -- functions start counting at 0, i.e. `toEnum 1 :: Month` is `Feb`.
 data Month
-    = Jan
-    | Feb
-    | Mar
-    | Apr
-    | May
-    | Jun
-    | Jul
-    | Aug
-    | Sep
-    | Oct
-    | Nov
-    | Dec
-    deriving (Serializable)
+  = Jan
+  | Feb
+  | Mar
+  | Apr
+  | May
+  | Jun
+  | Jul
+  | Aug
+  | Sep
+  | Oct
+  | Nov
+  | Dec
+  deriving (Serializable)

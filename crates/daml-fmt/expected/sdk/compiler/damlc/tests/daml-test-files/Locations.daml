@@ -7,6 +7,6 @@
 module Locations where
 
 template A with
-    p: Party
+    p : Party
   where
     signatory p

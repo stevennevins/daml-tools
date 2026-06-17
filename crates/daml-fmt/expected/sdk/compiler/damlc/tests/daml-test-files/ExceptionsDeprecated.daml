@@ -8,11 +8,11 @@ import DA.Exception
 
 -- @ WARN range=10:11-10:22; Exceptions are deprecated
 exception MyException with
-    m: Text
+    m : Text
   where
     message m
 
-exprTest: Update ()
+exprTest : Update ()
 exprTest = do
   -- 3 Warnings here, two for the `try-catch` itself, one for the use of `GeneralError` matching.
   -- @ WARN range=21:3-22:33; _tryCatch; Exceptions are deprecated
@@ -28,7 +28,7 @@ exprTest = do
   -- @ WARN range=29:13-29:28; ArithmeticError; Exceptions are deprecated
   let err = ArithmeticError "Can't add!"
   -- @ WARN range=31:16-31:28; AnyException; Exceptions are deprecated
-      anyErr: AnyException
+      anyErr : AnyException
       anyErr = error "only care about type"
 
   pure ()

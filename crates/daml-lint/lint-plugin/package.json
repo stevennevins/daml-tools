@@ -1,0 +1,29 @@
+{
+  "name": "@daml-tools/lint-plugin",
+  "version": "0.3.1",
+  "description": "TypeScript contract and starter templates for daml-lint custom rule plugins",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stevennevins/daml-tools.git",
+    "directory": "crates/daml-lint/lint-plugin"
+  },
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts"
+    },
+    "./templates/minimal-rule": "./templates/minimal-rule.ts",
+    "./templates/project/package": "./templates/project/package.json",
+    "./templates/project/tsconfig": "./templates/project/tsconfig.json"
+  },
+  "files": [
+    "dist/index.d.ts",
+    "templates",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

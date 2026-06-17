@@ -23,8 +23,8 @@ instance IsQuestion QueryACS [(ContractId (), AnyTemplate)] where command = "Que
 query: forall t p. (Template t, HasEnsure t, IsParties p) => p -> Script [(ContractId t, t)]
 -- The 'HasEnsure t' constraint prevents this function from being used on interface types.
 query p = fmap convert $ lift $ QueryACS with
-  parties = toParties p
-  tplId = templateTypeRep @t
+    parties = toParties p
+    tplId = templateTypeRep @t
   where
     convert: [(ContractId (), AnyTemplate)] -> [(ContractId t, t)]
     convert = map (\(cid, tpl) -> (coerceContractId cid, fromSome $ fromAnyTemplate tpl))
@@ -70,7 +70,7 @@ queryContractId p c = fmap (\(anyTpl, _, _) -> fromSome (fromAnyTemplate anyTpl)
 -- Queries a Disclosure for a given ContractId. Same performance caveats apply as to `queryContractId`.
 queryDisclosure: forall t p. (Template t, IsParties p) => HasCallStack => p -> ContractId t -> Script (Optional Disclosure)
 queryDisclosure p c = fmap (\(_, tplId, blob) -> Disclosure tplId cid blob) <$> queryContractId_ p c
- where
+  where
     cid = coerceContractId c
 
 -- | HIDE
@@ -86,8 +86,8 @@ instance IsQuestion QueryInterface [LedgerValue] where command = "QueryInterface
 -- If the view function fails for a given contract id, The `Optional v` will be `None`.
 queryInterface: forall i v p. (Template i, HasInterfaceView i v, IsParties p) => p -> Script [(ContractId i, Optional v)]
 queryInterface p = fmap convert $ lift $ QueryInterface with
-  parties = toParties p
-  interfaceId = templateTypeRep @i
+    parties = toParties p
+    interfaceId = templateTypeRep @i
   where
     convert: [LedgerValue] -> [(ContractId i, Optional v)]
     convert = map $ fromLedgerValue @(ContractId i, Optional v)
@@ -114,9 +114,9 @@ instance IsQuestion QueryInterfaceContractId (Optional LedgerValue) where comman
 -- and filtering on the client side.
 queryInterfaceContractId: forall i v p. (Template i, HasInterfaceView i v, IsParties p) => HasCallStack => p -> ContractId i -> Script (Optional v)
 queryInterfaceContractId p c = fmap convert $ lift $ QueryInterfaceContractId with
-  parties = toParties p
-  interfaceId = templateTypeRep @i
-  cid = coerceContractId c
+    parties = toParties p
+    interfaceId = templateTypeRep @i
+    cid = coerceContractId c
   where
     convert: Optional LedgerValue -> Optional v
     convert = fmap $ fromLedgerValue @v
@@ -144,9 +144,9 @@ instance IsQuestion QueryByKey (Optional (ContractId (), AnyTemplate)) where
 -- and filtering on the client side.
 queryByKey: forall t k p. HasCallStack => (TemplateKey t k, IsParties p) => p -> k -> Script (Optional (ContractId t, t))
 queryByKey p k = fmap convert $ lift $ QueryByKey with
-  parties = toParties p
-  tplId = templateTypeRep @t
-  key = toAnyContractKey @t k
+    parties = toParties p
+    tplId = templateTypeRep @t
+    key = toAnyContractKey @t k
   where
     convert: Optional (ContractId (), AnyTemplate) -> Optional (ContractId t, t)
     convert = fmap (\(cid, anyTpl) -> (coerceContractId cid, fromSome (fromAnyTemplate anyTpl)))
@@ -177,10 +177,10 @@ instance IsQuestion QueryNByKey [(ContractId (), AnyTemplate)] where command = "
 queryNByKey: forall t k p. HasCallStack => (TemplateKey t k, IsParties p) => p -> Int -> k -> Script [(ContractId t, t)]
 queryNByKey p limit k | limit < 0 = fail $ "queryNByKey limit (" <> show limit <> ") must be positive"
 queryNByKey p limit k = fmap convert $ lift $ QueryNByKey with
-  parties = toParties p
-  tplId = templateTypeRep @t
-  contractKey = toAnyContractKey @t k
-  limit = limit
+    parties = toParties p
+    tplId = templateTypeRep @t
+    contractKey = toAnyContractKey @t k
+    limit = limit
   where
     convert: [(ContractId (), AnyTemplate)] -> [(ContractId t, t)]
     convert = fmap (\(cid, anyTpl) -> (coerceContractId cid, fromSome (fromAnyTemplate anyTpl)))

@@ -38,9 +38,9 @@ main = tests
   [ ( "Disclosure retrieved with an upgraded template ID are valid disclosures"
     , queriedDisclosuresAreValid
     )
-  , ( "Disclosures cannot downgrade when an optional field is set"
-    , queriedDisclosuresCannotDropOptionalFieldWhenDowngrading
-    )
+    , ( "Disclosures cannot downgrade when an optional field is set"
+      , queriedDisclosuresCannotDropOptionalFieldWhenDowngrading
+      )
   ]
 
 queriedDisclosuresAreValid: Test

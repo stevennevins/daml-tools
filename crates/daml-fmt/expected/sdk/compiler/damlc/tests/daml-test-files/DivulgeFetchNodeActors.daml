@@ -106,7 +106,7 @@ template DivulgeTo
       with
         cid: ContractId Iou
       controller stakeholder
-        do fetch cid
+      do fetch cid
 
 template DivulgeFrom
   with
@@ -120,4 +120,4 @@ template DivulgeFrom
       with
         cid: ContractId Iou
       controller stakeholder
-        do fetch cid
+      do fetch cid

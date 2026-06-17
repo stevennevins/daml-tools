@@ -1,7 +1,10 @@
+import type { DamlFunction, Statement } from "./daml-lint";
+import { walkBodyStatements } from "../rules/_helpers";
+
 // Top-level functions that archive or exercise contracts hide ledger
 // mutations outside any choice, making authorization harder to audit.
 // Exercises on_function and the Archive/Exercise statement variants.
-// Compile: npx esbuild function-ledger-actions.ts --outfile=function-ledger-actions.js
+// Compile: npx esbuild examples/function-ledger-actions.ts --bundle --outfile=examples/dist/function-ledger-actions.js
 
 const NAME = "function-ledger-actions";
 const SEVERITY = "info";
@@ -9,25 +12,14 @@ const DESCRIPTION = "Top-level functions performing archive/exercise — verify 
 
 function ledgerActions(stmts: Statement[]): string[] {
   const found: string[] = [];
-  for (const stmt of stmts) {
+  walkBodyStatements(stmts, (stmt) => {
     if ("Archive" in stmt) {
       found.push("archive");
     }
     if ("Exercise" in stmt) {
       found.push("exercise");
     }
-    if ("TryCatch" in stmt) {
-      const tc = (stmt as { TryCatch: { try_body: Statement[]; catch_body: Statement[] } }).TryCatch;
-      found.push(...ledgerActions(tc.try_body), ...ledgerActions(tc.catch_body));
-    }
-    // An if/case keeps its arms as separate scopes; descend into each.
-    if ("Branch" in stmt) {
-      const br = (stmt as { Branch: { arms: Statement[][] } }).Branch;
-      for (const arm of br.arms) {
-        found.push(...ledgerActions(arm));
-      }
-    }
-  }
+  });
   return found;
 }
 
@@ -37,3 +29,5 @@ function on_function(fn: DamlFunction): void {
     report(fn, `Function '${fn.name}' performs ledger actions (${actions.join(", ")}) outside a choice`);
   }
 }
+
+globalThis.__daml_lint_rule = { NAME, SEVERITY, DESCRIPTION, on_function };

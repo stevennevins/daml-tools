@@ -16,6 +16,20 @@ on one shared, **lossless** parser.
 | [`daml-lint`](crates/daml-lint) | lib + CLI | Static analysis scanner — lowers the AST to an IR and runs detectors. |
 | [`daml-fmt`](crates/daml-fmt) | lib + CLI | Canonical code formatter, differential-tested against a compiler-verified corpus. |
 
+## Quickstart
+
+```sh
+cargo build --workspace
+cargo test --workspace
+
+cargo run -p daml-fmt --bin daml-fmt -- --help
+cargo run -p daml-lint -- --help
+```
+
+For a guided first pass through the tools, start with
+[`docs/tutorials/first-run.md`](docs/tutorials/first-run.md). For contributor
+setup and local verification, see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 ## The shape
 
 ```
@@ -36,44 +50,11 @@ The shared tree is **lossless** (keeps every comment and whitespace run as
 trivia), so the formatter can re-print layout byte-faithfully while the linter
 ignores trivia and reads meaning. One tree, two readers.
 
-## Build & test
+## Documentation
 
-```sh
-cargo build --workspace
-cargo test  --workspace
-```
-
-## Developer hooks
-
-This repo tracks Git hook shims in `.githooks` and manages hook behavior with
-`prek.toml`. Enable the hooks in new checkouts with `prek`:
-
-```sh
-uv tool install prek
-git config core.hooksPath .githooks
-prek prepare-hooks
-```
-
-Developers also need the Rust `rustfmt` and `clippy` components, Node.js 18+
-or newer, and `cargo-semver-checks`, matching CI.
-
-The pre-commit hook runs the local lint gates from CI: `cargo fmt --all --check`,
-`cargo clippy --workspace --all-targets --all-features --locked`, and
-`RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked`.
-The commit message hook enforces Conventional Commits so release-plz can derive
-changelogs and version bumps.
-
-The pre-push hook runs the heavier test gates: `cargo test --workspace
---all-features --locked` and the formatter's 924-file differential test
-(`cd crates/daml-fmt && node test/diff.js`). It also runs
-`cargo semver-checks check-release` for each published crate so breaking
-library API changes require the matching version bump before push.
-
-The parser/layout integration tests use a vendored
-[daml-finance](https://github.com/digital-asset/daml-finance) corpus under
-[`corpus/daml-finance/`](corpus/daml-finance/) (634 real `.daml` files), shared
-at the workspace root by `daml-parser` and `daml-lint`. The formatter is
-differential-tested over 924 files (`cd crates/daml-fmt && npm test`).
+The repo documentation is organized by user need under [`docs/`](docs/):
+tutorials for first success, how-to guides for specific work, reference for
+technical facts, and explanations for the design behind the tools.
 
 ## Install the CLIs
 
@@ -81,20 +62,6 @@ differential-tested over 924 files (`cd crates/daml-fmt && npm test`).
 cargo install daml-lint
 cargo install daml-fmt
 ```
-
-## Versioning & release
-
-Each crate is versioned independently. Before the first crates.io baseline,
-`cargo-semver-checks` runs in CI and pre-push hooks. While the crates are
-pre-1.0, breaking public API changes use 0.x minor bumps and patch releases
-stay compatible.
-
-Releases are driven by [release-plz](release-plz.toml) in dependency order
-(parser first, then lint + fmt). The GitHub workflow expects a crates.io
-`CARGO_REGISTRY_TOKEN`; set `RELEASE_PLZ_TOKEN` to a PAT if release PRs/tags
-must trigger follow-on workflows. CLI release archives and SHA-256 files are
-built for Linux x64, macOS ARM64, and Windows x64 when `daml-lint-v*` or
-`daml-fmt-v*` tags are published.
 
 ## License
 

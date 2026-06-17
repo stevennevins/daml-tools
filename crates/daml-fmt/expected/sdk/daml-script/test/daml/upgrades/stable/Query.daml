@@ -28,8 +28,8 @@ contents: |
 main: TestTree
 main = tests
   [ ("Upgrade a contract when querying", queryUpgraded)
-  , ("Downgrade a contract with Nones when querying", queryDowngradedNone)
-  , ("Fail to downgrade a contract with Somes when querying", queryDowngradedSome)
+    , ("Downgrade a contract with Nones when querying", queryDowngradedNone)
+    , ("Fail to downgrade a contract with Somes when querying", queryDowngradedSome)
   ]
 
 queryUpgraded: Test

@@ -6,15 +6,13 @@
 --
 -- @SINCE-LF 2.1
 
-
-
 module NumericScalePropagation where
 
 scalePropWhere: Numeric 10
 scalePropWhere = a + b
-    where
-        a = 0.1
-        b = 0.2
+  where
+    a = 0.1
+    b = 0.2
 
 scalePropLet: Numeric 15
 scalePropLet =

@@ -24,13 +24,29 @@ Results over the 924-file corpus (`corpus/SCOREBOARD.md` is the board):
 | semantics silently changed | 0 |
 | idempotent (`format(format(x)) == format(x)`) | 924 / 924 |
 
-What it lays out today: `do`-block indentation, `if`/`then`/`else` clauses,
-`case` alternatives, `let … in` bindings, constructor `with` fields,
-template/interface bodies, trailing-whitespace + final newline, and
-type-annotation colon spacing (`x : T` → `x: T`). Unmodeled constructs (guards,
-record updates, `data` declarations, type definitions, expression
-continuations) pass through verbatim. It makes its own consistent layout
-decisions and does not aim to match any other formatter's output.
+What it lays out today: module/import continuations, `do`-block indentation,
+`if`/`then`/`else` clauses, `case` alternatives, `let … in` bindings,
+constructor `with` fields, record-update fields, template/interface bodies,
+choice internals, declaration ladders, class/instance body-column alignment,
+function guards/where bindings, `try`/`catch` handlers, explicit tuple/list
+continuations, trailing-whitespace + blank-line/final-newline normalization,
+and type-annotation colon spacing (`x : T` → `x: T`). Broader expression
+wrapping (long applications, infix chains, lambdas, and inline forms) remains
+conservative. It makes its own consistent layout decisions and does not aim to
+match any other formatter's output.
+
+## Documentation
+
+The workspace docs split task guides, reference, and design background:
+
+- [Format Daml source](../../docs/how-to/format-daml.md) for CLI usage patterns
+- [Verify a formatter change](../../docs/how-to/verify-formatter-change.md) for
+  corpus, baseline, and audit commands
+- [CLI reference](../../docs/reference/cli.md) for options and exit codes
+- [Crate reference](../../docs/reference/crates.md) for features, binaries, and
+  public API
+- [Formatter verification model](../../docs/explanation/formatter-verification.md)
+  for the token/desugar/idempotence safety story
 
 ## Build & install
 
@@ -53,10 +69,10 @@ cargo install --path crates/daml-fmt         # puts daml-fmt on your PATH
 ## Usage
 
 ```sh
-daml-fmt Foo.daml              # formatted source to stdout
-daml-fmt -w src/**/*.daml      # rewrite files in place
-daml-fmt --check src/*.daml    # list unformatted files, exit 1 if any
-cat Foo.daml | daml-fmt        # stdin → stdout
+daml-fmt Foo.daml                                  # formatted source to stdout
+find src -name '*.daml' -exec daml-fmt -w {} +     # rewrite files in place
+find src -name '*.daml' -exec daml-fmt --check {} + # list unformatted files
+cat Foo.daml | daml-fmt                            # stdin -> stdout
 ```
 
 Exit codes: 0 ok, 1 `--check` found unformatted files, 2 error.
@@ -82,6 +98,14 @@ runs that oracle on a curated subset and keeps full-corpus idempotence:
 tools/verify-rust.sh               # needs Daml SDK 3.4.11 on PATH for desugar
 tools/verify-rust.sh --desugar     # full-corpus desugar sweep
 ```
+
+Review-oriented full-corpus audit packets:
+
+```sh
+npm run audit                       # writes target/daml-fmt-audit
+```
+
+See `docs/audit-workflow.md` for the 25-sample subagent review workflow.
 
 The structural candidate metric (edit candidates over modeled constructs):
 

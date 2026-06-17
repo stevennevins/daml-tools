@@ -13,7 +13,6 @@ template T
   where
     signatory p
 
-
 run: Script TemplateTypeRep
 run = script do
   pure $ templateTypeRep @T

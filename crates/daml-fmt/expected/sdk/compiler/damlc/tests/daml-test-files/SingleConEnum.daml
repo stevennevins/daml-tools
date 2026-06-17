@@ -10,7 +10,7 @@
 module SingleConEnum where
 
 data Color = Red
-    deriving (Eq, Show)
+  deriving (Eq, Show)
 
 red: Color
 red = Red

@@ -78,7 +78,6 @@ template T
         catch
           GeneralError msg -> msg === "lookupNByKey may not be passed a negative n"
 
-
 test = script do
   p <- allocateParty "p"
   submit p $ forA_ [1..15] $ const $ createCmd $ K p
