@@ -4,7 +4,7 @@
   "private": true,
   "license": "AGPL-3.0-only",
   "scripts": {
-    "build:rules": "esbuild rules/archive-before-execute.ts rules/missing-ensure-decimal.ts rules/missing-positive-amount.ts rules/unbounded-fields.ts --bundle --format=esm --target=es2020 --outdir=rules",
+    "build:rules": "esbuild rules/archive-before-execute.ts rules/missing-ensure-decimal.ts rules/missing-positive-amount.ts rules/unbounded-fields.ts rules/unguarded-division.ts --bundle --format=esm --target=es2020 --outdir=rules",
     "check:rules": "npm run build:rules && git diff --exit-code -- rules"
   },
   "devDependencies": {

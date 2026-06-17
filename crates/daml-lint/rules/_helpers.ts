@@ -97,6 +97,11 @@ export function isNonzeroNumericLiteral(expr: Expr): boolean {
   return "Lit" in expr && (expr.Lit.kind === "Int" || expr.Lit.kind === "Decimal") && !isZeroLiteral(expr);
 }
 
+export function isNonzeroNumericDivisor(expr: Expr): boolean {
+  if ("Neg" in expr) return isNonzeroNumericDivisor(expr.Neg.expr);
+  return isNonzeroNumericLiteral(expr);
+}
+
 export function isNonnegativeNumericLiteral(expr: Expr): boolean {
   return "Lit" in expr && (expr.Lit.kind === "Int" || expr.Lit.kind === "Decimal");
 }
@@ -155,6 +160,10 @@ export function expressionGuaranteesNonnegative(condition: Expr, name: string): 
 
 export function expressionGuaranteesStrictPositive(condition: Expr, name: string): boolean {
   return conjuncts(condition).some((part) => isStrictPositiveBound(part, name));
+}
+
+export function expressionGuaranteesNonzero(condition: Expr, name: string): boolean {
+  return conjuncts(condition).some((part) => isNonzeroBound(part, name));
 }
 
 function isSizeCall(func: Expr, args: Expr[], name: string): boolean {

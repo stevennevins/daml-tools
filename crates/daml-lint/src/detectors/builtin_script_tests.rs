@@ -3,6 +3,7 @@ use super::ensure_decimal::MissingEnsureDecimal;
 use super::positive_amount::MissingPositiveAmount;
 use super::script;
 use super::unbounded_fields::UnboundedFields;
+use super::unguarded_division::UnguardedDivision;
 use crate::detector::{Detector, Finding, Severity};
 use crate::parser::parse_daml;
 use std::path::Path;
@@ -1136,6 +1137,225 @@ template Settlement
             &case_name,
             &source,
             Path::new("MissingPositiveAmount.daml"),
+            &rust_detector,
+            script_detector.as_ref(),
+        );
+    }
+}
+
+#[test]
+fn unguarded_division_script_matches_rust_regressions() {
+    let script_detector = load_rule("unguarded-division.js");
+    let rust_detector = UnguardedDivision;
+
+    let cases = [
+        (
+            "unguarded division triggers",
+            r#"module Test where
+
+scaleFees fees rate =
+  map (\f -> f with amount = f.amount * (1.0 / rate)) fees
+"#,
+        ),
+        (
+            "guarded division passes",
+            r#"module Test where
+
+safeDivide x y = do
+  assertMsg "denominator must be positive" (y > 0)
+  pure (x / y)
+"#,
+        ),
+        (
+            "intToDecimal wrapper reports real denominator",
+            r#"module Test where
+
+dayCount total n = total / intToDecimal n
+"#,
+        ),
+        (
+            "guarded intToDecimal division passes",
+            r#"module Test where
+
+dayCount total n = do
+  assertMsg "n must be positive" (n > 0)
+  pure (total / intToDecimal n)
+"#,
+        ),
+        (
+            "guard after division is flagged",
+            r#"module Test where
+
+unsafeDivide x y = do
+  pure (x / y)
+  assertMsg "denominator must be positive" (y > 0)
+"#,
+        ),
+        (
+            "substring guard does not suppress",
+            r#"module Test where
+
+compute x q = do
+  assertMsg "quantity" (quantity > 0)
+  pure (x / q)
+"#,
+        ),
+        (
+            "ge zero is not a guard",
+            r#"module Test where
+
+divCheck x y = do
+  assertMsg "non-negative" (y >= 0)
+  pure (x / y)
+"#,
+        ),
+        (
+            "second division on line is flagged",
+            r#"module Test where
+
+compute a b c d = do
+  assertMsg "b ok" (b > 0)
+  pure (a / b + c / d)
+"#,
+        ),
+        ("literal denominator safe", "module T where\nf x = x / 2.0\n"),
+        ("zero literal denominator flags", "module T where\nf x = x / 0\n"),
+        (
+            "slash in string literal is not division",
+            r#"module Test where
+
+logUrl = debug "http://host/api/v1/data"
+"#,
+        ),
+        (
+            "slash in comment is not division",
+            r#"module Test where
+
+f x = do
+  {- ratio a/b/c is documented elsewhere -}
+  pure x -- see n/m below
+"#,
+        ),
+        ("line wrapped division is flagged", "module Test where\n\nratio a b = a /\n  b\n"),
+        (
+            "parenthesized literal denominator is safe",
+            "module T where\nf x = x / (2.0)\n",
+        ),
+        (
+            "if nonzero guard suppresses",
+            "module T where\nf x denom = pure (if denom /= 0.0 then x / denom else 0.0)\n",
+        ),
+        (
+            "if zero else guard suppresses",
+            "module T where\nf x denom = pure (if denom == 0.0 then 0.0 else x / denom)\n",
+        ),
+        (
+            "if unrelated condition does not guard",
+            "module T where\nf x denom flag = pure (if flag then x / denom else 0.0)\n",
+        ),
+        (
+            "prefix div is flagged",
+            r#"module Test where
+
+share total n = pure (div total n)
+"#,
+        ),
+        (
+            "guarded prefix div passes",
+            r#"module Test where
+
+share total n = do
+  assertMsg "n positive" (n > 0)
+  pure (div total n)
+"#,
+        ),
+        ("prefix div literal denominator safe", "module T where\nf x = pure (div x 2)\n"),
+        (
+            "ensure clause guards choice division",
+            r#"module Test where
+
+template Pool
+  with
+    admin : Party
+    rate : Decimal
+  where
+    signatory admin
+    ensure rate > 0.0
+
+    choice Share : Decimal
+      with
+        total : Decimal
+      controller admin
+      do
+        pure (total / rate)
+"#,
+        ),
+        (
+            "disjunction guard does not suppress",
+            r#"module Test where
+
+f x y = do
+  assertMsg "weak" (y > 0 || x > 5)
+  pure (x / y)
+"#,
+        ),
+        (
+            "same line guard suppresses",
+            "module Test where\nf x y = do { assertMsg \"y\" (y > 0.0); pure (x / y) }\n",
+        ),
+        (
+            "same line guard after division is flagged",
+            "module Test where\nf x y = do { pure (x / y); assertMsg \"y\" (y > 0.0) }\n",
+        ),
+        ("negative literal denominator safe", "module T where\nf x = x / (-2.0)\n"),
+        (
+            "negative prefix literal denominator safe",
+            "module T where\nf x = div x (-3)\n",
+        ),
+        ("negative zero denominator flags", "module T where\nf x = x / (-0.0)\n"),
+        (
+            "conditional if guard does not suppress",
+            "module Test where\nf flag x y = do\n  if flag\n    then assertMsg \"y ok\" (y > 0.0)\n    else pure ()\n  pure (x / y)\n",
+        ),
+        (
+            "conditional case guard does not suppress",
+            "module Test where\nf k x y = do\n  case k of\n    _ -> assertMsg \"y\" (y > 0.0)\n  pure (x / y)\n",
+        ),
+        (
+            "branch arm guard suppresses division in same arm",
+            r#"module Test where
+
+f flag x y =
+  if flag then do
+    assertMsg "y" (y /= 0.0)
+    pure (x / y)
+  else
+    pure 0.0
+"#,
+        ),
+        (
+            "forA guard does not suppress",
+            "module Test where\nf x y items = do\n  forA_ items (\\i -> assertMsg \"y\" (y > 0.0))\n  pure (x / y)\n",
+        ),
+        (
+            "when gated guard does not suppress",
+            "module Test where\nf x y b = do\n  when b (assertMsg \"y\" (y > 0.0))\n  pure (x / y)\n",
+        ),
+        (
+            "unconditional guard before branch division suppresses",
+            "module Test where\nf x y b = do\n  assertMsg \"y\" (y > 0.0)\n  if b then pure (x / y) else pure 0.0\n",
+        ),
+        (
+            "parenthesized denominator reported whole",
+            "module T where\nf x y = x / (y + 1)\n",
+        ),
+    ];
+
+    for (case_name, source) in cases {
+        assert_rule_matches_rust(
+            case_name,
+            source,
+            Path::new("UnguardedDivision.daml"),
             &rust_detector,
             script_detector.as_ref(),
         );
