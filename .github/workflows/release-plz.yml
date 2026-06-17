@@ -82,7 +82,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      - name: Sync daml-lint npm package version
+      - name: Sync npm package versions
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
           RELEASE_PLZ_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
@@ -96,8 +96,18 @@ jobs:
             exit 0
           fi
 
-          if ! jq -e '.releases[]? | select(.package_name == "daml-lint")' <<<"${RELEASE_PR}" >/dev/null; then
-            echo "Release PR does not include daml-lint; skipping npm package version sync."
+          sync_tools=()
+
+          if jq -e '.releases[]? | select(.package_name == "daml-lint")' <<<"${RELEASE_PR}" >/dev/null; then
+            sync_tools+=("daml-lint")
+          fi
+
+          if jq -e '.releases[]? | select(.package_name == "daml-fmt")' <<<"${RELEASE_PR}" >/dev/null; then
+            sync_tools+=("daml-fmt")
+          fi
+
+          if [[ "${#sync_tools[@]}" -eq 0 ]]; then
+            echo "Release PR does not include daml-lint or daml-fmt; skipping npm package version sync."
             exit 0
           fi
 
@@ -113,17 +123,26 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           gh pr checkout "${pr_number}"
 
-          (
-            cd crates/daml-lint
-            node tools/sync-lint-plugin-version.mjs
-          )
+          for tool in "${sync_tools[@]}"; do
+            if [[ "${tool}" == "daml-lint" ]]; then
+              (
+                cd crates/daml-lint
+                node tools/sync-lint-plugin-version.mjs
+              )
+            fi
+          done
+
+          node tools/sync-npm-cli-versions.mjs "${sync_tools[@]}"
 
           if git diff --quiet -- \
             crates/daml-lint/package.json \
             crates/daml-lint/package-lock.json \
             crates/daml-lint/lint-plugin/package.json \
-            crates/daml-lint/lint-plugin/templates/project/package.json; then
-            echo "daml-lint npm package metadata is already synced."
+            crates/daml-lint/lint-plugin/templates/project/package.json \
+            crates/daml-lint/npm \
+            crates/daml-fmt/package.json \
+            crates/daml-fmt/npm; then
+            echo "npm package metadata is already synced."
             exit 0
           fi
 
@@ -131,7 +150,10 @@ jobs:
             crates/daml-lint/package.json \
             crates/daml-lint/package-lock.json \
             crates/daml-lint/lint-plugin/package.json \
-            crates/daml-lint/lint-plugin/templates/project/package.json
-          git commit -m "chore(daml-lint): sync lint plugin version"
+            crates/daml-lint/lint-plugin/templates/project/package.json \
+            crates/daml-lint/npm \
+            crates/daml-fmt/package.json \
+            crates/daml-fmt/npm
+          git commit -m "chore: sync npm package versions"
           git remote set-url origin "https://x-access-token:${RELEASE_PLZ_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push origin "HEAD:${head_branch}"

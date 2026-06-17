@@ -5,6 +5,13 @@ or format stdin.
 
 ## Install `daml-fmt`
 
+As a project dev dependency:
+
+```sh
+npm install --save-dev @daml-tools/daml-fmt
+npx daml-fmt --check ./daml
+```
+
 From crates.io:
 
 ```sh

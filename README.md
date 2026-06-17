@@ -58,6 +58,16 @@ technical facts, and explanations for the design behind the tools.
 
 ## Install the CLIs
 
+For JavaScript/TypeScript projects that want the tools as dev dependencies:
+
+```sh
+npm install --save-dev @daml-tools/daml-lint @daml-tools/daml-fmt
+npx daml-lint ./daml
+npx daml-fmt --check ./daml
+```
+
+Or install from crates.io:
+
 ```sh
 cargo install daml-lint
 cargo install daml-fmt

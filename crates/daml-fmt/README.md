@@ -55,6 +55,13 @@ lexer + offside layout + parser), never on `daml-lint`. Both live in the
 [daml-tools](https://github.com/stevennevins/daml-tools) workspace, so a normal
 workspace checkout has everything it needs.
 
+For JavaScript/TypeScript projects that want `daml-fmt` as a dev dependency:
+
+```sh
+npm install --save-dev @daml-tools/daml-fmt
+npx daml-fmt --check ./daml
+```
+
 ```sh
 cargo install daml-fmt                       # from crates.io
 # or from the workspace repo:

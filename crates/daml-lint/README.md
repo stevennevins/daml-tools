@@ -47,6 +47,13 @@ The workspace docs split task guides, reference, and design background:
 
 ## Installation
 
+For JavaScript/TypeScript projects that want `daml-lint` as a dev dependency:
+
+```sh
+npm install --save-dev @daml-tools/daml-lint
+npx daml-lint ./daml
+```
+
 Requires [Rust](https://rustup.rs/) 1.87+ (its `rquickjs` dependency needs
 rustc 1.87).
 
