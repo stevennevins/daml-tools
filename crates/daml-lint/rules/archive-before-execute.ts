@@ -1,3 +1,4 @@
+import type { Choice, Statement, Template } from "../examples/daml-lint";
 import { renderText } from "./_helpers";
 
 const NAME = "archive-before-execute";

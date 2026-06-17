@@ -1,3 +1,4 @@
+import type { Template } from "../examples/daml-lint";
 import { expressionGuaranteesNonnegative, isMoneyType } from "./_helpers";
 
 const NAME = "missing-ensure-decimal";

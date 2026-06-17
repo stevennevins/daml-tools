@@ -1,7 +1,9 @@
 // Compiled from TypeScript; pass this JavaScript file to daml-lint --rules.
-const NAME = "no-trace";
-const SEVERITY = "low";
-const DESCRIPTION = "Debug trace left in code";
+
+// examples/no-trace.ts
+var NAME = "no-trace";
+var SEVERITY = "low";
+var DESCRIPTION = "Debug trace left in code";
 function check(m) {
   const source = m.source.replace(/\{-[\s\S]*?-\}/g, (s) => s.replace(/[^\n]/g, " "));
   source.split("\n").forEach((line, idx) => {
@@ -11,3 +13,4 @@ function check(m) {
     }
   });
 }
+globalThis.__daml_lint_rule = { NAME, SEVERITY, DESCRIPTION, check };

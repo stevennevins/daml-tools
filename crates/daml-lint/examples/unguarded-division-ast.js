@@ -1,7 +1,9 @@
 // Compiled from TypeScript; pass this JavaScript file to daml-lint --rules.
-const NAME = "unguarded-division-ast";
-const SEVERITY = "high";
-const DESCRIPTION = "Division whose denominator has no prior non-zero assertion (AST rule)";
+
+// examples/unguarded-division-ast.ts
+var NAME = "unguarded-division-ast";
+var SEVERITY = "high";
+var DESCRIPTION = "Division whose denominator has no prior non-zero assertion (AST rule)";
 function exprKey(e) {
   if ("Var" in e) {
     return e.Var.qualifier ? `${e.Var.qualifier}.${e.Var.name}` : e.Var.name;
@@ -132,3 +134,4 @@ function checkStatements(stmts, choiceName) {
 function on_choice(choice, _template) {
   checkStatements(choice.body, choice.name);
 }
+globalThis.__daml_lint_rule = { NAME, SEVERITY, DESCRIPTION, on_choice };

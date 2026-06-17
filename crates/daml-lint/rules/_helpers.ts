@@ -1,3 +1,5 @@
+import type { Expr, Statement, TypeNode } from "../examples/daml-lint";
+
 function unwrapConstrainedType(typeNode: TypeNode): TypeNode {
   return "Constrained" in typeNode ? unwrapConstrainedType(typeNode.Constrained.body) : typeNode;
 }

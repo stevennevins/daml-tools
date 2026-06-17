@@ -1,7 +1,9 @@
 // Compiled from TypeScript; pass this JavaScript file to daml-lint --rules.
-const NAME = "choice-param-shadows-field";
-const SEVERITY = "medium";
-const DESCRIPTION = "Choice parameters must not shadow template field names";
+
+// examples/choice-param-shadows-field.ts
+var NAME = "choice-param-shadows-field";
+var SEVERITY = "medium";
+var DESCRIPTION = "Choice parameters must not shadow template field names";
 function on_choice(choice, template) {
   const fieldNames = new Set(template.fields.map((f) => f.name));
   for (const param of choice.parameters) {
@@ -13,3 +15,4 @@ function on_choice(choice, template) {
     }
   }
 }
+globalThis.__daml_lint_rule = { NAME, SEVERITY, DESCRIPTION, on_choice };

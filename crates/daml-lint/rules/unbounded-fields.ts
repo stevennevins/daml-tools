@@ -1,3 +1,4 @@
+import type { Template } from "../examples/daml-lint";
 import { expressionHasSizeUpperBound, isUnboundedType, typeDisplay } from "./_helpers";
 
 const NAME = "unbounded-fields";

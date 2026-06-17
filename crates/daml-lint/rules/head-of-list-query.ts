@@ -1,3 +1,4 @@
+import type { BranchArm, DamlModule, Expr, SrcPos, Statement } from "../examples/daml-lint";
 import { childExprs, refString, renderText, statementExprs } from "./_helpers";
 
 const NAME = "head-of-list-query";
