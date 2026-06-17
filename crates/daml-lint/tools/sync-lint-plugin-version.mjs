@@ -25,6 +25,46 @@ const damlLintVersion = damlLintPackage.version;
 const lintPluginDependency = `^${damlLintVersion}`;
 const syncTargets = [
   {
+    path: "package.json",
+    update(packageJson) {
+      packageJson.version = damlLintVersion;
+    },
+    validate(packageJson) {
+      if (packageJson.version !== damlLintVersion) {
+        return `daml-lint-rules version ${packageJson.version} does not match daml-lint ${damlLintVersion}.`;
+      }
+      return null;
+    },
+  },
+  {
+    path: "package-lock.json",
+    update(packageLock) {
+      packageLock.version = damlLintVersion;
+      packageLock.packages ??= {};
+      packageLock.packages[""] ??= {};
+      packageLock.packages[""].version = damlLintVersion;
+    },
+    validate(packageLock) {
+      const errors = [];
+
+      if (packageLock.version !== damlLintVersion) {
+        errors.push(
+          `package-lock.json version ${packageLock.version} does not match daml-lint ${damlLintVersion}.`,
+        );
+      }
+
+      const rootPackageVersion = packageLock.packages?.[""]?.version;
+
+      if (rootPackageVersion !== damlLintVersion) {
+        errors.push(
+          `package-lock.json root package version ${rootPackageVersion} does not match daml-lint ${damlLintVersion}.`,
+        );
+      }
+
+      return errors.length > 0 ? errors.join("\n") : null;
+    },
+  },
+  {
     path: "lint-plugin/package.json",
     update(packageJson) {
       packageJson.version = damlLintVersion;

@@ -29,12 +29,15 @@ Release-plz opens a `chore: release` PR after semver-relevant changes land on
 do.
 
 For `daml-lint` release PRs, the Release-plz workflow also syncs the npm
-plugin package metadata into the release PR.
+demo/rules package, lockfile, public plugin package, and template dependency
+into the release PR.
 
 Before merging it, verify:
 
 - Rust crate versions and changelogs are correct.
-- `crates/daml-lint/lint-plugin/package.json` matches the `daml-lint` crate
+- `crates/daml-lint/package.json`,
+  `crates/daml-lint/package-lock.json`, and
+  `crates/daml-lint/lint-plugin/package.json` match the `daml-lint` crate
   version when `daml-lint` is being released.
 - `crates/daml-lint/lint-plugin/templates/project/package.json` depends on the
   new `@daml-tools/lint-plugin` version.

@@ -49,9 +49,20 @@ jobs:
         run: |
           set -euo pipefail
           package_version="$(node -p "require('./package.json').version")"
+          rules_package_version="$(node -p "require('../package.json').version")"
+          lockfile_version="$(node -p "require('../package-lock.json').version")"
+          lockfile_root_version="$(node -p "require('../package-lock.json').packages[''].version")"
           tag_version="${RELEASE_TAG#daml-lint-v}"
           if [[ "${package_version}" != "${tag_version}" ]]; then
             echo "::error::package.json version ${package_version} does not match ${RELEASE_TAG}"
+            exit 1
+          fi
+          if [[ "${rules_package_version}" != "${tag_version}" ]]; then
+            echo "::error::daml-lint-rules package.json version ${rules_package_version} does not match ${RELEASE_TAG}"
+            exit 1
+          fi
+          if [[ "${lockfile_version}" != "${tag_version}" || "${lockfile_root_version}" != "${tag_version}" ]]; then
+            echo "::error::package-lock.json versions ${lockfile_version}/${lockfile_root_version} do not match ${RELEASE_TAG}"
             exit 1
           fi
       - name: Publish package
