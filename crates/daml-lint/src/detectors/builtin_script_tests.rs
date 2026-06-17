@@ -1,3 +1,4 @@
+use super::archive_before_execute::ArchiveBeforeExecute;
 use super::ensure_decimal::MissingEnsureDecimal;
 use super::positive_amount::MissingPositiveAmount;
 use super::script;
@@ -39,6 +40,414 @@ fn assert_rule_matches_rust(
         snapshot(rust_detector.detect(&module)),
         "TypeScript built-in drifted from Rust detector for {case_name}"
     );
+}
+
+#[test]
+fn archive_before_execute_script_matches_rust_regressions() {
+    let script_detector = load_rule("archive-before-execute.js");
+    let rust_detector = ArchiveBeforeExecute;
+
+    let cases = [
+        (
+            "fetchAndArchive before try triggers",
+            r#"module Test where
+
+template VoteManager
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice CloseVoteRequest : ()
+      with
+        requestCid : ContractId VoteRequest
+      controller admin
+      do
+        request <- fetchAndArchive requestCid
+        let action = request.action
+        try do
+          executeAction action
+        catch
+          e -> pure ()
+"#,
+        ),
+        (
+            "archive after try passes",
+            r#"module Test where
+
+template SafeManager
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice SafeClose : ()
+      with
+        requestCid : ContractId VoteRequest
+      controller admin
+      do
+        try do
+          executeAction requestCid
+        catch
+          e -> pure ()
+        archive requestCid
+"#,
+        ),
+        (
+            "choice finding reports real line",
+            r#"module Test where
+
+template VoteManager
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice CloseVoteRequest : ()
+      with
+        requestCid : ContractId VoteRequest
+      controller admin
+      do
+        request <- fetchAndArchive requestCid
+        try do
+          executeAction request
+        catch
+          e -> pure ()
+"#,
+        ),
+        (
+            "comment mention does not trigger",
+            r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      controller admin
+      do
+        -- fetchAndArchive is performed by a helper elsewhere
+        try do
+          executeAction admin
+        catch
+          e -> pure ()
+"#,
+        ),
+        (
+            "multiline archive before try is flagged",
+            r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      with
+        requestCid : ContractId Foo
+      controller admin
+      do
+        archive
+          requestCid
+        try do
+          executeAction admin
+        catch
+          e -> pure ()
+"#,
+        ),
+        (
+            "exercise Archive before try is flagged",
+            r#"module Test where
+
+template VoteManager
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice CloseVoteRequest : ()
+      with
+        requestCid : ContractId VoteRequest
+      controller admin
+      do
+        exercise requestCid Archive
+        try do
+          executeAction admin
+        catch
+          e -> pure ()
+"#,
+        ),
+        (
+            "identifier starting with try is not try/catch",
+            r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      with
+        cid : ContractId Foo
+      controller admin
+      do
+        archive cid
+        tryAgain admin
+        pure ()
+"#,
+        ),
+        (
+            "archive inside earlier try not flagged by later try",
+            r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      with
+        cid : ContractId Foo
+      controller admin
+      do
+        try do
+          archive cid
+        catch
+          e -> pure ()
+        try do
+          executeAction admin
+        catch
+          e -> pure ()
+"#,
+        ),
+        (
+            "archive mention in string does not trigger",
+            r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      controller admin
+      do
+        debug "call fetchAndArchive before retrying"
+        try do
+          executeAction admin
+        catch
+          e -> pure ()
+"#,
+        ),
+        (
+            "multiple multiline archives each reported",
+            r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      with
+        a : ContractId Foo
+        b : ContractId Foo
+      controller admin
+      do
+        archive
+          a
+        archive
+          b
+        try do
+          executeAction admin
+        catch
+          e -> pure ()
+"#,
+        ),
+        (
+            "archive then try else not flagged",
+            r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      with
+        cid : ContractId Foo
+        useArchive : Bool
+      controller admin
+      do
+        if useArchive
+          then archive cid
+          else try do
+                 doWork admin
+               catch
+                 e -> pure ()
+"#,
+        ),
+        (
+            "try then archive else not flagged",
+            r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      with
+        cid : ContractId Foo
+        useArchive : Bool
+      controller admin
+      do
+        if useArchive
+          then try do
+                 doWork admin
+               catch
+                 e -> pure ()
+          else archive cid
+"#,
+        ),
+        (
+            "archive before try within one arm is flagged",
+            r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      with
+        cid : ContractId Foo
+        flag : Bool
+      controller admin
+      do
+        if flag
+          then do
+            archive cid
+            try do
+              doWork admin
+            catch
+              e -> pure ()
+          else pure ()
+"#,
+        ),
+        (
+            "uncalled archive helper not flagged",
+            r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      with
+        cid : ContractId Foo
+      controller admin
+      do
+        let doArchive x = archive x
+        try do
+          doWork admin
+        catch
+          e -> pure ()
+"#,
+        ),
+        (
+            "archive helper called inside try not flagged",
+            r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      with
+        cid : ContractId Foo
+      controller admin
+      do
+        let doArchive x = archive x
+        try do
+          doWork admin
+          doArchive cid
+        catch
+          e -> pure ()
+"#,
+        ),
+        (
+            "archive helper called before try flags at call site",
+            r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      with
+        cid : ContractId Foo
+      controller admin
+      do
+        let doArchive x = archive x
+        doArchive cid
+        try do
+          executeAction admin
+        catch
+          e -> pure ()
+"#,
+        ),
+        (
+            "multiple archives each reported",
+            r#"module Test where
+
+template T
+  with
+    admin : Party
+  where
+    signatory admin
+
+    choice C : ()
+      with
+        a : ContractId Foo
+        b : ContractId Foo
+      controller admin
+      do
+        archive a
+        archive b
+        try do
+          executeAction admin
+        catch
+          e -> pure ()
+"#,
+        ),
+    ];
+
+    for (case_name, source) in cases {
+        assert_rule_matches_rust(
+            case_name,
+            source,
+            Path::new("ArchiveBeforeExecute.daml"),
+            &rust_detector,
+            script_detector.as_ref(),
+        );
+    }
 }
 
 #[test]
