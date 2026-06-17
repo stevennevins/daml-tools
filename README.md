@@ -43,6 +43,12 @@ cargo build --workspace
 cargo test  --workspace
 ```
 
+## Documentation
+
+The repo documentation is organized by user need under [`docs/`](docs/):
+tutorials for first success, how-to guides for specific work, reference for
+technical facts, and explanations for the design behind the tools.
+
 ## Developer hooks
 
 This repo tracks Git hook shims in `.githooks` and manages hook behavior with
