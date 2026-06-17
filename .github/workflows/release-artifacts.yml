@@ -20,6 +20,8 @@ env:
 jobs:
   build-cli-archive:
     name: build CLI archive (${{ matrix.target }})
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
     strategy:
       fail-fast: false
       matrix:
@@ -29,7 +31,17 @@ jobs:
           - { os: windows-latest, target: x86_64-pc-windows-msvc }
     runs-on: ${{ matrix.os }}
     steps:
+      - name: Check release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${RELEASE_TAG}" =~ ^daml-(lint|fmt)-v ]]; then
+            echo "::error::release artifacts require a daml-lint-v* or daml-fmt-v* tag, got ${RELEASE_TAG}"
+            exit 1
+          fi
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
