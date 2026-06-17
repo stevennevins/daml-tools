@@ -97,17 +97,36 @@ fn parse_node<'js>(ctx: &Ctx<'js>, rule: &str, json: String) -> Result<Value<'js
 
 #[cfg(feature = "custom-rules")]
 pub fn load_script(path: &Path) -> Result<Box<dyn Detector>, String> {
+    let options = empty_options();
+    load_script_with_options(path, &options)
+}
+
+#[cfg(feature = "custom-rules")]
+pub fn load_script_with_options(
+    path: &Path,
+    options: &serde_json::Value,
+) -> Result<Box<dyn Detector>, String> {
     let source = std::fs::read_to_string(path)
         .map_err(|e| format!("could not read rules script {}: {}", path.display(), e))?;
-    load_script_source(&path.display().to_string(), &source)
+    load_script_source_with_options(&path.display().to_string(), &source, options)
 }
 
 pub(crate) fn load_script_source(label: &str, source: &str) -> Result<Box<dyn Detector>, String> {
+    let options = empty_options();
+    load_script_source_with_options(label, source, &options)
+}
+
+pub(crate) fn load_script_source_with_options(
+    label: &str,
+    source: &str,
+    options: &serde_json::Value,
+) -> Result<Box<dyn Detector>, String> {
     let (rt, interrupt_count) = new_runtime()?;
     let context = Context::full(&rt).map_err(|e| e.to_string())?;
     let loaded = context.with(|ctx| {
         // report() must exist at load time so top-level code referencing it parses.
         register_report(&ctx, Rc::new(RefCell::new(Vec::new())))?;
+        register_config(&ctx, options)?;
         ctx.eval::<(), _>(source.as_bytes())
             .catch(&ctx)
             .map_err(|e| format!("invalid rules script {}: {}", label, e))?;
@@ -155,6 +174,23 @@ type Reported = Rc<RefCell<Vec<(usize, usize, String, Option<String>)>>>;
 
 fn json<T: serde::Serialize>(v: &T) -> String {
     serde_json::to_string(v).expect("IR types always serialize")
+}
+
+fn empty_options() -> serde_json::Value {
+    serde_json::Value::Object(serde_json::Map::new())
+}
+
+fn register_config(ctx: &Ctx<'_>, options: &serde_json::Value) -> Result<(), String> {
+    let config_json = serde_json::to_string(options).map_err(|e| e.to_string())?;
+    let config = ctx
+        .json_parse(config_json)
+        .catch(ctx)
+        .map_err(|e| format!("could not parse rule CONFIG: {}", e))?;
+    ctx.globals()
+        .set("__daml_lint_config", config)
+        .map_err(|e| e.to_string())?;
+    ctx.eval::<(), _>(br#"globalThis.CONFIG = globalThis.__daml_lint_config;"#)
+        .map_err(|e| e.to_string())
 }
 
 fn register_report(ctx: &Ctx<'_>, sink: Reported) -> Result<(), String> {

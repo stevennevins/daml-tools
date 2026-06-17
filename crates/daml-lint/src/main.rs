@@ -4,6 +4,9 @@ use daml_lint::reporter::{self, OutputFormat};
 use daml_lint::{detectors, parser};
 use std::path::PathBuf;
 
+#[cfg(feature = "custom-rules")]
+mod config;
+
 #[derive(Parser)]
 #[command(name = "daml-lint")]
 #[command(about = "Static analysis scanner for DAML smart contracts")]
@@ -24,6 +27,11 @@ struct Cli {
     /// Minimum severity to cause non-zero exit: critical, high, medium, low, info
     #[arg(long, default_value = "high")]
     fail_on: String,
+
+    /// JSON config file with plugins and rule settings (default: .daml-lint.json)
+    #[cfg(feature = "custom-rules")]
+    #[arg(short, long)]
+    config: Option<PathBuf>,
 
     /// Custom AST rule scripts (JavaScript), repeatable. Write in TypeScript
     /// against examples/daml-lint.d.ts and compile; see examples/
@@ -53,11 +61,19 @@ fn main() {
 
     // Load detectors first so rule-file errors surface before scanning
     #[cfg(feature = "custom-rules")]
-    let mut detectors = detectors::create_builtin_detectors();
-    #[cfg(not(feature = "custom-rules"))]
-    let detectors = detectors::create_builtin_detectors();
-    #[cfg(feature = "custom-rules")]
-    {
+    let detectors = {
+        let lint_config = config::LintConfig::load(cli.config.as_deref()).unwrap_or_else(|e| {
+            eprintln!("Error: {}", e);
+            std::process::exit(2);
+        });
+        let mut detectors = detectors::create_builtin_detectors();
+        match lint_config.load_plugin_detectors() {
+            Ok(plugin_detectors) => detectors.extend(plugin_detectors),
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                std::process::exit(2);
+            }
+        }
         for rules_path in &cli.rules {
             match detectors::script::load_script(rules_path) {
                 Ok(rule) => detectors.push(rule),
@@ -67,7 +83,15 @@ fn main() {
                 }
             }
         }
-    }
+        let detectors = lint_config.apply_rule_settings(detectors);
+        if let Err(e) = lint_config.validate_rule_settings(&detectors) {
+            eprintln!("Error: {}", e);
+            std::process::exit(2);
+        }
+        detectors
+    };
+    #[cfg(not(feature = "custom-rules"))]
+    let detectors = detectors::create_builtin_detectors();
     if let Some(duplicate_detector_name) = detector::find_duplicate_detector_name(&detectors) {
         eprintln!(
             "Error: rule '{}': name collides with a built-in detector or another rule",

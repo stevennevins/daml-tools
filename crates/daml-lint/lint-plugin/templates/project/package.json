@@ -6,8 +6,13 @@
   "scripts": {
     "check": "tsc --noEmit",
     "build": "esbuild src/template-requires-ensure.ts --bundle --format=esm --target=es2020 --outfile=dist/template-requires-ensure.js",
-    "lint:missing": "daml-lint fixtures/missing-ensure.daml --rules dist/template-requires-ensure.js --fail-on info",
-    "lint:clean": "daml-lint fixtures/with-ensure.daml --rules dist/template-requires-ensure.js --fail-on info"
+    "lint:missing": "daml-lint fixtures/missing-ensure.daml --fail-on info",
+    "lint:clean": "daml-lint fixtures/with-ensure.daml --fail-on info"
+  },
+  "damlLint": {
+    "rules": {
+      "template-requires-ensure": "dist/template-requires-ensure.js"
+    }
   },
   "devDependencies": {
     "@daml-tools/lint-plugin": "^0.3.2",

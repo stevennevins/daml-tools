@@ -130,6 +130,21 @@ Define your own detectors as AST rule scripts and pass them with `--rules`
 daml-lint ./daml/ --rules my-rule.js --rules another-rule.js
 ```
 
+Installed plugin packages can also be enabled from `.daml-lint.json`:
+
+```json
+{
+  "plugins": ["template"],
+  "rules": {
+    "template/template-requires-ensure": ["medium", { "allowEmptyEnsure": false }]
+  }
+}
+```
+
+`template` resolves to `daml-lint-plugin-template` in `node_modules`; use
+`pluginPaths` for local package roots during development. Rule options from the
+array form are exposed to the rule as global `CONFIG`.
+
 A rule is TypeScript/JavaScript (executed by an embedded QuickJS engine):
 constants for metadata, plus visitor functions named after the node types you
 care about — like solhint's `ContractDefinition(node)` callbacks. Write rules
@@ -230,8 +245,9 @@ top-level mutable state across files.
 
 `SEVERITY` is one of `critical`, `high`, `medium`, `low`, `info`. Custom rules
 run alongside the built-in detectors, appear in all output formats, and count
-toward `--fail-on`. Rule names must not collide with built-in detector names
-or each other.
+toward `--fail-on`. Direct `--rules` names must not collide with built-in
+detector names or each other. Installed plugin rules are reported under their
+configured `plugin/rule` ID.
 
 Examples:
 

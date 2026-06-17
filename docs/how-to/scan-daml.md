@@ -96,6 +96,27 @@ an optional `const DESCRIPTION`, and at least one top-level visitor `function`.
 Assigning `globalThis.__daml_lint_rule` gives TypeScript a rule object to
 validate, but it does not replace the current runtime discovery contract.
 
+## Run installed plugin rules
+
+Install a plugin package in the project and enable its rules from
+`.daml-lint.json`:
+
+```sh
+npm install --save-dev daml-lint-plugin-template
+cat > .daml-lint.json <<'JSON'
+{
+  "plugins": ["template"],
+  "rules": {
+    "template/template-requires-ensure": "medium"
+  }
+}
+JSON
+daml-lint ./daml/ --fail-on medium
+```
+
+Use `[severity, options]` when a rule accepts configuration. The options value
+is available to the rule as global `CONFIG`.
+
 ## Use in CI
 
 A typical CI scan writes SARIF and fails on high findings or higher:

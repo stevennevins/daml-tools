@@ -1,6 +1,7 @@
 # daml-lint custom rule contract
 
-This page describes the custom rule interface loaded by `daml-lint --rules`.
+This page describes the custom rule interface loaded by `daml-lint --rules`
+and by installed plugin packages configured in `.daml-lint.json`.
 
 ## Runtime file
 
@@ -9,7 +10,7 @@ file must define:
 
 | Item | Required | Shape |
 |------|----------|-------|
-| `const NAME` | Yes | String rule name. Must not collide with built-ins or another custom rule. |
+| `const NAME` | Yes | Unqualified string rule name. For plugin packages, it must match the rule key in `package.json`. |
 | `const SEVERITY` | Yes | `critical`, `high`, `medium`, `low`, or `info`. |
 | `const DESCRIPTION` | No | String shown in rule metadata. |
 | Visitor function | Yes | At least one supported top-level `function` declaration. |
@@ -40,8 +41,8 @@ import type { DamlLintRuleModule, Template } from "@daml-tools/lint-plugin";
 ```
 
 The package exports the rule-facing IR types, `DamlLintRuleSeverity`,
-`DamlLintRuleModule`, `DamlLintReportTarget`, global `report`, and global
-`__daml_lint_rule`.
+`DamlLintRuleModule`, `DamlLintReportTarget`, global `CONFIG`, global
+`report`, and global `__daml_lint_rule`.
 
 The crate-local examples import equivalent types from
 `crates/daml-lint/examples/daml-lint.d.ts`.
@@ -71,6 +72,48 @@ report(field, "Field is unbounded", "field : Text");
 The first argument is a node with `span`, an expression node with `span`, or a
 1-based line number. Explicit evidence replaces the source line shown in
 reports.
+
+## Project config
+
+`daml-lint` reads `.daml-lint.json` from the current directory by default. Use
+`--config <FILE>` to load a different file.
+
+```json
+{
+  "plugins": ["template"],
+  "pluginPaths": ["./local-plugins"],
+  "rules": {
+    "missing-ensure-decimal": "off",
+    "template/template-requires-ensure": ["medium", { "allowEmptyEnsure": false }]
+  }
+}
+```
+
+Fields:
+
+| Field | Shape | Meaning |
+|-------|-------|---------|
+| `plugins` | string array | Plugin package names or short names. `template` resolves to `daml-lint-plugin-template`. |
+| `pluginPaths` | string array | Additional package search roots, resolved relative to the config file. |
+| `rules` | object | Built-in rule IDs or plugin-qualified rule IDs mapped to settings. |
+
+Rule IDs for plugin packages use `plugin/rule`, following the same namespace
+shape as ESLint and Solhint. The namespace is the package name without the
+`daml-lint-plugin-` prefix, so `daml-lint-plugin-template` exposes
+`template/<rule>`.
+
+Rule settings accept:
+
+| Setting | Meaning |
+|---------|---------|
+| `"off"` or `0` | Disable the rule. |
+| `"critical"`, `"high"`, `"medium"`, `"low"`, `"info"` | Enable and set a `daml-lint` severity. |
+| `"warn"` or `1` | Enable as `medium`. |
+| `"error"` or `2` | Enable as `high`. |
+| `[severity, options]` | Enable with options exposed to the rule as global `CONFIG`. |
+
+`CONFIG` defaults to `{}`. If more than one option value is provided after the
+severity, `CONFIG` is an array of those values.
 
 ## Node shapes
 
@@ -113,6 +156,23 @@ it. The JavaScript file passed to `--rules` must be self-contained.
 Name published rule packages after the plugin they provide, following the same
 pattern as Solhint plugins: `daml-lint-plugin-<name>` for unscoped packages or
 `@scope/daml-lint-plugin-<name>` for scoped packages.
+
+Installed plugin packages expose their rules through `package.json`:
+
+```json
+{
+  "name": "daml-lint-plugin-template",
+  "damlLint": {
+    "rules": {
+      "template-requires-ensure": "dist/template-requires-ensure.js"
+    }
+  }
+}
+```
+
+The manifest rule key is the unqualified rule name. The bundled script must
+define the same `const NAME`; users enable it as
+`template/template-requires-ensure`.
 
 The `@daml-tools/lint-plugin` package publishes only the type contract and
 starter templates. It does not publish runtime helpers.

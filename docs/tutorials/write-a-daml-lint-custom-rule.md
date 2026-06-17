@@ -12,6 +12,7 @@ mkdir daml-lint-plugin-template-requires-ensure
 cd daml-lint-plugin-template-requires-ensure
 npm init -y
 npm pkg set type=module
+npm pkg set damlLint.rules.template-requires-ensure=dist/template-requires-ensure.js
 npm install --save-dev @daml-tools/lint-plugin typescript esbuild
 mkdir -p src fixtures dist
 ```
@@ -87,6 +88,24 @@ template Iou
     ensure True
 ```
 
+## Add a local lint config
+
+Create `.daml-lint.json`:
+
+```json
+{
+  "pluginPaths": ["."],
+  "plugins": ["template-requires-ensure"],
+  "rules": {
+    "template-requires-ensure/template-requires-ensure": "medium"
+  }
+}
+```
+
+`pluginPaths: ["."]` lets the package resolve itself before it is published.
+After publishing and installing it in another project, consumers only need the
+`plugins` and `rules` entries.
+
 ## Type-check and bundle
 
 ```sh
@@ -99,14 +118,15 @@ npx esbuild src/template-requires-ensure.ts --bundle --format=esm --target=es202
 The missing fixture should report one finding:
 
 ```sh
-daml-lint fixtures/missing-ensure.daml --rules dist/template-requires-ensure.js --fail-on info
+daml-lint fixtures/missing-ensure.daml --fail-on info
 ```
 
 The ensured fixture should not report this custom finding:
 
 ```sh
-daml-lint fixtures/with-ensure.daml --rules dist/template-requires-ensure.js --fail-on info
+daml-lint fixtures/with-ensure.daml --fail-on info
 ```
 
-You now have a typed rule project that produces the single JavaScript file
-expected by `daml-lint --rules`.
+You now have a typed rule package that can be loaded through `.daml-lint.json`.
+The bundled JavaScript file also still works with direct `--rules` loading when
+you want to test one script without a package manifest.
