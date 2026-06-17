@@ -1,7 +1,7 @@
-# daml-lint custom rule starter
+# daml-lint plugin starter
 
 This project shows the minimal TypeScript flow for a `daml-lint --rules`
-custom rule.
+custom rule plugin.
 
 ```sh
 npm install

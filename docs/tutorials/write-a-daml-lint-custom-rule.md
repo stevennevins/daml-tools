@@ -8,11 +8,11 @@ You need Node.js 18 or newer and `daml-lint` on your `PATH`.
 ## Create the project
 
 ```sh
-mkdir daml-lint-template-rule
-cd daml-lint-template-rule
+mkdir daml-lint-plugin-template-requires-ensure
+cd daml-lint-plugin-template-requires-ensure
 npm init -y
 npm pkg set type=module
-npm install --save-dev daml-lint-rule-authoring typescript esbuild
+npm install --save-dev @daml-tools/lint-plugin typescript esbuild
 mkdir -p src fixtures dist
 ```
 
@@ -37,7 +37,7 @@ Create `tsconfig.json`:
 Create `src/template-requires-ensure.ts`:
 
 ```typescript
-import type { DamlLintRuleModule, Template } from "daml-lint-rule-authoring";
+import type { DamlLintRuleModule, Template } from "@daml-tools/lint-plugin";
 
 const NAME = "template-requires-ensure";
 const SEVERITY = "medium";

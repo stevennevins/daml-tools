@@ -7,7 +7,7 @@
     "noEmit": true,
     "lib": ["ES2020"],
     "paths": {
-      "daml-lint-rule-authoring": ["./dist/index.d.ts"]
+      "@daml-tools/lint-plugin": ["./dist/index.d.ts"]
     }
   },
   "include": ["templates/**/*.ts", "type-tests/**/*.ts"]

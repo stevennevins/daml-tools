@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 
 const checkOnly = process.argv.includes("--check");
 const sourcePath = "examples/daml-lint.d.ts";
-const targetPath = "rule-authoring/dist/index.d.ts";
+const targetPath = "lint-plugin/dist/index.d.ts";
 
 const sourceHeader = `// TypeScript contract for daml-lint custom rule authoring.
 //
@@ -32,7 +32,7 @@ function replaceIdentifier(text, from, to) {
 function generatedTypes() {
   let output = readFileSync(sourcePath, "utf8");
   if (!output.includes(sourceHeader)) {
-    throw new Error(`${sourcePath} header changed; update tools/sync-rule-authoring-types.mjs`);
+    throw new Error(`${sourcePath} header changed; update tools/sync-lint-plugin-types.mjs`);
   }
   output = output.replace(sourceHeader, targetHeader);
   for (const [from, to] of renames) {
@@ -47,7 +47,7 @@ if (checkOnly) {
   const current = readFileSync(targetPath, "utf8");
   if (current !== expected) {
     console.error(`${targetPath} is out of sync with ${sourcePath}`);
-    console.error("Run `npm run build:authoring-types` from crates/daml-lint.");
+    console.error("Run `npm run build:lint-plugin-types` from crates/daml-lint.");
     process.exit(1);
   }
 } else if (!existsSync(targetPath) || readFileSync(targetPath, "utf8") !== expected) {

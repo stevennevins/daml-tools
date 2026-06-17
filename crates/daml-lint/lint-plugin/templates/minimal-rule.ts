@@ -1,4 +1,4 @@
-import type { DamlLintRuleModule, Template } from "daml-lint-rule-authoring";
+import type { DamlLintRuleModule, Template } from "@daml-tools/lint-plugin";
 
 const NAME = "template-requires-ensure";
 const SEVERITY = "medium";

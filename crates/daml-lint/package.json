@@ -6,12 +6,12 @@
   "scripts": {
     "build:rules": "esbuild rules/archive-before-execute.ts rules/head-of-list-query.ts rules/missing-ensure-decimal.ts rules/missing-positive-amount.ts rules/unbounded-fields.ts rules/unguarded-division.ts --bundle --format=esm --target=es2020 --outdir=rules",
     "build:examples": "esbuild examples/choice-param-shadows-field.ts examples/consuming-choice-signatory-controller.ts examples/function-ledger-actions.ts examples/no-bare-contractid-field.ts examples/no-create-in-nonconsuming.ts examples/no-trace.ts examples/template-requires-ensure.ts examples/unguarded-division-ast.ts examples/unqualified-da-import.ts --bundle --format=esm --target=es2020 --outdir=examples/dist --banner:js=\"// Compiled from TypeScript; pass this JavaScript file to daml-lint --rules.\"",
-    "build:authoring-types": "node tools/sync-rule-authoring-types.mjs",
-    "check:authoring-types": "node tools/sync-rule-authoring-types.mjs --check",
-    "check:types": "npm run check:authoring-types && tsc -p tsconfig.json --noEmit && tsc -p rule-authoring/tsconfig.json --noEmit",
+    "build:lint-plugin-types": "node tools/sync-lint-plugin-types.mjs",
+    "check:lint-plugin-types": "node tools/sync-lint-plugin-types.mjs --check",
+    "check:types": "npm run check:lint-plugin-types && tsc -p tsconfig.json --noEmit && tsc -p lint-plugin/tsconfig.json --noEmit",
     "check:examples-clean": "node -e \"const fs=require('fs');const files=fs.readdirSync('examples').filter((f)=>f.endsWith('.js'));if(files.length){console.error('Top-level generated example JS belongs in examples/dist: '+files.join(', '));process.exit(1);}\"",
-    "check:authoring-package": "cd rule-authoring && npm pack --dry-run",
-    "check:rules": "npm run check:types && npm run build:rules && npm run build:examples && npm run check:examples-clean && npm run check:authoring-package && git diff --exit-code -- rules examples rule-authoring tools package.json package-lock.json tsconfig.json"
+    "check:lint-plugin-package": "cd lint-plugin && npm pack --dry-run",
+    "check:rules": "npm run check:types && npm run build:rules && npm run build:examples && npm run check:examples-clean && npm run check:lint-plugin-package && git diff --exit-code -- rules examples lint-plugin tools package.json package-lock.json tsconfig.json"
   },
   "devDependencies": {
     "esbuild": "0.28.1",

@@ -33,10 +33,10 @@ Visitors may define any subset, but at least one must be present.
 
 ## TypeScript contract
 
-Rule authors can import types from `daml-lint-rule-authoring`:
+Rule authors can import types from `@daml-tools/lint-plugin`:
 
 ```typescript
-import type { DamlLintRuleModule, Template } from "daml-lint-rule-authoring";
+import type { DamlLintRuleModule, Template } from "@daml-tools/lint-plugin";
 ```
 
 The package exports the rule-facing IR types, `DamlLintRuleSeverity`,
@@ -110,5 +110,9 @@ Publish external rule packages as TypeScript source plus a bundled JavaScript
 artifact, or publish only the bundled rule file if users do not need to edit
 it. The JavaScript file passed to `--rules` must be self-contained.
 
-The `daml-lint-rule-authoring` package publishes only the type contract and
+Name published rule packages after the plugin they provide, following the same
+pattern as Solhint plugins: `daml-lint-plugin-<name>` for unscoped packages or
+`@scope/daml-lint-plugin-<name>` for scoped packages.
+
+The `@daml-tools/lint-plugin` package publishes only the type contract and
 starter templates. It does not publish runtime helpers.

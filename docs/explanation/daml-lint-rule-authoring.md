@@ -43,7 +43,8 @@ Built-in rules live in `crates/daml-lint/rules`. They may import internal
 helpers because the build bundles those helpers into the generated JavaScript
 embedded in the Rust crate.
 
-External rule authors should import only from `daml-lint-rule-authoring`.
-Internal helpers are not a public interface yet. Keeping the public package to
-types and templates gives authors a stable boundary without promising helper
-behavior before it has versioning expectations.
+External rule authors should import only from
+`@daml-tools/lint-plugin`. Internal helpers are not a public interface yet.
+Keeping the public package to types and templates gives authors a stable
+boundary without promising helper behavior before it has versioning
+expectations.

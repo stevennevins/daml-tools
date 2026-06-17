@@ -1,12 +1,12 @@
 {
-  "name": "daml-lint-rule-authoring",
+  "name": "@daml-tools/lint-plugin",
   "version": "0.3.0",
-  "description": "TypeScript contract and starter templates for daml-lint custom rules",
+  "description": "TypeScript contract and starter templates for daml-lint custom rule plugins",
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/stevennevins/daml-tools.git",
-    "directory": "crates/daml-lint/rule-authoring"
+    "directory": "crates/daml-lint/lint-plugin"
   },
   "type": "module",
   "types": "./dist/index.d.ts",
