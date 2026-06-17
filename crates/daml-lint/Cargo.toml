@@ -1,6 +1,10 @@
 [package]
 name = "daml-lint"
+<<<<<<< Updated upstream
 version = "0.2.0"
+=======
+version = "0.3.1"
+>>>>>>> Stashed changes
 description = "Static analysis scanner for Daml smart contracts"
 edition.workspace = true
 rust-version.workspace = true
