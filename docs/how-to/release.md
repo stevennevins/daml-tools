@@ -23,7 +23,10 @@ GitHub secrets.
 
 ## Review the release PR
 
-Release-plz opens a `chore: release` PR after changes land on `main`.
+Release-plz opens a `chore: release` PR after semver-relevant changes land on
+`main`. Normal `docs:`, `ci:`, and `chore:` commits do not prepare releases;
+`feat:`, `fix:`, `perf:`, `refactor:`, `security:`, and breaking `!` commits
+do.
 
 Before merging it, verify:
 
