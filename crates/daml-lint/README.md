@@ -71,7 +71,7 @@ The default features build the published CLI and custom-rule engine:
 daml-lint = "0.2"
 ```
 
-Library consumers that only need the built-in detectors and rule-facing IR can
+Library consumers that only need parser lowering and the rule-facing IR can
 avoid the CLI parser and QuickJS runtime:
 
 ```toml
@@ -79,8 +79,12 @@ avoid the CLI parser and QuickJS runtime:
 daml-lint = { version = "0.2", default-features = false }
 ```
 
-Enable `custom-rules` only when you need JavaScript AST rules from library code.
-The `cli` feature exists for the `daml-lint` binary.
+The `js-runtime` feature enables the QuickJS-backed runtime used by shipped
+built-ins. The `custom-rules` feature enables loading user-provided rule files
+through `--rules` when the runtime is also enabled. Shipped built-ins are
+authored in TypeScript and embedded as generated JavaScript; no TypeScript
+toolchain is required at runtime. The `cli` feature exists for the `daml-lint`
+binary.
 
 ## Usage
 
@@ -221,8 +225,9 @@ Examples:
 - [examples/no-trace.ts](examples/no-trace.ts) — banned-token check over raw source lines
 - [examples/unguarded-division-ast.ts](examples/unguarded-division-ast.ts) — expression-level analysis on the typed AST (division denominators vs prior assertions)
 
-Each example ships with its compiled `.js` next to it — that's the file
-`--rules` takes.
+Each example is authored in TypeScript and ships with its compiled `.js` next
+to it — that's the file `--rules` takes. Run `npm run build:examples` from this
+crate to refresh those generated files.
 
 To check that a rule script parses without running a scan, point the tool at a nonexistent path — rule errors are reported before file discovery. (A valid script then prints `No .daml files found.`, which also exits 2 — go by the message, not the exit code.)
 

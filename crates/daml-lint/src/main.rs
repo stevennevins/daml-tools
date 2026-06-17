@@ -27,6 +27,7 @@ struct Cli {
 
     /// Custom AST rule scripts (JavaScript), repeatable. Write in TypeScript
     /// against examples/daml-lint.d.ts and compile; see examples/
+    #[cfg(feature = "custom-rules")]
     #[arg(long)]
     rules: Vec<PathBuf>,
 }
@@ -51,13 +52,19 @@ fn main() {
     });
 
     // Load detectors first so rule-file errors surface before scanning
+    #[cfg(feature = "custom-rules")]
     let mut detectors = detectors::create_builtin_detectors();
-    for rules_path in &cli.rules {
-        match detectors::script::load_script(rules_path) {
-            Ok(rule) => detectors.push(rule),
-            Err(e) => {
-                eprintln!("Error: {}", e);
-                std::process::exit(2);
+    #[cfg(not(feature = "custom-rules"))]
+    let detectors = detectors::create_builtin_detectors();
+    #[cfg(feature = "custom-rules")]
+    {
+        for rules_path in &cli.rules {
+            match detectors::script::load_script(rules_path) {
+                Ok(rule) => detectors.push(rule),
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(2);
+                }
             }
         }
     }

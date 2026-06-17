@@ -1,3 +1,4 @@
+// Compiled from TypeScript; pass this JavaScript file to daml-lint --rules.
 const NAME = "unguarded-division-ast";
 const SEVERITY = "high";
 const DESCRIPTION = "Division whose denominator has no prior non-zero assertion (AST rule)";
@@ -30,9 +31,6 @@ function divisions(e, out, guarded) {
     divisions(e.Lambda.body, out, guarded);
   } else if ("If" in e) {
     divisions(e.If.cond, out, guarded);
-    // `if denom /= 0 then a / denom else ...` — the condition guards the
-    // then-branch. The else-branch runs when the guard is false, so it keeps
-    // the outer scope.
     const inner = new Set(guarded);
     guardedKeysOf(e.If.cond, inner);
     divisions(e.If.then_branch, out, inner);
@@ -59,20 +57,16 @@ function guardsKey(cond, key) {
     return false;
   }
   const b = cond.BinOp;
-  // Only a top-level `&&` conjunction is guaranteed; `||` is not.
   if (b.op === "&&") {
     return guardsKey(b.lhs, key) || guardsKey(b.rhs, key);
   }
   const lk = exprKey(b.lhs);
   const rk = exprKey(b.rhs);
-  const isZero = (e) =>
-    "Lit" in e && (e.Lit.kind === "Int" || e.Lit.kind === "Decimal") && parseFloat(e.Lit.value) === 0;
-  // Strict direction only — `denom > 0`, `0 < denom`, `denom /= 0`. An upper
-  // bound (`denom < N`, `denom <= N`) does NOT prove non-zero, nor does `>= 0`.
+  const isZero = (e) => "Lit" in e && (e.Lit.kind === "Int" || e.Lit.kind === "Decimal") && parseFloat(e.Lit.value) === 0;
   if (b.op === ">") return lk === key && isZero(b.rhs);
   if (b.op === "<") return rk === key && isZero(b.lhs);
   if (b.op === "/=" || b.op === "!=") {
-    return (lk === key && isZero(b.rhs)) || (rk === key && isZero(b.lhs));
+    return lk === key && isZero(b.rhs) || rk === key && isZero(b.lhs);
   }
   return false;
 }
@@ -110,8 +104,6 @@ function checkStatements(stmts, choiceName) {
       checkStatements(stmt.TryCatch.catch_body, choiceName);
       continue;
     }
-    // An if/case keeps its arms as separate scopes; a conditional assert in one
-    // arm does not guard a division in another, so scan each arm fresh.
     if ("Branch" in stmt) {
       for (const arm of stmt.Branch.arms) {
         checkStatements(arm.body, choiceName);

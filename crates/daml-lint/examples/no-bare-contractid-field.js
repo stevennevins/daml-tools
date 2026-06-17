@@ -1,19 +1,13 @@
-// Compiled from no-bare-contractid-field.ts — this is the file you pass to --rules.
-
+// Compiled from TypeScript; pass this JavaScript file to daml-lint --rules.
 const NAME = "no-bare-contractid-field";
 const SEVERITY = "low";
 const DESCRIPTION = "Template fields holding ContractIds risk dangling references";
-
 function containsContractId(ty) {
   if (ty === null) {
     return false;
   }
   if ("App" in ty) {
-    return (
-      isCon(ty.App.head, "ContractId") ||
-      containsContractId(ty.App.head) ||
-      ty.App.args.some(containsContractId)
-    );
+    return isCon(ty.App.head, "ContractId") || containsContractId(ty.App.head) || ty.App.args.some(containsContractId);
   }
   if ("List" in ty) {
     return containsContractId(ty.List.inner);
@@ -29,16 +23,14 @@ function containsContractId(ty) {
   }
   return false;
 }
-
 function isCon(ty, name) {
   return "Con" in ty && ty.Con.name === name;
 }
-
 function on_field(field, template) {
   if (containsContractId(field.type_)) {
     report(
       field,
-      `Field '${field.name}' on template '${template.name}' stores a ContractId — consider a contract key lookup to avoid dangling references`
+      `Field '${field.name}' on template '${template.name}' stores a ContractId \u2014 consider a contract key lookup to avoid dangling references`
     );
   }
 }

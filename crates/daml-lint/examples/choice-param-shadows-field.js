@@ -1,9 +1,7 @@
-// Compiled from choice-param-shadows-field.ts — this is the file you pass to --rules.
-
+// Compiled from TypeScript; pass this JavaScript file to daml-lint --rules.
 const NAME = "choice-param-shadows-field";
 const SEVERITY = "medium";
 const DESCRIPTION = "Choice parameters must not shadow template field names";
-
 function on_choice(choice, template) {
   const fieldNames = new Set(template.fields.map((f) => f.name));
   for (const param of choice.parameters) {

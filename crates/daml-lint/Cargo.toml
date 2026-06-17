@@ -22,24 +22,26 @@ daml-parser.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 # clap (CLI) and rquickjs (custom-rule JS engine) are optional so a library
-# consumer with `default-features = false` gets parser + IR + built-in detectors
-# WITHOUT pulling a CLI arg parser or a JS runtime. The published binary turns
-# both on via the default features below.
+# consumer with `default-features = false` gets parser lowering and rule-facing
+# IR WITHOUT pulling a CLI arg parser or a JS runtime. The published binary
+# turns both on via the default features below.
 clap = { workspace = true, optional = true }
 rquickjs = { workspace = true, optional = true }
 
 [features]
-default = ["cli", "custom-rules"]
-# `cli`: the clap-based `daml-lint` binary. The built-in detectors are always
-# usable as a library regardless of this feature.
+default = ["cli", "js-runtime", "custom-rules"]
+# `cli`: the clap-based `daml-lint` binary.
 cli = ["dep:clap"]
-# `custom-rules`: load JavaScript AST rules via `--rules` (rquickjs engine).
-custom-rules = ["dep:rquickjs"]
+# `js-runtime`: enable the QuickJS-backed rule runtime used by shipped built-ins.
+js-runtime = ["dep:rquickjs"]
+# `custom-rules`: enable loading user-provided JavaScript AST rule files.
+custom-rules = []
 
-# The CLI binary wires up `--rules`, so it needs BOTH the clap CLI and the
-# custom-rule engine. With `default-features = false` the bin is skipped and you
-# get the dependency-light library. The lib target is still auto-detected.
+# The CLI binary needs the clap CLI and the JS runtime for built-ins. The
+# `custom-rules` feature adds `--rules`. With `default-features = false` the bin
+# is skipped and you get the dependency-light library. The lib target is still
+# auto-detected.
 [[bin]]
 name = "daml-lint"
 path = "src/main.rs"
-required-features = ["cli", "custom-rules"]
+required-features = ["cli", "js-runtime"]

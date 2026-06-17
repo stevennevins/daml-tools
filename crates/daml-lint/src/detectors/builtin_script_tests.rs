@@ -10,12 +10,11 @@ use crate::parser::parse_daml;
 use std::path::Path;
 
 fn load_rule(name: &str) -> Box<dyn Detector> {
-    script::load_script(
-        &Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("rules")
-            .join(name),
-    )
-    .unwrap()
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("rules")
+        .join(name);
+    let source = std::fs::read_to_string(&path).unwrap();
+    script::load_script_source(&path.display().to_string(), &source).unwrap()
 }
 
 fn snapshot(findings: Vec<Finding>) -> Vec<(String, Severity, usize, usize, String, String)> {

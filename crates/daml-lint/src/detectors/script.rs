@@ -2,6 +2,7 @@ use crate::detector::{parse_severity, DetectError, Detector, Finding, Severity};
 use crate::ir::DamlModule;
 use rquickjs::{CatchResultExt, Context, Ctx, Function, Object, Runtime, Value};
 use std::cell::RefCell;
+#[cfg(feature = "custom-rules")]
 use std::path::Path;
 use std::rc::Rc;
 
@@ -94,13 +95,14 @@ fn parse_node<'js>(ctx: &Ctx<'js>, rule: &str, json: String) -> Result<Value<'js
         .map_err(|e| format!("rule '{}': {}", rule, e))
 }
 
+#[cfg(feature = "custom-rules")]
 pub fn load_script(path: &Path) -> Result<Box<dyn Detector>, String> {
     let source = std::fs::read_to_string(path)
         .map_err(|e| format!("could not read rules script {}: {}", path.display(), e))?;
     load_script_source(&path.display().to_string(), &source)
 }
 
-pub fn load_script_source(label: &str, source: &str) -> Result<Box<dyn Detector>, String> {
+pub(crate) fn load_script_source(label: &str, source: &str) -> Result<Box<dyn Detector>, String> {
     let (rt, interrupt_count) = new_runtime()?;
     let context = Context::full(&rt).map_err(|e| e.to_string())?;
     let loaded = context.with(|ctx| {
@@ -966,6 +968,7 @@ function check(m) {
         }
     }
 
+    #[cfg(feature = "custom-rules")]
     #[test]
     fn test_demo_scripts_load() {
         assert!(load_script(Path::new("examples/template-requires-ensure.js")).is_ok());
@@ -985,6 +988,7 @@ function check(m) {
     // rule must flag `100.0 / n` when the only `assert (n /= 0.0)` lives inside
     // an `if` branch — when the branch is not taken the assert never runs, so
     // `n` can be 0. The branch-lifted assert must not count as a prior guard.
+    #[cfg(feature = "custom-rules")]
     #[test]
     fn test_example_unguarded_division_flags_conditional_assert() {
         let det = load_script(Path::new("examples/unguarded-division-ast.js")).unwrap();
@@ -1017,6 +1021,7 @@ template T
 
     // Counter-case for finding 19: an unconditional do-block assert still
     // suppresses (no false positive introduced by the fix).
+    #[cfg(feature = "custom-rules")]
     #[test]
     fn test_example_unguarded_division_respects_unconditional_assert() {
         let det = load_script(Path::new("examples/unguarded-division-ast.js")).unwrap();
@@ -1044,6 +1049,7 @@ template T
     // ordinary party field whose NAME merely starts with "signatory" (e.g.
     // `signatoryParty`) is NOT signatory-controlled — the loose startsWith
     // substring match gave a false all-clear. It must flag.
+    #[cfg(feature = "custom-rules")]
     #[test]
     fn test_example_signatory_controller_flags_lookalike_field() {
         let det = load_script(Path::new(
@@ -1073,6 +1079,7 @@ template Bar
     // Counter-case for finding 20: the legitimate flexible-controller forms
     // `controller signatory this` and `controller signatory this, obs` (both
     // serialize the keyword as exactly "signatory this") still suppress.
+    #[cfg(feature = "custom-rules")]
     #[test]
     fn test_example_signatory_controller_allows_signatory_this() {
         let det = load_script(Path::new(
@@ -1102,8 +1109,62 @@ template Baz
         assert!(det.detect(&module).is_empty());
     }
 
+    #[cfg(feature = "custom-rules")]
+    #[test]
+    fn test_example_no_create_in_nonconsuming_descends_branch_arms() {
+        let det = load_script(Path::new("examples/no-create-in-nonconsuming.js")).unwrap();
+        let source = r#"module BranchCreate where
+
+template T
+  with
+    p : Party
+  where
+    signatory p
+
+    nonconsuming choice Fork : ContractId T
+      with
+        flag : Bool
+      controller p
+      do
+        if flag then do
+          create this
+        else do
+          create this
+"#;
+        let module = parse_daml(source, Path::new("BranchCreate.daml"));
+        let findings = det.detect(&module);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].message.contains("Fork"));
+    }
+
+    #[cfg(feature = "custom-rules")]
+    #[test]
+    fn test_example_function_ledger_actions_descends_branch_arms() {
+        let det = load_script(Path::new("examples/function-ledger-actions.js")).unwrap();
+        let source = r#"module BranchLedger where
+
+template T
+  with
+    p : Party
+  where
+    signatory p
+
+branchArchive : ContractId T -> Bool -> Update ()
+branchArchive cid flag = do
+  if flag then do
+    archive cid
+  else do
+    archive cid
+"#;
+        let module = parse_daml(source, Path::new("BranchLedger.daml"));
+        let findings = det.detect(&module);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].message.contains("branchArchive"));
+    }
+
     // Regression (audit finding 27): `trace` inside a `{- ... -}` block comment
     // is not executable code and must not be flagged.
+    #[cfg(feature = "custom-rules")]
     #[test]
     fn test_example_no_trace_ignores_block_comment() {
         let det = load_script(Path::new("examples/no-trace.js")).unwrap();
@@ -1120,6 +1181,7 @@ foo = 1
 
     // Regression (audit finding 28): `trace` as a word inside a Text literal is
     // not a Debug.trace call and must not be flagged.
+    #[cfg(feature = "custom-rules")]
     #[test]
     fn test_example_no_trace_ignores_string_literal() {
         let det = load_script(Path::new("examples/no-trace.js")).unwrap();
@@ -1134,6 +1196,7 @@ msg = "please trace this transaction"
 
     // Counter-case for findings 27/28: a real `trace` call is still flagged, so
     // the comment/string stripping did not blind the rule.
+    #[cfg(feature = "custom-rules")]
     #[test]
     fn test_example_no_trace_still_flags_real_call() {
         let det = load_script(Path::new("examples/no-trace.js")).unwrap();
