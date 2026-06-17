@@ -61,6 +61,10 @@ jobs:
           persist-credentials: false
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
       - name: Check release-plz token
         env:
           RELEASE_PLZ_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
@@ -115,6 +119,8 @@ jobs:
           )
 
           if git diff --quiet -- \
+            crates/daml-lint/package.json \
+            crates/daml-lint/package-lock.json \
             crates/daml-lint/lint-plugin/package.json \
             crates/daml-lint/lint-plugin/templates/project/package.json; then
             echo "daml-lint npm package metadata is already synced."
@@ -122,6 +128,8 @@ jobs:
           fi
 
           git add \
+            crates/daml-lint/package.json \
+            crates/daml-lint/package-lock.json \
             crates/daml-lint/lint-plugin/package.json \
             crates/daml-lint/lint-plugin/templates/project/package.json
           git commit -m "chore(daml-lint): sync lint plugin version"

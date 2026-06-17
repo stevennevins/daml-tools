@@ -1,0 +1,4 @@
+interface:
+  display_name: "Daml Tools Release"
+  short_description: "Run the daml-tools release process safely."
+  default_prompt: "Use $daml-tools-release to publish and verify a daml-tools release."
