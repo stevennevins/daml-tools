@@ -19,6 +19,7 @@ Use these when you already know the result you want and need the commands:
 
 - [Format Daml source](how-to/format-daml.md)
 - [Scan Daml source](how-to/scan-daml.md)
+- [Release the workspace](how-to/release.md)
 - [Verify a formatter change](how-to/verify-formatter-change.md)
 
 ## Reference
