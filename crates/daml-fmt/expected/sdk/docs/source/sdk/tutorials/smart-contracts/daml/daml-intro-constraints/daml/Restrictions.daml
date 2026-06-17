@@ -117,7 +117,6 @@ test_restrictions = do
       newOwner = bob
 -- TRANSFER_TEST_END
 
-
 -- REDEEM_TEST_BEGIN
   -- June 1st 2019 is a Saturday.
   setTime (time (date 2019 Jun 1) 0 0 0)
@@ -283,19 +282,19 @@ nonPerformedAbort = do
 -- OPTIONAL_POW_BEGIN
 optPow: Int -> Int -> Optional Int
 optPow base exponent
- | exponent == 0 = Some 1
- | exponent > 0 =
-   let Some result = optPow base (exponent - 1)
-   in Some (base * result)
- | otherwise = None
+  | exponent == 0 = Some 1
+  | exponent > 0 =
+    let Some result = optPow base (exponent - 1)
+    in Some (base * result)
+  | otherwise = None
 -- OPTIONAL_POW_END
 
 -- ERROR_POW_BEGIN
 errPow: Int -> Int -> Int
 errPow base exponent
- | exponent == 0 = 1
- | exponent > 0 = base * errPow base (exponent - 1)
- | otherwise = error "Negative exponent not supported"
+  | exponent == 0 = 1
+  | exponent > 0 = base * errPow base (exponent - 1)
+  | otherwise = error "Negative exponent not supported"
 -- ERROR_POW_END
 
 {-

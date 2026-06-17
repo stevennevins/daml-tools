@@ -5,12 +5,12 @@
 
 module AttestationTestData
   (TestMessage,
-   TestData(..),
-   serializeTestMessage,
-   derEncodedSignerPrivateKey,
-   derEncodedSignerPublicKey,
-   derEncodeSignature,
-   testData,
+  TestData(..),
+  serializeTestMessage,
+  derEncodedSignerPrivateKey,
+  derEncodedSignerPublicKey,
+  derEncodeSignature,
+  testData,
   ) where
 
 import DA.Crypto.Text

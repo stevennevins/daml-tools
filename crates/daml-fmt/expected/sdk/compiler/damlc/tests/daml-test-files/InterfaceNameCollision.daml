@@ -11,5 +11,5 @@ interface Iface where
   owner: Party
   foobar: ()
   choice FooBar: ()
-      controller owner this
-      do pure ()
+    controller owner this
+    do pure ()

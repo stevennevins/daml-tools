@@ -14,13 +14,13 @@ import DA.BigNumeric
 
 roundingModes =
     [ RoundingUp
-    , RoundingDown
-    , RoundingCeiling
-    , RoundingFloor
-    , RoundingHalfUp
-    , RoundingHalfDown
-    , RoundingHalfEven
-    , RoundingUnnecessary
+      , RoundingDown
+      , RoundingCeiling
+      , RoundingFloor
+      , RoundingHalfUp
+      , RoundingHalfDown
+      , RoundingHalfEven
+      , RoundingUnnecessary
     ]
 
 test1 = script do

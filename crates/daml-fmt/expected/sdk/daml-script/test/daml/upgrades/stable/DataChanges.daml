@@ -37,28 +37,28 @@ import V1.DataChangesDummy
 main: TestTree
 main = tests
   [ ("Fails if the template name changes", templateNameChanges)
-  , ("Fails if fields are removed", templateFieldsRemoved)
-  , ("Fails if non-optional fields are added", templateNonOptionalFieldsAdded)
-  , ("Fails if nested fields are removed", templateFieldsRemovedNested)
-  , ("Fails if nested non-optional fields are added", templateNonOptionalFieldsAddedNested)
-  , ("Succeeds if a nested enum is unchanged", templateEnumUnchanged)
-  , ("Succeeds if a nested enum is upgraded and extended", templateEnumUpgradeFromOld)
-  , ("Succeeds if a nested enum is an old case when downgrading", templateEnumDowngradeFromOld)
-  , ("Fails if a nested enum is a removed case", templateEnumUpgradeToRemoved)
-  , ("Fails if a nested enum is an additional case when downgrading", templateEnumDowngradeFromNew)
-  , ("Fails if an optional field is set on a choice when downgrading", templateOptionalFieldOnChoiceSetWhenDowngrading)
+    , ("Fails if fields are removed", templateFieldsRemoved)
+    , ("Fails if non-optional fields are added", templateNonOptionalFieldsAdded)
+    , ("Fails if nested fields are removed", templateFieldsRemovedNested)
+    , ("Fails if nested non-optional fields are added", templateNonOptionalFieldsAddedNested)
+    , ("Succeeds if a nested enum is unchanged", templateEnumUnchanged)
+    , ("Succeeds if a nested enum is upgraded and extended", templateEnumUpgradeFromOld)
+    , ("Succeeds if a nested enum is an old case when downgrading", templateEnumDowngradeFromOld)
+    , ("Fails if a nested enum is a removed case", templateEnumUpgradeToRemoved)
+    , ("Fails if a nested enum is an additional case when downgrading", templateEnumDowngradeFromNew)
+    , ("Fails if an optional field is set on a choice when downgrading", templateOptionalFieldOnChoiceSetWhenDowngrading)
   -- Template optional field set when downgrading
-  , tofswdViaInterfaceInCommandLocal
-  , tofswdViaInterfaceInCommandGlobal
-  , tofswdViaInterfaceInChoiceGlobal
-  , tofswdViaInterfaceInCommandDisclosed
-  , tofswdViaInterfaceInChoiceDisclosed
+    , tofswdViaInterfaceInCommandLocal
+    , tofswdViaInterfaceInCommandGlobal
+    , tofswdViaInterfaceInChoiceGlobal
+    , tofswdViaInterfaceInCommandDisclosed
+    , tofswdViaInterfaceInChoiceDisclosed
     -- no such thing as ViaCIDExercise, InCommand, and Local
-  , tofswdViaCIDExerciseInChoiceLocal
-  , tofswdViaCIDExerciseInCommandGlobal
-  , tofswdViaCIDExerciseInChoiceGlobal
-  , tofswdViaCIDExerciseInCommandDisclosed
-  , tofswdViaCIDExerciseInChoiceDisclosed
+    , tofswdViaCIDExerciseInChoiceLocal
+    , tofswdViaCIDExerciseInCommandGlobal
+    , tofswdViaCIDExerciseInChoiceGlobal
+    , tofswdViaCIDExerciseInCommandDisclosed
+    , tofswdViaCIDExerciseInChoiceDisclosed
   ]
 
 templateInvalidChange: forall t2 t1 c2. (Template t1, HasEnsure t1, Choice t2 c2 Text) => Bool -> (Party -> t1) -> c2 -> Test
@@ -478,13 +478,13 @@ dataChangesV1 = getPackageId "data-changes-1.0.0"
 templateOptionalFieldsSetWhenDowngradingTest: Show b => Text -> (Party -> Party -> Script (Either SubmitError b)) -> (Text, Test)
 templateOptionalFieldsSetWhenDowngradingTest trailer f = ("Fails if an optional field is set when downgrading (" <> trailer <> ")", s)
   where
-  s = test $ do
-    a <- allocatePartyOn "alice" participant0
-    b <- allocatePartyOn "bob" participant0
-    res <- f a b
-    case res of
-      Left (UpgradeError (TranslationFailed _ _ _ _) _) -> pure ()
-      _ -> assertFail $ "Expected specific failure but got " <> show res
+    s = test $ do
+      a <- allocatePartyOn "alice" participant0
+      b <- allocatePartyOn "bob" participant0
+      res <- f a b
+      case res of
+        Left (UpgradeError (TranslationFailed _ _ _ _) _) -> pure ()
+        _ -> assertFail $ "Expected specific failure but got " <> show res
 
 tofswdViaCIDExerciseInCommandGlobal: (Text, Test)
 tofswdViaCIDExerciseInCommandGlobal = templateOptionalFieldsSetWhenDowngradingTest "static,  global,    in command, cid" $ \a b -> do

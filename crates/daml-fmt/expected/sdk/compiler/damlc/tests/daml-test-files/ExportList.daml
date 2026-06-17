@@ -1,21 +1,21 @@
 -- Copyright (c) 2020, Digital Asset (Switzerland) GmbH and/or its
 -- affiliates. All rights reserved.
 module ExportList
-    ( function1
-    , Data1
-    , Data2 ()
-    , Data3 (Constr3)
-    , Data4 (field4)
-    , Data5 (Constr5, field5)
-    , Data6 (..)
-    , Class1
-    , Class2 ()
-    , Class3 (member3)
-    , Class4 (..)
-    , Template1
-    , Template2 (tfield2)
-    , Template3 (..)
-    ) where
+  ( function1
+  , Data1
+  , Data2 ()
+  , Data3 (Constr3)
+  , Data4 (field4)
+  , Data5 (Constr5, field5)
+  , Data6 (..)
+  , Class1
+  , Class2 ()
+  , Class3 (member3)
+  , Class4 (..)
+  , Template1
+  , Template2 (tfield2)
+  , Template3 (..)
+  ) where
 
 function0: Int
 function0 = 10

@@ -17,26 +17,26 @@ test1 =
 
 test2: ActionCatch m => m Int
 test2 = do
-    try
-        pure (10 / 0)
-    catch
-        (_: ArithmeticError) -> pure 0
+  try
+      pure (10 / 0)
+  catch
+      (_: ArithmeticError) -> pure 0
 
 test3: ActionCatch m => m Int
 test3 = do
-    x <- try
-            pure (10 / 0)
-        catch
-            (_: ArithmeticError) -> pure 0
-    pure (x+1)
+  x <- try
+          pure (10 / 0)
+      catch
+          (_: ArithmeticError) -> pure 0
+  pure (x+1)
 
 test4: ActionCatch m => m Int
 test4 = do
-    x <- try
-        pure (10 / 0)
-    catch
-        (_: ArithmeticError) -> pure 0
-    pure (x+1)
+  x <- try
+      pure (10 / 0)
+  catch
+      (_: ArithmeticError) -> pure 0
+  pure (x+1)
 
 test5: ActionCatch m => m Int
 test5 =

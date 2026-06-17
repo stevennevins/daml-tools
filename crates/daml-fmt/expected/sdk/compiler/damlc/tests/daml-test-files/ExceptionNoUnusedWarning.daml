@@ -8,7 +8,7 @@
 module ExceptionNoUnusedWarning where
 
 exception MyException
-    with
-        m: Text
-    where
-        message m
+  with
+    m: Text
+  where
+    message m

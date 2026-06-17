@@ -3,8 +3,6 @@
 
 -- Test that the maximal precision of e^-10 in rational literals passes.
 
-
-
 module RationalPrecisionMax where
 
 a: Decimal

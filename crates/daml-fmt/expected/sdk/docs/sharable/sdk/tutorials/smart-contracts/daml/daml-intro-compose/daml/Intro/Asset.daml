@@ -1,7 +1,6 @@
 -- Copyright (c) 2025 Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
 
-
 module Intro.Asset where
 
 data SplitResult = SplitResult with
@@ -23,7 +22,6 @@ template Asset
 
     observer observers
 -- ASSET_END
-
 
 -- MERGE_SPLIT_BEGIN
     choice Split
@@ -89,24 +87,24 @@ template TransferProposal
     observer newOwner
 
     choice TransferProposal_Accept
-        : ContractId Asset
-        controller asset.issuer, newOwner
-        do
-          create asset with
-            owner = newOwner
+      : ContractId Asset
+      controller asset.issuer, newOwner
+      do
+        create asset with
+          owner = newOwner
 
     choice TransferProposal_Cancel
-        : ContractId Asset
-        controller asset.owner
-        do
-          create asset with
-            observers = []
+      : ContractId Asset
+      controller asset.owner
+      do
+        create asset with
+          observers = []
 
     choice TransferProposal_Reject
-        : ContractId Asset
-        controller newOwner
-        do
-          create asset
+      : ContractId Asset
+      controller newOwner
+      do
+        create asset
 
 template TransferApproval
   with
@@ -117,30 +115,30 @@ template TransferApproval
     observer asset.owner, newOwner
 
     choice TransferApproval_Cancel
-        : ()
-        controller asset.owner
-        do
-          return ()
+      : ()
+      controller asset.owner
+      do
+        return ()
 
     choice TransferApproval_Reject
-        : ()
-        controller newOwner
-        do
-          return ()
+      : ()
+      controller newOwner
+      do
+        return ()
 
     choice TransferApproval_Transfer
-        : ContractId Asset
-        with
-          assetCid: ContractId Asset
-        controller asset.owner, newOwner
-        do
-          sentAsset <- fetch assetCid
-          assertMsg
-            "Transfer failed: Assets do not match."
-            (asset == sentAsset with
-              observers = asset.observers
-            )
-          archive assetCid
-          create asset with
-            owner = newOwner
-            observers = []
+      : ContractId Asset
+      with
+        assetCid: ContractId Asset
+      controller asset.owner, newOwner
+      do
+        sentAsset <- fetch assetCid
+        assertMsg
+          "Transfer failed: Assets do not match."
+          (asset == sentAsset with
+            observers = asset.observers
+          )
+        archive assetCid
+        create asset with
+          owner = newOwner
+          observers = []

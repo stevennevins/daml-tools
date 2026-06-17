@@ -46,10 +46,10 @@ contents: |
 main: TestTree
 main = tests
   [ ("Call a V1 choice on a V1 contract from within a choice body, expect V1 implementation is used regardless of the possible upgrade.", exerciseV1ChoiceV1ContractSameType)
-  , ("Call a V1 choice on a V2 contract from within a choice body, expect V1 implementation is used, via a downgrade.", exerciseV1ChoiceV2ContractSameType)
-  , ("Call a V1 choice on a V2 contract with Some field from within a choice body, expect V1 implementation to attempt to be used, but fail downgrade", exerciseV1ChoiceV2ContractSameTypeSome)
-  , ("Call a V2 choice on a V1 contract from within a choice body, expect V2 implementation is used, via an upgrade", exerciseV2ChoiceV1ContractSameType)
-  , ("Call a V2 choice on a V2 contract from within a choice body, expect V2 implementation is used, for sanity", exerciseV2ChoiceV2ContractSameType)
+    , ("Call a V1 choice on a V2 contract from within a choice body, expect V1 implementation is used, via a downgrade.", exerciseV1ChoiceV2ContractSameType)
+    , ("Call a V1 choice on a V2 contract with Some field from within a choice body, expect V1 implementation to attempt to be used, but fail downgrade", exerciseV1ChoiceV2ContractSameTypeSome)
+    , ("Call a V2 choice on a V1 contract from within a choice body, expect V2 implementation is used, via an upgrade", exerciseV2ChoiceV1ContractSameType)
+    , ("Call a V2 choice on a V2 contract from within a choice body, expect V2 implementation is used, for sanity", exerciseV2ChoiceV2ContractSameType)
   ]
 
 exerciseV1Util: Choice V1.ChoiceBodyExerciseHelper c r => Party -> c -> Script r

@@ -22,7 +22,7 @@ eqNoFieldsNoWhere = (==)
 ------
 
 exception NoFieldsWhereBlank
-    where
+  where
 
 mkNoFieldsWhereBlank: NoFieldsWhereBlank
 mkNoFieldsWhereBlank = NoFieldsWhereBlank
@@ -30,8 +30,8 @@ mkNoFieldsWhereBlank = NoFieldsWhereBlank
 ------
 
 exception NoFieldsWhereMessage
-    where
-        message "NoFieldsWhereMessage exception"
+  where
+    message "NoFieldsWhereMessage exception"
 
 mkNoFieldsWhereMessage: NoFieldsWhereMessage
 mkNoFieldsWhereMessage = NoFieldsWhereMessage
@@ -39,8 +39,8 @@ mkNoFieldsWhereMessage = NoFieldsWhereMessage
 ------
 
 exception WithFieldNoWhere
-    with
-        f1: Int
+  with
+    f1: Int
 
 mkWithFieldNoWhere: WithFieldNoWhere
 mkWithFieldNoWhere = WithFieldNoWhere
@@ -50,9 +50,9 @@ mkWithFieldNoWhere = WithFieldNoWhere
 ------
 
 exception WithFieldWhereBlank
-    with
-        f2: Int
-    where
+  with
+    f2: Int
+  where
 
 mkWithFieldWhereBlank: WithFieldWhereBlank
 mkWithFieldWhereBlank = WithFieldWhereBlank
@@ -62,10 +62,10 @@ mkWithFieldWhereBlank = WithFieldWhereBlank
 ------
 
 exception WithFieldWhereMessage
-    with
-        f3: Int
-    where
-        message "WithFieldWhereMessage exception"
+  with
+    f3: Int
+  where
+    message "WithFieldWhereMessage exception"
 
 mkWithFieldWhereMessage: WithFieldWhereMessage
 mkWithFieldWhereMessage = WithFieldWhereMessage
@@ -82,7 +82,7 @@ mkWithBracketsNoWhere = WithBracketsNoWhere { f4 = 10 }
 ------
 
 exception WithBracketsWhereMessage with { f5 : Int }
-    where message "Hello"
+  where message "Hello"
 
 mkWithBracketsWhereMessage: WithBracketsWhereMessage
 mkWithBracketsWhereMessage = WithBracketsWhereMessage { f5 = 10 }

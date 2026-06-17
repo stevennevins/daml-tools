@@ -110,9 +110,9 @@ contents: |
 main: TestTree
 main = tests
   [ ("fromInterface performs upgrade", fromInterfaceUpgrade)
-  , ("fromInterface performs downgrade", fromInterfaceDowngrade)
-  , ("fromInterface fails invalid upgrade", fromInterfaceIllegalUpgrade)
-  , ("fromInterface fails invalid downgrade", fromInterfaceInvalidDowngrade)
+    , ("fromInterface performs downgrade", fromInterfaceDowngrade)
+    , ("fromInterface fails invalid upgrade", fromInterfaceIllegalUpgrade)
+    , ("fromInterface fails invalid downgrade", fromInterfaceInvalidDowngrade)
   ]
 
 fromInterfaceUpgrade: Test

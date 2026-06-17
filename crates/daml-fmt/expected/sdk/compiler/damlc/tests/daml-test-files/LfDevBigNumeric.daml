@@ -24,11 +24,11 @@ run = script do
      createCmd BigNumericResults with
        party = alice
        values = map fromBigNumeric [
-             x + x
-           , negate x
-           , x * x
-           , BN.round 0 BN.RoundingUp x
-           , BN.round 0 BN.RoundingDown x
-           , BN.round 0 BN.RoundingHalfUp x
-           , BN.round 0 BN.RoundingCeiling (negate x)
+         x + x
+         , negate x
+         , x * x
+         , BN.round 0 BN.RoundingUp x
+         , BN.round 0 BN.RoundingDown x
+         , BN.round 0 BN.RoundingHalfUp x
+         , BN.round 0 BN.RoundingCeiling (negate x)
          ]

@@ -1,9 +1,7 @@
 -- Copyright (c) 2025 Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
 
-
 {-# LANGUAGE PartialTypeSignatures #-}
-
 
 module CoinIssuance where
 
@@ -55,7 +53,6 @@ template CoinIssueAgreement
       controller issuer
       do create Coin with issuer; owner; amount; delegates = []
 -- END_COIN_ISSUE_AGREEMENT
-
 
 --the original contract
 -- BEGIN_COIN_TEMPLATE_DATATYPE
@@ -129,7 +126,6 @@ template LockedCoin
         assert (currTime >= maturity)
         create coin
 -- END_LOCKED_COIN_TEMPLATE_CLAWBACK
-
 
 --TransferProposal
 template TransferProposal

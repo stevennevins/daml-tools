@@ -16,12 +16,12 @@ testCase input expectedOutput = do
     then pure ()
     else assertFail $ unlines
       [ "ShowText.testCase failed:"
-      , "|              input          = " <> show input
-      , "| toCodePoints input          = " <> show (toCodePoints input)
-      , "|              expectedOutput = " <> show expectedOutput
-      , "| toCodePoints expectedOutput = " <> show (toCodePoints expectedOutput)
-      , "|              actualOutput   = " <> show actualOutput
-      , "| toCodePoints actualOutput   = " <> show (toCodePoints actualOutput)
+        , "|              input          = " <> show input
+        , "| toCodePoints input          = " <> show (toCodePoints input)
+        , "|              expectedOutput = " <> show expectedOutput
+        , "| toCodePoints expectedOutput = " <> show (toCodePoints expectedOutput)
+        , "|              actualOutput   = " <> show actualOutput
+        , "| toCodePoints actualOutput   = " <> show (toCodePoints actualOutput)
       ]
 
 infix 2 ==>

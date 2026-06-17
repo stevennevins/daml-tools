@@ -26,7 +26,7 @@ module DA.Logic
   , traverse
   , zipFormulas
   )
-where
+  where
 
 import DA.Either
 import DA.Logic.Types

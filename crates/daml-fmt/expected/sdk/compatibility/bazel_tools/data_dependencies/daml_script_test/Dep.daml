@@ -12,8 +12,8 @@ template T0
     signatory party
 
     nonconsuming choice C0: Bool
-     controller party
-        do pure True
+      controller party
+      do pure True
 
 run: Script ()
 run = script do

@@ -6,7 +6,7 @@
 module Com.Acme.ParameterizedTypes where
 
 data Attribute a = Attribute
-    with v: a
+  with v: a
 
 data BookAttributes = BookAttributes with
    pages: (Attribute Int)

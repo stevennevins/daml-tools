@@ -3,8 +3,6 @@
 
 -- Test that rational positive literals smaller or equal 10^38 -1 after multiplying with 10^10 pass.
 
-
-
 module RationalUpperBoundMax where
 
 -- 10^38 -1 / 10^10

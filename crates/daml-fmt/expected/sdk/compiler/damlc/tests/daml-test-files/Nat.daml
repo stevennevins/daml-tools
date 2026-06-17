@@ -7,8 +7,7 @@ import Daml.Script
 import DA.Assert
 
 data Nat = Z | S Nat
-      deriving (Eq,Ord,Show)
-
+  deriving (Eq,Ord,Show)
 
 add: Nat -> Nat -> Nat
 add Z x = x

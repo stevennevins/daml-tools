@@ -6,6 +6,6 @@
 -- | HIDE
 module Daml.Script.Internal.Questions.Crypto(
   module Daml.Script.Internal.Questions.Crypto.Text
-) where
+  ) where
 
 import Daml.Script.Internal.Questions.Crypto.Text

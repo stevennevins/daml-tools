@@ -24,13 +24,16 @@ Results over the 924-file corpus (`corpus/SCOREBOARD.md` is the board):
 | semantics silently changed | 0 |
 | idempotent (`format(format(x)) == format(x)`) | 924 / 924 |
 
-What it lays out today: `do`-block indentation, `if`/`then`/`else` clauses,
-`case` alternatives, `let … in` bindings, constructor `with` fields,
-template/interface bodies, trailing-whitespace + final newline, and
-type-annotation colon spacing (`x : T` → `x: T`). Unmodeled constructs (guards,
-record updates, `data` declarations, type definitions, expression
-continuations) pass through verbatim. It makes its own consistent layout
-decisions and does not aim to match any other formatter's output.
+What it lays out today: module/import continuations, `do`-block indentation,
+`if`/`then`/`else` clauses, `case` alternatives, `let … in` bindings,
+constructor `with` fields, record-update fields, template/interface bodies,
+choice internals, declaration ladders, class/instance body-column alignment,
+function guards/where bindings, `try`/`catch` handlers, explicit tuple/list
+continuations, trailing-whitespace + blank-line/final-newline normalization,
+and type-annotation colon spacing (`x : T` → `x: T`). Broader expression
+wrapping (long applications, infix chains, lambdas, and inline forms) remains
+conservative. It makes its own consistent layout decisions and does not aim to
+match any other formatter's output.
 
 ## Build & install
 

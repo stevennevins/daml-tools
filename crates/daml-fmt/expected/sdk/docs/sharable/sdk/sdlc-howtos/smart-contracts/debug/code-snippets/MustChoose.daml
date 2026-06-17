@@ -3,7 +3,6 @@
 
 {-# LANGUAGE PartialTypeSignatures #-}
 
-
 module MustChoose where
 
 import Daml.Script

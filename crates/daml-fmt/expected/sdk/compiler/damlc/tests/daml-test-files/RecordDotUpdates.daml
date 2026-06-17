@@ -42,7 +42,6 @@ i o = o { text = "hello"
         , int = 31
         }
 
-
 x = Inner {text = "hello", int = 42}
 x' = let text = "world" in x {text}
 

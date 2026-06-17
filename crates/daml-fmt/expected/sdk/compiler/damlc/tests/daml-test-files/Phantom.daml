@@ -7,7 +7,7 @@ import Daml.Script
 import DA.Assert
 
 data Phantom a = Phantom {}
-    deriving (Eq, Show)
+  deriving (Eq, Show)
 phantom: Phantom (Party -> Party)
 phantom = Phantom {}
 

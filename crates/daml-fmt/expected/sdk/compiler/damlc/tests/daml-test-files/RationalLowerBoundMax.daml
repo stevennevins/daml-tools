@@ -3,8 +3,6 @@
 
 -- Test that rational negative literals bigger or equal -10^38 + 1 pass.
 
-
-
 module RationalLowerBoundMax where
 
 -- -10^38 + 1 / 10^10

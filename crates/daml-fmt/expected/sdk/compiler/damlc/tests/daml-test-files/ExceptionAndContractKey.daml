@@ -35,7 +35,6 @@ template Op
         None <- lookupByKey @K sig
         pure ()
 
-
     choice OpCreate: ()
       with cid: ContractId K
       controller sig

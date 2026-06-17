@@ -13,10 +13,10 @@ import PackageIds
 main: TestTree
 main = tests
   [ ("Can't catch ValidationFailed", cantCatchValidationFailed)
-  , ("Can't catch DowngradeDropDefinedField", cantCatchDowngradeDropDefinedField)
-  , ("Can catch common errors across version (via interface)", canCatchCommonErrors)
-  , ("Can catch changing errors (using AnyException) across version (via interface)", canCatchChangingErrors)
-  , ("Can catch changing new error (using AnyException) across version (via interface)", canCatchNewError)
+    , ("Can't catch DowngradeDropDefinedField", cantCatchDowngradeDropDefinedField)
+    , ("Can catch common errors across version (via interface)", canCatchCommonErrors)
+    , ("Can catch changing errors (using AnyException) across version (via interface)", canCatchChangingErrors)
+    , ("Can catch changing new error (using AnyException) across version (via interface)", canCatchNewError)
   ]
 
 {- PACKAGE

@@ -29,7 +29,7 @@ template Iou
       -- Split the IOU by dividing the amount.
 -- BEGIN_IOU_TEMPLATE_SPLIT
     choice Iou_Split: (IouCid, IouCid)
-        with
+      with
         splitAmount: Decimal
       controller owner
       do

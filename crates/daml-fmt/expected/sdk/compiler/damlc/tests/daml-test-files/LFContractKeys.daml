@@ -32,11 +32,11 @@ template Divulger
     observer sig
 
     nonconsuming choice DivulgeKeyed: Keyed
-        with
-          keyedCid: ContractId Keyed
-        controller sig
-        do
-          fetch keyedCid
+      with
+        keyedCid: ContractId Keyed
+      controller sig
+      do
+        fetch keyedCid
 
 template Delegation
   with

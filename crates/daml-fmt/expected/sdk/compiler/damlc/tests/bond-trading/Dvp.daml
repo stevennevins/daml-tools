@@ -1,7 +1,6 @@
 -- Copyright (c) 2025 Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
 
-
 module Dvp where
 
 import Daml.Script
@@ -148,7 +147,6 @@ main = script do
         cashAmount = 100.0
         settleTime = datetime 2018 Aug 14 0 0 0
         dvpId = "abc"
-
 
   dvpCid <- bob `submit` exerciseCmd dvpProposalCid Accept
 

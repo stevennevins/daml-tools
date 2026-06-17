@@ -19,46 +19,46 @@ main = tests
       [ subtree "exercise"
           [ subtree "signatories"
               [ ("changed", exerciseSignatoriesChangedLocal)
-              , ("unchanged", exerciseSignatoriesUnchangedLocal)
+                , ("unchanged", exerciseSignatoriesUnchangedLocal)
               ]
-          , subtree "observers"
-              [ ("changed", exerciseObserversChangedLocal)
-              , ("unchanged", exerciseObserversUnchangedLocal)
-              ]
+            , subtree "observers"
+                [ ("changed", exerciseObserversChangedLocal)
+                  , ("unchanged", exerciseObserversUnchangedLocal)
+                ]
           ]
-      , subtree "exercise by interface"
-          [ subtree "signatories"
-              [ ("changed", exerciseByInterfaceSignatoriesChangedLocal)
-              , ("unchanged", exerciseByInterfaceSignatoriesUnchangedLocal)
-              ]
-          , subtree "observers"
-              [ ("changed", exerciseByInterfaceObserversChangedLocal)
-              , ("unchanged", exerciseByInterfaceObserversUnchangedLocal)
-              ]
-          ]
+        , subtree "exercise by interface"
+            [ subtree "signatories"
+                [ ("changed", exerciseByInterfaceSignatoriesChangedLocal)
+                  , ("unchanged", exerciseByInterfaceSignatoriesUnchangedLocal)
+                ]
+              , subtree "observers"
+                  [ ("changed", exerciseByInterfaceObserversChangedLocal)
+                    , ("unchanged", exerciseByInterfaceObserversUnchangedLocal)
+                  ]
+            ]
       ]
-  , subtree "global"
-      [ subtree "exercise"
-          [ subtree "signatories"
-              [ ("changed", exerciseSignatoriesChangedGlobal)
-              , ("unchanged", exerciseSignatoriesUnchangedGlobal)
+    , subtree "global"
+        [ subtree "exercise"
+            [ subtree "signatories"
+                [ ("changed", exerciseSignatoriesChangedGlobal)
+                  , ("unchanged", exerciseSignatoriesUnchangedGlobal)
+                ]
+              , subtree "observers"
+                  [ ("changed", exerciseObserversChangedGlobal)
+                    , ("unchanged", exerciseObserversUnchangedGlobal)
+                  ]
+            ]
+          , subtree "exercise by interface"
+              [ subtree "signatories"
+                  [ ("changed", exerciseByInterfaceSignatoriesChangedGlobal)
+                    , ("unchanged", exerciseByInterfaceSignatoriesUnchangedGlobal)
+                  ]
+                , subtree "observers"
+                    [ ("changed", exerciseByInterfaceObserversChangedGlobal)
+                      , ("unchanged", exerciseByInterfaceObserversUnchangedGlobal)
+                    ]
               ]
-          , subtree "observers"
-              [ ("changed", exerciseObserversChangedGlobal)
-              , ("unchanged", exerciseObserversUnchangedGlobal)
-              ]
-          ]
-      , subtree "exercise by interface"
-          [ subtree "signatories"
-              [ ("changed", exerciseByInterfaceSignatoriesChangedGlobal)
-              , ("unchanged", exerciseByInterfaceSignatoriesUnchangedGlobal)
-              ]
-          , subtree "observers"
-              [ ("changed", exerciseByInterfaceObserversChangedGlobal)
-              , ("unchanged", exerciseByInterfaceObserversUnchangedGlobal)
-              ]
-          ]
-      ]
+        ]
   ]
 
 {- PACKAGE

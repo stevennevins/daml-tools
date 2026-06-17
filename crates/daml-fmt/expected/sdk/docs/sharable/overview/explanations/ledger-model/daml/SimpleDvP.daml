@@ -1,7 +1,6 @@
 -- Copyright (c) 2025 Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
 
-
 module SimpleDvP where
 
 import Daml.Script
@@ -160,7 +159,6 @@ simpleDvpHelperContract = script do
   submit bank2 do exerciseCmd newEur Archive
   submit bank1 do exerciseCmd newUsd Archive
 
-
 createAuthError = script do
   alice <- allocateParty "Alice"
   bob <- allocateParty "Bob"
@@ -191,7 +189,6 @@ createAuthError = script do
 -- SNIPPET-create-auth-error-END
     pure ()
   assert $ isLeft result
-
 
 nestedAuthError = script do
   alice <- allocateParty "Alice"

@@ -5,14 +5,11 @@ module TestChoiceAuthority where
 
 import Daml.Script
 
-
-
 template HasAuthority
   with
     party: Party
   where
     signatory party
-
 
 template ProposeConsortiumAuthority
   with
@@ -59,7 +56,6 @@ template ProposeConsortiumAuthority
         authority consortiumParty -- gain authority
       do
         create HasAuthority with party = consortiumParty
-
 
 test: Script ()
 test = do

@@ -1,9 +1,7 @@
 -- Copyright (c) 2025 Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
 
-
 module DA.Bifunctor(Bifunctor(..)) where
-
 
 -- | A bifunctor is a type constructor that takes
 -- two type arguments and is a functor in *both* arguments. That
@@ -72,7 +70,6 @@ class Bifunctor p where
     bimap: (a -> b) -> (c -> d) -> p a c -> p b d
     bimap f g = first f . second g
 
-
     -- | Map covariantly over the first argument.
     --
     -- ```daml-force
@@ -91,7 +88,6 @@ class Bifunctor p where
     first: (a -> b) -> p a c -> p b c
     first f = bimap f identity
 
-
     -- | Map covariantly over the second argument.
     --
     -- ```daml-force
@@ -109,8 +105,6 @@ class Bifunctor p where
     -- ```
     second: (b -> c) -> p a b -> p a c
     second = bimap identity
-
-
 
 instance Bifunctor (,) where
     bimap f g (a, b) = (f a, g b)

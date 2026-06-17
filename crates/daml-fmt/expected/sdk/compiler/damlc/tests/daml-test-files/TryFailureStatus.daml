@@ -61,14 +61,12 @@ canCatchException = do
     Left fs | fs == exampleGeneralErrorFailureStatus -> pure ()
     _ -> fail $ "Expected exampleGeneralErrorFailureStatus but got " <> show res
 
-
 canCatchDamlScriptException: Script ()
 canCatchDamlScriptException = do
   res <- tryFailureStatus $ (throw exampleInvalidUserId : Script ())
   case res of
     Left fs | fs == exampleInvalidUserIdFailureStatus -> pure ()
     _ -> fail $ "Expected exampleInvalidUserIdFailureStatus but got " <> show res
-
 
 tryToEitherWorksWithin: Script ()
 tryToEitherWorksWithin = do

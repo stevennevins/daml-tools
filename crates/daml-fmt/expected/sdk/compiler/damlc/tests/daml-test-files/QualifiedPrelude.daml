@@ -7,7 +7,6 @@
 -- + DEL-5958 ApplicativeDo pieces
 {-# LANGUAGE ApplicativeDo #-}
 
-
 module QualifiedPrelude where
 
 import Daml.Script

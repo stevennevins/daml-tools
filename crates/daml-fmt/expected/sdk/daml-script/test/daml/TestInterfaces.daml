@@ -86,7 +86,6 @@ test = script do
   asset3 === Asset with {issuer = p, owner = p, amount = 5}
   pure ()
 
-
 -- Tests for queryInterface/queryInterfaceContractId
 
 -- Two interfaces (1,2)...
@@ -128,7 +127,6 @@ template MyTemplateC
     signatory p
     interface instance MyInterface2 for MyTemplateC where
       view = (if isError then error else MyView2) ("C:" <> text)
-
 
 test_queryInterface: Script ()
 test_queryInterface = script do

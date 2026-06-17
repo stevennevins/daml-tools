@@ -55,9 +55,9 @@ testMultiTrade = script do
   -- MAPA_BEGIN
   let rels =
         [ Relationship chfbank alice
-        , Relationship chfbank bob
-        , Relationship gbpbank alice
-        , Relationship gbpbank bob
+          , Relationship chfbank bob
+          , Relationship gbpbank alice
+          , Relationship gbpbank bob
         ]
   [chfha, chfhb, gbpha, gbphb] <- mapA setupRelationship rels
   -- MAPA_END

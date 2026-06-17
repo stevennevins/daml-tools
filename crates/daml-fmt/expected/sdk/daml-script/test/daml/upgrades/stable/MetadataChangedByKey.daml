@@ -19,66 +19,66 @@ main = tests
       [ subtree "exercise"
           [ subtree "key"
               [ ("changed", exerciseKeyChangedLocal)
-              , ("unchanged", exerciseKeyUnchangedLocal)
+                , ("unchanged", exerciseKeyUnchangedLocal)
               ]
-          , subtree "maintainer"
-              [ ("changed", exerciseMaintainerChangedLocal)
-              , ("unchanged", exerciseMaintainerUnchangedLocal)
-              ]
+            , subtree "maintainer"
+                [ ("changed", exerciseMaintainerChangedLocal)
+                  , ("unchanged", exerciseMaintainerUnchangedLocal)
+                ]
           ]
-      , subtree "exercise by interface"
-          [ subtree "key"
-              [ ("changed", exerciseByInterfaceKeyChangedLocal)
-              , ("unchanged", exerciseByInterfaceKeyUnchangedLocal)
-              ]
-          , subtree "maintainer"
-              [ ("changed", exerciseByInterfaceMaintainerChangedLocal)
-              , ("unchanged", exerciseByInterfaceMaintainerUnchangedLocal)
-              ]
-          ]
-      , subtree "exercise by key"
-          [ subtree "key"
-              [ ("changed", exerciseByKeyKeyChangedLocal)
-              , ("unchanged", exerciseByKeyKeyUnchangedLocal)
-              ]
-          , subtree "maintainer"
-              [ ("changed", exerciseByKeyMaintainerChangedLocal)
-              , ("unchanged", exerciseByKeyMaintainerUnchangedLocal)
-              ]
-          ]
+        , subtree "exercise by interface"
+            [ subtree "key"
+                [ ("changed", exerciseByInterfaceKeyChangedLocal)
+                  , ("unchanged", exerciseByInterfaceKeyUnchangedLocal)
+                ]
+              , subtree "maintainer"
+                  [ ("changed", exerciseByInterfaceMaintainerChangedLocal)
+                    , ("unchanged", exerciseByInterfaceMaintainerUnchangedLocal)
+                  ]
+            ]
+        , subtree "exercise by key"
+            [ subtree "key"
+                [ ("changed", exerciseByKeyKeyChangedLocal)
+                  , ("unchanged", exerciseByKeyKeyUnchangedLocal)
+                ]
+              , subtree "maintainer"
+                  [ ("changed", exerciseByKeyMaintainerChangedLocal)
+                    , ("unchanged", exerciseByKeyMaintainerUnchangedLocal)
+                  ]
+            ]
       ]
-  , subtree "global"
-      [ subtree "exercise"
-          [ subtree "key"
-              [ ("changed", exerciseKeyChangedGlobal)
-              , ("unchanged", exerciseKeyUnchangedGlobal)
+    , subtree "global"
+        [ subtree "exercise"
+            [ subtree "key"
+                [ ("changed", exerciseKeyChangedGlobal)
+                  , ("unchanged", exerciseKeyUnchangedGlobal)
+                ]
+              , subtree "maintainer"
+                  [ ("changed", exerciseMaintainerChangedGlobal)
+                    , ("unchanged", exerciseMaintainerUnchangedGlobal)
+                  ]
+            ]
+          , subtree "exercise by interface"
+              [ subtree "key"
+                  [ ("changed", exerciseByInterfaceKeyChangedGlobal)
+                    , ("unchanged", exerciseByInterfaceKeyUnchangedGlobal)
+                  ]
+                , subtree "maintainer"
+                    [ ("changed", exerciseByInterfaceMaintainerChangedGlobal)
+                      , ("unchanged", exerciseByInterfaceMaintainerUnchangedGlobal)
+                    ]
               ]
-          , subtree "maintainer"
-              [ ("changed", exerciseMaintainerChangedGlobal)
-              , ("unchanged", exerciseMaintainerUnchangedGlobal)
+          , subtree "exercise by key"
+              [ subtree "key"
+                  [ ("changed", exerciseByKeyKeyChangedGlobal)
+                    , ("unchanged", exerciseByKeyKeyUnchangedGlobal)
+                  ]
+                , subtree "maintainer"
+                    [ ("changed", exerciseByKeyMaintainerChangedGlobal)
+                      , ("unchanged", exerciseByKeyMaintainerUnchangedGlobal)
+                    ]
               ]
-          ]
-      , subtree "exercise by interface"
-          [ subtree "key"
-              [ ("changed", exerciseByInterfaceKeyChangedGlobal)
-              , ("unchanged", exerciseByInterfaceKeyUnchangedGlobal)
-              ]
-          , subtree "maintainer"
-              [ ("changed", exerciseByInterfaceMaintainerChangedGlobal)
-              , ("unchanged", exerciseByInterfaceMaintainerUnchangedGlobal)
-              ]
-          ]
-      , subtree "exercise by key"
-          [ subtree "key"
-              [ ("changed", exerciseByKeyKeyChangedGlobal)
-              , ("unchanged", exerciseByKeyKeyUnchangedGlobal)
-              ]
-          , subtree "maintainer"
-              [ ("changed", exerciseByKeyMaintainerChangedGlobal)
-              , ("unchanged", exerciseByKeyMaintainerUnchangedGlobal)
-              ]
-          ]
-      ]
+        ]
   ]
 
 {- PACKAGE

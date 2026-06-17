@@ -1,9 +1,7 @@
 -- Copyright (c) 2025 Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
 
-
 {-# LANGUAGE PartialTypeSignatures #-}
-
 
 module CoinTransferWithAuthorization where
 
@@ -44,7 +42,6 @@ template CoinProposal
       : ContractId Coin
       controller owner
       do create Coin with issuer; owner; amount
-
 
 -- authorization contract
 -- BEGIN_COIN_OWNER_AUTH_TEMPLATE
@@ -88,8 +85,6 @@ template TransferProposal
         assert (newOwner == t.owner)
         create coin with owner = newOwner
 -- END_ACCEPT_COIN_TRANSFER
-
-
 
 tokenAccept: Script ()  -- test
 tokenAccept =

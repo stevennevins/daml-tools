@@ -1,7 +1,6 @@
 -- Copyright (c) 2025 Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
 
-
 module Tests.Template1 where
 
 import qualified Tests.Template2 as T2
@@ -12,7 +11,6 @@ template TestTemplate
     temp2: ContractId T2.TestTemplate
   where
     signatory owner
-
 
 template SimpleTemplate
   with

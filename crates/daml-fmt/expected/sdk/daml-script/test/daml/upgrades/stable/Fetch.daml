@@ -133,18 +133,18 @@ contents: |
 main: TestTree
 main = tests
   [ ("Upgrade a contract when fetching", fetchUpgraded)
-  , ("Downgrade a contract with Nones when fetching", fetchDowngradedNone)
+    , ("Downgrade a contract with Nones when fetching", fetchDowngradedNone)
 
   -- Fetching contract to downgrade it with an optional field still set should fail
-  , fetchDowngradedSomeGlobal
-  , fetchDowngradedSomeLocal
-  , fetchDowngradedSomeDisclosed
-  , fetchDowngradedSomeDynamicGlobal
-  , fetchDowngradedSomeDynamicLocal
-  , fetchDowngradedSomeDynamicDisclosed
+    , fetchDowngradedSomeGlobal
+    , fetchDowngradedSomeLocal
+    , fetchDowngradedSomeDisclosed
+    , fetchDowngradedSomeDynamicGlobal
+    , fetchDowngradedSomeDynamicLocal
+    , fetchDowngradedSomeDynamicDisclosed
 
-  , ("Upgrade a contract when fetching where the source package (V1) is unvetted", fetchUpgradedSourceUnvetted)
-  , ("Downgrade a contract with Nones when fetching where the source package (V2) is unvetted", fetchDowngradedNoneSourceUnvetted)
+    , ("Upgrade a contract when fetching where the source package (V1) is unvetted", fetchUpgradedSourceUnvetted)
+    , ("Downgrade a contract with Nones when fetching where the source package (V2) is unvetted", fetchDowngradedNoneSourceUnvetted)
   ]
 
 exerciseV1Util: Choice V1.FetchHelper c r => Party -> c -> Script r
@@ -179,13 +179,13 @@ fetchDowngradedNone = test $ do
 mkFetchDowngradedSome: Show b => Text -> (Party -> Party -> Script (Either SubmitError b)) -> (Text, Test)
 mkFetchDowngradedSome trailer f = ("Fail to downgrade a contract with Somes when fetching (" <> trailer <> ")", s)
   where
-  s = test $ do
-    a <- allocatePartyOn "alice" participant0
-    b <- allocatePartyOn "bob" participant0
-    res <- f a b
-    case res of
-      Left (UpgradeError (TranslationFailed _ _ _ _) _) -> pure ()
-      res -> assertFail $ "Expected UpgradeError, got " <> show res
+    s = test $ do
+      a <- allocatePartyOn "alice" participant0
+      b <- allocatePartyOn "bob" participant0
+      res <- f a b
+      case res of
+        Left (UpgradeError (TranslationFailed _ _ _ _) _) -> pure ()
+        res -> assertFail $ "Expected UpgradeError, got " <> show res
 
 fetchDowngradedSomeGlobal: (Text, Test)
 fetchDowngradedSomeGlobal = mkFetchDowngradedSome "static global" $ \a b -> do
@@ -234,7 +234,6 @@ fetchUpgradedSourceUnvetted: Test
 fetchUpgradedSourceUnvetted = test $ do
   a <- allocatePartyOn "alice" participant0
   cid <- a `submit` createExactCmd V1.FetchTemplate with party = a
-
 
   -- Unvet v1, so the engine cannot have type information about the real packageid of the contract
   withUnvettedPackageOnParticipant "fetch-local" "1.0.0" participant0 $ do

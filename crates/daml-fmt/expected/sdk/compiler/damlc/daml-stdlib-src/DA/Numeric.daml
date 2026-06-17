@@ -5,16 +5,16 @@
 {-# LANGUAGE CPP #-}
 
 module DA.Numeric
- ( mul
- , div
- , cast
- , castAndRound
- , shift
- , pi
- , RoundingMode(..)
- , roundNumeric
- , epsilon
-) where
+  ( mul
+  , div
+  , cast
+  , castAndRound
+  , shift
+  , pi
+  , RoundingMode(..)
+  , roundNumeric
+  , epsilon
+  ) where
 
 import GHC.Types (primitive)
 import qualified DA.Map as M
@@ -86,8 +86,8 @@ roundFloor x =
       r
       else
         r - epsilon
-    where
-      r = roundHalfEven x
+  where
+    r = roundHalfEven x
 
 roundUp: NumericScale n => Numeric 37 -> Numeric n
 roundUp x =
@@ -109,8 +109,8 @@ roundHalfCeiling x =
       r
       else
         roundHalfEven (x + epsilon)
-    where
-      r = roundHalfEven x
+  where
+    r = roundHalfEven x
 
 roundHalfFloor: NumericScale n => Numeric 37 -> Numeric n
 roundHalfFloor x =
@@ -118,8 +118,8 @@ roundHalfFloor x =
       r
       else
         roundHalfEven (x - epsilon)
-    where
-      r = roundHalfEven x
+  where
+    r = roundHalfEven x
 
 roundHalfUp: NumericScale n => Numeric 37 -> Numeric n
 roundHalfUp x =
@@ -173,43 +173,43 @@ roundMapEntry = (numericScale @n, round' @n)
 roundMap: M.Map  Int (RoundingMode -> Numeric 37 -> Numeric 37)
 roundMap = M.fromList
     [ roundMapEntry @0
-    , roundMapEntry @1
-    , roundMapEntry @2
-    , roundMapEntry @3
-    , roundMapEntry @4
-    , roundMapEntry @5
-    , roundMapEntry @6
-    , roundMapEntry @7
-    , roundMapEntry @8
-    , roundMapEntry @9
-    , roundMapEntry @10
-    , roundMapEntry @11
-    , roundMapEntry @12
-    , roundMapEntry @13
-    , roundMapEntry @14
-    , roundMapEntry @15
-    , roundMapEntry @16
-    , roundMapEntry @17
-    , roundMapEntry @18
-    , roundMapEntry @19
-    , roundMapEntry @20
-    , roundMapEntry @21
-    , roundMapEntry @22
-    , roundMapEntry @23
-    , roundMapEntry @24
-    , roundMapEntry @25
-    , roundMapEntry @26
-    , roundMapEntry @27
-    , roundMapEntry @28
-    , roundMapEntry @29
-    , roundMapEntry @30
-    , roundMapEntry @31
-    , roundMapEntry @32
-    , roundMapEntry @33
-    , roundMapEntry @34
-    , roundMapEntry @35
-    , roundMapEntry @36
-    , (37, const identity)
+      , roundMapEntry @1
+      , roundMapEntry @2
+      , roundMapEntry @3
+      , roundMapEntry @4
+      , roundMapEntry @5
+      , roundMapEntry @6
+      , roundMapEntry @7
+      , roundMapEntry @8
+      , roundMapEntry @9
+      , roundMapEntry @10
+      , roundMapEntry @11
+      , roundMapEntry @12
+      , roundMapEntry @13
+      , roundMapEntry @14
+      , roundMapEntry @15
+      , roundMapEntry @16
+      , roundMapEntry @17
+      , roundMapEntry @18
+      , roundMapEntry @19
+      , roundMapEntry @20
+      , roundMapEntry @21
+      , roundMapEntry @22
+      , roundMapEntry @23
+      , roundMapEntry @24
+      , roundMapEntry @25
+      , roundMapEntry @26
+      , roundMapEntry @27
+      , roundMapEntry @28
+      , roundMapEntry @29
+      , roundMapEntry @30
+      , roundMapEntry @31
+      , roundMapEntry @32
+      , roundMapEntry @33
+      , roundMapEntry @34
+      , roundMapEntry @35
+      , roundMapEntry @36
+      , (37, const identity)
     ]
   where
 

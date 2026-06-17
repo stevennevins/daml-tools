@@ -30,7 +30,6 @@ assertTypeRepNeq: CanAbort m => TemplateTypeRep -> TemplateTypeRep -> m ()
 assertTypeRepNeq a b =
   unless (a /= b) $ abort "TypeReps are equal"
 
-
 main = script do
   assertTypeRepEq (templateTypeRep @T1) (templateTypeRep @T1)
   assertTypeRepEq (templateTypeRep @T2) (templateTypeRep @T2)

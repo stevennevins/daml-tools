@@ -1,7 +1,6 @@
 -- Copyright (c) 2025 Digital Asset (Switzerland) GmbH and/or its affiliates. All rights reserved.
 -- SPDX-License-Identifier: Apache-2.0
 
-
 -- | Type and functions for non-empty lists. This module re-exports many functions with
 -- the same name as prelude list functions, so it is expected to import the module qualified.
 -- For example, with the following import list you will have access to the `NonEmpty` type
