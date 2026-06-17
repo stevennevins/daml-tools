@@ -35,6 +35,19 @@ wrapping (long applications, infix chains, lambdas, and inline forms) remains
 conservative. It makes its own consistent layout decisions and does not aim to
 match any other formatter's output.
 
+## Documentation
+
+The workspace docs split task guides, reference, and design background:
+
+- [Format Daml source](../../docs/how-to/format-daml.md) for CLI usage patterns
+- [Verify a formatter change](../../docs/how-to/verify-formatter-change.md) for
+  corpus, baseline, and audit commands
+- [CLI reference](../../docs/reference/cli.md) for options and exit codes
+- [Crate reference](../../docs/reference/crates.md) for features, binaries, and
+  public API
+- [Formatter verification model](../../docs/explanation/formatter-verification.md)
+  for the token/desugar/idempotence safety story
+
 ## Build & install
 
 daml-fmt depends only on the [`daml-parser`](https://crates.io/crates/daml-parser) crate (the shared
@@ -56,10 +69,10 @@ cargo install --path crates/daml-fmt         # puts daml-fmt on your PATH
 ## Usage
 
 ```sh
-daml-fmt Foo.daml              # formatted source to stdout
-daml-fmt -w src/**/*.daml      # rewrite files in place
-daml-fmt --check src/*.daml    # list unformatted files, exit 1 if any
-cat Foo.daml | daml-fmt        # stdin → stdout
+daml-fmt Foo.daml                                  # formatted source to stdout
+find src -name '*.daml' -exec daml-fmt -w {} +     # rewrite files in place
+find src -name '*.daml' -exec daml-fmt --check {} + # list unformatted files
+cat Foo.daml | daml-fmt                            # stdin -> stdout
 ```
 
 Exit codes: 0 ok, 1 `--check` found unformatted files, 2 error.

@@ -16,6 +16,18 @@ daml-lint lowers that AST to a rule-facing IR and runs detectors over it. Files
 that fail to parse degrade to partial structure with a diagnostic on stderr
 (`file:line:col`); a scan never aborts on bad input.
 
+## Documentation
+
+The workspace docs split task guides, reference, and design background:
+
+- [Scan Daml source](../../docs/how-to/scan-daml.md) for CLI usage patterns
+- [CLI reference](../../docs/reference/cli.md) for options, output formats, and
+  exit codes
+- [Crate reference](../../docs/reference/crates.md) for features and public
+  modules
+- [Workspace architecture](../../docs/explanation/workspace-architecture.md)
+  for how `daml-lint` uses `daml-parser`
+
 ## Detectors
 
 | Detector | Severity | Description |
@@ -56,7 +68,7 @@ The default features build the published CLI and custom-rule engine:
 
 ```toml
 [dependencies]
-daml-lint = "0.1"
+daml-lint = "0.2"
 ```
 
 Library consumers that only need the built-in detectors and rule-facing IR can
@@ -64,7 +76,7 @@ avoid the CLI parser and QuickJS runtime:
 
 ```toml
 [dependencies]
-daml-lint = { version = "0.1", default-features = false }
+daml-lint = { version = "0.2", default-features = false }
 ```
 
 Enable `custom-rules` only when you need JavaScript AST rules from library code.
@@ -254,7 +266,7 @@ provenance and licensing.
 ## Public API Stability
 
 `daml-lint` is pre-1.0. The CLI exit codes and documented feature flags are the
-stable user contract for 0.1.x. The rule-facing IR is intentionally public for
+stable user contract for 0.2.x. The rule-facing IR is intentionally public for
 custom rules and library users, but it may gain structure in 0.x minor releases;
 custom rules should check `ir_version` and match typed nodes rather than raw
 source substrings. Detector result types such as `Finding`, `Severity`, and
