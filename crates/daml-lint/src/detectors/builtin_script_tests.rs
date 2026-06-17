@@ -1,5 +1,6 @@
 use super::archive_before_execute::ArchiveBeforeExecute;
 use super::ensure_decimal::MissingEnsureDecimal;
+use super::head_of_list::HeadOfListQuery;
 use super::positive_amount::MissingPositiveAmount;
 use super::script;
 use super::unbounded_fields::UnboundedFields;
@@ -445,6 +446,292 @@ template T
             case_name,
             source,
             Path::new("ArchiveBeforeExecute.daml"),
+            &rust_detector,
+            script_detector.as_ref(),
+        );
+    }
+}
+
+#[test]
+fn head_of_list_query_script_matches_rust_regressions() {
+    let script_detector = load_rule("head-of-list-query.js");
+    let rust_detector = HeadOfListQuery;
+
+    let cases = [
+        (
+            "cons pattern on query result flags",
+            r#"module Test where
+
+getFeaturedAppRight owner = do
+  results <- queryFilter @FeaturedAppRight (\r -> r.provider == owner)
+  case results of
+    (rightCid, _) :: _ -> do
+      pure (Some rightCid)
+    [] -> pure None
+"#,
+        ),
+        (
+            "singleton pattern on query result flags",
+            r#"module Test where
+
+getTransferFactory owner = do
+  results <- query @TransferFactory owner
+  case results of
+    [(rulesCid, _)] -> pure rulesCid
+"#,
+        ),
+        (
+            "safe query usage passes",
+            r#"module Test where
+
+getAllFactories owner = do
+  results <- query @TransferFactory owner
+  mapA (\(cid, _) -> fetch cid) results
+"#,
+        ),
+        (
+            "cons pattern reported once",
+            r#"module Test where
+
+getOne owner = do
+  results <- query @Foo owner
+  case results of
+    x :: _ -> pure (Some x)
+    [] -> pure None
+"#,
+        ),
+        (
+            "head on non-query list ignored",
+            r#"module Test where
+
+firstOf xs = pure (head xs)
+"#,
+        ),
+        (
+            "head on query binding flags",
+            r#"module Test where
+
+pick owner = do
+  results <- query @Foo owner
+  pure (head results)
+"#,
+        ),
+        (
+            "index on query binding flags",
+            r#"module Test where
+
+pick owner = do
+  results <- query @Foo owner
+  pure (results !! 0)
+"#,
+        ),
+        (
+            "head dollar on query binding flags",
+            r#"module Test where
+
+pick owner = do
+  results <- query @Foo owner
+  pure (head $ results)
+"#,
+        ),
+        (
+            "head dollar on sorted query is safe",
+            r#"module Test where
+
+pick owner = do
+  results <- query @Foo owner
+  pure (head $ sortOn f results)
+"#,
+        ),
+        (
+            "qualified head on query binding flags",
+            r#"module Test where
+
+pick owner = do
+  results <- query @Foo owner
+  pure (DA.List.head results)
+"#,
+        ),
+        (
+            "head of sorted query result is not flagged",
+            r#"module Test where
+
+pick owner = do
+  results <- query @Foo owner
+  let sorted = sortOn snd results
+  case sorted of
+    x :: _ -> pure (Some x)
+    [] -> pure None
+"#,
+        ),
+        (
+            "recursive cons binding tail is not flagged",
+            r#"module Test where
+
+go owner = do
+  results <- query @Foo owner
+  case results of
+    x :: rest -> process x rest
+    [] -> pure ()
+"#,
+        ),
+        (
+            "singleton bind from query flags",
+            r#"module Test where
+
+pick owner = do
+  [theOne] <- query @Foo owner
+  pure theOne
+"#,
+        ),
+        (
+            "cons head bind from query flags",
+            r#"module Test where
+
+pick owner = do
+  (x :: _) <- query @Foo owner
+  pure x
+"#,
+        ),
+        (
+            "fixed-many bind from query is safe",
+            "module Test where\n\nf owner = do\n  [a, b] <- query @Foo owner\n  pure (a, b)\n",
+        ),
+        (
+            "tail-binding cons bind from query is safe",
+            "module Test where\n\nf owner = do\n  (x :: rest) <- query @Foo owner\n  process x rest\n",
+        ),
+        (
+            "plain bind from query is safe until head use",
+            "module Test where\n\nf owner = do\n  results <- query @Foo owner\n  mapA fetch results\n",
+        ),
+        (
+            "nested case on local list is not flagged",
+            r#"module Test where
+
+pick owner = do
+  results <- query @Foo owner
+  case results of
+    _ -> do
+      let names = ["a", "b"]
+      case names of
+        first :: _ -> pure (Some first)
+        [] -> pure None
+"#,
+        ),
+        (
+            "nested case on query result flags once",
+            r#"module Test where
+
+pick owner = do
+  results <- query @Foo owner
+  case owner of
+    _ -> do
+      case results of
+        first :: _ -> pure (Some first)
+        [] -> pure None
+"#,
+        ),
+        (
+            "monadic rebind to sorted list clears tracking",
+            r#"module Test where
+
+pick owner = do
+  results <- query @Foo owner
+  results <- pure (sortOn snd results)
+  pure (head results)
+"#,
+        ),
+        (
+            "let rebind to sorted list clears tracking",
+            r#"module Test where
+
+pick owner = do
+  raw <- query @Foo owner
+  let raw = sortOn snd raw
+  pure (head raw)
+"#,
+        ),
+        (
+            "head before sorted rebind still flags",
+            r#"module Test where
+
+pick owner = do
+  results <- query @Foo owner
+  first <- pure (head results)
+  results <- pure (sortOn snd results)
+  pure first
+"#,
+        ),
+        (
+            "requery rebind still flags",
+            r#"module Test where
+
+pick owner = do
+  results <- query @Foo owner
+  results <- query @Bar owner
+  pure (head results)
+"#,
+        ),
+        (
+            "direct alias of query result flags",
+            r#"module Test where
+
+pick owner = do
+  results <- query @Foo owner
+  let alias = results
+  pure (head alias)
+"#,
+        ),
+        (
+            "alias chain of query result flags",
+            r#"module Test where
+
+pick owner = do
+  results <- query @Foo owner
+  let a = results
+  let b = a
+  pure (head b)
+"#,
+        ),
+        (
+            "derived binding is not an alias",
+            r#"module Test where
+
+pick owner = do
+  results <- query @Foo owner
+  let sorted = sortOn snd results
+  pure (head sorted)
+"#,
+        ),
+        (
+            "head fmap over query flags",
+            "module Test where\n\npick owner = do\n  x <- head <$> query @Foo owner\n  pure x\n",
+        ),
+        (
+            "fmap head over query flags",
+            "module Test where\n\npick owner = do\n  x <- fmap head (query @Foo owner)\n  pure x\n",
+        ),
+        (
+            "last fmap over query flags",
+            "module Test where\n\npick owner = do\n  x <- last <$> query @Foo owner\n  pure x\n",
+        ),
+        (
+            "non-head fmap over query is not flagged",
+            r#"module Test where
+
+pick owner = do
+  xs <- sortOn snd <$> query @Foo owner
+  pure xs
+"#,
+        ),
+    ];
+
+    for (case_name, source) in cases {
+        assert_rule_matches_rust(
+            case_name,
+            source,
+            Path::new("HeadOfListQuery.daml"),
             &rust_detector,
             script_detector.as_ref(),
         );
