@@ -1,6 +1,6 @@
 {
   "name": "@daml-tools/lint-plugin",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "TypeScript contract and starter templates for daml-lint custom rule plugins",
   "license": "AGPL-3.0-only",
   "repository": {
