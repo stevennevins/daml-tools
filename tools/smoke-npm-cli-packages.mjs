@@ -41,21 +41,26 @@ const cliPackages = {
 const hostPlatform = Object.entries(platformPackages).find(
   ([, config]) => config.packagePlatform === `${process.platform}:${process.arch}`,
 )?.[0];
-const smokePlatform =
-  hostPlatform ?? (process.platform === "linux" ? "linux-x64" : undefined);
-const platformOverride = hostPlatform
-  ? undefined
-  : smokePlatform
-    ? { platform: "linux", arch: "x64", libc: "glibc" }
-    : undefined;
 
-if (!smokePlatform) {
+function glibcRuntimeVersion() {
+  return process.report?.getReport?.().header.glibcVersionRuntime;
+}
+
+if (!hostPlatform) {
   console.error(
     `No npm smoke-test platform is defined for ${process.platform}/${process.arch}.`,
   );
   process.exit(1);
 }
 
+if (platformPackages[hostPlatform].libc === "glibc" && !glibcRuntimeVersion()) {
+  console.error(
+    `The ${hostPlatform} npm smoke test requires a glibc host; this host did not report glibc.`,
+  );
+  process.exit(1);
+}
+
+const smokePlatform = hostPlatform;
 const tempRoot = mkdtempSync(path.join(tmpdir(), "daml-tools-npm-smoke-"));
 const packageRoot = path.join(tempRoot, "packages");
 const tarballRoot = path.join(tempRoot, "tarballs");
@@ -113,29 +118,6 @@ function writeBinary(packageDir, tool, platform) {
   chmodSync(binaryPath, 0o755);
 }
 
-function runtimeEnv() {
-  if (!platformOverride) {
-    return process.env;
-  }
-
-  const platformShim = path.join(tempRoot, "platform-shim.cjs");
-  writeFileSync(
-    platformShim,
-    [
-      `Object.defineProperty(process, "platform", { value: ${JSON.stringify(platformOverride.platform)} });`,
-      `Object.defineProperty(process, "arch", { value: ${JSON.stringify(platformOverride.arch)} });`,
-      "",
-    ].join("\n"),
-  );
-
-  return {
-    ...process.env,
-    NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${platformShim}`]
-      .filter(Boolean)
-      .join(" "),
-  };
-}
-
 function binPath(tool) {
   const executable = process.platform === "win32" ? `${tool}.cmd` : tool;
   return path.join(consumerRoot, "node_modules", ".bin", executable);
@@ -185,26 +167,14 @@ try {
     )}\n`,
   );
 
-  const installArgs = ["install", "--ignore-scripts", "--no-audit", "--no-fund"];
-
-  if (platformOverride) {
-    installArgs.push(`--os=${platformOverride.platform}`, `--cpu=${platformOverride.arch}`);
-    if (platformOverride.libc) {
-      installArgs.push(`--libc=${platformOverride.libc}`);
-    }
-  }
-
-  run("npm", installArgs, {
+  run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund"], {
     cwd: consumerRoot,
   });
-
-  const env = runtimeEnv();
 
   for (const [tool, config] of Object.entries(cliPackages)) {
     const output = run(binPath(tool), ["--version"], {
       cwd: consumerRoot,
       capture: true,
-      env,
     }).trim();
 
     if (!config.expectedVersion.test(output)) {

@@ -67,8 +67,8 @@ npx daml-fmt --check ./daml
 ```
 
 The npm packages currently ship native binaries for macOS arm64, Linux x64
-glibc, and Windows x64. Use the Cargo install path on other platforms, including
-Intel macOS, Linux arm64, and Alpine/musl Linux.
+glibc 2.35 or newer, and Windows x64. Use the Cargo install path on other
+platforms, including Intel macOS, Linux arm64, and Alpine/musl Linux.
 
 Or install from crates.io:
 

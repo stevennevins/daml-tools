@@ -26,7 +26,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
           - { os: macos-latest, target: aarch64-apple-darwin }
           - { os: windows-latest, target: x86_64-pc-windows-msvc }
     runs-on: ${{ matrix.os }}
@@ -48,6 +48,25 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build CLIs
         run: cargo build --release --locked --target ${{ matrix.target }} --bin daml-lint --bin daml-fmt
+      - name: Check Linux glibc baseline
+        if: ${{ matrix.target == 'x86_64-unknown-linux-gnu' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="target/${{ matrix.target }}/release"
+          for tool in daml-lint daml-fmt; do
+            binary="${release_dir}/${tool}"
+            max_glibc="$(objdump -T "${binary}" | sed -nE 's/.*GLIBC_([0-9]+\.[0-9]+).*/\1/p' | sort -Vu | tail -n1)"
+            if [[ -z "${max_glibc}" ]]; then
+              echo "::error::Could not determine the maximum GLIBC symbol version used by ${binary}."
+              exit 1
+            fi
+            echo "${binary} requires GLIBC_${max_glibc} or older."
+            if [[ "$(printf '%s\n' "${max_glibc}" "2.35" | sort -Vu | tail -n1)" != "2.35" ]]; then
+              echo "::error::${binary} requires GLIBC_${max_glibc}; Linux release archives must not require newer than GLIBC_2.35."
+              exit 1
+            fi
+          done
       - name: Package archive
         shell: bash
         run: |

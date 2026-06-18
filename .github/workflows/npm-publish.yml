@@ -10,6 +10,11 @@ on:
       tag:
         description: "daml-lint or daml-fmt release tag to publish"
         required: true
+      use_npm_token:
+        description: "Use the temporary NPM_TOKEN bootstrap secret instead of trusted publishing"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -81,11 +86,18 @@ jobs:
         working-directory: crates/daml-lint/lint-plugin
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          USE_NPM_TOKEN: ${{ github.event_name == 'workflow_dispatch' && inputs.use_npm_token }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -n "${NPM_TOKEN:-}" ]]; then
+          if [[ "${USE_NPM_TOKEN}" == "true" ]]; then
+            if [[ -z "${NPM_TOKEN:-}" ]]; then
+              echo "::error::use_npm_token was true, but the NPM_TOKEN secret is not configured."
+              exit 1
+            fi
             npm config set //registry.npmjs.org/:_authToken "${NPM_TOKEN}"
+          elif [[ -n "${NPM_TOKEN:-}" ]]; then
+            echo "::notice::NPM_TOKEN is configured but ignored. Dispatch manually with use_npm_token=true only for bootstrap publishing."
           fi
           npm publish --access public
 
@@ -99,7 +111,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, platform: linux-x64, binary_suffix: "" }
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, platform: linux-x64, binary_suffix: "" }
           - { os: macos-latest, target: aarch64-apple-darwin, platform: darwin-arm64, binary_suffix: "" }
           - { os: windows-latest, target: x86_64-pc-windows-msvc, platform: win32-x64, binary_suffix: ".exe" }
     steps:
@@ -157,6 +169,22 @@ jobs:
       - name: Build CLI
         if: ${{ steps.npm-package.outputs.exists != 'true' }}
         run: cargo build --release --locked --target ${{ matrix.target }} --bin ${{ steps.release.outputs.tool }}
+      - name: Check Linux glibc baseline
+        if: ${{ steps.npm-package.outputs.exists != 'true' && matrix.platform == 'linux-x64' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary="target/${{ matrix.target }}/release/${{ steps.release.outputs.tool }}${{ matrix.binary_suffix }}"
+          max_glibc="$(objdump -T "${binary}" | sed -nE 's/.*GLIBC_([0-9]+\.[0-9]+).*/\1/p' | sort -Vu | tail -n1)"
+          if [[ -z "${max_glibc}" ]]; then
+            echo "::error::Could not determine the maximum GLIBC symbol version used by ${binary}."
+            exit 1
+          fi
+          echo "${binary} requires GLIBC_${max_glibc} or older."
+          if [[ "$(printf '%s\n' "${max_glibc}" "2.35" | sort -Vu | tail -n1)" != "2.35" ]]; then
+            echo "::error::${binary} requires GLIBC_${max_glibc}; npm Linux x64 packages must not require newer than GLIBC_2.35."
+            exit 1
+          fi
       - name: Prepare platform package
         if: ${{ steps.npm-package.outputs.exists != 'true' }}
         shell: bash
@@ -170,16 +198,46 @@ jobs:
           if [[ "${{ runner.os }}" != "Windows" ]]; then
             chmod +x "${package_dir}/bin/${tool}${{ matrix.binary_suffix }}"
           fi
+      - name: Smoke prepared platform package
+        if: ${{ steps.npm-package.outputs.exists != 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool="${{ steps.release.outputs.tool }}"
+          package_dir="crates/${tool}/npm/${{ matrix.platform }}"
+          pack_dir="${PWD}/target/npm-platform-pack"
+          smoke_dir="${PWD}/target/npm-platform-smoke"
+          pack_json="${PWD}/target/npm-platform-pack.json"
+          rm -rf "${pack_dir}" "${smoke_dir}" "${pack_json}"
+          mkdir -p "${pack_dir}" "${smoke_dir}"
+          npm pack "${package_dir}" --json --pack-destination "${pack_dir}" > "${pack_json}"
+          tarball="$(node -e 'const fs = require("node:fs"); const [pack] = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); console.log(pack.filename);' "${pack_json}")"
+          cd "${smoke_dir}"
+          npm init -y
+          npm install --save-dev "${pack_dir}/${tarball}" --ignore-scripts --no-audit --no-fund
+          binary="node_modules/@daml-tools/${tool}-${{ matrix.platform }}/bin/${tool}${{ matrix.binary_suffix }}"
+          test -f "${binary}"
+          if [[ "${{ runner.os }}" != "Windows" ]]; then
+            test -x "${binary}"
+          fi
+          "${binary}" --version
       - name: Publish platform package
         if: ${{ steps.npm-package.outputs.exists != 'true' }}
         working-directory: crates/${{ steps.release.outputs.tool }}/npm/${{ matrix.platform }}
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          USE_NPM_TOKEN: ${{ github.event_name == 'workflow_dispatch' && inputs.use_npm_token }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -n "${NPM_TOKEN:-}" ]]; then
+          if [[ "${USE_NPM_TOKEN}" == "true" ]]; then
+            if [[ -z "${NPM_TOKEN:-}" ]]; then
+              echo "::error::use_npm_token was true, but the NPM_TOKEN secret is not configured."
+              exit 1
+            fi
             npm config set //registry.npmjs.org/:_authToken "${NPM_TOKEN}"
+          elif [[ -n "${NPM_TOKEN:-}" ]]; then
+            echo "::notice::NPM_TOKEN is configured but ignored. Dispatch manually with use_npm_token=true only for bootstrap publishing."
           fi
           npm publish --access public
 
@@ -264,11 +322,18 @@ jobs:
         working-directory: crates/${{ steps.release.outputs.tool }}/npm/cli
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          USE_NPM_TOKEN: ${{ github.event_name == 'workflow_dispatch' && inputs.use_npm_token }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -n "${NPM_TOKEN:-}" ]]; then
+          if [[ "${USE_NPM_TOKEN}" == "true" ]]; then
+            if [[ -z "${NPM_TOKEN:-}" ]]; then
+              echo "::error::use_npm_token was true, but the NPM_TOKEN secret is not configured."
+              exit 1
+            fi
             npm config set //registry.npmjs.org/:_authToken "${NPM_TOKEN}"
+          elif [[ -n "${NPM_TOKEN:-}" ]]; then
+            echo "::notice::NPM_TOKEN is configured but ignored. Dispatch manually with use_npm_token=true only for bootstrap publishing."
           fi
           npm publish --access public
       - name: Wait for wrapper package registry metadata

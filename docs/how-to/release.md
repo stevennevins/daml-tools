@@ -22,7 +22,7 @@ Optional bootstrap secret:
 
 | Secret | Purpose |
 |--------|---------|
-| `NPM_TOKEN` | Lets the npm publish workflow use a short-lived npm granular access token for the first publish of brand-new npm packages, before trusted publishing is configured. Remove it after bootstrap. |
+| `NPM_TOKEN` | Lets a manually dispatched npm publish workflow use a short-lived npm granular access token for the first publish of brand-new npm packages, before trusted publishing is configured. Remove it after bootstrap. |
 
 The npm packages use npm trusted publishing, so they do not need an npm token in
 GitHub secrets. Configure trusted publishing on npmjs.com for every published
@@ -40,9 +40,10 @@ package:
 
 For the first CLI npm release, the new packages may not exist yet on npm. If
 npm requires an existing package before trusted publishing can be configured,
-add a temporary `NPM_TOKEN` granular-access-token secret, let the tag workflow
-publish the first versions, configure trusted publishing for each package, then
-remove the token. The workflow uses `NPM_TOKEN` only when the secret is present.
+add a temporary `NPM_TOKEN` granular-access-token secret, dispatch the npm
+publish workflow manually with `use_npm_token=true`, publish the first versions,
+configure trusted publishing for each package, then remove the token. Normal tag
+workflows ignore `NPM_TOKEN` and use trusted publishing.
 
 Do not use the already-created `daml-lint-v0.3.3` or `daml-fmt-v0.2.1` tags to
 bootstrap the CLI npm packages. Those tags predate the `crates/*/npm` package
@@ -143,6 +144,9 @@ The npm workflow checks out the requested tag, verifies package versions, skips
 any package version that already exists on npm, builds the tagged CLI binary for
 each missing supported platform package, publishes the missing platform
 packages, and then publishes the wrapper package if it is missing.
+
+Only set `use_npm_token=true` while recovering the first bootstrap publish of a
+brand-new npm package. Leave it unset for normal trusted publishing reruns.
 
 Do not add `--provenance` while this repository is private. npm trusted
 publishing works from this repo, but npm rejects provenance bundles whose

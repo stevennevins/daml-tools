@@ -54,8 +54,8 @@ npm install --save-dev @daml-tools/daml-lint
 npx daml-lint ./daml
 ```
 
-Requires [Rust](https://rustup.rs/) 1.87+ (its `rquickjs` dependency needs
-rustc 1.87).
+Cargo installs require [Rust](https://rustup.rs/) 1.87+ (the `rquickjs`
+dependency needs rustc 1.87).
 
 ```sh
 cargo install daml-lint
