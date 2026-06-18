@@ -21,6 +21,11 @@ const platformPackages = {
     binaryExtension: "",
     libc: "glibc",
   },
+  "linux-arm64": {
+    packagePlatform: "linux:arm64",
+    binaryExtension: "",
+    libc: "glibc",
+  },
   "win32-x64": {
     packagePlatform: "win32:x64",
     binaryExtension: ".exe",

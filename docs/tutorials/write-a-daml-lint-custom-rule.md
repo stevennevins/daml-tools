@@ -3,7 +3,7 @@
 This tutorial starts from an empty directory and builds one custom rule that
 reports templates without an `ensure` clause.
 
-You need Node.js 18 or newer and `daml-lint` on your `PATH`.
+You need Node.js 18 or newer.
 
 ## Create the project
 
@@ -13,7 +13,7 @@ cd daml-lint-plugin-template-requires-ensure
 npm init -y
 npm pkg set type=module
 npm pkg set damlLint.rules.template-requires-ensure=dist/template-requires-ensure.js
-npm install --save-dev @daml-tools/lint-plugin typescript esbuild
+npm install --save-dev @daml-tools/daml-lint @daml-tools/lint-plugin typescript esbuild
 mkdir -p src fixtures dist
 ```
 
@@ -118,13 +118,13 @@ npx esbuild src/template-requires-ensure.ts --bundle --format=esm --target=es202
 The missing fixture should report one finding:
 
 ```sh
-daml-lint fixtures/missing-ensure.daml --fail-on info
+npx daml-lint fixtures/missing-ensure.daml --fail-on info
 ```
 
 The ensured fixture should not report this custom finding:
 
 ```sh
-daml-lint fixtures/with-ensure.daml --fail-on info
+npx daml-lint fixtures/with-ensure.daml --fail-on info
 ```
 
 You now have a typed rule package that can be loaded through `.daml-lint.json`.

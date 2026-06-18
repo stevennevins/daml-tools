@@ -30,6 +30,11 @@ const platformPackages = {
     cpu: ["x64"],
     libc: ["glibc"],
   },
+  "linux-arm64": {
+    os: ["linux"],
+    cpu: ["arm64"],
+    libc: ["glibc"],
+  },
   "win32-x64": {
     os: ["win32"],
     cpu: ["x64"],

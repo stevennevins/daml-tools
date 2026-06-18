@@ -7,7 +7,7 @@ Install it with TypeScript and esbuild in your rule project:
 
 ```sh
 npm pkg set type=module
-npm install --save-dev @daml-tools/lint-plugin typescript esbuild
+npm install --save-dev @daml-tools/daml-lint @daml-tools/lint-plugin typescript esbuild
 ```
 
 Author rules in TypeScript, keep top-level `const NAME`, `const SEVERITY`, an

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5](https://github.com/stevennevins/daml-tools/compare/daml-fmt-v0.2.4...daml-fmt-v0.2.5) - 2026-06-18
+
+### Fixed
+
+- support npm CLI installs on Linux arm64
+
 ## [0.2.4](https://github.com/stevennevins/daml-tools/compare/daml-fmt-v0.2.3...daml-fmt-v0.2.4) - 2026-06-18
 
 ### Fixed

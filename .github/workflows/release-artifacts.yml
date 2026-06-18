@@ -27,6 +27,7 @@ jobs:
       matrix:
         include:
           - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
           - { os: macos-latest, target: aarch64-apple-darwin }
           - { os: windows-latest, target: x86_64-pc-windows-msvc }
     runs-on: ${{ matrix.os }}
@@ -49,7 +50,7 @@ jobs:
       - name: Build CLIs
         run: cargo build --release --locked --target ${{ matrix.target }} --bin daml-lint --bin daml-fmt
       - name: Check Linux glibc baseline
-        if: ${{ matrix.target == 'x86_64-unknown-linux-gnu' }}
+        if: ${{ startsWith(matrix.target, 'x86_64-unknown-linux-gnu') || startsWith(matrix.target, 'aarch64-unknown-linux-gnu') }}
         shell: bash
         run: |
           set -euo pipefail

@@ -80,10 +80,16 @@ const syncTargets = [
     path: "lint-plugin/templates/project/package.json",
     update(packageJson) {
       packageJson.devDependencies ??= {};
+      packageJson.devDependencies["@daml-tools/daml-lint"] = lintPluginDependency;
       packageJson.devDependencies["@daml-tools/lint-plugin"] = lintPluginDependency;
     },
     validate(packageJson) {
+      const actualDamlLint = packageJson.devDependencies?.["@daml-tools/daml-lint"];
       const actual = packageJson.devDependencies?.["@daml-tools/lint-plugin"];
+
+      if (actualDamlLint !== lintPluginDependency) {
+        return `Template @daml-tools/daml-lint dependency ${actualDamlLint} does not match ${lintPluginDependency}.`;
+      }
 
       if (actual !== lintPluginDependency) {
         return `Template @daml-tools/lint-plugin dependency ${actual} does not match ${lintPluginDependency}.`;

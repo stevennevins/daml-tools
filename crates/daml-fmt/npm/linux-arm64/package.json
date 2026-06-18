@@ -1,18 +1,21 @@
 {
-  "name": "@daml-tools/daml-fmt-darwin-arm64",
+  "name": "@daml-tools/daml-fmt-linux-arm64",
   "version": "0.2.5",
-  "description": "macOS arm64 native binary for the daml-fmt CLI",
+  "description": "Linux arm64 native binary for the daml-fmt CLI",
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/stevennevins/daml-tools.git",
-    "directory": "crates/daml-fmt/npm/darwin-arm64"
+    "directory": "crates/daml-fmt/npm/linux-arm64"
   },
   "os": [
-    "darwin"
+    "linux"
   ],
   "cpu": [
     "arm64"
+  ],
+  "libc": [
+    "glibc"
   ],
   "files": [
     "bin"
