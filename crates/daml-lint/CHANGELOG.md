@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5](https://github.com/stevennevins/daml-tools/compare/daml-lint-v0.3.4...daml-lint-v0.3.5) - 2026-06-18
+
+### Fixed
+
+- harden npm CLI release flow
+
 ## [0.3.4](https://github.com/stevennevins/daml-tools/compare/daml-lint-v0.3.3...daml-lint-v0.3.4) - 2026-06-18
 
 ### Added
