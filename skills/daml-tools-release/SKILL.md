@@ -146,6 +146,11 @@ If a prerelease publish partially fails, bump to a new prerelease version before
 retrying. `cargo npm publish` cannot skip already-published platform packages;
 the workflow only skips when the wrapper version already exists.
 
+If old tooling already published platform packages for a version but missed the
+wrapper package, do not try to republish that same version through cargo-npm.
+npm package versions are immutable; use a fresh patch release or prerelease so
+the platform packages and wrapper are generated and published together.
+
 ## Monitor And Recover
 
 Do not stop after merge or tag push. Watch the workflow chain:
