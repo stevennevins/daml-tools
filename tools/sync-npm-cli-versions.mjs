@@ -58,6 +58,10 @@ function writeJson(path, value) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+function normalizeLineEndings(value) {
+  return value.replace(/\r\n/g, "\n");
+}
+
 function crateVersion(crateName) {
   const crate = metadata.packages.find((pkg) => pkg.name === crateName);
 
@@ -75,7 +79,7 @@ function syncJson(path, update) {
   update(json);
   const next = `${JSON.stringify(json, null, 2)}\n`;
 
-  if (original === next) {
+  if (normalizeLineEndings(original) === next) {
     return false;
   }
 
