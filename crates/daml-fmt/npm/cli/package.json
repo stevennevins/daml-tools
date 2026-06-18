@@ -9,7 +9,7 @@
     "directory": "crates/daml-fmt/npm/cli"
   },
   "bin": {
-    "daml-fmt": "./bin/daml-fmt.cjs"
+    "daml-fmt": "bin/daml-fmt.cjs"
   },
   "files": [
     "bin",

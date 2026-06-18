@@ -28,6 +28,7 @@ const platformPackages = {
   "linux-x64": {
     os: ["linux"],
     cpu: ["x64"],
+    libc: ["glibc"],
   },
   "win32-x64": {
     os: ["win32"],
@@ -109,9 +110,15 @@ for (const tool of selectedTools) {
     }) || changed;
 
   for (const platform of Object.keys(platformPackages)) {
+    const platformConfig = platformPackages[platform];
     changed =
       syncJson(`${config.root}/${platform}/package.json`, (packageJson) => {
         packageJson.version = version;
+        if (platformConfig.libc) {
+          packageJson.libc = platformConfig.libc;
+        } else {
+          delete packageJson.libc;
+        }
       }) || changed;
   }
 

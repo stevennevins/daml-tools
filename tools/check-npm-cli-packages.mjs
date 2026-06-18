@@ -16,6 +16,7 @@ const platformPackages = {
   "linux-x64": {
     os: ["linux"],
     cpu: ["x64"],
+    libc: ["glibc"],
   },
   "win32-x64": {
     os: ["win32"],
@@ -91,7 +92,7 @@ for (const [tool, config] of Object.entries(cliPackages)) {
 
   expect(wrapper.name === config.packagePrefix, `${wrapperPath} name must be ${config.packagePrefix}.`);
   expect(wrapper.version === version, `${wrapperPath} version must be ${version}.`);
-  expect(wrapper.bin?.[tool] === `./${config.wrapperBin}`, `${wrapperPath} bin.${tool} must point to ./${config.wrapperBin}.`);
+  expect(wrapper.bin?.[tool] === config.wrapperBin, `${wrapperPath} bin.${tool} must point to ${config.wrapperBin}.`);
   expect(
     JSON.stringify(wrapper.optionalDependencies) === JSON.stringify(expectedOptionalDependencies),
     `${wrapperPath} optionalDependencies must exactly match current platform packages at ${version}.`,
@@ -120,6 +121,11 @@ for (const [tool, config] of Object.entries(cliPackages)) {
     expect(packageJson.version === version, `${packagePath} version must be ${version}.`);
     assertJsonArray(packageJson.os, platformConfig.os, `${packagePath} os`);
     assertJsonArray(packageJson.cpu, platformConfig.cpu, `${packagePath} cpu`);
+    if (platformConfig.libc) {
+      assertJsonArray(packageJson.libc, platformConfig.libc, `${packagePath} libc`);
+    } else {
+      expect(packageJson.libc === undefined, `${packagePath} libc must be absent.`);
+    }
     assertJsonArray(packageJson.files, ["bin"], `${packagePath} files`);
     expect(packageJson.publishConfig?.access === "public", `${packagePath} must publish publicly.`);
   }
