@@ -32,13 +32,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ ! "${RELEASE_TAG}" =~ ^daml-lint-v ]]; then
+          if [[ ! "${RELEASE_TAG}" =~ ^daml-lint-v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::npm publishing requires a daml-lint-v* release tag, got ${RELEASE_TAG}"
             exit 1
           fi
       - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -81,6 +79,17 @@ jobs:
           else
             echo "exists=false" >> "${GITHUB_OUTPUT}"
           fi
+      - name: Refuse branch-based manual publish
+        if: ${{ steps.npm-package.outputs.exists != 'true' && github.event_name == 'workflow_dispatch' && (github.ref_type != 'tag' || github.ref_name != inputs.tag) }}
+        shell: bash
+        env:
+          PACKAGE_NAME: ${{ steps.npm-package.outputs.name }}
+          PACKAGE_VERSION: ${{ steps.npm-package.outputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+          RELEASE_TAG_INPUT: ${{ inputs.tag }}
+        run: |
+          echo "::error::${PACKAGE_NAME}@${PACKAGE_VERSION} is missing, but this workflow_dispatch run checked out ${REF_NAME} for release tag ${RELEASE_TAG_INPUT}. Re-run from the release tag to publish, or publish the first version locally and use branch dispatch only to verify existing packages."
+          exit 1
       - name: Publish package
         if: ${{ steps.npm-package.outputs.exists != 'true' }}
         working-directory: crates/daml-lint/lint-plugin
@@ -121,15 +130,19 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "${RELEASE_TAG}" =~ ^(daml-lint|daml-fmt)-v(.+)$ ]]; then
-            echo "tool=${BASH_REMATCH[1]}" >> "${GITHUB_OUTPUT}"
-            echo "version=${BASH_REMATCH[2]}" >> "${GITHUB_OUTPUT}"
+            tool="${BASH_REMATCH[1]}"
+            version="${BASH_REMATCH[2]}"
+            if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+              echo "::error::npm CLI publishing requires a semver release tag, got ${RELEASE_TAG}"
+              exit 1
+            fi
+            echo "tool=${tool}" >> "${GITHUB_OUTPUT}"
+            echo "version=${version}" >> "${GITHUB_OUTPUT}"
           else
             echo "::error::npm CLI publishing requires a daml-lint-v* or daml-fmt-v* tag, got ${RELEASE_TAG}"
             exit 1
           fi
       - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -146,12 +159,14 @@ jobs:
       - name: Check package version and registry state
         id: npm-package
         shell: bash
+        env:
+          EXPECTED_VERSION: ${{ steps.release.outputs.version }}
         run: |
           set -euo pipefail
           package_dir="crates/${{ steps.release.outputs.tool }}/npm/${{ matrix.platform }}"
           package_name="$(node -p "require('./${package_dir}/package.json').name")"
           package_version="$(node -p "require('./${package_dir}/package.json').version")"
-          if [[ "${package_version}" != "${{ steps.release.outputs.version }}" ]]; then
+          if [[ "${package_version}" != "${EXPECTED_VERSION}" ]]; then
             echo "::error::${package_dir} version ${package_version} does not match ${RELEASE_TAG}"
             exit 1
           fi
@@ -163,6 +178,17 @@ jobs:
           else
             echo "exists=false" >> "${GITHUB_OUTPUT}"
           fi
+      - name: Refuse branch-based manual publish
+        if: ${{ steps.npm-package.outputs.exists != 'true' && github.event_name == 'workflow_dispatch' && (github.ref_type != 'tag' || github.ref_name != inputs.tag) }}
+        shell: bash
+        env:
+          PACKAGE_NAME: ${{ steps.npm-package.outputs.name }}
+          PACKAGE_VERSION: ${{ steps.npm-package.outputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+          RELEASE_TAG_INPUT: ${{ inputs.tag }}
+        run: |
+          echo "::error::${PACKAGE_NAME}@${PACKAGE_VERSION} is missing, but this workflow_dispatch run checked out ${REF_NAME} for release tag ${RELEASE_TAG_INPUT}. Re-run from the release tag to publish, or publish the first version locally and use branch dispatch only to verify existing packages."
+          exit 1
       - name: Verify existing platform package registry metadata
         if: ${{ steps.npm-package.outputs.exists == 'true' }}
         run: node tools/verify-npm-cli-registry-package.mjs crates/${{ steps.release.outputs.tool }}/npm/${{ matrix.platform }}
@@ -255,15 +281,19 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "${RELEASE_TAG}" =~ ^(daml-lint|daml-fmt)-v(.+)$ ]]; then
-            echo "tool=${BASH_REMATCH[1]}" >> "${GITHUB_OUTPUT}"
-            echo "version=${BASH_REMATCH[2]}" >> "${GITHUB_OUTPUT}"
+            tool="${BASH_REMATCH[1]}"
+            version="${BASH_REMATCH[2]}"
+            if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+              echo "::error::npm CLI publishing requires a semver release tag, got ${RELEASE_TAG}"
+              exit 1
+            fi
+            echo "tool=${tool}" >> "${GITHUB_OUTPUT}"
+            echo "version=${version}" >> "${GITHUB_OUTPUT}"
           else
             echo "::error::npm CLI publishing requires a daml-lint-v* or daml-fmt-v* tag, got ${RELEASE_TAG}"
             exit 1
           fi
       - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -278,12 +308,14 @@ jobs:
       - name: Check package version and registry state
         id: npm-package
         shell: bash
+        env:
+          EXPECTED_VERSION: ${{ steps.release.outputs.version }}
         run: |
           set -euo pipefail
           package_dir="crates/${{ steps.release.outputs.tool }}/npm/cli"
           package_name="$(node -p "require('./${package_dir}/package.json').name")"
           package_version="$(node -p "require('./${package_dir}/package.json').version")"
-          if [[ "${package_version}" != "${{ steps.release.outputs.version }}" ]]; then
+          if [[ "${package_version}" != "${EXPECTED_VERSION}" ]]; then
             echo "::error::${package_dir} version ${package_version} does not match ${RELEASE_TAG}"
             exit 1
           fi
@@ -295,6 +327,17 @@ jobs:
           else
             echo "exists=false" >> "${GITHUB_OUTPUT}"
           fi
+      - name: Refuse branch-based manual publish
+        if: ${{ steps.npm-package.outputs.exists != 'true' && github.event_name == 'workflow_dispatch' && (github.ref_type != 'tag' || github.ref_name != inputs.tag) }}
+        shell: bash
+        env:
+          PACKAGE_NAME: ${{ steps.npm-package.outputs.name }}
+          PACKAGE_VERSION: ${{ steps.npm-package.outputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+          RELEASE_TAG_INPUT: ${{ inputs.tag }}
+        run: |
+          echo "::error::${PACKAGE_NAME}@${PACKAGE_VERSION} is missing, but this workflow_dispatch run checked out ${REF_NAME} for release tag ${RELEASE_TAG_INPUT}. Re-run from the release tag to publish, or publish the first version locally and use branch dispatch only to verify existing packages."
+          exit 1
       - name: Verify existing wrapper package registry metadata
         if: ${{ steps.npm-package.outputs.exists == 'true' }}
         run: node tools/verify-npm-cli-registry-package.mjs crates/${{ steps.release.outputs.tool }}/npm/cli
