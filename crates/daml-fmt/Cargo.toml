@@ -1,6 +1,6 @@
 [package]
 name = "daml-fmt"
-version = "0.2.5"
+version = "0.2.6"
 description = "A canonical code formatter for the Daml smart-contract language, built on daml-parser"
 edition.workspace = true
 rust-version.workspace = true
