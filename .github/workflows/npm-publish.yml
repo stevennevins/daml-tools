@@ -20,11 +20,16 @@ permissions:
   contents: read
   id-token: write
 
+env:
+  # Pinned cargo-npm (CLI npm packaging). Keep in sync with
+  # .github/workflows/ci.yml and CONTRIBUTING.md.
+  CARGO_NPM_VERSION: "0.1.2"
+
 jobs:
   publish-lint-plugin:
     name: publish @daml-tools/lint-plugin
     runs-on: ubuntu-latest
-    needs: publish-cli-wrapper
+    needs: publish-cli
     if: ${{ github.repository_owner == 'stevennevins' && startsWith(github.event.inputs.tag || github.ref_name, 'daml-lint-v') }}
     env:
       RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
@@ -127,6 +132,7 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           USE_NPM_TOKEN: ${{ github.event_name == 'workflow_dispatch' && inputs.use_npm_token }}
+          PACKAGE_VERSION: ${{ steps.npm-package.outputs.version }}
         shell: bash
         run: |
           set -euo pipefail
@@ -139,10 +145,18 @@ jobs:
           elif [[ -n "${NPM_TOKEN:-}" ]]; then
             echo "::notice::NPM_TOKEN is configured but ignored. Dispatch manually with use_npm_token=true only for bootstrap publishing."
           fi
-          npm publish --access public
+          publish_args=(--access public)
+          if [[ "${PACKAGE_VERSION}" == *-* ]]; then
+            publish_args+=(--tag next)
+            echo "::notice::Publishing prerelease ${PACKAGE_VERSION} under the 'next' dist-tag."
+          fi
+          npm publish "${publish_args[@]}"
 
-  publish-cli-platform:
-    name: publish ${{ matrix.platform }} CLI package
+  # Build the released CLI's native binary on each platform's own runner. The
+  # binaries become workflow artifacts the publish job assembles into npm
+  # packages with cargo-npm.
+  build-cli:
+    name: build ${{ matrix.platform }} CLI binary
     runs-on: ${{ matrix.os }}
     if: ${{ github.repository_owner == 'stevennevins' && (startsWith(github.event.inputs.tag || github.ref_name, 'daml-lint-v') || startsWith(github.event.inputs.tag || github.ref_name, 'daml-fmt-v')) }}
     env:
@@ -169,7 +183,6 @@ jobs:
               exit 1
             fi
             echo "tool=${tool}" >> "${GITHUB_OUTPUT}"
-            echo "version=${version}" >> "${GITHUB_OUTPUT}"
           else
             echo "::error::npm CLI publishing requires a daml-lint-v* or daml-fmt-v* tag, got ${RELEASE_TAG}"
             exit 1
@@ -179,56 +192,10 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          registry-url: "https://registry.npmjs.org"
-          package-manager-cache: false
-      - name: Install npm 11
-        run: npm install --global npm@^11.10.0
-      - name: Check npm CLI package metadata
-        run: node tools/sync-npm-cli-versions.mjs --check ${{ steps.release.outputs.tool }}
-      - name: Check package version and registry state
-        id: npm-package
-        shell: bash
-        env:
-          EXPECTED_VERSION: ${{ steps.release.outputs.version }}
-        run: |
-          set -euo pipefail
-          package_dir="crates/${{ steps.release.outputs.tool }}/npm/${{ matrix.platform }}"
-          package_name="$(node -p "require('./${package_dir}/package.json').name")"
-          package_version="$(node -p "require('./${package_dir}/package.json').version")"
-          if [[ "${package_version}" != "${EXPECTED_VERSION}" ]]; then
-            echo "::error::${package_dir} version ${package_version} does not match ${RELEASE_TAG}"
-            exit 1
-          fi
-          echo "name=${package_name}" >> "${GITHUB_OUTPUT}"
-          echo "version=${package_version}" >> "${GITHUB_OUTPUT}"
-          if npm view "${package_name}@${package_version}" version --prefer-online >/dev/null 2>&1; then
-            echo "exists=true" >> "${GITHUB_OUTPUT}"
-            echo "${package_name}@${package_version} already exists; skipping publish."
-          else
-            echo "exists=false" >> "${GITHUB_OUTPUT}"
-          fi
-      - name: Refuse branch-based manual publish
-        if: ${{ steps.npm-package.outputs.exists != 'true' && github.event_name == 'workflow_dispatch' && (github.ref_type != 'tag' || github.ref_name != inputs.tag) }}
-        shell: bash
-        env:
-          PACKAGE_NAME: ${{ steps.npm-package.outputs.name }}
-          PACKAGE_VERSION: ${{ steps.npm-package.outputs.version }}
-          REF_NAME: ${{ github.ref_name }}
-          RELEASE_TAG_INPUT: ${{ inputs.tag }}
-        run: |
-          echo "::error::${PACKAGE_NAME}@${PACKAGE_VERSION} is missing, but this workflow_dispatch run checked out ${REF_NAME} for release tag ${RELEASE_TAG_INPUT}. Re-run from the release tag to publish, or publish the first version locally and use branch dispatch only to verify existing packages."
-          exit 1
-      - name: Verify existing platform package registry metadata
-        if: ${{ steps.npm-package.outputs.exists == 'true' }}
-        run: node tools/verify-npm-cli-registry-package.mjs crates/${{ steps.release.outputs.tool }}/npm/${{ matrix.platform }}
       - name: Build CLI
-        if: ${{ steps.npm-package.outputs.exists != 'true' }}
         run: cargo build --release --locked --target ${{ matrix.target }} --bin ${{ steps.release.outputs.tool }}
       - name: Check Linux glibc baseline
-        if: ${{ steps.npm-package.outputs.exists != 'true' && startsWith(matrix.platform, 'linux-') }}
+        if: ${{ startsWith(matrix.platform, 'linux-') }}
         shell: bash
         run: |
           set -euo pipefail
@@ -243,66 +210,22 @@ jobs:
             echo "::error::${binary} requires GLIBC_${max_glibc}; npm Linux packages must not require newer than GLIBC_2.35."
             exit 1
           fi
-      - name: Prepare platform package
-        if: ${{ steps.npm-package.outputs.exists != 'true' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          tool="${{ steps.release.outputs.tool }}"
-          package_dir="crates/${tool}/npm/${{ matrix.platform }}"
-          binary="target/${{ matrix.target }}/release/${tool}${{ matrix.binary_suffix }}"
-          mkdir -p "${package_dir}/bin"
-          cp "${binary}" "${package_dir}/bin/${tool}${{ matrix.binary_suffix }}"
-          if [[ "${{ runner.os }}" != "Windows" ]]; then
-            chmod +x "${package_dir}/bin/${tool}${{ matrix.binary_suffix }}"
-          fi
-      - name: Smoke prepared platform package
-        if: ${{ steps.npm-package.outputs.exists != 'true' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          tool="${{ steps.release.outputs.tool }}"
-          package_dir="crates/${tool}/npm/${{ matrix.platform }}"
-          pack_dir="${PWD}/target/npm-platform-pack"
-          smoke_dir="${PWD}/target/npm-platform-smoke"
-          pack_json="${PWD}/target/npm-platform-pack.json"
-          rm -rf "${pack_dir}" "${smoke_dir}" "${pack_json}"
-          mkdir -p "${pack_dir}" "${smoke_dir}"
-          npm pack "${package_dir}" --json --pack-destination "${pack_dir}" > "${pack_json}"
-          tarball="$(node -e 'const fs = require("node:fs"); const [pack] = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); console.log(pack.filename);' "${pack_json}")"
-          cd "${smoke_dir}"
-          npm init -y
-          npm install --save-dev "${pack_dir}/${tarball}" --ignore-scripts --no-audit --no-fund
-          binary="node_modules/@daml-tools/${tool}-${{ matrix.platform }}/bin/${tool}${{ matrix.binary_suffix }}"
-          test -f "${binary}"
-          if [[ "${{ runner.os }}" != "Windows" ]]; then
-            test -x "${binary}"
-          fi
-          "${binary}" --version
-      - name: Publish platform package
-        if: ${{ steps.npm-package.outputs.exists != 'true' }}
-        working-directory: crates/${{ steps.release.outputs.tool }}/npm/${{ matrix.platform }}
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          USE_NPM_TOKEN: ${{ github.event_name == 'workflow_dispatch' && inputs.use_npm_token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "${USE_NPM_TOKEN}" == "true" ]]; then
-            if [[ -z "${NPM_TOKEN:-}" ]]; then
-              echo "::error::use_npm_token was true, but the NPM_TOKEN secret is not configured."
-              exit 1
-            fi
-            npm config set //registry.npmjs.org/:_authToken "${NPM_TOKEN}"
-          elif [[ -n "${NPM_TOKEN:-}" ]]; then
-            echo "::notice::NPM_TOKEN is configured but ignored. Dispatch manually with use_npm_token=true only for bootstrap publishing."
-          fi
-          npm publish --access public
+      - name: Upload CLI binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: cli-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/${{ steps.release.outputs.tool }}${{ matrix.binary_suffix }}
+          if-no-files-found: error
 
-  publish-cli-wrapper:
-    name: publish CLI wrapper package
+  # Assemble and publish the npm packages with cargo-npm: it reads
+  # [package.metadata.npm] in the crate, builds one wrapper package plus one
+  # per-platform package from the binaries, and publishes platform packages
+  # first then the wrapper. The package version comes from Cargo.toml, so there
+  # is no version metadata to keep in sync.
+  publish-cli:
+    name: publish CLI npm packages
     runs-on: ubuntu-latest
-    needs: publish-cli-platform
+    needs: build-cli
     if: ${{ github.repository_owner == 'stevennevins' && (startsWith(github.event.inputs.tag || github.ref_name, 'daml-lint-v') || startsWith(github.event.inputs.tag || github.ref_name, 'daml-fmt-v')) }}
     env:
       RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
@@ -326,6 +249,7 @@ jobs:
             exit 1
           fi
       - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -333,71 +257,94 @@ jobs:
           package-manager-cache: false
       - name: Install npm 11
         run: npm install --global npm@^11.10.0
-      - name: Check npm CLI package metadata
-        run: |
-          node tools/sync-npm-cli-versions.mjs --check ${{ steps.release.outputs.tool }}
-          node tools/check-npm-cli-packages.mjs
-      - name: Check package version and registry state
-        id: npm-package
+      - name: Install cargo-npm
+        run: cargo install cargo-npm --version "${CARGO_NPM_VERSION}" --locked
+      - name: Resolve npm package and registry state
+        id: npm
         shell: bash
         env:
           EXPECTED_VERSION: ${{ steps.release.outputs.version }}
+          TOOL: ${{ steps.release.outputs.tool }}
         run: |
           set -euo pipefail
-          package_dir="crates/${{ steps.release.outputs.tool }}/npm/cli"
-          package_name="$(node -p "require('./${package_dir}/package.json').name")"
-          package_version="$(node -p "require('./${package_dir}/package.json').version")"
-          if [[ "${package_version}" != "${EXPECTED_VERSION}" ]]; then
-            echo "::error::${package_dir} version ${package_version} does not match ${RELEASE_TAG}"
+          crate_version="$(cargo metadata --format-version=1 --no-deps | jq -r --arg tool "${TOOL}" '.packages[] | select(.name == $tool) | .version')"
+          if [[ "${crate_version}" != "${EXPECTED_VERSION}" ]]; then
+            echo "::error::crates/${TOOL}/Cargo.toml version ${crate_version} does not match ${RELEASE_TAG}"
             exit 1
           fi
-          echo "name=${package_name}" >> "${GITHUB_OUTPUT}"
-          echo "version=${package_version}" >> "${GITHUB_OUTPUT}"
-          if npm view "${package_name}@${package_version}" version --prefer-online >/dev/null 2>&1; then
+          name="@daml-tools/${TOOL}"
+          dist_tag="latest"
+          if [[ "${EXPECTED_VERSION}" == *-* ]]; then
+            dist_tag="next"
+          fi
+          latest_version="$(npm view "${name}@latest" version --prefer-online 2>/dev/null || true)"
+          {
+            echo "name=${name}"
+            echo "dist_tag=${dist_tag}"
+            echo "latest_version=${latest_version}"
+          } >> "${GITHUB_OUTPUT}"
+          if npm view "${name}@${EXPECTED_VERSION}" version --prefer-online >/dev/null 2>&1; then
             echo "exists=true" >> "${GITHUB_OUTPUT}"
-            echo "${package_name}@${package_version} already exists; skipping publish."
+            echo "${name}@${EXPECTED_VERSION} already exists; skipping publish."
           else
             echo "exists=false" >> "${GITHUB_OUTPUT}"
           fi
       - name: Refuse branch-based manual publish
-        if: ${{ steps.npm-package.outputs.exists != 'true' && github.event_name == 'workflow_dispatch' && (github.ref_type != 'tag' || github.ref_name != inputs.tag) }}
+        if: ${{ steps.npm.outputs.exists != 'true' && github.event_name == 'workflow_dispatch' && (github.ref_type != 'tag' || github.ref_name != inputs.tag) }}
         shell: bash
         env:
-          PACKAGE_NAME: ${{ steps.npm-package.outputs.name }}
-          PACKAGE_VERSION: ${{ steps.npm-package.outputs.version }}
+          PACKAGE_NAME: ${{ steps.npm.outputs.name }}
+          PACKAGE_VERSION: ${{ steps.release.outputs.version }}
           REF_NAME: ${{ github.ref_name }}
           RELEASE_TAG_INPUT: ${{ inputs.tag }}
         run: |
-          echo "::error::${PACKAGE_NAME}@${PACKAGE_VERSION} is missing, but this workflow_dispatch run checked out ${REF_NAME} for release tag ${RELEASE_TAG_INPUT}. Re-run from the release tag to publish, or publish the first version locally and use branch dispatch only to verify existing packages."
+          echo "::error::${PACKAGE_NAME}@${PACKAGE_VERSION} is missing, but this workflow_dispatch run checked out ${REF_NAME} for release tag ${RELEASE_TAG_INPUT}. Re-run from the release tag to publish."
           exit 1
-      - name: Verify existing wrapper package registry metadata
-        if: ${{ steps.npm-package.outputs.exists == 'true' }}
-        run: node tools/verify-npm-cli-registry-package.mjs crates/${{ steps.release.outputs.tool }}/npm/cli
-      - name: Wait for platform package registry metadata
-        if: ${{ steps.npm-package.outputs.exists != 'true' }}
+      - name: Download CLI binaries
+        if: ${{ steps.npm.outputs.exists != 'true' }}
+        uses: actions/download-artifact@v7
+        with:
+          pattern: cli-*
+          path: artifacts
+      - name: Stage binaries into target/<triple>/release
+        if: ${{ steps.npm.outputs.exists != 'true' }}
         shell: bash
+        env:
+          TOOL: ${{ steps.release.outputs.tool }}
         run: |
           set -euo pipefail
-          for platform in darwin-arm64 linux-arm64 linux-x64 win32-x64; do
-            package_dir="crates/${{ steps.release.outputs.tool }}/npm/${platform}"
-            echo "Waiting for ${package_dir} to be visible in the npm registry..."
-            for attempt in {1..30}; do
-              if node tools/verify-npm-cli-registry-package.mjs "${package_dir}"; then
-                break
-              fi
-              if [[ "${attempt}" -eq 30 ]]; then
-                echo "::error::${package_dir} did not match npm registry metadata after ${attempt} attempts."
-                exit 1
-              fi
-              sleep 10
-            done
+          for triple in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu aarch64-apple-darwin x86_64-pc-windows-msvc; do
+            suffix=""
+            [[ "${triple}" == *windows* ]] && suffix=".exe"
+            dest="target/${triple}/release"
+            mkdir -p "${dest}"
+            cp "artifacts/cli-${triple}/${TOOL}${suffix}" "${dest}/${TOOL}${suffix}"
+            # Artifacts do not preserve the Unix exec bit; restore it so the
+            # generated platform package ships an executable binary.
+            [[ "${triple}" == *windows* ]] || chmod +x "${dest}/${TOOL}${suffix}"
           done
-      - name: Publish wrapper package
-        if: ${{ steps.npm-package.outputs.exists != 'true' }}
-        working-directory: crates/${{ steps.release.outputs.tool }}/npm/cli
+      - name: Generate npm packages
+        if: ${{ steps.npm.outputs.exists != 'true' }}
+        run: cargo npm generate -p ${{ steps.release.outputs.tool }} --out-dir target/npm-dist --clean
+      - name: Validate generated npm packages
+        if: ${{ steps.npm.outputs.exists != 'true' }}
+        shell: bash
+        env:
+          TOOL: ${{ steps.release.outputs.tool }}
+          PACKAGE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          wrapper="target/npm-dist/@daml-tools/${TOOL}/package.json"
+          node -e "const p=require('./'+process.argv[1]); const v=process.argv[2]; const deps=p.optionalDependencies||{}; if(!p.bin||Object.keys(deps).length!==4)throw new Error('wrapper missing bin or four optionalDependencies'); for (const dep of Object.values(deps)) if(dep!==v) throw new Error('optional dependency version mismatch')" "${wrapper}" "${PACKAGE_VERSION}"
+          for package_dir in target/npm-dist/@daml-tools/"${TOOL}"-*; do
+            test -f "${package_dir}/${TOOL}" || test -f "${package_dir}/${TOOL}.exe"
+          done
+      - name: Publish npm packages
+        if: ${{ steps.npm.outputs.exists != 'true' }}
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           USE_NPM_TOKEN: ${{ github.event_name == 'workflow_dispatch' && inputs.use_npm_token }}
+          DIST_TAG: ${{ steps.npm.outputs.dist_tag }}
         shell: bash
         run: |
           set -euo pipefail
@@ -410,33 +357,47 @@ jobs:
           elif [[ -n "${NPM_TOKEN:-}" ]]; then
             echo "::notice::NPM_TOKEN is configured but ignored. Dispatch manually with use_npm_token=true only for bootstrap publishing."
           fi
-          npm publish --access public
-      - name: Wait for wrapper package registry metadata
+          if [[ "${DIST_TAG}" != "latest" ]]; then
+            echo "::notice::Publishing under the '${DIST_TAG}' dist-tag; 'latest' is left unchanged."
+          fi
+          cargo npm publish -p ${{ steps.release.outputs.tool }} --out-dir target/npm-dist -- --access public --tag "${DIST_TAG}"
+      - name: Smoke published wrapper as a dev dependency
         shell: bash
+        env:
+          PACKAGE_NAME: ${{ steps.npm.outputs.name }}
+          PACKAGE_VERSION: ${{ steps.release.outputs.version }}
+          DIST_TAG: ${{ steps.npm.outputs.dist_tag }}
+          PREVIOUS_LATEST: ${{ steps.npm.outputs.latest_version }}
+          TOOL: ${{ steps.release.outputs.tool }}
         run: |
           set -euo pipefail
-          package_dir="crates/${{ steps.release.outputs.tool }}/npm/cli"
-          echo "Waiting for ${package_dir} to be visible in the npm registry..."
+          echo "Waiting for ${PACKAGE_NAME}@${PACKAGE_VERSION} to be visible in the npm registry..."
           for attempt in {1..30}; do
-            if node tools/verify-npm-cli-registry-package.mjs "${package_dir}"; then
-              exit 0
+            if npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version --prefer-online >/dev/null 2>&1; then
+              break
             fi
             if [[ "${attempt}" -eq 30 ]]; then
-              echo "::error::${package_dir} did not match npm registry metadata after ${attempt} attempts."
+              echo "::error::${PACKAGE_NAME}@${PACKAGE_VERSION} did not appear on the npm registry."
               exit 1
             fi
             sleep 10
           done
-      - name: Smoke published wrapper package
-        shell: bash
-        run: |
-          set -euo pipefail
-          package_name="${{ steps.npm-package.outputs.name }}"
-          package_version="${{ steps.npm-package.outputs.version }}"
-          tool="${{ steps.release.outputs.tool }}"
           work="$(mktemp -d)"
           cd "${work}"
-          npm init -y
-          npm install --save-dev "${package_name}@${package_version}"
-          test -x "node_modules/.bin/${tool}"
-          npx --no-install "${tool}" --version
+          npm init -y >/dev/null
+          npm install --save-dev "${PACKAGE_NAME}@${PACKAGE_VERSION}"
+          test -x "node_modules/.bin/${TOOL}"
+          npx --no-install "${TOOL}" --version
+          if [[ "${DIST_TAG}" != "latest" ]]; then
+            next_version="$(npm view "${PACKAGE_NAME}@${DIST_TAG}" version --prefer-online)"
+            if [[ "${next_version}" != "${PACKAGE_VERSION}" ]]; then
+              echo "::error::${PACKAGE_NAME}@${DIST_TAG} is ${next_version}, expected ${PACKAGE_VERSION}."
+              exit 1
+            fi
+            latest_version="$(npm view "${PACKAGE_NAME}@latest" version --prefer-online)"
+            if [[ "${latest_version}" != "${PREVIOUS_LATEST}" ]]; then
+              echo "::error::${PACKAGE_NAME}@latest moved from ${PREVIOUS_LATEST} to ${latest_version} during prerelease publish."
+              exit 1
+            fi
+            echo "${PACKAGE_NAME}@${DIST_TAG} resolves to ${PACKAGE_VERSION}; latest remains ${latest_version}."
+          fi

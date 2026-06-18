@@ -14,6 +14,20 @@ categories = ["development-tools", "command-line-utilities"]
 # `examples/` are kept — users writing AST rules need them).
 exclude = ["test-fixtures/", "docs/"]
 
+# npm distribution of the CLI (cargo-npm). `cargo npm generate` builds a thin
+# wrapper package plus one optional native package per target.
+[package.metadata.npm]
+name = "@daml-tools/daml-lint"
+prefix = "@daml-tools/daml-lint-"
+bins = ["daml-lint"]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]
+custom = { engines = { node = ">=18" }, publishConfig = { access = "public" } }
+
 [lints]
 workspace = true
 
