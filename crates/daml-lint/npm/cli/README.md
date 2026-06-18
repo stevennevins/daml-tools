@@ -10,4 +10,5 @@ npx daml-lint ./daml
 The package installs a small JavaScript launcher plus an optional native
 platform package for the current operating system and CPU.
 
-Supported npm platforms are macOS arm64, Linux x64 glibc, and Windows x64.
+Supported npm platforms are macOS arm64, Linux x64 glibc 2.35 or newer, and
+Windows x64.
