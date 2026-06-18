@@ -175,9 +175,9 @@ npx --no-install daml-fmt --version
 ```
 
 If a prerelease publish partially fails after any npm package version is
-created, bump to a new prerelease version before retrying. npm package versions
-are immutable, and `cargo npm publish` publishes the generated package set as a
-unit.
+created, rerun the workflow with `use_npm_token=true` only after checking the
+registry state. The workflow skips generated package versions that already
+exist, publishes the missing platform packages, then publishes the wrapper.
 
 ## Verify the release
 
@@ -234,14 +234,13 @@ gh workflow run npm-publish.yml --repo stevennevins/daml-tools --ref daml-fmt-vX
 
 The workflow checks out the requested tag, verifies the Cargo package version
 matches the tag, builds the tagged CLI binary for each supported platform,
-generates cargo-npm packages, publishes platform packages first, publishes the
-wrapper, and smoke-installs the wrapper from npm.
+generates cargo-npm packages, publishes missing platform packages first,
+publishes the wrapper if missing, and smoke-installs the wrapper from npm.
 
 If the wrapper package version already exists on npm, the CLI publish job skips
 publishing and still runs the smoke install. If some platform packages exist but
-the wrapper does not, do not rerun blindly; inspect the registry state and pick
-a new prerelease or release recovery path before publishing more immutable npm
-versions.
+the wrapper does not, inspect the registry state before rerunning so the missing
+package set is clear in the recovery notes.
 
 Only set `use_npm_token=true` while recovering the first bootstrap publish of a
 brand-new npm package. Leave it unset for normal trusted publishing reruns.

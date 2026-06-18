@@ -142,14 +142,13 @@ release-plz.
    npx --no-install daml-fmt --version
    ```
 
-If a prerelease publish partially fails, bump to a new prerelease version before
-retrying. `cargo npm publish` cannot skip already-published platform packages;
-the workflow only skips when the wrapper version already exists.
+If a prerelease publish partially fails, inspect the registry state before
+retrying. The workflow skips generated package versions that already exist,
+publishes missing platform packages first, then publishes the wrapper.
 
 If old tooling already published platform packages for a version but missed the
-wrapper package, do not try to republish that same version through cargo-npm.
-npm package versions are immutable; use a fresh patch release or prerelease so
-the platform packages and wrapper are generated and published together.
+wrapper package, recover through the workflow with `use_npm_token=true` only
+after confirming which immutable package versions already exist.
 
 ## Monitor And Recover
 

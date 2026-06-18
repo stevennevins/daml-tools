@@ -43,6 +43,8 @@ jobs:
             exit 1
           fi
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -85,17 +87,6 @@ jobs:
           else
             echo "exists=false" >> "${GITHUB_OUTPUT}"
           fi
-      - name: Refuse branch-based manual publish
-        if: ${{ steps.npm-package.outputs.exists != 'true' && github.event_name == 'workflow_dispatch' && (github.ref_type != 'tag' || github.ref_name != inputs.tag) }}
-        shell: bash
-        env:
-          PACKAGE_NAME: ${{ steps.npm-package.outputs.name }}
-          PACKAGE_VERSION: ${{ steps.npm-package.outputs.version }}
-          REF_NAME: ${{ github.ref_name }}
-          RELEASE_TAG_INPUT: ${{ inputs.tag }}
-        run: |
-          echo "::error::${PACKAGE_NAME}@${PACKAGE_VERSION} is missing, but this workflow_dispatch run checked out ${REF_NAME} for release tag ${RELEASE_TAG_INPUT}. Re-run from the release tag to publish, or publish the first version locally and use branch dispatch only to verify existing packages."
-          exit 1
       - name: Smoke starter template
         if: ${{ steps.npm-package.outputs.exists != 'true' }}
         working-directory: crates/daml-lint
@@ -188,6 +179,8 @@ jobs:
             exit 1
           fi
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -249,6 +242,8 @@ jobs:
             exit 1
           fi
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-node@v6
         with:
@@ -289,17 +284,6 @@ jobs:
           else
             echo "exists=false" >> "${GITHUB_OUTPUT}"
           fi
-      - name: Refuse branch-based manual publish
-        if: ${{ steps.npm.outputs.exists != 'true' && github.event_name == 'workflow_dispatch' && (github.ref_type != 'tag' || github.ref_name != inputs.tag) }}
-        shell: bash
-        env:
-          PACKAGE_NAME: ${{ steps.npm.outputs.name }}
-          PACKAGE_VERSION: ${{ steps.release.outputs.version }}
-          REF_NAME: ${{ github.ref_name }}
-          RELEASE_TAG_INPUT: ${{ inputs.tag }}
-        run: |
-          echo "::error::${PACKAGE_NAME}@${PACKAGE_VERSION} is missing, but this workflow_dispatch run checked out ${REF_NAME} for release tag ${RELEASE_TAG_INPUT}. Re-run from the release tag to publish."
-          exit 1
       - name: Download CLI binaries
         if: ${{ steps.npm.outputs.exists != 'true' }}
         uses: actions/download-artifact@v7
@@ -345,6 +329,7 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           USE_NPM_TOKEN: ${{ github.event_name == 'workflow_dispatch' && inputs.use_npm_token }}
           DIST_TAG: ${{ steps.npm.outputs.dist_tag }}
+          TOOL: ${{ steps.release.outputs.tool }}
         shell: bash
         run: |
           set -euo pipefail
@@ -360,7 +345,23 @@ jobs:
           if [[ "${DIST_TAG}" != "latest" ]]; then
             echo "::notice::Publishing under the '${DIST_TAG}' dist-tag; 'latest' is left unchanged."
           fi
-          cargo npm publish -p ${{ steps.release.outputs.tool }} --out-dir target/npm-dist -- --access public --tag "${DIST_TAG}"
+
+          publish_if_missing() {
+            local package_dir="$1"
+            local package_name package_version
+            package_name="$(node -p "require('./${package_dir}/package.json').name")"
+            package_version="$(node -p "require('./${package_dir}/package.json').version")"
+            if npm view "${package_name}@${package_version}" version --prefer-online >/dev/null 2>&1; then
+              echo "${package_name}@${package_version} already exists; skipping publish."
+              return
+            fi
+            npm publish "${package_dir}" --access public --tag "${DIST_TAG}"
+          }
+
+          for package_dir in target/npm-dist/@daml-tools/"${TOOL}"-*; do
+            publish_if_missing "${package_dir}"
+          done
+          publish_if_missing "target/npm-dist/@daml-tools/${TOOL}"
       - name: Smoke published wrapper as a dev dependency
         shell: bash
         env:
