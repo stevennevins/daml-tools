@@ -23,19 +23,37 @@ const platformBinarySuffixes = {
 
 let registryPackage;
 
+function execNpm(args) {
+  return execFileSync("npm", args, {
+    encoding: "utf8",
+    shell: process.platform === "win32",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
 try {
-  registryPackage = JSON.parse(
-    execFileSync("npm", ["view", packageSpec, "--json", "--prefer-online"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    }),
-  );
+  const registryFields = ["version", "dist.integrity", ...comparableFields];
+  const output = execNpm([
+    "view",
+    packageSpec,
+    ...registryFields,
+    "--json",
+    "--prefer-online",
+  ]);
+  const registryFieldsPackage = JSON.parse(output);
+  registryPackage = {
+    ...registryFieldsPackage,
+    dist: {
+      integrity: registryFieldsPackage["dist.integrity"],
+    },
+  };
 } catch (error) {
   const stderr = error.stderr?.toString().trim();
   if (stderr) {
     console.error(stderr);
   }
-  console.error(`${packageSpec} is not visible in the npm registry.`);
+  console.error(`${packageSpec} metadata could not be read from the npm registry.`);
+  console.error(error.message);
   process.exit(1);
 }
 
@@ -68,14 +86,14 @@ function packRegistryPackage() {
   const tempRoot = mkdtempSync(path.join(tmpdir(), "daml-tools-npm-registry-"));
 
   try {
-    const output = execFileSync(
-      "npm",
-      ["pack", packageSpec, "--json", "--pack-destination", tempRoot, "--ignore-scripts"],
-      {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
+    const output = execNpm([
+      "pack",
+      packageSpec,
+      "--json",
+      "--pack-destination",
+      tempRoot,
+      "--ignore-scripts",
+    ]);
     const [pack] = JSON.parse(output);
     return pack;
   } catch (error) {
