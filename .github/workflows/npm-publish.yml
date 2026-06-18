@@ -151,6 +151,9 @@ jobs:
           else
             echo "exists=false" >> "${GITHUB_OUTPUT}"
           fi
+      - name: Verify existing platform package registry metadata
+        if: ${{ steps.npm-package.outputs.exists == 'true' }}
+        run: node tools/verify-npm-cli-registry-package.mjs crates/${{ steps.release.outputs.tool }}/npm/${{ matrix.platform }}
       - name: Build CLI
         if: ${{ steps.npm-package.outputs.exists != 'true' }}
         run: cargo build --release --locked --target ${{ matrix.target }} --bin ${{ steps.release.outputs.tool }}
@@ -234,6 +237,28 @@ jobs:
           else
             echo "exists=false" >> "${GITHUB_OUTPUT}"
           fi
+      - name: Verify existing wrapper package registry metadata
+        if: ${{ steps.npm-package.outputs.exists == 'true' }}
+        run: node tools/verify-npm-cli-registry-package.mjs crates/${{ steps.release.outputs.tool }}/npm/cli
+      - name: Wait for platform package registry metadata
+        if: ${{ steps.npm-package.outputs.exists != 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for platform in darwin-arm64 linux-x64 win32-x64; do
+            package_dir="crates/${{ steps.release.outputs.tool }}/npm/${platform}"
+            echo "Waiting for ${package_dir} to be visible in the npm registry..."
+            for attempt in {1..30}; do
+              if node tools/verify-npm-cli-registry-package.mjs "${package_dir}"; then
+                break
+              fi
+              if [[ "${attempt}" -eq 30 ]]; then
+                echo "::error::${package_dir} did not match npm registry metadata after ${attempt} attempts."
+                exit 1
+              fi
+              sleep 10
+            done
+          done
       - name: Publish wrapper package
         if: ${{ steps.npm-package.outputs.exists != 'true' }}
         working-directory: crates/${{ steps.release.outputs.tool }}/npm/cli
@@ -246,3 +271,32 @@ jobs:
             npm config set //registry.npmjs.org/:_authToken "${NPM_TOKEN}"
           fi
           npm publish --access public
+      - name: Wait for wrapper package registry metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_dir="crates/${{ steps.release.outputs.tool }}/npm/cli"
+          echo "Waiting for ${package_dir} to be visible in the npm registry..."
+          for attempt in {1..30}; do
+            if node tools/verify-npm-cli-registry-package.mjs "${package_dir}"; then
+              exit 0
+            fi
+            if [[ "${attempt}" -eq 30 ]]; then
+              echo "::error::${package_dir} did not match npm registry metadata after ${attempt} attempts."
+              exit 1
+            fi
+            sleep 10
+          done
+      - name: Smoke published wrapper package
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_name="${{ steps.npm-package.outputs.name }}"
+          package_version="${{ steps.npm-package.outputs.version }}"
+          tool="${{ steps.release.outputs.tool }}"
+          work="$(mktemp -d)"
+          cd "${work}"
+          npm init -y
+          npm install --save-dev "${package_name}@${package_version}"
+          test -x "node_modules/.bin/${tool}"
+          npx --no-install "${tool}" --version

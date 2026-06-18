@@ -19,6 +19,7 @@ const platformPackages = {
   "linux-x64": {
     packagePlatform: "linux:x64",
     binaryExtension: "",
+    libc: "glibc",
   },
   "win32-x64": {
     packagePlatform: "win32:x64",
@@ -45,7 +46,7 @@ const smokePlatform =
 const platformOverride = hostPlatform
   ? undefined
   : smokePlatform
-    ? { platform: "linux", arch: "x64" }
+    ? { platform: "linux", arch: "x64", libc: "glibc" }
     : undefined;
 
 if (!smokePlatform) {
@@ -188,6 +189,9 @@ try {
 
   if (platformOverride) {
     installArgs.push(`--os=${platformOverride.platform}`, `--cpu=${platformOverride.arch}`);
+    if (platformOverride.libc) {
+      installArgs.push(`--libc=${platformOverride.libc}`);
+    }
   }
 
   run("npm", installArgs, {

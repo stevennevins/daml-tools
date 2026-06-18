@@ -9,7 +9,7 @@
     "directory": "crates/daml-lint/npm/cli"
   },
   "bin": {
-    "daml-lint": "./bin/daml-lint.cjs"
+    "daml-lint": "bin/daml-lint.cjs"
   },
   "files": [
     "bin",
