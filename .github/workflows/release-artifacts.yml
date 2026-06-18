@@ -102,6 +102,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          version="${TAG#*-v}"
+          prerelease_flag=()
+          if [[ "${version}" == *-* ]]; then
+            prerelease_flag=(--prerelease)
+          fi
           gh release view "${TAG}" >/dev/null 2>&1 || \
-            gh release create "${TAG}" --verify-tag --title "${TAG}" --notes "CLI artifacts for ${TAG}."
+            gh release create "${TAG}" --verify-tag "${prerelease_flag[@]}" --title "${TAG}" --notes "CLI artifacts for ${TAG}."
           gh release upload "${TAG}" dist/* --clobber

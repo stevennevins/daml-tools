@@ -14,11 +14,13 @@ Install:
 - Node.js 18 or newer
 - `uv`, for installing `prek`
 - `cargo-semver-checks`
+- `cargo-npm` 0.1.2, for local npm CLI package generation
 
 ```sh
 rustup component add rustfmt clippy
 uv tool install prek
 cargo install cargo-semver-checks --locked
+cargo install cargo-npm --version 0.1.2 --locked
 ```
 
 CI currently uses Node.js 22, but the local formatter and linter checks require
@@ -116,5 +118,6 @@ Releases are driven by [release-plz](release-plz.toml) in dependency order:
 expects a crates.io `CARGO_REGISTRY_TOKEN`; set `RELEASE_PLZ_TOKEN` to a PAT if
 release PRs or tags must trigger follow-on workflows.
 
-CLI release archives and SHA-256 files are built for Linux x64, macOS ARM64,
-and Windows x64 when `daml-lint-v*` or `daml-fmt-v*` tags are published.
+CLI release archives and SHA-256 files are built for Linux x64, Linux ARM64,
+macOS ARM64, and Windows x64 when `daml-lint-v*` or `daml-fmt-v*` tags are
+published.
