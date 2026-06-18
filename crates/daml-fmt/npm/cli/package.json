@@ -1,6 +1,6 @@
 {
   "name": "@daml-tools/daml-fmt",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "npm-distributed daml-fmt CLI",
   "license": "AGPL-3.0-only",
   "repository": {
@@ -16,9 +16,9 @@
     "README.md"
   ],
   "optionalDependencies": {
-    "@daml-tools/daml-fmt-darwin-arm64": "0.2.3",
-    "@daml-tools/daml-fmt-linux-x64": "0.2.3",
-    "@daml-tools/daml-fmt-win32-x64": "0.2.3"
+    "@daml-tools/daml-fmt-darwin-arm64": "0.2.4",
+    "@daml-tools/daml-fmt-linux-x64": "0.2.4",
+    "@daml-tools/daml-fmt-win32-x64": "0.2.4"
   },
   "publishConfig": {
     "access": "public"
