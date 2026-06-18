@@ -92,10 +92,10 @@ For a TypeScript rule, type-check and bundle it before scanning:
 
 ```sh
 npm pkg set type=module
-npm install --save-dev @daml-tools/lint-plugin typescript esbuild
+npm install --save-dev @daml-tools/daml-lint @daml-tools/lint-plugin typescript esbuild
 npx tsc --noEmit
 npx esbuild src/template-requires-ensure.ts --bundle --format=esm --target=es2020 --outfile=dist/template-requires-ensure.js
-daml-lint ./daml/ --rules dist/template-requires-ensure.js --fail-on medium
+npx daml-lint ./daml/ --rules dist/template-requires-ensure.js --fail-on medium
 ```
 
 The bundled JavaScript must expose top-level `const NAME`, `const SEVERITY`,

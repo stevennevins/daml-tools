@@ -5,7 +5,7 @@ const { existsSync } = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
-const supportedPlatforms = "Supported npm platforms are linux/x64 glibc 2.35+, darwin/arm64, and win32/x64.";
+const supportedPlatforms = "Supported npm platforms are linux/x64 glibc 2.35+, linux/arm64 glibc 2.35+, darwin/arm64, and win32/x64.";
 
 const platformPackages = {
   "darwin:arm64": {
@@ -14,6 +14,10 @@ const platformPackages = {
   },
   "linux:x64": {
     name: "@daml-tools/daml-lint-linux-x64",
+    binary: ["bin", "daml-lint"],
+  },
+  "linux:arm64": {
+    name: "@daml-tools/daml-lint-linux-arm64",
     binary: ["bin", "daml-lint"],
   },
   "win32:x64": {
@@ -35,7 +39,7 @@ function isLinuxMusl() {
 
 function linuxLibcMessage() {
   return (
-    "daml-lint is distributed for Linux x64 glibc 2.35+, but this host appears to use musl. " +
+    "daml-lint is distributed for Linux x64 and arm64 glibc 2.35+, but this host appears to use musl. " +
     "Use the Cargo install path on Alpine/musl Linux."
   );
 }

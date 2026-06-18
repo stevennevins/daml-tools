@@ -31,10 +31,12 @@ package:
 - `@daml-tools/lint-plugin`
 - `@daml-tools/daml-lint`
 - `@daml-tools/daml-lint-darwin-arm64`
+- `@daml-tools/daml-lint-linux-arm64`
 - `@daml-tools/daml-lint-linux-x64`
 - `@daml-tools/daml-lint-win32-x64`
 - `@daml-tools/daml-fmt`
 - `@daml-tools/daml-fmt-darwin-arm64`
+- `@daml-tools/daml-fmt-linux-arm64`
 - `@daml-tools/daml-fmt-linux-x64`
 - `@daml-tools/daml-fmt-win32-x64`
 
@@ -136,8 +138,8 @@ If the `Publish npm Packages` workflow fails after the tag exists, rerun it with
 the release tag:
 
 ```sh
-gh workflow run npm-publish.yml --repo stevennevins/daml-tools --ref main -f tag=daml-lint-vX.Y.Z
-gh workflow run npm-publish.yml --repo stevennevins/daml-tools --ref main -f tag=daml-fmt-vX.Y.Z
+gh workflow run npm-publish.yml --repo stevennevins/daml-tools --ref daml-lint-vX.Y.Z -f tag=daml-lint-vX.Y.Z
+gh workflow run npm-publish.yml --repo stevennevins/daml-tools --ref daml-fmt-vX.Y.Z -f tag=daml-fmt-vX.Y.Z
 ```
 
 The npm workflow checks out the requested tag, verifies package versions, skips
@@ -158,8 +160,8 @@ If release artifact upload fails after a tag exists, rerun the artifact workflow
 with that tag:
 
 ```sh
-gh workflow run release-artifacts.yml --repo stevennevins/daml-tools --ref main -f tag=daml-lint-vX.Y.Z
-gh workflow run release-artifacts.yml --repo stevennevins/daml-tools --ref main -f tag=daml-fmt-vX.Y.Z
+gh workflow run release-artifacts.yml --repo stevennevins/daml-tools --ref daml-lint-vX.Y.Z -f tag=daml-lint-vX.Y.Z
+gh workflow run release-artifacts.yml --repo stevennevins/daml-tools --ref daml-fmt-vX.Y.Z -f tag=daml-fmt-vX.Y.Z
 ```
 
 The artifact workflow checks out the requested tag and uploads archives to that

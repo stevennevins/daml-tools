@@ -14,9 +14,10 @@ const packageJsonPath = path.join(packageDir, "package.json");
 const localPackage = JSON.parse(readFileSync(packageJsonPath, "utf8"));
 const packageSpec = `${localPackage.name}@${localPackage.version}`;
 const comparableFields = ["os", "cpu", "libc", "bin", "optionalDependencies"];
-const platformPackagePattern = /^@daml-tools\/(daml-lint|daml-fmt)-(darwin-arm64|linux-x64|win32-x64)$/;
+const platformPackagePattern = /^@daml-tools\/(daml-lint|daml-fmt)-(darwin-arm64|linux-arm64|linux-x64|win32-x64)$/;
 const platformBinarySuffixes = {
   "darwin-arm64": "",
+  "linux-arm64": "",
   "linux-x64": "",
   "win32-x64": ".exe",
 };

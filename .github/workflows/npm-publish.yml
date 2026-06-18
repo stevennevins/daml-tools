@@ -24,6 +24,7 @@ jobs:
   publish-lint-plugin:
     name: publish @daml-tools/lint-plugin
     runs-on: ubuntu-latest
+    needs: publish-cli-wrapper
     if: ${{ github.repository_owner == 'stevennevins' && startsWith(github.event.inputs.tag || github.ref_name, 'daml-lint-v') }}
     env:
       RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
@@ -90,6 +91,36 @@ jobs:
         run: |
           echo "::error::${PACKAGE_NAME}@${PACKAGE_VERSION} is missing, but this workflow_dispatch run checked out ${REF_NAME} for release tag ${RELEASE_TAG_INPUT}. Re-run from the release tag to publish, or publish the first version locally and use branch dispatch only to verify existing packages."
           exit 1
+      - name: Smoke starter template
+        if: ${{ steps.npm-package.outputs.exists != 'true' }}
+        working-directory: crates/daml-lint
+        shell: bash
+        env:
+          PACKAGE_VERSION: ${{ steps.npm-package.outputs.version }}
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          pack_dir="${work}/pack"
+          project_dir="${work}/project"
+          mkdir -p "${pack_dir}" "${project_dir}"
+          npm pack lint-plugin --json --pack-destination "${pack_dir}" > "${work}/pack.json"
+          tarball="$(node -e 'const fs = require("node:fs"); const [pack] = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); console.log(pack.filename);' "${work}/pack.json")"
+          cp -R lint-plugin/templates/project/. "${project_dir}/"
+          cd "${project_dir}"
+          npm install --save-dev "${pack_dir}/${tarball}" "@daml-tools/daml-lint@${PACKAGE_VERSION}" typescript@6.0.3 esbuild@0.28.1
+          npm run check
+          npm run build
+          set +e
+          npm run lint:missing > "${work}/missing.out" 2>&1
+          missing_status=$?
+          set -e
+          if [[ "${missing_status}" -ne 1 ]]; then
+            cat "${work}/missing.out"
+            echo "::error::lint:missing should report the starter template finding and exit 1."
+            exit 1
+          fi
+          grep -F "template-requires-ensure/template-requires-ensure" "${work}/missing.out"
+          npm run lint:clean
       - name: Publish package
         if: ${{ steps.npm-package.outputs.exists != 'true' }}
         working-directory: crates/daml-lint/lint-plugin
@@ -121,6 +152,7 @@ jobs:
       matrix:
         include:
           - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, platform: linux-x64, binary_suffix: "" }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, platform: linux-arm64, binary_suffix: "" }
           - { os: macos-latest, target: aarch64-apple-darwin, platform: darwin-arm64, binary_suffix: "" }
           - { os: windows-latest, target: x86_64-pc-windows-msvc, platform: win32-x64, binary_suffix: ".exe" }
     steps:
@@ -196,7 +228,7 @@ jobs:
         if: ${{ steps.npm-package.outputs.exists != 'true' }}
         run: cargo build --release --locked --target ${{ matrix.target }} --bin ${{ steps.release.outputs.tool }}
       - name: Check Linux glibc baseline
-        if: ${{ steps.npm-package.outputs.exists != 'true' && matrix.platform == 'linux-x64' }}
+        if: ${{ steps.npm-package.outputs.exists != 'true' && startsWith(matrix.platform, 'linux-') }}
         shell: bash
         run: |
           set -euo pipefail
@@ -208,7 +240,7 @@ jobs:
           fi
           echo "${binary} requires GLIBC_${max_glibc} or older."
           if [[ "$(printf '%s\n' "${max_glibc}" "2.35" | sort -Vu | tail -n1)" != "2.35" ]]; then
-            echo "::error::${binary} requires GLIBC_${max_glibc}; npm Linux x64 packages must not require newer than GLIBC_2.35."
+            echo "::error::${binary} requires GLIBC_${max_glibc}; npm Linux packages must not require newer than GLIBC_2.35."
             exit 1
           fi
       - name: Prepare platform package
@@ -346,7 +378,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for platform in darwin-arm64 linux-x64 win32-x64; do
+          for platform in darwin-arm64 linux-arm64 linux-x64 win32-x64; do
             package_dir="crates/${{ steps.release.outputs.tool }}/npm/${platform}"
             echo "Waiting for ${package_dir} to be visible in the npm registry..."
             for attempt in {1..30}; do
