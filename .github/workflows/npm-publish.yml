@@ -99,7 +99,7 @@ jobs:
           pack_dir="${work}/pack"
           project_dir="${work}/project"
           mkdir -p "${pack_dir}" "${project_dir}"
-          npm pack lint-plugin --json --pack-destination "${pack_dir}" > "${work}/pack.json"
+          npm pack ./lint-plugin --json --pack-destination "${pack_dir}" > "${work}/pack.json"
           tarball="$(node -e 'const fs = require("node:fs"); const [pack] = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); console.log(pack.filename);' "${work}/pack.json")"
           cp -R lint-plugin/templates/project/. "${project_dir}/"
           cd "${project_dir}"
@@ -346,6 +346,21 @@ jobs:
             echo "::notice::Publishing under the '${DIST_TAG}' dist-tag; 'latest' is left unchanged."
           fi
 
+          wait_for_package() {
+            local package_spec="$1"
+            echo "Waiting for ${package_spec} to be visible in the npm registry..."
+            for attempt in {1..30}; do
+              if npm view "${package_spec}" version --prefer-online >/dev/null 2>&1; then
+                return
+              fi
+              if [[ "${attempt}" -eq 30 ]]; then
+                echo "::error::${package_spec} did not appear on the npm registry."
+                exit 1
+              fi
+              sleep 10
+            done
+          }
+
           publish_if_missing() {
             local package_dir="$1"
             local package_name package_version
@@ -353,9 +368,11 @@ jobs:
             package_version="$(node -p "require('./${package_dir}/package.json').version")"
             if npm view "${package_name}@${package_version}" version --prefer-online >/dev/null 2>&1; then
               echo "${package_name}@${package_version} already exists; skipping publish."
+              wait_for_package "${package_name}@${package_version}"
               return
             fi
             npm publish "${package_dir}" --access public --tag "${DIST_TAG}"
+            wait_for_package "${package_name}@${package_version}"
           }
 
           for package_dir in target/npm-dist/@daml-tools/"${TOOL}"-*; do
