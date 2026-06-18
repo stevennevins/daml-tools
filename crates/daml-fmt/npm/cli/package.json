@@ -1,0 +1,29 @@
+{
+  "name": "@daml-tools/daml-fmt",
+  "version": "0.2.1",
+  "description": "npm-distributed daml-fmt CLI",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stevennevins/daml-tools.git",
+    "directory": "crates/daml-fmt/npm/cli"
+  },
+  "bin": {
+    "daml-fmt": "./bin/daml-fmt.cjs"
+  },
+  "files": [
+    "bin",
+    "README.md"
+  ],
+  "optionalDependencies": {
+    "@daml-tools/daml-fmt-darwin-arm64": "0.2.1",
+    "@daml-tools/daml-fmt-linux-x64": "0.2.1",
+    "@daml-tools/daml-fmt-win32-x64": "0.2.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

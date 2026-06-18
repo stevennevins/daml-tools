@@ -1,0 +1,23 @@
+{
+  "name": "@daml-tools/daml-lint-linux-x64",
+  "version": "0.3.3",
+  "description": "Linux x64 native binary for the daml-lint CLI",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stevennevins/daml-tools.git",
+    "directory": "crates/daml-lint/npm/linux-x64"
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

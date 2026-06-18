@@ -5,6 +5,13 @@ write reports, apply custom rules, and set CI failure thresholds.
 
 ## Install `daml-lint`
 
+As a project dev dependency:
+
+```sh
+npm install --save-dev @daml-tools/daml-lint
+npx daml-lint ./daml
+```
+
 From crates.io:
 
 ```sh

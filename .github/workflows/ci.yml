@@ -35,6 +35,12 @@ jobs:
       - name: daml-lint generated rules are current
         working-directory: crates/daml-lint
         run: npm ci && npm run check:rules
+      - name: npm CLI package metadata
+        run: |
+          node tools/sync-npm-cli-versions.mjs --check
+          node tools/check-npm-cli-packages.mjs
+      - name: npm CLI packages install as dev dependencies
+        run: node tools/smoke-npm-cli-packages.mjs
       - name: daml-lint feature split tests
         run: |
           cargo test -p daml-lint --no-default-features --lib --locked

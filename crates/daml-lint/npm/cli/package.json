@@ -1,0 +1,29 @@
+{
+  "name": "@daml-tools/daml-lint",
+  "version": "0.3.3",
+  "description": "npm-distributed daml-lint CLI",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stevennevins/daml-tools.git",
+    "directory": "crates/daml-lint/npm/cli"
+  },
+  "bin": {
+    "daml-lint": "./bin/daml-lint.cjs"
+  },
+  "files": [
+    "bin",
+    "README.md"
+  ],
+  "optionalDependencies": {
+    "@daml-tools/daml-lint-darwin-arm64": "0.3.3",
+    "@daml-tools/daml-lint-linux-x64": "0.3.3",
+    "@daml-tools/daml-lint-win32-x64": "0.3.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
