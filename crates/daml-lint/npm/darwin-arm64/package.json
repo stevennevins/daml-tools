@@ -1,6 +1,6 @@
 {
   "name": "@daml-tools/daml-lint-darwin-arm64",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "macOS arm64 native binary for the daml-lint CLI",
   "license": "AGPL-3.0-only",
   "repository": {
