@@ -113,6 +113,12 @@ This triggers the release flow:
 6. `daml-lint-v*` and `daml-fmt-v*` tags upload CLI archives and checksums to
    GitHub releases.
 
+The `daml-tools-*` archives are deliberately attached to every `daml-lint-v*`
+and `daml-fmt-v*` GitHub release. Release-plz can create both CLI tags at the
+same commit; keep the per-tag artifact workflow runs in that case. Skipping one
+tag would remove assets from that release or require cross-release copy and
+retry logic while tags and releases are still being created.
+
 Plain `X.Y.Z` npm package versions publish under `latest`. Semver prerelease
 versions publish under `next`.
 
