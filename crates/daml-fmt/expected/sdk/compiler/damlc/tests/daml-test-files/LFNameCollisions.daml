@@ -9,10 +9,18 @@ import Prelude hiding (submit, submitMustFail)
 -- to the corresponding LF primitives if they are coming from the
 -- right module.
 
-submit: a -> Int -> Int -> a
+submit:
+  a
+  -> Int
+  -> Int
+  -> a
 submit x _ _ = x
 
-submitMustFail: a -> Int -> Int -> a
+submitMustFail:
+  a
+  -> Int
+  -> Int
+  -> a
 submitMustFail x _ _ = x
 
 unpackPair: forall (a: Symbol) (b: Symbol) c d. (c,d) -> (c,d)

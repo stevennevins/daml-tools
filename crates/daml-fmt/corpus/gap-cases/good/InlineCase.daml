@@ -1,0 +1,6 @@
+module InlineCase where
+
+ownerOrFallback: Optional Text -> Text
+ownerOrFallback maybeOwner = case maybeOwner of
+  None -> "Fallback"
+  Some owner -> owner

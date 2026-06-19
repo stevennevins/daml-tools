@@ -5,8 +5,9 @@ module Native where
 
 -- NATIVE_TEST_BEGIN
 import Daml.Script
-import DA.Time
+
 import DA.Date
+import DA.Time
 
 native_test = script do
   alice <- allocateParty "Alice"

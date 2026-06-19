@@ -4,8 +4,9 @@
 
 module ContractManipulation where
 
-import DA.Assert
 import Daml.Script
+
+import DA.Assert
 
 -- CONTRACT_MANIPULATION_BEGIN
 data Bank = Bank with

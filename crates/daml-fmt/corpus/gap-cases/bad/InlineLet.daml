@@ -1,0 +1,4 @@
+module InlineLet where
+
+total : Decimal -> Decimal -> Decimal -> Decimal
+total amount rate taxRate = let fee = amount * rate; tax = fee * taxRate in amount + fee + tax

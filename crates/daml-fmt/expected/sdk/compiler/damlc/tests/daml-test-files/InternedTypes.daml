@@ -28,9 +28,14 @@
 
 module InternedTypes where
 
-ap1: (a -> b) -> a -> b
+ap1:
+  (a -> b)
+  -> a
+  -> b
 ap1 f x = f x
 
 -- A second copy to make sure we share across functions.
-ap2: (a -> b) -> (a -> b)
+ap2:
+  (a -> b)
+  -> (a -> b)
 ap2 f x = f x

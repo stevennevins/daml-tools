@@ -3,15 +3,16 @@
 
 module UnvettedPackages (main) where
 
-import UpgradeTestLib
-import qualified V1.UnvettedPackagesTestPackage as V1
-import qualified V2.UnvettedPackagesTestPackage as V2
-import UnvettedPackagesHelper
-import UnvettedPackagesInterface
 import DA.Action (foldlA, unless)
 import DA.Optional
 import DA.Text (isInfixOf)
 import DA.Time (seconds)
+
+import UnvettedPackagesHelper
+import UnvettedPackagesInterface
+import UpgradeTestLib
+import qualified V1.UnvettedPackagesTestPackage as V1
+import qualified V2.UnvettedPackagesTestPackage as V2
 
 -- These tests rely on unvetting, none of them will work on IDE
 main: TestTree
@@ -65,7 +66,7 @@ main = tests
 {- PACKAGE
 name: unvetted-packages-interface
 versions: 1
--}
+  -}
 
 {- MODULE
 package: unvetted-packages-interface
@@ -91,13 +92,13 @@ contents: |
       controller c
       do
         pure $ getVersion this
--}
+          -}
 
 {- PACKAGE
 name: unvetted-packages-test-template
 versions: 2
 depends: unvetted-packages-interface-1.0.0
--}
+  -}
 
 {- MODULE
 package: unvetted-packages-test-template
@@ -138,7 +139,7 @@ contents: |
       view = TestTemplateInterfaceView p
       getVersion = "V1"        -- @V 1
       getVersion = "V2"        -- @V  2
--}
+        -}
 
 -- Helper template for ChoiceBody tests
 
@@ -148,7 +149,7 @@ versions: 1
 depends: |
   unvetted-packages-test-template-2.0.0
   unvetted-packages-interface-1.0.0
--}
+    -}
 
 {- MODULE
 package: unvetted-packages-helper
@@ -210,7 +211,7 @@ contents: |
       controller newSig
       do
         create this with sigs = newSig :: sigs, obs = delete newSig obs
--}
+          -}
 
 testTemplateHelper: Party -> TestTemplateHelper
 testTemplateHelper p = TestTemplateHelper with p = p, sigs = [], obs = []
@@ -260,16 +261,32 @@ unvettedTest makeSubmission assertResult participant sigs obs = do
     res <- makeSubmission alice cidV2 iid
     assertResult res
 
-directExercise: Party -> ContractId V2.TestTemplate -> ContractId TestTemplateInterface -> Commands Text
+directExercise:
+  Party
+  -> ContractId V2.TestTemplate
+  -> ContractId TestTemplateInterface
+  -> Commands Text
 directExercise _ cidV2 _ = exerciseCmd cidV2 V2.TestTemplateChoice
 
-directExerciseInterface: Party -> ContractId V2.TestTemplate -> ContractId TestTemplateInterface -> Commands Text
+directExerciseInterface:
+  Party
+  -> ContractId V2.TestTemplate
+  -> ContractId TestTemplateInterface
+  -> Commands Text
 directExerciseInterface _ _ iid = exerciseCmd iid GetVersion
 
-helperExercise: Party -> ContractId V2.TestTemplate -> ContractId TestTemplateInterface -> Commands Text
+helperExercise:
+  Party
+  -> ContractId V2.TestTemplate
+  -> ContractId TestTemplateInterface
+  -> Commands Text
 helperExercise p cidV2 _ = createAndExerciseCmd (testTemplateHelper p) (HelperChoice with cid = cidV2)
 
-helperExerciseInterface: Party -> ContractId V2.TestTemplate -> ContractId TestTemplateInterface -> Commands Text
+helperExerciseInterface:
+  Party
+  -> ContractId V2.TestTemplate
+  -> ContractId TestTemplateInterface
+  -> Commands Text
 helperExerciseInterface p _ iid = createAndExerciseCmd (testTemplateHelper p) (HelperInterfaceChoice with iid = iid)
 
 v1UnvettedOnSubmitter
@@ -369,10 +386,18 @@ v1UnvettedOnConfirmingInformeeChoiceBody = v1UnvettedOnInformee True helperExerc
 v1UnvettedOnConfirmingInformeeChoiceBodyInterface: Test
 v1UnvettedOnConfirmingInformeeChoiceBodyInterface = v1UnvettedOnInformee True helperExerciseInterface
 
-helperFetch: Party -> ContractId V2.TestTemplate -> ContractId TestTemplateInterface -> Commands V2.TestTemplate
+helperFetch:
+  Party
+  -> ContractId V2.TestTemplate
+  -> ContractId TestTemplateInterface
+  -> Commands V2.TestTemplate
 helperFetch p cidV2 _ = createAndExerciseCmd (testTemplateHelper p) (HelperFetch with cid = cidV2)
 
-helperFetchInterface: Party -> ContractId V2.TestTemplate -> ContractId TestTemplateInterface -> Commands ()
+helperFetchInterface:
+  Party
+  -> ContractId V2.TestTemplate
+  -> ContractId TestTemplateInterface
+  -> Commands ()
 helperFetchInterface p _ iid = createAndExerciseCmd (testTemplateHelper p) (HelperFetchInterface with iid = iid)
 
 fetchUndistributedUnvettedOnSubmitter: Test

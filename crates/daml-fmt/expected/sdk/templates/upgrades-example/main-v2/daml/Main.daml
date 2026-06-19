@@ -1,9 +1,9 @@
 module Main where -- V2
 
+import DA.Optional
+
 import Asset (Asset)
 import qualified Asset
-
-import DA.Optional
 
 template IOU with
     issuer: Party

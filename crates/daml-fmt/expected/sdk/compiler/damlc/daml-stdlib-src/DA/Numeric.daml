@@ -219,7 +219,11 @@ roundMap = M.fromList
 --
 -- This will fail when using the `RoundingUnnecessary` mode for a number that cannot
 -- be represented exactly with at most `n` decimal places.
-roundNumeric: forall n. NumericScale n => Int -> RoundingMode -> Numeric n -> Numeric n
+roundNumeric:
+  forall n. NumericScale n => Int
+  -> RoundingMode
+  -> Numeric n
+  -> Numeric n
 roundNumeric i m x =
     shift $ (O.fromSome $ M.lookup (37 - scale + i) roundMap) m (shift x)
   where

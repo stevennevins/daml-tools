@@ -4,9 +4,11 @@
 module NonEmpty where
 
 import Daml.Script
-import Prelude hiding (cons, find)
+
 import DA.Assert
 import DA.NonEmpty
+
+import Prelude hiding (cons, find)
 
 testApplicative = script do
   let l = NonEmpty 1 [2, 3, 4]

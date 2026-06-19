@@ -16,7 +16,9 @@ instance Show AnyContractId where
     where app_prec = 10
 
 -- | MOVE Daml.Script
-fromAnyContractId: forall t. Template t => AnyContractId -> Optional (ContractId t)
+fromAnyContractId:
+  forall t. Template t => AnyContractId
+  -> Optional (ContractId t)
 fromAnyContractId cid
   | cid.templateId == templateTypeRep @t = Some (coerceContractId cid.contractId)
   | otherwise = None

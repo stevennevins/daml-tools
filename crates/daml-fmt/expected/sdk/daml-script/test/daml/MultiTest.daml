@@ -5,11 +5,12 @@
 
 module MultiTest where
 
-import DA.List (sortOn, (\\), head)
-import DA.Text (splitOn)
-import DA.Optional(fromSome)
-import DA.Time
 import Daml.Script
+
+import DA.List (sortOn, (\\), head)
+import DA.Optional(fromSome)
+import DA.Text (splitOn)
+import DA.Time
 
 template T
   with
@@ -71,7 +72,11 @@ listKnownPartiesTest = do
 tries: Int
 tries = 60
 
-waitForCid: (Template t, HasEnsure t) => Int -> Party -> ContractId t -> Script ()
+waitForCid:
+  (Template t, HasEnsure t) => Int
+  -> Party
+  -> ContractId t
+  -> Script ()
 waitForCid tries p cid
   | tries <= 0 = abort $ "Cid " <> show cid <> " did not appear"
   | otherwise = do

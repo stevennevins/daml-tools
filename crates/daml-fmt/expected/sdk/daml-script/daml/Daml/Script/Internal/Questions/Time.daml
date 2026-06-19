@@ -4,8 +4,9 @@
 module Daml.Script.Internal.Questions.Time where
 
 import Daml.Script.Internal.LowLevel
-import DA.Time
+
 import DA.Stack
+import DA.Time
 
 -- | HIDE
 data SetTime = SetTime with

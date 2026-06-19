@@ -1,0 +1,4 @@
+module InlineIf where
+
+status : Decimal -> Text
+status amount = if amount > 0.0 then "Active" else "Closed"

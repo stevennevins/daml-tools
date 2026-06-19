@@ -6,11 +6,11 @@ module EmptyWith where
 data Foo = Foo with -- this should be fine
 
 data Bar = Bar with
-  bar: Int
+  bar : Int
 
 create = Foo with -- this should be fine
 
 match (Bar with) = 1 -- this should be fine
 
-update: Bar -> Bar
+update : Bar -> Bar
 update x = x with -- this should be be fine (since record dot updates)

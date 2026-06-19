@@ -10,7 +10,7 @@ import qualified V2.ChoiceBodyExercise as V2
 {- PACKAGE
 name: choice-body-exercise
 versions: 2
--}
+  -}
 
 {- MODULE
 package: choice-body-exercise
@@ -38,7 +38,7 @@ contents: |
           cid : ContractId ChoiceBodyExerciseTemplate
         controller party
         do exercise cid NonUpgradedChoice
--}
+          -}
 
 -- Template payload upgrading/downgrading from exercises within choice bodies
 -- The expected behaviour here is that the outer templates have fixed the choice version they wish to call
@@ -52,16 +52,28 @@ main = tests
     , ("Call a V2 choice on a V2 contract from within a choice body, expect V2 implementation is used, for sanity", exerciseV2ChoiceV2ContractSameType)
   ]
 
-exerciseV1Util: Choice V1.ChoiceBodyExerciseHelper c r => Party -> c -> Script r
+exerciseV1Util:
+  Choice V1.ChoiceBodyExerciseHelper c r => Party
+  -> c
+  -> Script r
 exerciseV1Util p c = p `submit` createAndExerciseExactCmd (V1.ChoiceBodyExerciseHelper with party = p) c
 
-exerciseV2Util: Choice V2.ChoiceBodyExerciseHelper c r => Party -> c -> Script r
+exerciseV2Util:
+  Choice V2.ChoiceBodyExerciseHelper c r => Party
+  -> c
+  -> Script r
 exerciseV2Util p c = p `submit` createAndExerciseExactCmd (V2.ChoiceBodyExerciseHelper with party = p) c
 
-tryExerciseV1Util: Choice V1.ChoiceBodyExerciseHelper c r => Party -> c -> Script (Either SubmitError r)
+tryExerciseV1Util:
+  Choice V1.ChoiceBodyExerciseHelper c r => Party
+  -> c
+  -> Script (Either SubmitError r)
 tryExerciseV1Util p c = p `trySubmit` createAndExerciseExactCmd (V1.ChoiceBodyExerciseHelper with party = p) c
 
-tryExerciseV2Util: Choice V2.ChoiceBodyExerciseHelper c r => Party -> c -> Script (Either SubmitError r)
+tryExerciseV2Util:
+  Choice V2.ChoiceBodyExerciseHelper c r => Party
+  -> c
+  -> Script (Either SubmitError r)
 tryExerciseV2Util p c = p `trySubmit` createAndExerciseExactCmd (V2.ChoiceBodyExerciseHelper with party = p) c
 
 exerciseV1ChoiceV1ContractSameType: Test

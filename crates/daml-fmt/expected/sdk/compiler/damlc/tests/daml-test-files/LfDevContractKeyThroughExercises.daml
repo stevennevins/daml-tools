@@ -6,9 +6,10 @@
 module LfDevContractKeyThroughExercises where
 
 import Daml.Script
+
 import DA.Assert ((===))
-import qualified DA.Set as S
 import DA.Set (Set)
+import qualified DA.Set as S
 
 template BasicKey
   with

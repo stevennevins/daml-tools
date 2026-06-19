@@ -114,13 +114,19 @@ sort: Ord a => [a] -> [a]
 sort = sortBy compare
 
 -- | The `sortBy` function is the non-overloaded version of `sort`.
-sortBy: (a -> a -> Ordering) -> [a] -> [a]
+sortBy:
+  (a -> a -> Ordering)
+  -> [a]
+  -> [a]
 sortBy _ [] = []
 sortBy cmp xs = foldBalanced1 (mergeBy cmp) (map (:: []) xs)
 
 -- | `minimumBy f xs` returns the first element `x` of `xs` for which `f x y`
 -- is either `LT` or `EQ` for all other `y` in `xs`. `xs` must be non-empty.
-minimumBy: (a -> a -> Ordering) -> [a] -> a
+minimumBy:
+  (a -> a -> Ordering)
+  -> [a]
+  -> a
 minimumBy _ [] = error "minimumBy: empty list"
 minimumBy f (x::xs) = foldl keep_min x xs
   where keep_min acc e = case f acc e of
@@ -130,7 +136,10 @@ minimumBy f (x::xs) = foldl keep_min x xs
 
 -- | `maximumBy f xs` returns the first element `x` of `xs` for which `f x y`
 -- is either `GT` or `EQ` for all other `y` in `xs`. `xs` must be non-empty.
-maximumBy: (a -> a -> Ordering) -> [a] -> a
+maximumBy:
+  (a -> a -> Ordering)
+  -> [a]
+  -> a
 maximumBy _ [] = error "maximumBy: empty list"
 maximumBy f (x::xs) = foldl keep_max x xs
   where keep_max acc e = case f acc e of
@@ -146,7 +155,10 @@ maximumBy f (x::xs) = foldl keep_max x xs
 --
 -- Elements are arranged from from lowest to highest, keeping
 -- duplicates in the order they appeared in the input.
-sortOn: Ord k => (a -> k) -> [a] -> [a]
+sortOn:
+  Ord k => (a -> k)
+  -> [a]
+  -> [a]
 sortOn f = map snd . sortBy (compare `on` fst) . map (\x -> (f x, x))
   where
     on op f x y = f x `op` f y
@@ -154,7 +166,10 @@ sortOn f = map snd . sortBy (compare `on` fst) . map (\x -> (f x, x))
 -- | `minimumOn f xs` returns the first element `x` of `xs` for which `f x`
 -- is smaller than or equal to any other `f y` for `y` in `xs`. `xs` must be
 -- non-empty.
-minimumOn: Ord k => (a -> k) -> [a] -> a
+minimumOn:
+  Ord k => (a -> k)
+  -> [a]
+  -> a
 minimumOn _ [] = error "minimumOn: empty list"
 minimumOn f (x::xs) = fst $ foldl keep_min (x, f x) xs
   where keep_min (m, km) e = let ke = f e
@@ -165,7 +180,10 @@ minimumOn f (x::xs) = fst $ foldl keep_min (x, f x) xs
 -- | `maximumOn f xs` returns the first element `x` of `xs` for which `f x`
 -- is greater than or equal to any other `f y` for `y` in `xs`. `xs` must be
 -- non-empty.
-maximumOn: Ord k => (a -> k) -> [a] -> a
+maximumOn:
+  Ord k => (a -> k)
+  -> [a]
+  -> a
 maximumOn _ [] = error "maximumOn: empty list"
 maximumOn f (x::xs) = fst $ foldl keep_max (x, f x) xs
   where keep_max (m, km) e = let ke = f e
@@ -175,7 +193,11 @@ maximumOn f (x::xs) = fst $ foldl keep_max (x, f x) xs
 
 -- | Merge two sorted lists using into a single, sorted whole, allowing
 -- the programmer to specify the comparison function.
-mergeBy: (a -> a -> Ordering) -> [a] -> [a] -> [a]
+mergeBy:
+  (a -> a -> Ordering)
+  -> [a]
+  -> [a]
+  -> [a]
 mergeBy _ [] ys = ys
 mergeBy _ xs [] = xs
 mergeBy cmp (x :: xs) (y :: ys) =
@@ -185,10 +207,20 @@ mergeBy cmp (x :: xs) (y :: ys) =
 
 -- | Combine elements pairwise by means of a programmer supplied
 -- function from two list inputs into a single list.
-combinePairs: (a -> a -> a) -> [a] -> [a]
+combinePairs:
+  (a -> a -> a)
+  -> [a]
+  -> [a]
 combinePairs _ [] = []
 combinePairs _ [x] = [x]
-combinePairs f (x1 :: x2 :: xs) = f x1 x2 :: combinePairs f xs
+combinePairs f (x1 :: x2 :: xs) =
+  f
+    x1
+    x2
+    ::
+    combinePairs
+    f
+    xs
 
 -- | Fold a non-empty list in a balanced way. Balanced means that each
 -- element has approximately the same depth in the operator
@@ -196,7 +228,10 @@ combinePairs f (x1 :: x2 :: xs) = f x1 x2 :: combinePairs f xs
 -- between maximum and minimum depth is at most 1. The accumulation
 -- operation must be associative and commutative in order to get the
 -- same result as `foldl1` or `foldr1`.
-foldBalanced1: (a -> a -> a) -> [a] -> a
+foldBalanced1:
+  (a -> a -> a)
+  -> [a]
+  -> a
 foldBalanced1 _ [] = error "foldBalanced1: empty list"
 foldBalanced1 _ [x] = x
 foldBalanced1 f xs = foldBalanced1 f (combinePairs f xs)
@@ -207,7 +242,10 @@ group: Eq a => [a] -> [[a]]
 group = groupBy (==)
 
 -- | The 'groupBy' function is the non-overloaded version of 'group'.
-groupBy: (a -> a -> Bool) -> [a] -> [[a]]
+groupBy:
+  (a -> a -> Bool)
+  -> [a]
+  -> [[a]]
 groupBy _  []     = []
 groupBy eq (x::xs) = (x::ys) :: groupBy eq zs
   where
@@ -215,7 +253,10 @@ groupBy eq (x::xs) = (x::ys) :: groupBy eq zs
 
 -- | Similar to 'group', except that the equality is done on an
 -- extracted value.
-groupOn: Eq k => (a -> k) -> [a] -> [[a]]
+groupOn:
+  Eq k => (a -> k)
+  -> [a]
+  -> [[a]]
 groupOn _ [] = []
 groupOn f (x::xs) =
     let k = f x
@@ -231,7 +272,10 @@ dedup: Ord a => [a] -> [a]
 dedup = dedupBy compare
 
 -- | A version of `dedup` with a custom predicate.
-dedupBy: (a -> a -> Ordering) -> [a] -> [a]
+dedupBy:
+  (a -> a -> Ordering)
+  -> [a]
+  -> [a]
 dedupBy cmp xs =
   let
     indexed = zip xs [1..length xs]
@@ -242,7 +286,10 @@ dedupBy cmp xs =
 
 -- | A version of `dedup` where deduplication is done
 -- after applyng function. Example use: `dedupOn (.employeeNo) employees`
-dedupOn: Ord k => (a -> k) -> [a] -> [a]
+dedupOn:
+  Ord k => (a -> k)
+  -> [a]
+  -> [a]
 dedupOn f = map snd . dedupBy (compare `on` fst) . map (\x -> (f x, x))
   where
     on op f x y = f x `op` f y
@@ -254,7 +301,10 @@ dedupSort: Ord a => [a] -> [a]
 dedupSort = dedupSortBy compare
 
 -- | A version of `dedupSort` with a custom predicate.
-dedupSortBy: (a -> a -> Ordering) -> [a] -> [a]
+dedupSortBy:
+  (a -> a -> Ordering)
+  -> [a]
+  -> [a]
 dedupSortBy cmp =
   let eq x y = EQ == cmp x y
   in map head . groupBy eq . sortBy cmp
@@ -264,17 +314,27 @@ unique: Ord a => [a] -> Bool
 unique = uniqueBy compare
 
 -- | A version of `unique` with a custom predicate.
-uniqueBy: (a -> a -> Ordering) -> [a] -> Bool
+uniqueBy:
+  (a -> a -> Ordering)
+  -> [a]
+  -> Bool
 uniqueBy cmp xs = length xs == length (dedupBy cmp xs)
 
 -- | Returns True if and only if there are no duplicate elements in the given list
 -- after applyng function. Example use: `assert $ uniqueOn (.employeeNo) employees`
-uniqueOn: Ord k => (a -> k) -> [a] -> Bool
+uniqueOn:
+  Ord k => (a -> k)
+  -> [a]
+  -> Bool
 uniqueOn f = unique . map f
 
 -- | Given a list and a replacement list, replaces each occurance of
 -- the search list with the replacement list in the operation list.
-replace: Eq a => [a] -> [a] -> [a] -> [a]
+replace:
+  Eq a => [a]
+  -> [a]
+  -> [a]
+  -> [a]
 replace [] _ xs = xs
 replace from to xs | Some xs <- stripPrefix from xs = to ++ replace from to xs
 replace from to (x :: xs) = x :: replace from to xs
@@ -353,7 +413,10 @@ mapAccumL f z (x::xs) = (z'', y::ys)
 -- | A generalisation of `map`, `mapWithIndex` takes a mapping
 -- function that also depends on the element's index, and applies it to every
 -- element in the sequence.
-mapWithIndex: (Int -> a -> b) -> [a] -> [b]
+mapWithIndex:
+  (Int -> a -> b)
+  -> [a]
+  -> [b]
 mapWithIndex f = snd . mapAccumL (\ix x -> (ix + 1, f ix x)) 0
 
 -- | The `inits` function returns all initial segments of the argument,
@@ -382,11 +445,17 @@ tails []          =  [[]]
 tails xxs@(_::xs) =  xxs :: tails xs
 
 -- | A version of `dropWhile` operating from the end.
-dropWhileEnd: (a -> Bool) -> [a] -> [a]
+dropWhileEnd:
+  (a -> Bool)
+  -> [a]
+  -> [a]
 dropWhileEnd p = reverse . dropWhile p . reverse
 
 -- | A version of `takeWhile` operating from the end.
-takeWhileEnd: (a -> Bool) -> [a] -> [a]
+takeWhileEnd:
+  (a -> Bool)
+  -> [a]
+  -> [a]
 takeWhileEnd f = reverse . takeWhile f . reverse
 
 -- | The `transpose` function transposes the rows and columns of its
@@ -398,8 +467,20 @@ transpose ((x::xs)::xss) =
     (x::[h | (h::_) <- xss])::transpose (xs::[ t | (_::t) <- xss])
 
 -- | Break, but from the end.
-breakEnd: (a -> Bool) -> [a] -> ([a], [a])
-breakEnd f = swap . both reverse . break f . reverse
+breakEnd:
+  (a -> Bool)
+  -> [a]
+  -> ([a], [a])
+breakEnd f =
+  swap
+    .
+    both
+    reverse
+    .
+    break
+    f
+    .
+    reverse
 
 -- | Find the first instance of `needle` in `haystack`.
 -- The first element of the returned tuple is the prefix of `haystack`
@@ -423,7 +504,10 @@ breakOnEnd needle haystack =
 
 -- | A variant of `lines` with a custom test. In particular, if there
 -- is a trailing separator it will be discarded.
-linesBy: (a -> Bool) -> [a] -> [[a]]
+linesBy:
+  (a -> Bool)
+  -> [a]
+  -> [[a]]
 linesBy _ [] = []
 linesBy p xs = let (x, xs') = break p xs
                in x :: case xs' of
@@ -432,7 +516,10 @@ linesBy p xs = let (x, xs') = break p xs
 
 -- | A variant of `words` with a custom test. In particular, adjacent
 -- separators are discarded, as are leading or trailing separators.
-wordsBy: (a -> Bool) -> [a] -> [[a]]
+wordsBy:
+  (a -> Bool)
+  -> [a]
+  -> [[a]]
 wordsBy _ [] = []
 wordsBy p xs = case dropWhile p xs of
                      []  -> []
@@ -465,19 +552,28 @@ init (x :: xs) = x :: init xs
 init [] = error "init: empty list"
 
 -- | Left associative fold of a list that must be non-empty.
-foldl1: (a -> a -> a) -> [a] -> a
+foldl1:
+  (a -> a -> a)
+  -> [a]
+  -> a
 foldl1 f (x :: xs) =  foldl f x xs
 foldl1 _ [] = error "foldl1: empty list"
 
 -- | Right associative fold of a list that must be non-empty.
-foldr1: (a -> a -> a) -> [a] -> a
+foldr1:
+  (a -> a -> a)
+  -> [a]
+  -> a
 foldr1 f xs = fromSomeNote "foldr1: empty list" (foldr mf None xs)
   where
     mf x = \case None -> Some x; Some y -> Some (f x y)
 
 -- | Apply some operation repeatedly, producing an element of output
 -- and the remainder of the list.
-repeatedly: ([a] -> (b, [a])) -> [a] -> [b]
+repeatedly:
+  ([a] -> (b, [a]))
+  -> [a]
+  -> [b]
 repeatedly _ [] = []
 repeatedly f as = b :: repeatedly f as'
   where (b, as') = f as
@@ -510,9 +606,26 @@ delete                  =  deleteBy (==)
 -- > deleteBy (<=) 4 [1..10]
 -- [1,2,3,5,6,7,8,9,10]
 -- ```
-deleteBy: (a -> a -> Bool) -> a -> [a] -> [a]
+deleteBy:
+  (a -> a -> Bool)
+  -> a
+  -> [a]
+  -> [a]
 deleteBy _  _ []         = []
-deleteBy eq x (y::ys)    = if x `eq` y then ys else y :: deleteBy eq x ys
+deleteBy eq x (y::ys)    =
+  if
+    x
+    `eq`
+    y
+    then
+    ys
+    else
+    y
+    ::
+    deleteBy
+    eq
+    x
+    ys
 
 -- | The `\\` function is list difference (non-associative).
 -- In the result of `xs \\ ys`, the first occurrence of each element of
@@ -553,9 +666,16 @@ elemIndex x = findIndex (x==)
 
 -- | Find index, given predicate, of first matching element.
 -- Will return `None` if not found.
-findIndex: (a -> Bool) -> [a] -> Optional Int
+findIndex:
+  (a -> Bool)
+  -> [a]
+  -> Optional Int
 findIndex = findIndex_ 0
 
-findIndex_: Int -> (a -> Bool) -> [a] -> Optional Int
+findIndex_:
+  Int
+  -> (a -> Bool)
+  -> [a]
+  -> Optional Int
 findIndex_ _ _ [] = None
 findIndex_ i p (x::xs) = if p x then Some i else findIndex_ (i + 1) p xs

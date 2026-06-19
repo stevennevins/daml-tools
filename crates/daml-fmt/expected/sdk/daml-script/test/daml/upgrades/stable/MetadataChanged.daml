@@ -3,15 +3,14 @@
 
 module MetadataChanged (main) where
 
+import DA.Exception
 import DA.Text (isInfixOf)
 
+import qualified ClientMod as Client
 import UpgradeTestLib
-
+import V1.Common
 import qualified V1.MetadataChangedMod as V1
 import qualified V2.MetadataChangedMod as V2
-import qualified ClientMod as Client
-import V1.Common
-import DA.Exception
 
 main: TestTree
 main = tests
@@ -64,7 +63,7 @@ main = tests
 {- PACKAGE
 name: metadata-changed-common
 versions: 1
--}
+  -}
 
 {- MODULE
 package: metadata-changed-common
@@ -82,13 +81,13 @@ contents: |
       controller (view this).ctl
       do
         pure $ getVersion this
--}
+          -}
 
 {- PACKAGE
 name: metadata-changed
 versions: 2
 depends: metadata-changed-common-1.0.0
--}
+  -}
 
 {- MODULE
 package: metadata-changed
@@ -170,7 +169,7 @@ contents: |
         view = IV party1
         getVersion = "V1"  -- @V 1
         getVersion = "V2"  -- @V 2
--}
+          -}
 
 {- PACKAGE
 name: metadata-changed-client
@@ -179,7 +178,7 @@ depends: |
   metadata-changed-1.0.0
   metadata-changed-2.0.0
   metadata-changed-common-1.0.0
--}
+    -}
 
 {- MODULE
 package: metadata-changed-client
@@ -284,7 +283,7 @@ contents: |
           cid <- create (V1.UnchangedObservers p1 p2)
           exercise @I (toInterfaceContractId cid) DynamicCall
           pure ()
--}
+            -}
 
 {- CHANGED SIGNATORIES -}
 

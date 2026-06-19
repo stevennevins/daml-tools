@@ -67,7 +67,11 @@ class Bifunctor p where
     -- >>> bimap not (+1) (Right 3)
     -- Right 4
     -- ```
-    bimap: (a -> b) -> (c -> d) -> p a c -> p b d
+    bimap:
+      (a -> b)
+      -> (c -> d)
+      -> p a c
+      -> p b d
     bimap f g = first f . second g
 
     -- | Map covariantly over the first argument.
@@ -85,7 +89,10 @@ class Bifunctor p where
     -- >>> first not (Left True : Either Bool Int)
     -- Left False
     -- ```
-    first: (a -> b) -> p a c -> p b c
+    first:
+      (a -> b)
+      -> p a c
+      -> p b c
     first f = bimap f identity
 
     -- | Map covariantly over the second argument.
@@ -103,7 +110,10 @@ class Bifunctor p where
     -- >>> second (+1) (Right 3 : Either Bool Int)
     -- Right 4
     -- ```
-    second: (b -> c) -> p a b -> p a c
+    second:
+      (b -> c)
+      -> p a b
+      -> p a c
     second = bimap identity
 
 instance Bifunctor (,) where

@@ -5,8 +5,9 @@
 module TextMap where
 
 import Daml.Script
-import DA.TextMap as TM
+
 import DA.Assert
+import DA.TextMap as TM
 
 testEmpty = script do
   0 === size TM.empty

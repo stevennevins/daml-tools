@@ -5,16 +5,16 @@ module Dvp where
 
 import Daml.Script
 
+import DA.Assert
+import DA.Date
+
 import Bond hiding (Withdraw, Reject, Accept)
 import Bond qualified
 import Cash hiding (Withdraw, Reject, Accept)
 import Cash qualified
-import DvpTerms
 import DvpNotification hiding (Accept)
 import DvpNotification qualified
-
-import DA.Assert
-import DA.Date
+import DvpTerms
 
 template DvpProposal
   with
@@ -100,8 +100,21 @@ data SettleResult = SettleResult
     cashCid: CashId
     notificationCid: DvpNotificationId
 
-setDate: Int -> Month -> Int -> Script ()
-setDate year month day = setTime $ datetime year month day 0 0 0
+setDate:
+  Int
+  -> Month
+  -> Int
+  -> Script ()
+setDate year month day =
+  setTime
+    $
+    datetime
+    year
+    month
+    day
+    0
+    0
+    0
 
 main = script do
   setDate 2018 May 14
@@ -145,7 +158,14 @@ main = script do
         cashIssuer = acmeBank
         cashCurrency = "USD"
         cashAmount = 100.0
-        settleTime = datetime 2018 Aug 14 0 0 0
+        settleTime =
+          datetime
+            2018
+            Aug
+            14
+            0
+            0
+            0
         dvpId = "abc"
 
   dvpCid <- bob `submit` exerciseCmd dvpProposalCid Accept

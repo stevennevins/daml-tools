@@ -15,10 +15,17 @@ class D a where
 -- Default implementation for method with additional type class
 -- constraints in a type class with a super class.
 class FoldableX t where
-  foldrX: (a -> b -> b) -> b -> t a -> b
+  foldrX:
+    (a -> b -> b)
+    -> b
+    -> t a
+    -> b
 
 class (Functor t, FoldableX t) => TraversableX t where
-  traverseX: Applicative m => (a -> m b) -> t a -> m (t b)
+  traverseX:
+    Applicative m => (a -> m b)
+    -> t a
+    -> m (t b)
   traverseX f = sequenceX . fmap f
 
   sequenceX: Applicative m => t (m a) -> m (t a)

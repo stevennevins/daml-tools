@@ -1,16 +1,13 @@
 //! daml-fmt: a code formatter for Daml, built on the daml-parser pipeline.
 //!
-//! Strategy: reconstruct the file from the lossless token+trivia stream and
-//! normalize whitespace in the gaps between spans — never inside string or
-//! comment spans (CLAUDE.md: comments are sacred). Every candidate output is
-//! passed through a TOKEN-EQUIVALENCE GATE before it is returned: re-lex it and
-//! require the full token stream — including the virtual layout tokens
-//! (`VLBrace`/`VSemi`/`VRBrace`) that encode Daml's offside rule — to be
-//! identical to the input's. Identical post-layout tokens ⇒ identical parse ⇒
-//! identical desugar, so the gate makes a rewrite desugar-safe by construction
-//! (the corpus desugar oracle still verifies it). If a rule would change the
-//! token stream (e.g. collapsing `+ :` into the operator `+:`), the gate falls
-//! back to a safer output and ultimately to the input unchanged.
+//! Strategy: reconstruct source from parser spans and the lossless
+//! token+trivia stream, never inside string or comment spans (CLAUDE.md:
+//! comments are sacred). Pure reindent and whitespace candidates pass through a
+//! token-equivalence gate: re-lex and require the laid-out token stream,
+//! including Daml's virtual layout tokens (`VLBrace`/`VSemi`/`VRBrace`), to
+//! match their immediate input. Layout-organizing rewrites intentionally change
+//! layout shape, so the corpus desugar oracle and idempotence checks are the
+//! safety bar for those rules.
 //!
 //! The shipping backend is `layout_ast` (AST-driven, our own pattern — NOT a
 //! LimeChain derivative, and NOT aimed at matching the `expected/` baseline).
@@ -51,15 +48,39 @@ pub fn lex_diagnostics(src: &str) -> Vec<String> {
         .collect()
 }
 
-/// Format Daml source.
+/// Formatter behavior switches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FormatOptions {
+    /// Sort import declarations into formatter-defined groups.
+    ///
+    /// This is enabled by default. Reordering imports can change package
+    /// identity even when the source-level declarations denote the same
+    /// imports; use `--preserve-import-order` in the CLI when package identity
+    /// stability matters more than import organization.
+    pub organize_imports: bool,
+}
+
+impl Default for FormatOptions {
+    fn default() -> Self {
+        Self {
+            organize_imports: true,
+        }
+    }
+}
+
+/// Format Daml source with default formatter options.
 ///
 /// Delegates to the AST-driven backend (`layout_ast::format_ast`): an
 /// own-design canonical layout that reindents modeled AST constructs, applies
-/// token-gated whitespace/blank-line/colon-spacing normalization, and passes
-/// unmodeled constructs through verbatim. Every change is gated on the offside
-/// token stream, so it is desugar-safe by construction.
+/// layout-organizing rules, token-gated whitespace/blank-line/colon-spacing
+/// normalization, and passes unmodeled constructs through verbatim.
 pub fn format_source(src: &str) -> String {
-    layout_ast::format_ast(src)
+    format_source_with_options(src, FormatOptions::default())
+}
+
+/// Format Daml source with explicit formatter options.
+pub fn format_source_with_options(src: &str, options: FormatOptions) -> String {
+    layout_ast::format_ast(src, options)
 }
 
 /// Count AST formatter structural edit candidates over modeled constructs.
@@ -332,5 +353,32 @@ mod tests {
     fn interior_blank_runs_collapse_to_one_blank_line() {
         let src = "module M where\n\n\n\nx = 1\n";
         assert_eq!(format_source(src), "module M where\n\nx = 1\n");
+    }
+
+    #[test]
+    fn gap_cases_format_to_expected_output() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("corpus/gap-cases");
+        let bad_dir = root.join("bad");
+        let good_dir = root.join("good");
+        let mut checked = 0usize;
+        for entry in std::fs::read_dir(&bad_dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_none_or(|ext| ext != "daml") {
+                continue;
+            }
+            let name = path.file_name().unwrap();
+            let bad = std::fs::read_to_string(&path).unwrap();
+            let good = std::fs::read_to_string(good_dir.join(name)).unwrap();
+            let formatted = format_source(&bad);
+            assert_eq!(formatted, good, "gap fixture mismatch: {}", path.display());
+            assert_eq!(
+                format_source(&good),
+                good,
+                "gap fixture not idempotent: {}",
+                path.display()
+            );
+            checked += 1;
+        }
+        assert_eq!(checked, 9, "unexpected gap fixture count");
     }
 }

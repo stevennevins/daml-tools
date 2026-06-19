@@ -6,7 +6,7 @@
 //! layout decisions and may diverge from the LimeChain baseline). This is the
 //! shipping backend behind `format_source`.
 //!
-//! Uniform mechanism (the architecture the prototype validated):
+//! Main mechanism:
 //!   1. Walk the AST; every node carries a byte `Span`.
 //!   2. For a layout block, reindent ONLY the block's child lines so the anchor
 //!      construct lands at its canonical column. Current passes cover
@@ -24,16 +24,17 @@
 //!      `head_col + 2`.
 //!   3. Comments are sacred: comment lines are never measured-from and never
 //!      shifted (CLAUDE.md). Block-comment interiors are trivia, untouched.
-//!   4. Gate the whole candidate on `same_tokens` = identical LAID-OUT token
-//!      stream (offside virtuals included) ⇒ identical parse ⇒ identical
-//!      desugar. Any accepted reindent is desugar-safe BY CONSTRUCTION.
+//!   4. Gate pure reindent candidates on `same_tokens` = identical LAID-OUT
+//!      token stream (offside virtuals included) ⇒ identical parse ⇒ identical
+//!      desugar. Any accepted pure reindent is desugar-safe BY CONSTRUCTION.
 //!   5. Fall back to the input (verbatim) when the gate rejects or a node is
-//!      not modeled. Broader expression wrapping and layout-organizing rewrites
-//!      still pass through verbatim — safe, and lets us land one construct family
-//!      at a time.
+//!      not modeled.
 //!
-//! On top of the structural pass we compose the proven, token-gated
-//! whitespace + colon-spacing normalization (`crate::normalize_gaps`).
+//! On top of the structural pass we compose import organization and expression
+//! layout rewrites that intentionally change layout form. Those rules are
+//! covered by focused tests and the desugar/idempotence corpus verification.
+//! Final whitespace + colon-spacing normalization remains token-gated
+//! (`crate::normalize_gaps`).
 
 use daml_parser::ast::*;
 use daml_parser::layout::resolve_layout;
@@ -49,16 +50,39 @@ const INDENT: i64 = 2;
 /// pathological non-convergence (the last output is still gate-safe).
 const MAX_STRUCTURAL_PASSES: usize = 6;
 
-/// Format with the AST-driven structural reindents, then the gap normalization;
-/// every step is gated for desugar-safety.
-pub fn format_ast(src: &str) -> String {
-    if has_source_location_expectation(src) {
+/// Format with AST-driven structural reindents, layout-organizing rewrites, and
+/// final token-gated gap normalization.
+pub fn format_ast(src: &str, options: crate::FormatOptions) -> String {
+    if has_source_location_expectation(src) || has_trailing_with_comment(src) {
         return src.to_string();
     }
 
-    // Step 1: structural reindent, each family as its own gated pass. Iterate to
-    // a fixpoint so a later pass that unblocks an earlier one's gate still
-    // converges within a single call (idempotence).
+    // Step 1: structural reindent, each family as its own gated pass.
+    let mut base = run_structural_passes(src);
+
+    // Step 2: layout-organizing rewrites that intentionally change layout
+    // tokens while preserving the non-layout token stream. Import organization
+    // is controlled separately because it reorders import declarations.
+    if options.organize_imports {
+        base = organize_imports(&base);
+    }
+    base = rewrite_layout_forms(&base);
+    base = run_structural_passes(&base);
+
+    // Step 3: whitespace + colon normalization on top, gated vs `base`.
+    // same_tokens keeps this final spacing step from changing `base`'s parse.
+    let full = crate::normalize_gaps(&base, true);
+    if same_tokens(&base, &full) {
+        return full;
+    }
+    let ws_only = crate::normalize_gaps(&base, false);
+    if same_tokens(&base, &ws_only) {
+        return ws_only;
+    }
+    base
+}
+
+fn run_structural_passes(src: &str) -> String {
     let mut base = src.to_string();
     for _ in 0..MAX_STRUCTURAL_PASSES {
         let mut next = base.clone();
@@ -79,18 +103,6 @@ pub fn format_ast(src: &str) -> String {
             break;
         }
         base = next;
-    }
-
-    // Step 2: whitespace + colon normalization on top, gated vs `base`.
-    // same_tokens is transitive, so gating each step against its own input
-    // keeps the final output token-equivalent (and desugar-equivalent) to src.
-    let full = crate::normalize_gaps(&base, true);
-    if same_tokens(&base, &full) {
-        return full;
-    }
-    let ws_only = crate::normalize_gaps(&base, false);
-    if same_tokens(&base, &ws_only) {
-        return ws_only;
     }
     base
 }
@@ -306,6 +318,705 @@ fn has_source_location_expectation(src: &str) -> bool {
                 || line.contains("end_line")
                 || line.contains("end_col")
         })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Replacement {
+    start: usize,
+    end: usize,
+    text: String,
+}
+
+fn apply_replacements(src: &str, replacements: &[Replacement]) -> String {
+    if replacements.is_empty() {
+        return src.to_string();
+    }
+    let mut ordered = replacements.to_vec();
+    ordered.sort_by_key(|r| (r.start, r.end));
+    let mut out = String::with_capacity(src.len());
+    let mut cursor = 0usize;
+    for r in ordered {
+        if r.start < cursor || r.start > r.end || r.end > src.len() {
+            return src.to_string();
+        }
+        out.push_str(&src[cursor..r.start]);
+        out.push_str(&r.text);
+        cursor = r.end;
+    }
+    out.push_str(&src[cursor..]);
+    out
+}
+
+fn rewrite_layout_forms(src: &str) -> String {
+    let mut base = rewrite_line_forms(src);
+    base = rewrite_lambda_bodies(&base);
+    base = rewrite_infix_continuations(&base);
+
+    let (module, _) = parse_module(&base);
+    let mut replacements = Vec::new();
+    collect_inline_expression_rewrites(&base, &module, &mut replacements);
+    apply_replacements(&base, &replacements)
+}
+
+fn rewrite_line_forms(src: &str) -> String {
+    let mut out = String::with_capacity(src.len());
+    let mut last_expr_indent = None;
+    for line in src.split_inclusive('\n') {
+        let (body, ending) = split_line_ending(line);
+        let leading = body.len() - body.trim_start_matches(' ').len();
+        let trimmed = body[leading..].trim_end();
+        if trimmed.is_empty() || trimmed.starts_with("--") {
+            out.push_str(line);
+            continue;
+        }
+        if let Some(comment_at) = body.find("--") {
+            if !body[..comment_at].trim().is_empty() {
+                out.push_str(line);
+                continue;
+            }
+        }
+
+        if starts_with_infix_operator(trimmed) {
+            if let Some(prev) = last_expr_indent {
+                let target = prev + INDENT as usize;
+                if leading != target {
+                    out.push_str(&" ".repeat(target));
+                    out.push_str(trimmed);
+                    out.push_str(ending);
+                    continue;
+                }
+            }
+        }
+
+        if let Some(rewritten) = rewrite_signature_line(body, ending) {
+            out.push_str(&rewritten);
+            last_expr_indent = None;
+            continue;
+        }
+        if let Some(rewritten) = rewrite_inline_let_line(body, ending) {
+            out.push_str(&rewritten);
+            last_expr_indent = None;
+            continue;
+        }
+        if let Some(rewritten) = rewrite_long_application_line(body, ending) {
+            out.push_str(&rewritten);
+            last_expr_indent = None;
+            continue;
+        }
+
+        out.push_str(line);
+        if !starts_with_infix_operator(trimmed)
+            && !starts_with_word(trimmed, "module")
+            && !starts_with_word(trimmed, "import")
+            && !trimmed.ends_with(':')
+        {
+            last_expr_indent = Some(leading);
+        }
+    }
+    out
+}
+
+fn split_line_ending(line: &str) -> (&str, &str) {
+    line.strip_suffix("\r\n").map_or_else(
+        || {
+            line.strip_suffix('\n')
+                .map_or((line, ""), |body| (body, "\n"))
+        },
+        |body| (body, "\r\n"),
+    )
+}
+
+fn rewrite_signature_line(body: &str, ending: &str) -> Option<String> {
+    let leading = body.len() - body.trim_start_matches(' ').len();
+    let trimmed = body[leading..].trim_end();
+    let colon = trimmed.find(':')?;
+    if trimmed[..colon].contains('=') {
+        return None;
+    }
+    let name = trimmed[..colon].trim();
+    if name.is_empty() || name.contains(' ') {
+        return None;
+    }
+    let ty = trimmed[colon + 1..].trim();
+    let arrow_count = ty.matches("->").count();
+    if arrow_count < 3 && trimmed.chars().count() <= 80 {
+        return None;
+    }
+    let indent = " ".repeat(leading);
+    let parts = split_top_level_arrows(ty)?;
+    if parts.len() < 2 {
+        return None;
+    }
+    let mut out = format!("{indent}{name}:");
+    for (idx, part) in parts.iter().enumerate() {
+        out.push_str(ending);
+        out.push_str(&indent);
+        out.push_str("  ");
+        if idx > 0 {
+            out.push_str("-> ");
+        }
+        out.push_str(part);
+    }
+    out.push_str(ending);
+    Some(out)
+}
+
+fn split_top_level_arrows(ty: &str) -> Option<Vec<&str>> {
+    let bytes = ty.as_bytes();
+    let mut parts = Vec::new();
+    let mut start = 0usize;
+    let mut depth = 0i32;
+    let mut i = 0usize;
+    while i + 1 < bytes.len() {
+        match bytes[i] {
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth -= 1,
+            b'-' if bytes[i + 1] == b'>' && depth == 0 => {
+                let part = ty[start..i].trim();
+                if part.is_empty() {
+                    return None;
+                }
+                parts.push(part);
+                i += 2;
+                start = i;
+                continue;
+            }
+            _ => {}
+        }
+        if depth < 0 {
+            return None;
+        }
+        i += 1;
+    }
+    let part = ty[start..].trim();
+    if part.is_empty() {
+        return None;
+    }
+    parts.push(part);
+    Some(parts)
+}
+
+fn rewrite_inline_let_line(body: &str, ending: &str) -> Option<String> {
+    let leading = body.len() - body.trim_start_matches(' ').len();
+    let trimmed = body[leading..].trim_end();
+    let marker = " = let ";
+    let let_at = trimmed.find(marker)? + " = ".len();
+    let prefix = trimmed[..let_at].trim_end();
+    let rest = &trimmed[let_at + "let ".len()..];
+    let in_at = rest.rfind(" in ")?;
+    let bindings = &rest[..in_at];
+    let body_expr = rest[in_at + " in ".len()..].trim();
+    if !bindings.contains(';') {
+        return None;
+    }
+    let indent = " ".repeat(leading + INDENT as usize);
+    let nested = " ".repeat(leading + 2 * INDENT as usize);
+    let mut out = format!("{}{}{}", " ".repeat(leading), prefix, ending);
+    out.push_str(&indent);
+    out.push_str("let");
+    out.push_str(ending);
+    for binding in bindings.split(';').map(str::trim).filter(|b| !b.is_empty()) {
+        out.push_str(&nested);
+        out.push_str(binding);
+        out.push_str(ending);
+    }
+    out.push_str(&indent);
+    out.push_str("in ");
+    out.push_str(body_expr);
+    out.push_str(ending);
+    Some(out)
+}
+
+fn rewrite_long_application_line(body: &str, ending: &str) -> Option<String> {
+    let leading = body.len() - body.trim_start_matches(' ').len();
+    let trimmed = body[leading..].trim_end();
+    let marker = " = ";
+    let eq_at = trimmed.find(marker)?;
+    let prefix = trimmed[..eq_at + marker.len() - 1].trim_end();
+    let rhs = trimmed[eq_at + marker.len()..].trim();
+    if rhs.contains('"')
+        || rhs.chars().any(|c| {
+            matches!(
+                c,
+                '+' | '*'
+                    | '/'
+                    | '<'
+                    | '>'
+                    | '='
+                    | ';'
+                    | '\\'
+                    | '('
+                    | ')'
+                    | '['
+                    | ']'
+                    | '{'
+                    | '}'
+                    | ','
+            )
+        })
+    {
+        return None;
+    }
+    if rhs.chars().any(|c| matches!(c, '\''))
+        && rhs.split_whitespace().any(|part| part.starts_with('\''))
+    {
+        return None;
+    }
+    let parts: Vec<_> = rhs.split_whitespace().collect();
+    if parts.len() < 7 {
+        return None;
+    }
+    if parts[0]
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_uppercase())
+    {
+        return None;
+    }
+    let indent = " ".repeat(leading + INDENT as usize);
+    let nested = " ".repeat(leading + 2 * INDENT as usize);
+    let mut out = format!("{}{}{}", " ".repeat(leading), prefix, ending);
+    out.push_str(&indent);
+    out.push_str(parts[0]);
+    out.push_str(ending);
+    for part in parts.iter().skip(1) {
+        out.push_str(&nested);
+        out.push_str(part);
+        out.push_str(ending);
+    }
+    Some(out)
+}
+
+fn collect_inline_expression_rewrites(
+    src: &str,
+    module: &Module,
+    replacements: &mut Vec<Replacement>,
+) {
+    for decl in &module.decls {
+        let Decl::Function(fun) = decl else {
+            continue;
+        };
+        for eq in &fun.equations {
+            let line_starts = line_start_table(src);
+            let eq_line = line_of(&line_starts, eq.span.start);
+            if leading_has_tab(src, line_starts[eq_line]) {
+                continue;
+            }
+            let body_indent = indent_of(src, &line_starts, eq_line) as usize + INDENT as usize;
+            collect_expr_rewrite(src, &eq.body, body_indent, true, replacements);
+        }
+    }
+}
+
+fn collect_expr_rewrite(
+    src: &str,
+    expr: &Expr,
+    indent: usize,
+    break_before_expr: bool,
+    replacements: &mut Vec<Replacement>,
+) {
+    let span = expr.span();
+    let line_starts = line_start_table(src);
+    match expr {
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } if break_before_expr
+            && same_line_span(src, span)
+            && inline_if_parts_are_simple(src, cond, then_branch, else_branch) =>
+        {
+            let ind = " ".repeat(indent);
+            let nested = " ".repeat(indent + INDENT as usize);
+            let mut text = String::new();
+            if break_before_expr {
+                text.push('\n');
+                text.push_str(&ind);
+            }
+            text.push_str("if ");
+            text.push_str(src[cond.span().start..cond.span().end].trim());
+            text.push('\n');
+            text.push_str(&nested);
+            text.push_str("then ");
+            text.push_str(src[then_branch.span().start..then_branch.span().end].trim());
+            text.push('\n');
+            text.push_str(&nested);
+            text.push_str("else ");
+            text.push_str(src[else_branch.span().start..else_branch.span().end].trim());
+            replacements.push(Replacement {
+                start: span.start,
+                end: span.end,
+                text,
+            });
+        }
+        Expr::Case {
+            scrutinee, alts, ..
+        } if break_before_expr && same_line_span(src, span) && !alts.is_empty() => {
+            let ind = " ".repeat(indent);
+            let mut text = String::from("case ");
+            text.push_str(src[scrutinee.span().start..scrutinee.span().end].trim());
+            text.push_str(" of");
+            for alt in alts {
+                text.push('\n');
+                text.push_str(&ind);
+                text.push_str(src[alt.pat.span().start..alt.pat.span().end].trim());
+                text.push_str(" -> ");
+                text.push_str(src[alt.body.span().start..alt.body.span().end].trim());
+            }
+            replacements.push(Replacement {
+                start: span.start,
+                end: span.end,
+                text,
+            });
+        }
+        Expr::LetIn { bindings, body, .. }
+            if break_before_expr && same_line_span(src, span) && !bindings.is_empty() =>
+        {
+            let ind = " ".repeat(indent);
+            let nested = " ".repeat(indent + INDENT as usize);
+            let mut text = String::new();
+            if break_before_expr {
+                text.push('\n');
+                text.push_str(&ind);
+            }
+            text.push_str("let");
+            for binding in bindings {
+                text.push('\n');
+                text.push_str(&nested);
+                text.push_str(src[binding.span.start..binding.span.end].trim());
+            }
+            text.push('\n');
+            text.push_str(&ind);
+            text.push_str("in ");
+            text.push_str(src[body.span().start..body.span().end].trim());
+            replacements.push(Replacement {
+                start: span.start,
+                end: span.end,
+                text,
+            });
+        }
+        Expr::Record { base, fields, .. }
+            if break_before_expr
+                && same_line_span(src, span)
+                && src[span.start..span.end].contains(';')
+                && matches!(base.as_ref(), Expr::Con { .. })
+                && fields.len() > 1 =>
+        {
+            let ind = " ".repeat(indent);
+            let mut text = String::new();
+            text.push_str(src[base.span().start..base.span().end].trim());
+            text.push_str(" with");
+            for field in fields {
+                text.push('\n');
+                text.push_str(&ind);
+                text.push_str(src[field.span.start..field.span.end].trim());
+            }
+            replacements.push(Replacement {
+                start: span.start,
+                end: span.end,
+                text,
+            });
+        }
+        Expr::App { func, args, .. }
+            if break_before_expr
+                && same_line_span(src, span)
+                && args.len() >= 6
+                && root_app_func(func).is_some()
+                && app_args_are_simple(src, args) =>
+        {
+            let ind = " ".repeat(indent);
+            let nested = " ".repeat(indent + INDENT as usize);
+            let mut text = String::new();
+            if break_before_expr {
+                text.push('\n');
+                text.push_str(&ind);
+            }
+            text.push_str(src[func.span().start..func.span().end].trim());
+            for arg in args {
+                text.push('\n');
+                text.push_str(&nested);
+                text.push_str(src[arg.span().start..arg.span().end].trim());
+            }
+            replacements.push(Replacement {
+                start: span.start,
+                end: span.end,
+                text,
+            });
+        }
+        _ => {
+            let expr_line = line_of(&line_starts, span.start);
+            let child_indent = if expr_line < line_starts.len() {
+                indent_of(src, &line_starts, expr_line) as usize + INDENT as usize
+            } else {
+                indent + INDENT as usize
+            };
+            match expr {
+                Expr::App { func, args, .. } => {
+                    collect_expr_rewrite(src, func, child_indent, false, replacements);
+                    for arg in args {
+                        collect_expr_rewrite(src, arg, child_indent, false, replacements);
+                    }
+                }
+                Expr::BinOp { lhs, rhs, .. } => {
+                    collect_expr_rewrite(src, lhs, child_indent, false, replacements);
+                    collect_expr_rewrite(src, rhs, child_indent, false, replacements);
+                }
+                Expr::If {
+                    cond,
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
+                    collect_expr_rewrite(src, cond, child_indent, false, replacements);
+                    collect_expr_rewrite(src, then_branch, child_indent, false, replacements);
+                    collect_expr_rewrite(src, else_branch, child_indent, false, replacements);
+                }
+                Expr::Case {
+                    scrutinee, alts, ..
+                } => {
+                    collect_expr_rewrite(src, scrutinee, child_indent, false, replacements);
+                    for alt in alts {
+                        collect_expr_rewrite(src, &alt.body, child_indent, false, replacements);
+                    }
+                }
+                Expr::LetIn { bindings, body, .. } => {
+                    for binding in bindings {
+                        collect_expr_rewrite(src, &binding.expr, child_indent, false, replacements);
+                    }
+                    collect_expr_rewrite(src, body, child_indent, false, replacements);
+                }
+                Expr::Record { base, fields, .. } => {
+                    collect_expr_rewrite(src, base, child_indent, false, replacements);
+                    for field in fields {
+                        if let Some(value) = &field.value {
+                            collect_expr_rewrite(src, value, child_indent, false, replacements);
+                        }
+                    }
+                }
+                Expr::Lambda { body, .. } | Expr::Neg { expr: body, .. } => {
+                    collect_expr_rewrite(src, body, child_indent, false, replacements);
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+fn root_app_func(expr: &Expr) -> Option<()> {
+    matches!(expr, Expr::Var { .. }).then_some(())
+}
+
+fn inline_if_parts_are_simple(
+    src: &str,
+    cond: &Expr,
+    then_branch: &Expr,
+    else_branch: &Expr,
+) -> bool {
+    [cond.span(), then_branch.span(), else_branch.span()]
+        .into_iter()
+        .map(|span| src[span.start..span.end].trim())
+        .all(is_simple_inline_piece)
+}
+
+fn is_simple_inline_piece(text: &str) -> bool {
+    !text.is_empty()
+        && !text.contains('\n')
+        && !text
+            .chars()
+            .any(|c| matches!(c, '(' | ')' | '{' | '}' | '[' | ']' | ';' | ','))
+}
+
+fn app_args_are_simple(src: &str, args: &[Expr]) -> bool {
+    args.iter()
+        .map(|arg| src[arg.span().start..arg.span().end].trim())
+        .all(is_simple_app_arg)
+}
+
+fn is_simple_app_arg(text: &str) -> bool {
+    !text.is_empty()
+        && !text.contains('\n')
+        && text
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '\'' | '.' | '-'))
+}
+
+fn same_line_span(src: &str, span: Span) -> bool {
+    !src[span.start..span.end].contains('\n')
+}
+
+fn has_trailing_with_comment(src: &str) -> bool {
+    src.lines().any(|line| {
+        let Some(comment_at) = line.find("--") else {
+            return false;
+        };
+        line[..comment_at]
+            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '\''))
+            .any(|word| word == "with")
+    })
+}
+
+fn organize_imports(src: &str) -> String {
+    let (module, _) = parse_module(src);
+    if module.imports.len() < 2 {
+        return src.to_string();
+    }
+    let Some(first) = module.imports.first() else {
+        return src.to_string();
+    };
+    let Some(last) = module.imports.last() else {
+        return src.to_string();
+    };
+
+    let line_starts = line_start_table(src);
+    let start_line = line_of(&line_starts, first.span.start);
+    let end_line = line_of(&line_starts, last.span.end.saturating_sub(1));
+    let block_start = line_starts[start_line];
+    let block_end = *line_starts.get(end_line + 1).unwrap_or(&src.len());
+    if src[block_start..block_end].contains("--")
+        || src[block_start..block_end].contains("{-")
+        || src[block_start..block_end]
+            .lines()
+            .any(|line| line.trim_start().starts_with('#'))
+    {
+        return src.to_string();
+    }
+
+    let mut imports: Vec<_> = module
+        .imports
+        .iter()
+        .map(|imp| {
+            (
+                import_group(&imp.module_name),
+                imp.module_name.clone(),
+                src[imp.span.start..imp.span.end].trim().to_string(),
+            )
+        })
+        .collect();
+    imports.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+
+    let original: Vec<_> = module
+        .imports
+        .iter()
+        .map(|imp| src[imp.span.start..imp.span.end].trim().to_string())
+        .collect();
+    let sorted: Vec<_> = imports.iter().map(|(_, _, text)| text.clone()).collect();
+    if original == sorted {
+        return src.to_string();
+    }
+
+    let mut text = String::new();
+    let mut prev_group = None;
+    for (group, _, import) in imports {
+        if prev_group.is_some_and(|g| g != group) {
+            text.push('\n');
+        }
+        text.push_str(&import);
+        text.push('\n');
+        prev_group = Some(group);
+    }
+
+    let mut out = String::with_capacity(src.len());
+    out.push_str(&src[..block_start]);
+    out.push_str(&text);
+    out.push_str(&src[block_end..]);
+    out
+}
+
+fn import_group(module_name: &str) -> u8 {
+    if module_name.starts_with("Daml.") {
+        0
+    } else if module_name.starts_with("DA.") {
+        1
+    } else {
+        2
+    }
+}
+
+fn rewrite_lambda_bodies(src: &str) -> String {
+    let (module, _) = parse_module(src);
+    let line_starts = line_start_table(src);
+    let mut edits = Vec::new();
+    walk_module_expressions(&module, &mut |expr| {
+        let Expr::Lambda { span, body, .. } = expr else {
+            return;
+        };
+        let lambda_line = line_of(&line_starts, span.start);
+        let body_line = line_of(&line_starts, body.span().start);
+        if body_line <= lambda_line || leading_has_tab(src, line_starts[body_line]) {
+            return;
+        }
+        let target = indent_of(src, &line_starts, lambda_line) + INDENT;
+        let delta = target - indent_of(src, &line_starts, body_line);
+        if delta != 0 {
+            edits.push(Edit {
+                child_start: line_starts[body_line],
+                block_end: body.span().end,
+                delta,
+            });
+        }
+    });
+    if edits.is_empty() {
+        return src.to_string();
+    }
+    let shifted = apply_shifts(src, &edits);
+    if same_tokens(src, &shifted) {
+        shifted
+    } else {
+        src.to_string()
+    }
+}
+
+fn rewrite_infix_continuations(src: &str) -> String {
+    let (module, _) = parse_module(src);
+    let line_starts = line_start_table(src);
+    let comments = comment_spans(src);
+    let mut edits = Vec::new();
+    for decl in &module.decls {
+        let Decl::Function(fun) = decl else {
+            continue;
+        };
+        for eq in &fun.equations {
+            let body_span = eq.body.span();
+            let first_line = line_of(&line_starts, body_span.start);
+            let target = indent_of(src, &line_starts, first_line) + INDENT;
+            let mut line = first_line + 1;
+            while line < line_starts.len() && line_starts[line] < body_span.end {
+                let Some(trimmed) = code_line_trimmed(src, &line_starts, &comments, line) else {
+                    line += 1;
+                    continue;
+                };
+                if starts_with_infix_operator(trimmed) {
+                    push_code_line_edit(&mut edits, src, &line_starts, &comments, line, target);
+                }
+                line += 1;
+            }
+        }
+    }
+    if edits.is_empty() {
+        return src.to_string();
+    }
+    let shifted = apply_shifts(src, &edits);
+    if same_tokens(src, &shifted) {
+        shifted
+    } else {
+        src.to_string()
+    }
+}
+
+fn starts_with_infix_operator(trimmed: &str) -> bool {
+    if trimmed.starts_with("->")
+        || trimmed == ":"
+        || trimmed
+            .strip_prefix('|')
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
+    {
+        return false;
+    }
+    trimmed
+        .chars()
+        .next()
+        .is_some_and(|c| matches!(c, '&' | '|' | '+' | '-' | '*' | '/' | '<' | '>' | '=' | ':'))
 }
 
 /// One reindent: shift every child line in `[child_start, block_end)` by `delta`.
@@ -1891,6 +2602,10 @@ fn find_symbol(
 mod tests {
     use super::*;
 
+    fn format_ast(src: &str) -> String {
+        super::format_ast(src, crate::FormatOptions::default())
+    }
+
     #[test]
     fn comment_line_detection() {
         let src = "x\n-- hi\ny\n";
@@ -2001,10 +2716,9 @@ mod tests {
     }
 
     #[test]
-    fn single_line_if_is_untouched() {
-        // Inline then/else are not line-leading, so the rule leaves them alone.
+    fn single_line_if_is_expanded() {
         let src = "g x = if x then 1 else 2\n";
-        assert_eq!(format_ast(src), src);
+        assert_eq!(format_ast(src), "g x =\n  if x\n    then 1\n    else 2\n");
     }
 
     #[test]
@@ -2050,10 +2764,12 @@ mod tests {
     }
 
     #[test]
-    fn inline_case_is_untouched() {
-        // alts share the `case` line — left verbatim.
+    fn inline_case_alts_are_expanded() {
         let src = "f x = case x of None -> 1; Some y -> y\n";
-        assert_eq!(format_ast(src), src);
+        assert_eq!(
+            format_ast(src),
+            "f x = case x of\n  None -> 1\n  Some y -> y\n"
+        );
     }
 
     #[test]
@@ -2086,10 +2802,9 @@ mod tests {
     }
 
     #[test]
-    fn inline_letin_is_untouched() {
-        // binding shares the `let` line — left verbatim.
+    fn inline_letin_is_expanded() {
         let src = "f = let x = 1 in x\n";
-        assert_eq!(format_ast(src), src);
+        assert_eq!(format_ast(src), "f =\n  let\n    x = 1\n  in x\n");
     }
 
     #[test]
@@ -2120,9 +2835,12 @@ mod tests {
     }
 
     #[test]
-    fn inline_con_with_is_untouched() {
+    fn inline_con_with_fields_are_expanded() {
         let src = "f = Asset with issuer = a; owner = b\n";
-        assert_eq!(format_ast(src), src);
+        assert_eq!(
+            format_ast(src),
+            "f = Asset with\n  issuer = a\n  owner = b\n"
+        );
     }
 
     #[test]

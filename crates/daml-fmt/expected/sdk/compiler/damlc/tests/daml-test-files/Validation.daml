@@ -6,12 +6,13 @@
 module Validation where
 
 import Daml.Script
-import DA.Foldable qualified as F
-import DA.NonEmpty
-import DA.Validation
-import DA.Traversable qualified as T
-import DA.List.Total
+
 import DA.Assert
+import DA.Foldable qualified as F
+import DA.List.Total
+import DA.NonEmpty
+import DA.Traversable qualified as T
+import DA.Validation
 
 l: [Int]
 l = []

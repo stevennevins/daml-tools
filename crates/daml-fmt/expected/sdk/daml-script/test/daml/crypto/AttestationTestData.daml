@@ -65,8 +65,8 @@ derEncodeSignature sig | isHex sig && byteCount sig == 65 =
   in
     Some(
       derPrefix
-        <> rPrefix <> rValue
-        <> sPrefix <> sValue
+    <> rPrefix <> rValue
+    <> sPrefix <> sValue
     )
 derEncodeSignature _ =
   None

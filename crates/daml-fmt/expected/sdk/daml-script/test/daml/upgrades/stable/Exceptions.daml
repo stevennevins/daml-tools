@@ -3,12 +3,12 @@
 
 module Exceptions (main) where
 
+import ExceptionsHelper
+import ExceptionsInterface
+import PackageIds
 import UpgradeTestLib
 import qualified V1.ExceptionsTemplate as V1
 import qualified V2.ExceptionsTemplate as V2
-import ExceptionsInterface
-import ExceptionsHelper
-import PackageIds
 
 main: TestTree
 main = tests
@@ -22,7 +22,7 @@ main = tests
 {- PACKAGE
 name: exceptions-interface
 versions: 1
--}
+  -}
 
 {- MODULE
 package: exceptions-interface
@@ -64,12 +64,12 @@ contents: |
   exception Exception2
     where
       message "exception 2"
--}
+        -}
 
 {- PACKAGE
 name: new-exception
 versions: 1
--}
+  -}
 
 {- MODULE
 package: new-exception
@@ -79,7 +79,7 @@ contents: |
   exception NewException
     where
       message "new exception"
--}
+        -}
 
 {- PACKAGE
 name: exceptions
@@ -87,7 +87,7 @@ versions: 2
 depends: |
   exceptions-interface-1.0.0
   new-exception-1.0.0        -- @V 2
--}
+    -}
 
 {- MODULE
 package: exceptions
@@ -125,7 +125,7 @@ contents: |
         do
           pure v1ViewText -- @V 1
           pure v2ViewText -- @V  2
--}
+          -}
 
 {- PACKAGE
 name: exceptions-helper
@@ -134,7 +134,7 @@ depends: |
   exceptions-1.0.0
   exceptions-2.0.0
   exceptions-interface-1.0.0
--}
+    -}
 
 {- MODULE
 package: exceptions-helper
@@ -205,7 +205,7 @@ contents: |
             pure None
           catch (e : AnyException) -> pure $ Some $ message e
           
--}
+            -}
 
 assertIsUpgradeError: Either SubmitError a -> Script ()
 assertIsUpgradeError (Left (UpgradeError _ _)) = pure ()

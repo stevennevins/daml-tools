@@ -3,15 +3,16 @@
 
 module MultiParticipant (main) where
 
-import UpgradeTestLib
-import qualified V1.MultiParticipant as V1
 import DA.Text
 import DA.Time
+
+import UpgradeTestLib
+import qualified V1.MultiParticipant as V1
 
 {- PACKAGE
 name: multi-participant
 versions: 2
--}
+  -}
 
 {- MODULE
 package: multi-participant
@@ -26,7 +27,7 @@ contents: |
     where
       signatory party
       observer ob
--}
+        -}
 
 main: TestTree
 main = tests

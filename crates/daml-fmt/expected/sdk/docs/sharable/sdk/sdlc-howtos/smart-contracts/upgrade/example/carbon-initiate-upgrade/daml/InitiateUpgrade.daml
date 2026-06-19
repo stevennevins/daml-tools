@@ -3,9 +3,10 @@
 
 module InitiateUpgrade where
 
+import Daml.Script
+
 import DA.Foldable
 import DA.List
-import Daml.Script
 
 import CarbonV1
 import qualified Setup

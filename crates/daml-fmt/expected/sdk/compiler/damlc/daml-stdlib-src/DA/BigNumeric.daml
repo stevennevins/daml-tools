@@ -76,7 +76,12 @@ precision = primitive @"BEPrecisionBigNumeric"
 -- This will fail when dividing by `0`, and when using the `RoundingUnnecessary`
 -- mode for a number that cannot be represented exactly with at most `n` decimal
 -- places.
-div: Int -> RoundingMode -> BigNumeric -> BigNumeric -> BigNumeric
+div:
+  Int
+  -> RoundingMode
+  -> BigNumeric
+  -> BigNumeric
+  -> BigNumeric
 div = primitive @"BEDivBigNumeric"
 
 -- | Round a `BigNumeric` number. The value of `round n r a` is the value
@@ -85,7 +90,11 @@ div = primitive @"BEDivBigNumeric"
 --
 -- This will fail when using the `RoundingUnnecessary` mode for a number that cannot
 -- be represented exactly with at most `n` decimal places.
-round: Int -> RoundingMode -> BigNumeric -> BigNumeric
+round:
+  Int
+  -> RoundingMode
+  -> BigNumeric
+  -> BigNumeric
 round scale rounding x = div scale rounding x 1.0
 
 -- | Shift a `BigNumeric` number to the right by a power of 10. The value
@@ -122,7 +131,10 @@ shiftLeft n x = shiftRight (-n) x
 -- >>> (roundToNumeric RoundingHalfUp 1.23456789 : Numeric 5)
 -- 1.23457
 -- ```
-roundToNumeric: forall n. NumericScale n => RoundingMode -> BigNumeric -> Numeric n
+roundToNumeric:
+  forall n. NumericScale n => RoundingMode
+  -> BigNumeric
+  -> Numeric n
 roundToNumeric r x = fromBigNumeric (round (numericScale @n) r x)
 
 #endif

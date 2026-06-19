@@ -5,6 +5,8 @@
 
 module ScriptTest where
 
+import Daml.Script
+
 import DA.Action
 import DA.Assert
 import DA.Date
@@ -12,7 +14,6 @@ import DA.Foldable hiding (length)
 import DA.List
 import DA.Stack
 import DA.Time
-import Daml.Script
 
 -- `mySubmit` and `stackTrace` are used when testing srcloc within a stack-trace.
 -- If these functions are relocated within this file, the expected locations
@@ -341,17 +342,23 @@ tree = do
   pure ()
 
 -- Create a contract only visible to one party to test readAs
-jsonMultiPartySubmissionCreateSingle: Party -> Script (ContractId MultiPartyContract)
+jsonMultiPartySubmissionCreateSingle:
+  Party
+  -> Script (ContractId MultiPartyContract)
 jsonMultiPartySubmissionCreateSingle p = do
   submit p (createCmd (MultiPartyContract [p]))
 
 -- Create a contract only visible to one party to test readAs
-jsonMultiPartySubmissionCreate: (Party, Party) -> Script (ContractId MultiPartyContract)
+jsonMultiPartySubmissionCreate:
+  (Party, Party)
+  -> Script (ContractId MultiPartyContract)
 jsonMultiPartySubmissionCreate (p1, p2) = do
   submitMulti [p1, p2] [] (createCmd (MultiPartyContract [p1, p2]))
 
 -- Create a contract only visible to one party to test readAs
-jsonMultiPartySubmissionExercise: (Party, Party, ContractId MultiPartyContract, ContractId MultiPartyContract) -> Script ()
+jsonMultiPartySubmissionExercise:
+  (Party, Party, ContractId MultiPartyContract, ContractId MultiPartyContract)
+  -> Script ()
 jsonMultiPartySubmissionExercise (p1, p2, cid, cidFetch) = do
   submitMulti [p2] [p1] (exerciseCmd cid (MPFetchOther cidFetch p2))
 

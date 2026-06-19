@@ -5,12 +5,13 @@
 module Restrictions where
 -- END_EXT
 
+import Daml.Script
+
 import DA.Assert
 import DA.Date
 import DA.Text as T
 import DA.Time
 import DA.Tuple
-import Daml.Script
 
 data Cash = Cash with
   currency: Text
@@ -28,8 +29,8 @@ template SimpleIou
     observer owner
 
     ensure cash.amount > 0.0
-        && T.length cash.currency == 3
-        && T.isUpper cash.currency
+      && T.length cash.currency == 3
+      && T.isUpper cash.currency
 -- RESTRICTED_IOU_END
 
 -- TRANSFER_CHOICE_BEGIN
@@ -52,7 +53,14 @@ template SimpleIou
         let
           today = toDateUTC now
           dow = dayOfWeek today
-          timeofday = now `subTime` time today 0 0 0
+          timeofday =
+            now
+              `subTime`
+              time
+              today
+              0
+              0
+              0
           hrs = convertRelTimeToMicroseconds timeofday / 3600000000
         if (hrs < 8 || hrs > 18) then
           abort $ "Cannot redeem outside business hours. Current time: " <> show timeofday
@@ -305,7 +313,7 @@ nonPerformedError = script do
   let successfulComputation = errPow 1 1
   return if causeError then failingComputation else successfulComputation
 -- NON_PERFORMED_ERROR_END
--}
+    -}
 
 test = script do
   optPow 2 5 === Some 32

@@ -24,37 +24,37 @@ function1: Int
 function1 = 10
 
 data Data0
-    = Constr0 with
+  = Constr0 with
         field0: Int
     | Constr0'
 
 data Data1
-    = Constr1 with
+  = Constr1 with
         field1: Int
     | Constr1'
 
 data Data2
-    = Constr2 with
+  = Constr2 with
         field2: Int
     | Constr2'
 
 data Data3
-    = Constr3 with
+  = Constr3 with
         field3: Int
     | Constr3'
 
 data Data4
-    = Constr4 with
+  = Constr4 with
         field4: Int
     | Constr4'
 
 data Data5
-    = Constr5 with
+  = Constr5 with
         field5: Int
     | Constr5'
 
 data Data6
-    = Constr6 with
+  = Constr6 with
         field6: Int
     | Constr6'
 

@@ -43,12 +43,21 @@ i o = o { text = "hello"
         }
 
 x = Inner {text = "hello", int = 42}
-x' = let text = "world" in x {text}
+x' =
+  let
+    text = "world"
+  in x {text}
 
 y = Outer {inner = x, text = "world", int = 21}
-y' = let text = "world" in let int = 12 in y {text, inner.text = text, int, inner.int = int}
+y' =
+  let
+    text = "world"
+  in let int = 12 in y {text, inner.text = text, int, inner.int = int}
 
-z = let Outer {..} = y in Outer {..}
+z =
+  let
+    Outer {..} = y
+  in Outer {..}
 
 data One = One with two: Two
 data Two = Two with val: Int

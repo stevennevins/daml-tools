@@ -6,9 +6,10 @@
 module Set where
 
 import Daml.Script
-import DA.Set as S
+
 import DA.Assert
 import qualified DA.Foldable as Foldable
+import DA.Set as S
 
 testEmpty = script do
   0 === size S.empty

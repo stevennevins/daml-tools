@@ -7,9 +7,8 @@ import Daml.Script
 
 import Intro.Asset
 import Intro.Asset.Role
-import Intro.Asset.Trade
-
 import Intro.Asset.RoleTests
+import Intro.Asset.Trade
 
 tradeSetup = do
   (setupResult@(alice, bob, usdbank, usdha, usdhb), usdCid) <- test_issuance

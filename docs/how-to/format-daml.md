@@ -77,6 +77,16 @@ cat Foo.daml | daml-fmt
 With no file arguments, `daml-fmt` reads stdin and writes formatted source to
 stdout.
 
+## Preserve import order
+
+By default, `daml-fmt` organizes import declarations. Import reordering can
+change Daml package identity, so preserve the original order when package
+identity stability matters:
+
+```sh
+daml-fmt --preserve-import-order Foo.daml
+```
+
 ## Avoid invalid option combinations
 
 Do not combine `--write` and `--check`:

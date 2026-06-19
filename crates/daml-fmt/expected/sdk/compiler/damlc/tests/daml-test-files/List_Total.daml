@@ -4,8 +4,9 @@
 module List_Total where
 
 import Daml.Script
-import DA.List.Total
+
 import DA.Assert
+import DA.List.Total
 
 intNil: [Int]
 intNil = []

@@ -5,8 +5,9 @@
 
 module Tests.Trade where
 
-import DA.Assert
 import Daml.Script
+
+import DA.Assert
 
 import Iou
 import IouTrade

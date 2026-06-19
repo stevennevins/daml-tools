@@ -62,7 +62,11 @@ allocatePartyOn requestedName participantName = allocatePartyWithHintOn requeste
 
 {-# DEPRECATED allocatePartyWithHintOn "Daml 3.3 compatibility helper, use 'allocatePartyByHintOn' instead of 'allocatePartyWithHintOn'" #-}
 -- | MOVE Daml.Script
-allocatePartyWithHintOn: Text -> PartyIdHint -> ParticipantName -> Script Party
+allocatePartyWithHintOn:
+  Text
+  -> PartyIdHint
+  -> ParticipantName
+  -> Script Party
 allocatePartyWithHintOn requestedName idHint participant =
   allocateReplicatedPartyWithHintOn requestedName idHint participant []
 
@@ -71,7 +75,11 @@ allocatePartyWithHintOn requestedName idHint participant =
 -- Allocate a party with the given display name on the specified main participant using the party management service
 -- and replicates it to the specified (possibly empty) list of additional participants. Commands submitted by the
 -- allocated party will be routed to the main participant.
-allocateReplicatedPartyOn: Text -> ParticipantName -> [ParticipantName] -> Script Party
+allocateReplicatedPartyOn:
+  Text
+  -> ParticipantName
+  -> [ParticipantName]
+  -> Script Party
 allocateReplicatedPartyOn requestedName mainParticipant additionalParticipants =
   allocateReplicatedPartyWithHintOn requestedName (PartyIdHint "") mainParticipant additionalParticipants
 
@@ -80,7 +88,12 @@ allocateReplicatedPartyOn requestedName mainParticipant additionalParticipants =
 -- Allocate a party with the given display name and id hint on the specified main participant using the party
 -- management service and replicates it to the specified (possibly empty) list of additional participants. Commands
 -- submitted by the allocated party will be routed to the main participant.
-allocateReplicatedPartyWithHintOn: Text -> PartyIdHint -> ParticipantName -> [ParticipantName] -> Script Party
+allocateReplicatedPartyWithHintOn:
+  Text
+  -> PartyIdHint
+  -> ParticipantName
+  -> [ParticipantName]
+  -> Script Party
 allocateReplicatedPartyWithHintOn requestedName (PartyIdHint idHint) mainParticipant additionalParticipants =
   lift $ AllocateParty with
     requestedName = requestedName

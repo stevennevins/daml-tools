@@ -5,8 +5,8 @@
 
 module Import where
 
-import qualified Good
 import qualified Bad
+import qualified Good
 
 -- this checks that qualified names show up in error messages
 a: Good.T

@@ -3,11 +3,13 @@
 
 module Check where
 
-import MustChoose
 import Daml.Script
+
 import DA.Assert
 import DA.Date
 import DA.Time
+
+import MustChoose
 
 check =
   script do
@@ -30,5 +32,12 @@ check =
       payer = acme
       amount = 130.0
       service = "A job well done"
-      timeLimit = datetime 1970 Feb 20 0 0 0
+      timeLimit =
+        datetime
+          1970
+          Feb
+          20
+          0
+          0
+          0
 -- end snippet: check contract contents

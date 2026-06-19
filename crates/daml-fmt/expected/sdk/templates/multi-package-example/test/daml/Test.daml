@@ -1,10 +1,12 @@
 module Test where
 
 import Daml.Script
+
+import DA.Assert
+
 import Asset (Asset)
 import qualified Asset
 import qualified Main
-import DA.Assert
 
 main: Script ()
 main = do

@@ -11,15 +11,15 @@ Part of the [daml-tools](https://github.com/stevennevins/daml-tools) workspace.
 The formatter is **Rust on the [`daml-parser`](https://crates.io/crates/daml-parser) crate** (lexer →
 offside-rule layout → recursive-descent AST). It is an **AST-driven, own-design** layout —
 it walks the parse tree, reindents the constructs it models, and passes
-everything else through verbatim. Every change is gated on the laid-out token
-stream, so it is **desugar-safe by construction**: a formatted file desugars
-byte-identically to the original.
+everything else through verbatim. Pure reindentation remains gated on the
+laid-out token stream; layout-organizing rules are checked by the compiler
+desugar oracle.
 
 Results over the 924-file corpus (`corpus/SCOREBOARD.md` is the board):
 
 | tier | result |
 |---|---|
-| desugar byte-identical (semantics proven unchanged) | 924 / 924 |
+| desugar-equivalent, import-order normalized | 924 / 924 |
 | parses | 924 / 924 |
 | semantics silently changed | 0 |
 | idempotent (`format(format(x)) == format(x)`) | 924 / 924 |
@@ -29,11 +29,15 @@ What it lays out today: module/import continuations, `do`-block indentation,
 constructor `with` fields, record-update fields, template/interface bodies,
 choice internals, declaration ladders, class/instance body-column alignment,
 function guards/where bindings, `try`/`catch` handlers, explicit tuple/list
-continuations, trailing-whitespace + blank-line/final-newline normalization,
-and type-annotation colon spacing (`x : T` → `x: T`). Broader expression
-wrapping (long applications, infix chains, lambdas, and inline forms) remains
-conservative. It makes its own consistent layout decisions and does not aim to
-match any other formatter's output.
+continuations, long applications, infix chains, lambdas, inline `if`/`case`/
+`let`/record construction forms, trailing-whitespace + blank-line/final-newline
+normalization, import organization, and type-annotation colon spacing
+(`x : T` → `x: T`). It makes its own consistent layout decisions and does not
+aim to match any other formatter's output.
+
+Import organization is enabled by default. Reordering import declarations can
+change Daml package identity even when the formatted source denotes the same
+imports; use `--preserve-import-order` when package identity stability matters.
 
 ## Documentation
 
@@ -79,6 +83,7 @@ cargo install --path crates/daml-fmt         # puts daml-fmt on your PATH
 daml-fmt Foo.daml                                  # formatted source to stdout
 find src -name '*.daml' -exec daml-fmt -w {} +     # rewrite files in place
 find src -name '*.daml' -exec daml-fmt --check {} + # list unformatted files
+daml-fmt --preserve-import-order Foo.daml          # format without import sorting
 cat Foo.daml | daml-fmt                            # stdin -> stdout
 ```
 
@@ -98,8 +103,11 @@ cargo test                # unit tests for the layout helpers
 ```
 
 The real semantic bar is the desugar oracle: the formatted file must desugar
-byte-identically to the original (`daml damlc desugar`). The default verifier
-runs that oracle on a curated subset and keeps full-corpus idempotence:
+byte-identically to the original (`daml damlc desugar`), except import
+organization may reorder import declarations and change package identity. For
+that rule, the verifier compares desugar output with import lines sorted, so
+the body and import set must still match. The default verifier runs that oracle
+on a curated subset and keeps full-corpus idempotence:
 
 ```sh
 tools/verify-rust.sh               # needs Daml SDK 3.4.11 on PATH for desugar

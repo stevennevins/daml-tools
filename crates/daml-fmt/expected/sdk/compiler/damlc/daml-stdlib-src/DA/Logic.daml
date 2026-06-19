@@ -76,7 +76,10 @@ disj = Disjunction
 
 -- | `fromBool` converts `True` to `true` and `False` to `false`.
 fromBool: Bool -> Formula t
-fromBool x = if x then true else false
+fromBool x =
+  if x
+    then true
+    else false
 
 -- | `toNNF` transforms a formula to negation normal form
 -- (see https://en.wikipedia.org/wiki/Negation_normal_form).
@@ -111,7 +114,10 @@ toDNF f = case f of
       _ -> error "Does not happen."
 
 -- | An implementation of `traverse` in the usual sense.
-traverse: Applicative f => (t -> f s) -> Formula t -> f (Formula s)
+traverse:
+  Applicative f => (t -> f s)
+  -> Formula t
+  -> f (Formula s)
 traverse fn (Proposition x) = Proposition <$> fn x
 traverse fn (Negation x) = Negation <$> traverse fn x
 traverse fn (Conjunction xs) = Conjunction <$> mapA (traverse fn) xs
@@ -141,7 +147,10 @@ zipFormulas _ _ = error "Formula structures do not match."
 
 -- | `substitute` takes a truth assignment and substitutes `True` or
 -- `False` into the respective places in a formula.
-substitute: (t -> Optional Bool) -> Formula t -> Formula t
+substitute:
+  (t -> Optional Bool)
+  -> Formula t
+  -> Formula t
 substitute t f = f >>= (\x -> optional (Proposition x) fromBool (t x))
 
 -- | `reduce` reduces a formula as far as possible by:
@@ -188,17 +197,26 @@ isBool x = case x of
 
 -- | `interpret` is a version of `toBool` that first substitutes using
 -- a truth function and then reduces as far as possible.
-interpret: (t -> Optional  Bool) -> Formula t -> Either (Formula t) Bool
+interpret:
+  (t -> Optional  Bool)
+  -> Formula t
+  -> Either (Formula t) Bool
 interpret t f = optionalToEither rx $ isBool rx
   where rx = reduce $ substitute t f
 
 -- | `substituteA` is a version of `substitute` that allows for truth
 -- values to be obtained from an action.
-substituteA: Applicative f => (t -> f (Optional Bool)) -> Formula t -> f (Formula t)
+substituteA:
+  Applicative f => (t -> f (Optional Bool))
+  -> Formula t
+  -> f (Formula t)
 substituteA t x = join <$> traverse work x
   where work p = optional (Proposition p) fromBool <$> t p
 
 -- | `interpretA` is a version of `interpret` that allows for truth
 -- values to be obtained form an action.
-interpretA: Applicative f => (t -> f (Optional Bool)) -> Formula t -> f (Either (Formula t) Bool)
+interpretA:
+  Applicative f => (t -> f (Optional Bool))
+  -> Formula t
+  -> f (Either (Formula t) Bool)
 interpretA t f = optionalToEither f . isBool . reduce <$> substituteA t f

@@ -3,17 +3,18 @@
 
 module Ensure (main) where
 
-import UpgradeTestLib
-import qualified V1.EnsureChanges as V1
-import qualified V2.EnsureChanges as V2
-import qualified V1.IfaceMod as Iface
 import DA.Exception
 import DA.Text
+
+import UpgradeTestLib
+import qualified V1.EnsureChanges as V1
+import qualified V1.IfaceMod as Iface
+import qualified V2.EnsureChanges as V2
 
 {- PACKAGE
 name: ensure-changes-iface
 versions: 1
--}
+  -}
 
 {- MODULE
 package: ensure-changes-iface
@@ -28,13 +29,13 @@ contents: |
     nonconsuming choice NoOp : ()
       controller signatory this
       do pure ()
--}
+        -}
 
 {- PACKAGE
 name: ensure-changes
 versions: 2
 depends: ensure-changes-iface-1.0.0
--}
+  -}
 
 {- MODULE
 package: ensure-changes
@@ -60,7 +61,7 @@ contents: |
         controller party
         do pure "V1"       -- @V 1
         do pure "V2"       -- @V  2
--}
+          -}
 
 main: TestTree
 main = tests
@@ -87,12 +88,12 @@ ensureClauseBecomesInvalid: Test
 ensureClauseBecomesInvalid =
   testForPreconditionFailed (V1.EnsureChangesTemplate True False) $ \cidV1 ->
      -- because the exercise is not exact, the contract should be upgraded to V2 before evaluating the ensure clause
-     exerciseCmd cidV1 V1.EnsureChangesCall
+    exerciseCmd cidV1 V1.EnsureChangesCall
 
 ensureClauseBecomesInvalidDynamic: Test
 ensureClauseBecomesInvalidDynamic =
   testForPreconditionFailed (V1.EnsureChangesTemplate True False) $ \cidV1 ->
-     exerciseExactCmd (coerceContractId @V1.EnsureChangesTemplate @Iface.I cidV1) Iface.NoOp
+    exerciseExactCmd (coerceContractId @V1.EnsureChangesTemplate @Iface.I cidV1) Iface.NoOp
 
 onlyV2EnsureClauseRequiredForImplicitUpgrade: Test
 onlyV2EnsureClauseRequiredForImplicitUpgrade = test $ do

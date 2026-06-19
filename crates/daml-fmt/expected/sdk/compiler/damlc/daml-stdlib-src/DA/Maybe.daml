@@ -40,9 +40,15 @@ isNothing: Optional a -> Bool
 isNothing = isNone
 
 {-# DEPRECATED mapMaybe "Daml 1.2 compatibility helper, use 'mapOptional' from 'DA.Optional' instead of 'mapMaybe'" #-}
-mapMaybe: (a -> Optional b) -> [a] -> [b]
+mapMaybe:
+  (a -> Optional b)
+  -> [a]
+  -> [b]
 mapMaybe = mapOptional
 
 {-# DEPRECATED whenJust "Daml 1.2 compatibility helper, use 'whenSome' from 'DA.Optional' instead of 'whenJust'" #-}
-whenJust: Applicative m => Optional a -> (a -> m ()) -> m ()
+whenJust:
+  Applicative m => Optional a
+  -> (a -> m ())
+  -> m ()
 whenJust = whenSome

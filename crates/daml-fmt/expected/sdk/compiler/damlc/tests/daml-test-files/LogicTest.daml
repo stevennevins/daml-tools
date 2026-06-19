@@ -4,8 +4,9 @@
 module LogicTest where
 
 import Daml.Script
-import DA.Logic
+
 import DA.Assert
+import DA.Logic
 
 propositionTest = script do
   let

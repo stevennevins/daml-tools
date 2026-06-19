@@ -1,8 +1,8 @@
 module Test where
 
-import Main
-
 import Daml.Script
+
+import Main
 
 setup: Script AssetId
 setup = script do

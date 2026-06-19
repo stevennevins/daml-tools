@@ -9,12 +9,20 @@ import Daml.Script
 
 import DA.Assert
 
-range: a -> (a -> a) -> Int -> [a]
+range:
+  a
+  -> (a -> a)
+  -> Int
+  -> [a]
 range x next n =
   if n <= 0 then []
     else reverse (rangeHelper [x] next (n - 1))
 
-rangeHelper: [a] -> (a -> a) -> Int -> [a]
+rangeHelper:
+  [a]
+  -> (a -> a)
+  -> Int
+  -> [a]
 rangeHelper xs next n =
   if n <= 0 then xs
     else

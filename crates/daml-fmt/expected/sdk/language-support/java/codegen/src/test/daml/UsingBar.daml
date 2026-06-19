@@ -3,8 +3,8 @@
 
 module UsingBar where
 
-import Bar
 import AnotherBar
+import Bar
 
 template UsingBar
   with

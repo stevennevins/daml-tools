@@ -14,11 +14,17 @@ It models a guarded set of constructs canonically and passes everything else
 through verbatim. Today: module/import continuations, `do` blocks, `if`/`case`/
 `let-in`, constructor `with` fields, record-update fields, template/interface
 bodies, choice internals, declaration ladders, guards/where bindings,
-`try`/`catch`, explicit tuple/list continuations, trailing-whitespace +
-blank-line/final-newline normalization, and type-annotation colon spacing
-(`x : T` → `x: T`). It makes its own consistent decisions; it does not target any
-other formatter's output. The `expected/` tree is a snapshot of *this*
+`try`/`catch`, explicit tuple/list continuations, long applications, infix
+chains, lambdas, inline `if`/`case`/`let`/record construction forms,
+trailing-whitespace + blank-line/final-newline normalization, import
+organization, and type-annotation colon spacing (`x : T` → `x: T`). It makes
+its own consistent decisions; it does not target any other formatter's output.
+The `expected/` tree is a snapshot of *this*
 formatter's output, used as the regression baseline.
+
+Import organization is the default. It may change Daml package identity even
+when the source-level import set is unchanged; the CLI exposes
+`--preserve-import-order` for callers that need stable package identity.
 
 Compiler diagnostic and LF query fixtures with source-location expectations
 (`-- @ ... range=LINE:COL-LINE:COL`, `.location`, `start_line`, `start_col`,
@@ -41,11 +47,11 @@ The whole design is one safe mechanism applied per construct:
 3. **Slice node CONTENT verbatim from spans** — never re-assemble from AST
    fields. (`FieldAssign.name` drops dotted-update tails like `r with a.b = x`,
    so reconstructing would silently change meaning.)
-4. **Gate every candidate** on `same_tokens`: `resolve_layout(lex(out)) ==
-   resolve_layout(lex(in))`, i.e. the laid-out token stream *including* the
-   offside virtuals (VLBrace/VSemi/VRBrace) is identical. Identical laid-out
-   tokens ⇒ identical parse ⇒ identical desugar, so any accepted edit is
-   **desugar-safe by construction**.
+4. **Gate pure reindent candidates** on `same_tokens`:
+   `resolve_layout(lex(out)) == resolve_layout(lex(in))`, i.e. the laid-out
+   token stream *including* the offside virtuals (VLBrace/VSemi/VRBrace) is
+   identical. Layout-organizing rewrites intentionally change layout form and
+   are held to the desugar/idempotence verification tiers instead.
 5. **Fall back to verbatim** when the gate rejects or a node isn't modeled.
    Unmodeled constructs pass through unchanged — safe, and lets us land one
    construct at a time.
@@ -89,9 +95,11 @@ Fast tier (no SDK): `npm test` (expected/ + idempotence over the binary) and
 `cargo test` (unit tests). Coverage metric: `cargo run --features dev-tools --bin coverage -- original`.
 
 The real semantic bar is the desugar oracle — a formatted file must desugar
-byte-identically to the original. The default verifier runs a curated desugar
-subset plus full-corpus idempotence; full-corpus desugar remains explicit.
-Requires Daml SDK 3.4.11 (`daml version`):
+byte-identically to the original, except import organization compares desugar
+output with import declarations sorted so import order/package identity changes
+do not fail by themselves. The default verifier runs a curated desugar subset
+plus full-corpus idempotence; full-corpus desugar remains explicit. Requires
+Daml SDK 3.4.11 (`daml version`):
 
     tools/verify-rust.sh               # idempotence + desugar subset
     tools/verify-rust.sh --desugar     # full-corpus desugar sweep
@@ -108,8 +116,8 @@ re-run the sweeps, update `SCOREBOARD.md` + the corpus manifests, commit.
 
 - **The desugar oracle outranks everything.** Parse-level checks hide silent
   semantic changes — always run the equivalence tier before claiming success.
-- **Every emitted edit must pass the `same_tokens` gate.** Anything that can't
-  is a verbatim span. This is the structural desugar-safety guarantee.
+- **Pure reindent edits must pass the `same_tokens` gate.** Layout-organizing
+  rewrites must be covered by focused tests and the desugar/idempotence tiers.
 - **Comments are sacred:** never move or re-indent a comment; never measure a
   block's indentation from a comment line; block-comment interiors pass through
   byte-for-byte.
@@ -126,9 +134,11 @@ re-run the sweeps, update `SCOREBOARD.md` + the corpus manifests, commit.
 
 ## Forward-looking improvements
 
-Each new construct = a canonical column rule + verbatim content slicing,
-landed behind the gate, verified `--desugar` 924/924 + idempotent, with the
-structural candidate metric rising.
+Each new pure reindent construct = a canonical column rule + verbatim content
+slicing, landed behind the token gate, verified `--desugar` 924/924 +
+idempotent, with the structural candidate metric rising. Layout-organizing
+rules that intentionally change layout form need focused examples plus the same
+desugar/idempotence corpus verification.
 
 Landed (each its own gated structural pass, iterated to a fixpoint,
 `--desugar`-clean + idempotent):
@@ -167,12 +177,11 @@ the formatter follows the corpus, not the guess.
 
 Still candidates:
 
-- **broader expression wrapping**: long applications, infix chains, lambdas, and
-  inline forms remain conservative.
+- **broader expression wrapping** beyond the currently modeled long
+  applications, infix chains, lambdas, and inline forms remains conservative.
 - **`let … in` mid-line / split**, **`case`/template `where` that would dedent
-  below offside**: left verbatim by guards (the gate would reject them anyway).
-- **format-organizing transforms** such as import sorting/grouping are out of
-  scope for the current formatter; it only changes safe layout.
+  below offside**: left verbatim by guards (the pure reindent gate would reject
+  them anyway).
 
 Hard-won guidance for the structural rules: a per-line indent rule that isn't
 offside-aware breaks desugar (a naive `line_indent + 2` dedents blocks below

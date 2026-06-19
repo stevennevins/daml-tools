@@ -3,10 +3,11 @@
 
 module Intro.Exceptions where
 
-import DA.Action
 import Daml.Script
-import DA.Exception
+
+import DA.Action
 import DA.Assert ((===))
+import DA.Exception
 import DA.Text (isInfixOf)
 
 transferLimit: Decimal

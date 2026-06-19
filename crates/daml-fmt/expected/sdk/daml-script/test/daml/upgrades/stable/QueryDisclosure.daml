@@ -3,15 +3,16 @@
 
 module QueryDisclosure (main) where
 
+import DA.Optional (fromSome)
+
 import UpgradeTestLib
 import qualified V1.QueryDisclosure as V1
 import qualified V2.QueryDisclosure as V2
-import DA.Optional (fromSome)
 
 {- PACKAGE
 name: query-disclosure
 versions: 2
--}
+  -}
 
 {- MODULE
 package: query-disclosure
@@ -31,7 +32,7 @@ contents: |
         where
           controller ctl
           do pure ()
--}
+            -}
 
 main: TestTree
 main = tests

@@ -63,7 +63,7 @@ contents: |
         do pure ()                                    -- @V  2
 -}
 
-main: TestTree
+main : TestTree
 main = tests $
   [ subtree description
       [ ("static exercise", testCase exerciseStaticChoice)
@@ -81,16 +81,17 @@ main = tests $
 
 type ChoiceExerciser = ContractId V1.SignatoryObserverChangesTemplate -> Commands ()
 
-exerciseStaticChoice: ChoiceExerciser
+exerciseStaticChoice : ChoiceExerciser
 exerciseStaticChoice cidV1 =
   let cidV2 = coerceContractId @V1.SignatoryObserverChangesTemplate @V2.SignatoryObserverChangesTemplate cidV1
   in exerciseCmd cidV2 V2.InvalidUpgradeStakeholdersCall
+
 
 -- Given a function that maps a set of 3 parties to the pre-upgrade and post-upgrade signatory set
 -- and the same for observers
 -- along side an expected result flag (success or failure), test the upgrade behaviour
 signatoryObserverUpgrade
-  : Bool
+  :  Bool
   -> ((Party, Party, Party) -> ([Party], [Party]))
   -> ((Party, Party, Party) -> ([Party], [Party]))
   -> ChoiceExerciser
@@ -122,36 +123,37 @@ signatoryObserverUpgrade shouldSucceed sigF obsF exerciseChoice = test $ do
       -> pure ()
     _ -> assertFail $ "Expected " <> (if shouldSucceed then "success" else "Upgrade error") <> " but got " <> show res
 
-unchanged: (Party, Party, Party) -> ([Party], [Party])
+unchanged : (Party, Party, Party) -> ([Party], [Party])
 unchanged (alice, bob, charlie) = ([alice], [alice])
 
-signatoryUpgrade: Bool -> ((Party, Party, Party) -> ([Party], [Party])) -> ChoiceExerciser ->Test
+signatoryUpgrade : Bool -> ((Party, Party, Party) -> ([Party], [Party])) -> ChoiceExerciser ->Test
 signatoryUpgrade shouldSucceed f = signatoryObserverUpgrade shouldSucceed f unchanged
 
-observerUpgrade: Bool -> ((Party, Party, Party) -> ([Party], [Party])) -> ChoiceExerciser -> Test
+observerUpgrade : Bool -> ((Party, Party, Party) -> ([Party], [Party])) -> ChoiceExerciser -> Test
 observerUpgrade shouldSucceed = signatoryObserverUpgrade shouldSucceed unchanged
 
-unchangedSignatoryUpgrade: ChoiceExerciser -> Test
+unchangedSignatoryUpgrade : ChoiceExerciser -> Test
 unchangedSignatoryUpgrade = signatoryUpgrade True unchanged
 
-largerSignatoryUpgrade: ChoiceExerciser -> Test
+largerSignatoryUpgrade : ChoiceExerciser -> Test
 largerSignatoryUpgrade = signatoryUpgrade False $ \(alice, bob, charlie) -> ([alice, bob], [alice, bob, charlie])
 
-smallerSignatoryUpgrade: ChoiceExerciser -> Test
+smallerSignatoryUpgrade : ChoiceExerciser -> Test
 smallerSignatoryUpgrade = signatoryUpgrade False $ \(alice, bob, charlie) -> ([alice, bob, charlie], [alice, bob])
 
-unchangeObserverUpgrade: ChoiceExerciser -> Test
+unchangeObserverUpgrade : ChoiceExerciser -> Test
 unchangeObserverUpgrade = observerUpgrade True unchanged
 
-largerObserverUpgrade: ChoiceExerciser -> Test
+largerObserverUpgrade : ChoiceExerciser -> Test
 largerObserverUpgrade = observerUpgrade False $ \(alice, bob, charlie) -> ([alice, bob], [alice, bob, charlie])
 
-smallerObserverUpgrade: ChoiceExerciser -> Test
+smallerObserverUpgrade : ChoiceExerciser -> Test
 smallerObserverUpgrade = observerUpgrade False $ \(alice, bob, charlie) -> ([alice, bob, charlie], [alice, bob])
 
-canRemoveObserversThatAreSignatories: ChoiceExerciser -> Test
+canRemoveObserversThatAreSignatories : ChoiceExerciser -> Test
 canRemoveObserversThatAreSignatories =
   signatoryObserverUpgrade
     True
     (\(alice, bob, charlie) -> ([alice, bob, charlie], [alice, bob, charlie])) -- signatories
     (\(alice, bob, charlie) -> ([alice, bob, charlie], [alice, bob])) -- observers
+

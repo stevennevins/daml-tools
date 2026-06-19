@@ -56,7 +56,7 @@ template FlexiblePayout
       with receiver: Party; amount : Decimal
       controller giver
       do create Payout with giver; receiver; amount
--}
+        -}
 
 -- Better - TransferablePayout
 template TransferablePayout
@@ -95,7 +95,7 @@ template StealablePayout
           callableId <- transferable.receiver does
             exercise transferableId Transfer with newReceiver = receiver
           receiver does exercise callableId TransferablePayout_Call
--}
+            -}
 
 -- Complex Party expression
 {-
@@ -114,7 +114,7 @@ template LastOneOut
       TurnOffTheLights
         returning {}
         to return {}
--}
+          -}
 
 -- Argument not serializable
 {-
@@ -133,4 +133,4 @@ template SupervisedPayout
       controller supervisor receiver
       do create Payout with giver; receiver; amount
 -- END_NOT_SERIALIZABLE_TEMPLATE
--}
+        -}

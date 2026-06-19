@@ -5,14 +5,14 @@
 
 module DataChangesByKey (main) where
 
+import DA.Optional (fromSome)
+import DA.Text
+
+import PackageIds
 import UpgradeTestLib
+import V1.DataChangesDummy
 import qualified V1.OptionalFieldsAdded as V1
 import qualified V2.OptionalFieldsAdded as V2
-import DA.Text
-import DA.Optional (fromSome)
-import PackageIds
-
-import V1.DataChangesDummy
 
 main: TestTree
 main = tests
@@ -27,7 +27,7 @@ main = tests
 {- PACKAGE
 name: data-changes-by-key
 versions: 2
--}
+  -}
 
 {- MODULE
 package: data-changes-by-key
@@ -80,7 +80,7 @@ contents: |
         do
           exerciseByKey @OptionalFieldsAdded k (OptionalFieldsAddedCallWithCtl ctl)
           pure ()
--}
+            -}
 
 {- PACKAGE
 name: data-changes-by-key-dummy
@@ -88,7 +88,7 @@ versions: 1
 depends: |
   data-changes-by-key-1.0.0
   data-changes-by-key-2.0.0
--}
+    -}
 
 {- MODULE
 package: data-changes-by-key-dummy
@@ -115,12 +115,15 @@ contents: |
           let cidV1 = coerceContractId @V2.OptionalFieldsAdded @V1.OptionalFieldsAdded cid
           exerciseByKey @V1.OptionalFieldsAdded (V1.OptionalFieldsAddedKey party) (V1.OptionalFieldsAddedCallWithCtl party)
           pure ()
--}
+            -}
 
 dataChangesV1: PackageId
 dataChangesV1 = getPackageId "data-changes-by-key-1.0.0"
 
-templateOptionalFieldsSetWhenDowngradingTest: Show b => Text -> (Party -> Party -> Script (Either SubmitError b)) -> (Text, Test)
+templateOptionalFieldsSetWhenDowngradingTest:
+  Show b => Text
+  -> (Party -> Party -> Script (Either SubmitError b))
+  -> (Text, Test)
 templateOptionalFieldsSetWhenDowngradingTest trailer f = ("Fails if an optional field is set when downgrading (" <> trailer <> ")", s)
   where
     s = test $ do

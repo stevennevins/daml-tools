@@ -7,9 +7,10 @@ module LockingBySafekeeping where
 
 import Daml.Script
 
+import DA.Time
+
 import CoinIssuance
 import Utilities
-import DA.Time
 
 data LockResult = LockResult {
   coinCid : ContractId Coin;

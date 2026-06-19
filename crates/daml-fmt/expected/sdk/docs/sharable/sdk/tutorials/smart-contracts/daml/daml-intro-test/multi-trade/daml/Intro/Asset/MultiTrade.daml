@@ -3,10 +3,10 @@
 
 module Intro.Asset.MultiTrade where
 
+import DA.Foldable (mapA_)
 import DA.List
 
 import Intro.Asset
-import DA.Foldable (mapA_)
 
 baseOwner: MultiTrade -> Party
 baseOwner MultiTrade { baseAssets } = (head baseAssets).owner

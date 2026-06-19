@@ -27,7 +27,10 @@ instance IsQuestion Secp256k1WithEcdsaSign BytesHex where command = "Secp256k1Wi
 -- Note that this implementation uses a random source with a fixed PRNG and seed, ensuring it behaves deterministically during testing.
 --
 -- For example, CCTP attestation services may be mocked in daml-script code.
-secp256k1signWithEcdsaOnly: HasCallStack => PrivateKeyHex -> BytesHex -> Script BytesHex
+secp256k1signWithEcdsaOnly:
+  HasCallStack => PrivateKeyHex
+  -> BytesHex
+  -> Script BytesHex
 secp256k1signWithEcdsaOnly pk msg = lift $ Secp256k1WithEcdsaSign pk msg
 
 -- | HIDE

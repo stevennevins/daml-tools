@@ -17,7 +17,11 @@ interface MyInterface where
 -- INTERFACE_METHODS_BEGIN
   method1: Party
   method2: Int
-  method3: Bool -> Int -> Int -> Int
+  method3:
+    Bool
+    -> Int
+    -> Int
+    -> Int
 -- INTERFACE_METHODS_END
 
 -- INTERFACE_VIEWTYPE_BEGIN
@@ -48,7 +52,12 @@ func1 = method1
 func2: MyInterface -> Int
 func2 = method2
 
-func3: MyInterface -> Bool -> Int -> Int -> Int
+func3:
+  MyInterface
+  -> Bool
+  -> Int
+  -> Int
+  -> Int
 func3 = method3
 -- INTERFACE_METHODS_TOP_LEVEL_END
 
@@ -78,7 +87,7 @@ interface Rectangle requires Shape where
 interface Square requires Rectangle where
   viewtype EmptyInterfaceView
 -- INTERFACE_TRANSITIVE_REQUIRES_INCORRECT_END
--}
+    -}
 
 -- INTERFACE_TRANSITIVE_REQUIRES_CORRECT_BEGIN
 interface Square requires Rectangle, Shape where
