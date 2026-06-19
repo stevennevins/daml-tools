@@ -3,6 +3,9 @@
 Use this flow to publish Rust crates, the `@daml-tools/lint-plugin` npm
 package, cargo-npm CLI packages, and GitHub release artifacts.
 
+`daml-parser` releases publish the Rust crate and release notes only. They do
+not publish npm packages or GitHub binary assets.
+
 ## Check release authentication
 
 Confirm the required GitHub secrets exist:
@@ -22,7 +25,7 @@ Optional bootstrap secret:
 
 | Secret | Purpose |
 |--------|---------|
-| `NPM_TOKEN` | Lets a manually dispatched npm publish workflow use a short-lived npm granular access token for first-time npm package bootstrap. Remove it after bootstrap. |
+| `NPM_TOKEN` | Emergency/bootstrap only: lets a manually dispatched npm publish workflow use a short-lived npm granular access token when trusted publishing cannot create or recover a package. Remove it after use. |
 
 Normal npm publishing uses npm trusted publishing, so tag-triggered workflows do
 not need an npm token. Configure trusted publishing on npmjs.com for every
@@ -110,6 +113,12 @@ This triggers the release flow:
 6. `daml-lint-v*` and `daml-fmt-v*` tags upload CLI archives and checksums to
    GitHub releases.
 
+The `daml-tools-*` archives are deliberately attached to every `daml-lint-v*`
+and `daml-fmt-v*` GitHub release. Release-plz can create both CLI tags at the
+same commit; keep the per-tag artifact workflow runs in that case. Skipping one
+tag would remove assets from that release or require cross-release copy and
+retry logic while tags and releases are still being created.
+
 Plain `X.Y.Z` npm package versions publish under `latest`. Semver prerelease
 versions publish under `next`.
 
@@ -187,6 +196,10 @@ Check workflow status:
 gh run list --repo stevennevins/daml-tools --limit 12
 ```
 
+If `gh workflow list --all` still shows `Npm Registry Smoke` as active, treat it
+as stale GitHub Actions metadata. `origin/main` no longer contains
+`.github/workflows/npm-registry-smoke.yml`, so it is not a current release gate.
+
 Check crates.io:
 
 ```sh
@@ -219,8 +232,13 @@ gh release view daml-lint-vX.Y.Z --repo stevennevins/daml-tools --json assets,ur
 gh release view daml-fmt-vX.Y.Z --repo stevennevins/daml-tools --json assets,url
 ```
 
-Each CLI GitHub release should have archives and `.sha256` files for Linux x64,
-Linux ARM64, macOS ARM64, and Windows x64.
+Each CLI GitHub release should have `daml-tools-*` archives and matching
+`.sha256` files:
+
+- `daml-tools-x86_64-unknown-linux-gnu.tar.gz`
+- `daml-tools-aarch64-unknown-linux-gnu.tar.gz`
+- `daml-tools-aarch64-apple-darwin.tar.gz`
+- `daml-tools-x86_64-pc-windows-msvc.zip`
 
 ## Recover a failed npm publish
 
@@ -242,8 +260,9 @@ publishing and still runs the smoke install. If some platform packages exist but
 the wrapper does not, inspect the registry state before rerunning so the missing
 package set is clear in the recovery notes.
 
-Only set `use_npm_token=true` while recovering the first bootstrap publish of a
-brand-new npm package. Leave it unset for normal trusted publishing reruns.
+Only set `use_npm_token=true` for emergency/bootstrap recovery when trusted
+publishing cannot create or recover a package. Leave it unset for normal trusted
+publishing reruns.
 
 ## Recover failed release artifacts
 

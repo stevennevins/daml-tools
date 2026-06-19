@@ -120,4 +120,5 @@ release PRs or tags must trigger follow-on workflows.
 
 CLI release archives and SHA-256 files are built for Linux x64, Linux ARM64,
 macOS ARM64, and Windows x64 when `daml-lint-v*` or `daml-fmt-v*` tags are
-published.
+published. Those GitHub release assets are `daml-tools-*` bundles; parser
+releases publish the Rust crate and release notes, but no binary assets.

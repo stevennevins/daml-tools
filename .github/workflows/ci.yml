@@ -155,12 +155,3 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: build CLIs
         run: cargo build --release --locked --target ${{ matrix.target }} --bin daml-lint --bin daml-fmt
-      - uses: actions/upload-artifact@v7
-        with:
-          name: cli-${{ matrix.target }}
-          path: |
-            target/${{ matrix.target }}/release/daml-lint
-            target/${{ matrix.target }}/release/daml-fmt
-            target/${{ matrix.target }}/release/daml-lint.exe
-            target/${{ matrix.target }}/release/daml-fmt.exe
-          if-no-files-found: error
