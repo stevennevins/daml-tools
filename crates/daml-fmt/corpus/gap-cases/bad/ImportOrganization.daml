@@ -1,0 +1,8 @@
+module ImportOrganization where
+
+import DA.Optional
+import Daml.Script
+import DA.List
+
+example : Optional Text
+example = Some "ok"

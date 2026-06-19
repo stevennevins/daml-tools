@@ -1,0 +1,11 @@
+module InfixChain where
+
+valid:
+  Bool
+  -> Bool
+  -> Bool
+  -> Bool
+valid hasOwner hasAmount isOpen =
+  hasOwner
+    && hasAmount
+    && isOpen

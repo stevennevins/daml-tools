@@ -1,0 +1,9 @@
+module ComplexTypeSignature where
+
+describe:
+  Text
+  -> Decimal
+  -> Optional Text
+  -> Either Text Decimal
+  -> Text
+describe label amount maybeOwner result = label

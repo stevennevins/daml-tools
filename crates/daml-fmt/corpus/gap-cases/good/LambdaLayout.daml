@@ -1,0 +1,5 @@
+module LambdaLayout where
+
+incrementAll: [Int] -> [Int]
+incrementAll xs = map (\x ->
+  x + 1) xs

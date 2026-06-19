@@ -1,0 +1,9 @@
+module InlineRecordWith where
+
+data Asset = Asset with
+  issuer : Text
+  owner : Text
+  amount : Decimal
+
+example : Asset
+example = Asset with issuer = "Bank"; owner = "Alice"; amount = 100.0
