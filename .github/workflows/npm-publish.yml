@@ -26,123 +26,6 @@ env:
   CARGO_NPM_VERSION: "0.1.2"
 
 jobs:
-  publish-lint-plugin:
-    name: publish @daml-tools/lint-plugin
-    runs-on: ubuntu-latest
-    needs: publish-cli
-    if: ${{ github.repository_owner == 'stevennevins' && startsWith(github.event.inputs.tag || github.ref_name, 'daml-lint-v') }}
-    env:
-      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
-    steps:
-      - name: Check release tag
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ ! "${RELEASE_TAG}" =~ ^daml-lint-v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::npm publishing requires a daml-lint-v* release tag, got ${RELEASE_TAG}"
-            exit 1
-          fi
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.inputs.tag || github.ref_name }}
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          registry-url: "https://registry.npmjs.org"
-          package-manager-cache: false
-      - name: Install npm 11
-        run: npm install --global npm@^11.10.0
-      - name: Check generated rules and plugin package
-        working-directory: crates/daml-lint
-        run: npm ci && npm run check:rules
-      - name: Check package version and registry state
-        id: npm-package
-        working-directory: crates/daml-lint/lint-plugin
-        shell: bash
-        run: |
-          set -euo pipefail
-          package_name="$(node -p "require('./package.json').name")"
-          package_version="$(node -p "require('./package.json').version")"
-          rules_package_version="$(node -p "require('../package.json').version")"
-          lockfile_version="$(node -p "require('../package-lock.json').version")"
-          lockfile_root_version="$(node -p "require('../package-lock.json').packages[''].version")"
-          tag_version="${RELEASE_TAG#daml-lint-v}"
-          if [[ "${package_version}" != "${tag_version}" ]]; then
-            echo "::error::package.json version ${package_version} does not match ${RELEASE_TAG}"
-            exit 1
-          fi
-          if [[ "${rules_package_version}" != "${tag_version}" ]]; then
-            echo "::error::daml-lint-rules package.json version ${rules_package_version} does not match ${RELEASE_TAG}"
-            exit 1
-          fi
-          if [[ "${lockfile_version}" != "${tag_version}" || "${lockfile_root_version}" != "${tag_version}" ]]; then
-            echo "::error::package-lock.json versions ${lockfile_version}/${lockfile_root_version} do not match ${RELEASE_TAG}"
-            exit 1
-          fi
-          echo "name=${package_name}" >> "${GITHUB_OUTPUT}"
-          echo "version=${package_version}" >> "${GITHUB_OUTPUT}"
-          if npm view "${package_name}@${package_version}" version --prefer-online >/dev/null 2>&1; then
-            echo "exists=true" >> "${GITHUB_OUTPUT}"
-            echo "${package_name}@${package_version} already exists; skipping publish."
-          else
-            echo "exists=false" >> "${GITHUB_OUTPUT}"
-          fi
-      - name: Smoke starter template
-        if: ${{ steps.npm-package.outputs.exists != 'true' }}
-        working-directory: crates/daml-lint
-        shell: bash
-        env:
-          PACKAGE_VERSION: ${{ steps.npm-package.outputs.version }}
-        run: |
-          set -euo pipefail
-          work="$(mktemp -d)"
-          pack_dir="${work}/pack"
-          project_dir="${work}/project"
-          mkdir -p "${pack_dir}" "${project_dir}"
-          npm pack ./lint-plugin --json --pack-destination "${pack_dir}" > "${work}/pack.json"
-          tarball="$(node -e 'const fs = require("node:fs"); const [pack] = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); console.log(pack.filename);' "${work}/pack.json")"
-          cp -R lint-plugin/templates/project/. "${project_dir}/"
-          cd "${project_dir}"
-          npm install --save-dev "${pack_dir}/${tarball}" "@daml-tools/daml-lint@${PACKAGE_VERSION}" typescript@6.0.3 esbuild@0.28.1
-          npm run check
-          npm run build
-          set +e
-          npm run lint:missing > "${work}/missing.out" 2>&1
-          missing_status=$?
-          set -e
-          if [[ "${missing_status}" -ne 1 ]]; then
-            cat "${work}/missing.out"
-            echo "::error::lint:missing should report the starter template finding and exit 1."
-            exit 1
-          fi
-          grep -F "template-requires-ensure/template-requires-ensure" "${work}/missing.out"
-          npm run lint:clean
-      - name: Publish package
-        if: ${{ steps.npm-package.outputs.exists != 'true' }}
-        working-directory: crates/daml-lint/lint-plugin
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          USE_NPM_TOKEN: ${{ github.event_name == 'workflow_dispatch' && inputs.use_npm_token }}
-          PACKAGE_VERSION: ${{ steps.npm-package.outputs.version }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "${USE_NPM_TOKEN}" == "true" ]]; then
-            if [[ -z "${NPM_TOKEN:-}" ]]; then
-              echo "::error::use_npm_token was true, but the NPM_TOKEN secret is not configured."
-              exit 1
-            fi
-            npm config set //registry.npmjs.org/:_authToken "${NPM_TOKEN}"
-          elif [[ -n "${NPM_TOKEN:-}" ]]; then
-            echo "::notice::NPM_TOKEN is configured but ignored. Dispatch manually with use_npm_token=true only for bootstrap publishing."
-          fi
-          publish_args=(--access public)
-          if [[ "${PACKAGE_VERSION}" == *-* ]]; then
-            publish_args+=(--tag next)
-            echo "::notice::Publishing prerelease ${PACKAGE_VERSION} under the 'next' dist-tag."
-          fi
-          npm publish "${publish_args[@]}"
-
   # Build the released CLI's native binary on each platform's own runner. The
   # binaries become workflow artifacts the publish job assembles into npm
   # packages with cargo-npm.
@@ -216,7 +99,7 @@ jobs:
   # first then the wrapper. The package version comes from Cargo.toml, so there
   # is no version metadata to keep in sync.
   publish-cli:
-    name: publish CLI npm packages
+    name: publish npm packages
     runs-on: ubuntu-latest
     needs: build-cli
     if: ${{ github.repository_owner == 'stevennevins' && (startsWith(github.event.inputs.tag || github.ref_name, 'daml-lint-v') || startsWith(github.event.inputs.tag || github.ref_name, 'daml-fmt-v')) }}
@@ -419,3 +302,96 @@ jobs:
             fi
             echo "${PACKAGE_NAME}@${DIST_TAG} resolves to ${PACKAGE_VERSION}; latest remains ${latest_version}."
           fi
+      - name: Check generated rules and plugin package
+        if: ${{ steps.release.outputs.tool == 'daml-lint' }}
+        working-directory: crates/daml-lint
+        run: npm ci && npm run check:rules
+      - name: Check lint-plugin package version and registry state
+        if: ${{ steps.release.outputs.tool == 'daml-lint' }}
+        id: lint_plugin_npm
+        working-directory: crates/daml-lint/lint-plugin
+        shell: bash
+        env:
+          EXPECTED_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          package_name="$(node -p "require('./package.json').name")"
+          package_version="$(node -p "require('./package.json').version")"
+          rules_package_version="$(node -p "require('../package.json').version")"
+          lockfile_version="$(node -p "require('../package-lock.json').version")"
+          lockfile_root_version="$(node -p "require('../package-lock.json').packages[''].version")"
+          if [[ "${package_version}" != "${EXPECTED_VERSION}" ]]; then
+            echo "::error::package.json version ${package_version} does not match ${RELEASE_TAG}"
+            exit 1
+          fi
+          if [[ "${rules_package_version}" != "${EXPECTED_VERSION}" ]]; then
+            echo "::error::daml-lint-rules package.json version ${rules_package_version} does not match ${RELEASE_TAG}"
+            exit 1
+          fi
+          if [[ "${lockfile_version}" != "${EXPECTED_VERSION}" || "${lockfile_root_version}" != "${EXPECTED_VERSION}" ]]; then
+            echo "::error::package-lock.json versions ${lockfile_version}/${lockfile_root_version} do not match ${RELEASE_TAG}"
+            exit 1
+          fi
+          echo "name=${package_name}" >> "${GITHUB_OUTPUT}"
+          echo "version=${package_version}" >> "${GITHUB_OUTPUT}"
+          if npm view "${package_name}@${package_version}" version --prefer-online >/dev/null 2>&1; then
+            echo "exists=true" >> "${GITHUB_OUTPUT}"
+            echo "${package_name}@${package_version} already exists; skipping publish."
+          else
+            echo "exists=false" >> "${GITHUB_OUTPUT}"
+          fi
+      - name: Smoke starter template
+        if: ${{ steps.release.outputs.tool == 'daml-lint' && steps.lint_plugin_npm.outputs.exists != 'true' }}
+        working-directory: crates/daml-lint
+        shell: bash
+        env:
+          PACKAGE_VERSION: ${{ steps.lint_plugin_npm.outputs.version }}
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          pack_dir="${work}/pack"
+          project_dir="${work}/project"
+          mkdir -p "${pack_dir}" "${project_dir}"
+          npm pack ./lint-plugin --json --pack-destination "${pack_dir}" > "${work}/pack.json"
+          tarball="$(node -e 'const fs = require("node:fs"); const [pack] = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); console.log(pack.filename);' "${work}/pack.json")"
+          cp -R lint-plugin/templates/project/. "${project_dir}/"
+          cd "${project_dir}"
+          npm install --save-dev "${pack_dir}/${tarball}" "@daml-tools/daml-lint@${PACKAGE_VERSION}" typescript@6.0.3 esbuild@0.28.1
+          npm run check
+          npm run build
+          set +e
+          npm run lint:missing > "${work}/missing.out" 2>&1
+          missing_status=$?
+          set -e
+          if [[ "${missing_status}" -ne 1 ]]; then
+            cat "${work}/missing.out"
+            echo "::error::lint:missing should report the starter template finding and exit 1."
+            exit 1
+          fi
+          grep -F "template-requires-ensure/template-requires-ensure" "${work}/missing.out"
+          npm run lint:clean
+      - name: Publish lint-plugin package
+        if: ${{ steps.release.outputs.tool == 'daml-lint' && steps.lint_plugin_npm.outputs.exists != 'true' }}
+        working-directory: crates/daml-lint/lint-plugin
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          USE_NPM_TOKEN: ${{ github.event_name == 'workflow_dispatch' && inputs.use_npm_token }}
+          PACKAGE_VERSION: ${{ steps.lint_plugin_npm.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${USE_NPM_TOKEN}" == "true" ]]; then
+            if [[ -z "${NPM_TOKEN:-}" ]]; then
+              echo "::error::use_npm_token was true, but the NPM_TOKEN secret is not configured."
+              exit 1
+            fi
+            npm config set //registry.npmjs.org/:_authToken "${NPM_TOKEN}"
+          elif [[ -n "${NPM_TOKEN:-}" ]]; then
+            echo "::notice::NPM_TOKEN is configured but ignored. Dispatch manually with use_npm_token=true only for bootstrap publishing."
+          fi
+          publish_args=(--access public)
+          if [[ "${PACKAGE_VERSION}" == *-* ]]; then
+            publish_args+=(--tag next)
+            echo "::notice::Publishing prerelease ${PACKAGE_VERSION} under the 'next' dist-tag."
+          fi
+          npm publish "${publish_args[@]}"
