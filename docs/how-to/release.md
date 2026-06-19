@@ -188,27 +188,97 @@ created, rerun the workflow with `use_npm_token=true` only after checking the
 registry state. The workflow skips generated package versions that already
 exist, publishes the missing platform packages, then publishes the wrapper.
 
+## Run a full lint release-flow smoke test
+
+Use this only when you intend to publish a real stable `daml-lint` release. This
+flow moves npm `latest`, publishes the Rust crate to crates.io, creates the
+GitHub release, uploads CLI archives, and publishes `@daml-tools/lint-plugin`.
+
+1. Choose a never-published patch version:
+
+   ```sh
+   cargo search daml-lint --limit 1
+   npm view @daml-tools/daml-lint versions --json --prefer-online
+   npm view @daml-tools/lint-plugin versions --json --prefer-online
+   ```
+
+2. On a fresh branch from `origin/main`, bump only `daml-lint` and sync its npm
+   metadata:
+
+   ```sh
+   cargo set-version -p daml-lint X.Y.Z
+   cargo check -p daml-lint --offline
+   (cd crates/daml-lint && node tools/sync-lint-plugin-version.mjs)
+   ```
+
+   If `cargo set-version` is not installed, edit
+   `crates/daml-lint/Cargo.toml` directly, then run the same `cargo check`
+   command to refresh `Cargo.lock`.
+
+3. Confirm these files are the only release metadata changes:
+
+   ```sh
+   git diff -- Cargo.lock \
+     crates/daml-lint/Cargo.toml \
+     crates/daml-lint/package.json \
+     crates/daml-lint/package-lock.json \
+     crates/daml-lint/lint-plugin/package.json \
+     crates/daml-lint/lint-plugin/templates/project/package.json
+   ```
+
+4. Run focused local checks:
+
+   ```sh
+   cargo test -p daml-lint --locked
+   cargo package -p daml-lint --allow-dirty
+   (cd crates/daml-lint && npm ci && npm run check:rules)
+   ```
+
+5. Open a PR, wait for CI, merge it to `main`, and then watch the post-merge
+   release runs in the order shown in the next section.
+
 ## Verify the release
 
-Check workflow status:
+Check workflow status. A `daml-lint-vX.Y.Z` or `daml-fmt-vX.Y.Z` release should
+leave these workflows green:
+
+- `CI` on `main`
+- `Release-plz` on `main`
+- `Release Artifacts` on the release tag
+- `Publish npm Packages` on the release tag
+
+List the relevant runs:
 
 ```sh
-gh run list --repo stevennevins/daml-tools --limit 12
+gh run list --repo stevennevins/daml-tools --branch main --limit 8
+gh run list --repo stevennevins/daml-tools --branch daml-lint-vX.Y.Z --limit 8
+gh run list --repo stevennevins/daml-tools --branch daml-fmt-vX.Y.Z --limit 8
+```
+
+Watch any in-progress run by ID:
+
+```sh
+gh run watch RUN_ID --repo stevennevins/daml-tools --exit-status --interval 15
 ```
 
 If `gh workflow list --all` still shows `Npm Registry Smoke` as active, treat it
 as stale GitHub Actions metadata. `origin/main` no longer contains
 `.github/workflows/npm-registry-smoke.yml`, so it is not a current release gate.
 
-Check crates.io:
+Check crates.io. Run `cargo info` outside this workspace so Cargo cannot report
+the local path package instead of the registry package:
 
 ```sh
+cd /tmp
+cargo info daml-parser@X.Y.Z --registry crates-io
+cargo info daml-lint@X.Y.Z --registry crates-io
+cargo info daml-fmt@X.Y.Z --registry crates-io
 cargo search daml-parser --limit 3
 cargo search daml-lint --limit 3
 cargo search daml-fmt --limit 3
 ```
 
-Check npm:
+Check npm wrapper packages and dist-tags:
 
 ```sh
 npm view @daml-tools/lint-plugin version dist-tags time.modified --prefer-online
@@ -216,12 +286,24 @@ npm view @daml-tools/daml-lint version dist-tags time.modified --prefer-online
 npm view @daml-tools/daml-fmt version dist-tags time.modified --prefer-online
 ```
 
-Check one installed wrapper on the current platform:
+For a CLI release, check every generated platform package for the exact version:
+
+```sh
+npm view @daml-tools/daml-lint-linux-x64@X.Y.Z version os cpu --json --prefer-online
+npm view @daml-tools/daml-lint-linux-arm64@X.Y.Z version os cpu --json --prefer-online
+npm view @daml-tools/daml-lint-darwin-arm64@X.Y.Z version os cpu --json --prefer-online
+npm view @daml-tools/daml-lint-win32-x64@X.Y.Z version os cpu --json --prefer-online
+```
+
+For `daml-fmt`, use the same commands with `@daml-tools/daml-fmt-*`.
+
+Check one installed wrapper on the current platform using the exact release
+version:
 
 ```sh
 tmp="$(mktemp -d)" && cd "$tmp"
 npm init -y >/dev/null
-npm install --save-dev @daml-tools/daml-lint@latest --prefer-online
+npm install --save-dev @daml-tools/daml-lint@X.Y.Z --prefer-online
 npx --no-install daml-lint --version
 ```
 
@@ -232,8 +314,8 @@ gh release view daml-lint-vX.Y.Z --repo stevennevins/daml-tools --json assets,ur
 gh release view daml-fmt-vX.Y.Z --repo stevennevins/daml-tools --json assets,url
 ```
 
-Each CLI GitHub release should have `daml-tools-*` archives and matching
-`.sha256` files:
+Each CLI GitHub release should have eight assets: four `daml-tools-*` archives
+and four matching `.sha256` files. The expected archives are:
 
 - `daml-tools-x86_64-unknown-linux-gnu.tar.gz`
 - `daml-tools-aarch64-unknown-linux-gnu.tar.gz`
