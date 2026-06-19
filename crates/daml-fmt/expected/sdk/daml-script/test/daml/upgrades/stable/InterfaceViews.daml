@@ -5,23 +5,24 @@
 
 module InterfaceViews (main) where
 
-import UpgradeTestLib
+import DA.Foldable
+import DA.List
+import DA.Optional
+import DA.Text
+
 import FixedInterface
-import FixedInterfaceViewTemplate
 import FixedInterfaceCaller
+import FixedInterfaceViewTemplate
+import PackageIds
+import UpgradeTestLib
 import qualified V1.Interfaces as V1
 import qualified V2.Interfaces as V2
-import PackageIds
-import DA.Foldable
-import DA.Optional
-import DA.List
-import DA.Text
 
 -- Fixed template so interface view can contain a contract ID
 {- PACKAGE
 name: fixed-interface-view-template
 versions: 1
--}
+  -}
 
 {- MODULE
 package: fixed-interface-view-template
@@ -32,14 +33,14 @@ contents: |
       fivtOwner : Party
     where
     signatory fivtOwner
--}
+      -}
 
 -- Fixed package containing only the interface
 {- PACKAGE
 name: fixed-interface-view
 versions: 1
 depends: fixed-interface-view-template-1.0.0
--}
+  -}
 
 {- MODULE
 package: fixed-interface-view
@@ -68,14 +69,14 @@ contents: |
       controller (view this).owner
       do
         pure $ getVersion this
--}
+          -}
 
 -- Another fixed package containing a helper template for exercising the interface in a choice
 {- PACKAGE
 name: fixed-interface-view-caller
 versions: 1
 depends: fixed-interface-view-1.0.0
--}
+  -}
 
 {- MODULE
 package: fixed-interface-view-caller
@@ -94,7 +95,7 @@ contents: |
       controller party
       do
         exercise icid GetVersion
--}
+          -}
 
 -- The versioned/upgraded package
 {- PACKAGE
@@ -103,7 +104,7 @@ versions: 2
 depends: |
   fixed-interface-view-1.0.0
   fixed-interface-view-template-1.0.0
--}
+    -}
 
 {- MODULE
 package: interface-views
@@ -163,7 +164,7 @@ contents: |
         view = IV party (intToNat i) None -- @V  2
         getVersion = "V1"                 -- @V 1
         getVersion = "V2"                 -- @V  2
--}
+        -}
 
 main: TestTree
 main = tests

@@ -3,9 +3,9 @@
 
 module Main where
 
-import Dep qualified
-
 import Daml.Script
+
+import Dep qualified
 
 template T1
   with

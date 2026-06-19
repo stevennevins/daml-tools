@@ -3,11 +3,11 @@
 
 module Library.Tests where
 
+import Daml.Script
+
 import Library
 import Library.Book
 import Library.Disc
-
-import Daml.Script
 
 test = do
   alice <- allocateParty "alice"

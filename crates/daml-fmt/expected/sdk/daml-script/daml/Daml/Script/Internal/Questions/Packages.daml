@@ -56,7 +56,10 @@ vetPackages packages = vetPackagesInternal packages None
 -- Vet a set of packages on a single participant.
 -- Note that the Admin API port must be provided when using this with a Canton Ledger
 -- Use ``--admin-port`` with the `daml script` CLI tool.
-vetPackagesOnParticipant: HasCallStack => [PackageName] -> ParticipantName -> Script ()
+vetPackagesOnParticipant:
+  HasCallStack => [PackageName]
+  -> ParticipantName
+  -> Script ()
 vetPackagesOnParticipant packages participant = vetPackagesInternal packages (Some participant)
 
 -- | MOVE Daml.Script.Internal
@@ -70,15 +73,24 @@ unvetPackages packages = unvetPackagesInternal packages None
 -- Unvet a set of packages on a single participant.
 -- Note that the Admin API port must be provided when using this with a Canton Ledger
 -- Use ``--admin-port`` with the `daml script` CLI tool.
-unvetPackagesOnParticipant: HasCallStack => [PackageName] -> ParticipantName -> Script ()
+unvetPackagesOnParticipant:
+  HasCallStack => [PackageName]
+  -> ParticipantName
+  -> Script ()
 unvetPackagesOnParticipant packages participant = unvetPackagesInternal packages (Some participant)
 
 -- | HIDE
-vetPackagesInternal: HasCallStack => [PackageName] -> Optional ParticipantName -> Script ()
+vetPackagesInternal:
+  HasCallStack => [PackageName]
+  -> Optional ParticipantName
+  -> Script ()
 vetPackagesInternal packages mParticipantName = lift $ VetPackages packages (participantName <$> mParticipantName)
 
 -- | HIDE
-unvetPackagesInternal: HasCallStack => [PackageName] -> Optional ParticipantName -> Script ()
+unvetPackagesInternal:
+  HasCallStack => [PackageName]
+  -> Optional ParticipantName
+  -> Script ()
 unvetPackagesInternal packages mParticipantName = lift $ UnvetPackages packages (participantName <$> mParticipantName)
 
 -- | MOVE Daml.Script.Internal

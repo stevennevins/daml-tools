@@ -3,15 +3,14 @@
 
 module MetadataChangedByKey (main) where
 
+import DA.Exception
 import DA.Text (isInfixOf)
 
+import qualified ClientMod as Client
 import UpgradeTestLib
-
+import V1.Common
 import qualified V1.MetadataChangedMod as V1
 import qualified V2.MetadataChangedMod as V2
-import qualified ClientMod as Client
-import V1.Common
-import DA.Exception
 
 main: TestTree
 main = tests
@@ -84,7 +83,7 @@ main = tests
 {- PACKAGE
 name: metadata-changed-by-key-common
 versions: 1
--}
+  -}
 
 {- MODULE
 package: metadata-changed-by-key-common
@@ -108,13 +107,13 @@ contents: |
       p2 : Party
       n : Int
     deriving (Eq, Show)
--}
+      -}
 
 {- PACKAGE
 name: metadata-changed-by-key
 versions: 2
 depends: metadata-changed-by-key-common-1.0.0
--}
+  -}
 
 {- MODULE
 package: metadata-changed-by-key
@@ -206,7 +205,7 @@ contents: |
         view = IV party1
         getVersion = "V1"  -- @V 1
         getVersion = "V2"  -- @V 2
--}
+          -}
 
 {- PACKAGE
 name: metadata-changed-by-key-client
@@ -215,7 +214,7 @@ depends: |
   metadata-changed-by-key-1.0.0
   metadata-changed-by-key-2.0.0
   metadata-changed-by-key-common-1.0.0
--}
+    -}
 
 {- MODULE
 package: metadata-changed-by-key-client
@@ -360,7 +359,7 @@ contents: |
           cid <- create (V1.UnchangedMaintainer p1 p2)
           exerciseByKey @V2.UnchangedMaintainer (MyKey p1 p2 0) V2.UnchangedMaintainerCall
           pure ()
--}
+            -}
 
 {- CHANGED KEY -}
 

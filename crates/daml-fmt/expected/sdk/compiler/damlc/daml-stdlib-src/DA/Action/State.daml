@@ -11,8 +11,8 @@ module DA.Action.State
   , modify
   ) where
 
-import DA.Action.State.Type (State (..))
 import DA.Action.State.Class
+import DA.Action.State.Type (State (..))
 
 instance Functor (State s) where
   fmap f (State x) = State $ \s ->

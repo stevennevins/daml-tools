@@ -8,33 +8,32 @@ module ContractKeys (main) where
 import DA.List (sort)
 import DA.Text (isInfixOf)
 
-import UpgradeTestLib
-
-import qualified V1.ContractKeys as V1
-import qualified V2.ContractKeys as V2
-import qualified V1.ChangedKeyExpr as V1
-import qualified V2.ChangedKeyExpr as V2
-import qualified V1.ChangedMaintainersExpr as V1
-import qualified V2.ChangedMaintainersExpr as V2
-import qualified V1.UpgradedContractKeys as V1
-import qualified V2.UpgradedContractKeys as V2
-import qualified V1.InvalidKeyUpgrade as V1
-import qualified V2.InvalidKeyUpgrade as V2
-import qualified V1.InvalidKeyRenaming as V1
-import qualified V2.InvalidKeyRenaming as V2
-import qualified V1.ContractKeyPresence as V1
-import qualified V2.ContractKeyPresence as V2
-import qualified V1.IfaceMod as Iface
-import qualified V1.KeyUpgradeClient as Client
-import qualified V1.ContractKeyQueryN as V1
-import qualified V2.ContractKeyQueryN as V2
-import qualified V3.ContractKeyQueryN as V3
 import ContractKeyQueryNHelper
+import UpgradeTestLib
+import qualified V1.ChangedKeyExpr as V1
+import qualified V1.ChangedMaintainersExpr as V1
+import qualified V1.ContractKeyPresence as V1
+import qualified V1.ContractKeyQueryN as V1
+import qualified V1.ContractKeys as V1
+import qualified V1.IfaceMod as Iface
+import qualified V1.InvalidKeyRenaming as V1
+import qualified V1.InvalidKeyUpgrade as V1
+import qualified V1.KeyUpgradeClient as Client
+import qualified V1.UpgradedContractKeys as V1
+import qualified V2.ChangedKeyExpr as V2
+import qualified V2.ChangedMaintainersExpr as V2
+import qualified V2.ContractKeyPresence as V2
+import qualified V2.ContractKeyQueryN as V2
+import qualified V2.ContractKeys as V2
+import qualified V2.InvalidKeyRenaming as V2
+import qualified V2.InvalidKeyUpgrade as V2
+import qualified V2.UpgradedContractKeys as V2
+import qualified V3.ContractKeyQueryN as V3
 
 {- PACKAGE
 name: contract-key-upgrades-iface
 versions: 1
--}
+  -}
 
 {- MODULE
 package: contract-key-upgrades-iface
@@ -50,13 +49,13 @@ contents: |
     nonconsuming choice NoOp : ()
       controller signatory this
       do pure ()
--}
+        -}
 
 {- PACKAGE
 name: contract-key-upgrades
 versions: 2
 depends: contract-key-upgrades-iface-1.0.0
--}
+  -}
 
 main: TestTree
 main = tests
@@ -191,7 +190,7 @@ contents: |
           k : UnchangedKeyKey
         controller party
         do exerciseByKey @UnchangedKey k UnchangedKeyCall
--}
+          -}
 
 queryKeyUnchanged: Test
 queryKeyUnchanged = test $ do
@@ -291,7 +290,7 @@ contents: |
           k : ChangedKeyExprKey
         controller party
         do exerciseByKey @ChangedKeyExpr k ChangedKeyExprCall
--}
+          -}
 
 qckKeyChangedExprSameValue: Test
 qckKeyChangedExprSameValue = test $ do
@@ -492,7 +491,7 @@ contents: |
           k : ChangedMaintainersExprKey
         controller party
         do exerciseByKey @ChangedMaintainersExpr k ChangedMaintainersExprCall
--}
+          -}
 
 qckMaintainersChangedExprSameValue: Test
 qckMaintainersChangedExprSameValue = test $ do
@@ -660,7 +659,7 @@ contents: |
           k : UpgradedKeyKey
         controller party
         do exerciseByKey @UpgradedKey k UpgradedKeyCall
--}
+          -}
 
 queryKeyUpgraded: Test
 queryKeyUpgraded = test $ do
@@ -716,7 +715,7 @@ contents: |
       choice InvalidKeyUpgradeCall : Text
         controller party
         do pure (show (key this).n)
--}
+          -}
 
 {- MODULE
 package: contract-key-upgrades
@@ -742,7 +741,7 @@ contents: |
         do
           pure (key this).n  -- @V 1
           pure (key this).m  -- @V 2
--}
+          -}
 
 {- PACKAGE
 name: contract-key-upgrades-client
@@ -750,7 +749,7 @@ versions: 1
 depends: |
   contract-key-upgrades-1.0.0
   contract-key-upgrades-2.0.0
--}
+    -}
 
 {- MODULE
 package: contract-key-upgrades-client
@@ -795,7 +794,7 @@ contents: |
         do
           cid <- create (V1.InvalidKeyRenaming party)
           exerciseByKey @V2.InvalidKeyRenaming (V2.InvalidKeyRenamingKey party 42) V2.InvalidKeyRenamingCall
--}
+            -}
 
 -- InvalidKeyUpgrade
 
@@ -889,7 +888,7 @@ contents: |
       choice DummyChoice : ()
         controller party
         do pure ()
--}
+          -}
 
 fetchTemplateWithUnexpectedKey: Test
 fetchTemplateWithUnexpectedKey = test $ do
@@ -915,7 +914,11 @@ fetchTemplateWithUnexpectedlyMissingKey = test $ do
 
 ------------------------------------------------------------------------------------------------------------------------
 
-expectMetadataChangedError: forall t k a. (HasTemplateTypeRep t, TemplateKey t k, Eq k) => k -> [Party] -> Either SubmitError a -> Script ()
+expectMetadataChangedError:
+  forall t k a. (HasTemplateTypeRep t, TemplateKey t k, Eq k) => k
+  -> [Party]
+  -> Either SubmitError a
+  -> Script ()
 expectMetadataChangedError key maintainers r = case r of
   Right _ -> assertFail "Expected failure but got success"
   Left (UpgradeError (ValidationFailed _ _ _ _ _ _ _ _ _ _ (Some (foundKey, foundMaintainers))) msg)
@@ -927,7 +930,7 @@ expectMetadataChangedError key maintainers r = case r of
 {- PACKAGE
 name: contract-key-query-n
 versions: 3
--}
+  -}
 
 {- MODULE
 package: contract-key-query-n
@@ -943,13 +946,13 @@ contents: |
       signatory p
       key p : Party
       maintainer key
--}
+        -}
 
 {- PACKAGE
 name: contract-key-query-n-helper
 versions: 1
 depends: contract-key-query-n-2.0.0
--}
+  -}
 
 {- MODULE
 package: contract-key-query-n-helper
@@ -971,9 +974,12 @@ contents: |
         do
           lookupNByKey @ContractKeyQueryNTemplate n p
 
--}
+            -}
 
-create3VersionedContract: Party -> Optional Int -> Script ([(ContractId V2.ContractKeyQueryNTemplate, V2.ContractKeyQueryNTemplate)])
+create3VersionedContract:
+  Party
+  -> Optional Int
+  -> Script ([(ContractId V2.ContractKeyQueryNTemplate, V2.ContractKeyQueryNTemplate)])
 create3VersionedContract p v3ExtraVal = do
   -- Reverse order so v1 is first in list
   cid3 <- p `submit` createExactCmd (V3.ContractKeyQueryNTemplate p (Some "text2") v3ExtraVal)

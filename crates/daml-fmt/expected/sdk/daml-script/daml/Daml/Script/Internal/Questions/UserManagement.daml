@@ -5,13 +5,15 @@ module Daml.Script.Internal.Questions.UserManagement where
 
 import Daml.Script.Internal.LowLevel
 import Daml.Script.Internal.Questions.Commands
+import Daml.Script.Internal.Questions.Exceptions ()
 import Daml.Script.Internal.Questions.PartyManagement
 import Daml.Script.Internal.Questions.Submit
-import DA.Stack
+
 import DA.Exception
-import Daml.Script.Internal.Questions.Exceptions ()
-import GHC.Types (primitive)
 import DA.Record
+import DA.Stack
+
+import GHC.Types (primitive)
 
 -- | MOVE Daml.Script
 -- Identifier for a user in the user management service.
@@ -168,7 +170,14 @@ instance IsQuestion ValidateUserId (Optional Text) where command = "ValidateUser
 -- | MOVE Daml.Script
 -- Construct a user identifer from text. May throw InvalidUserId.
 validateUserId: HasCallStack => Text -> Script UserId
-validateUserId name = mkUserId name $ lift $ ValidateUserId name
+validateUserId name =
+  mkUserId
+    name
+    $
+    lift
+    $
+    ValidateUserId
+    name
 
 -- | MOVE Daml.Script
 -- Create a user with the given rights. May throw UserAlreadyExists.
@@ -177,7 +186,11 @@ createUser user rights = createUser' user rights None
 
 -- | MOVE Daml.Script
 -- Create a user with the given rights on the given participant. May throw UserAlreadyExists.
-createUserOn: HasCallStack => User -> [UserRight] -> ParticipantName -> Script ()
+createUserOn:
+  HasCallStack => User
+  -> [UserRight]
+  -> ParticipantName
+  -> Script ()
 createUserOn user rights participant = createUser' user rights (Some participant)
 
 -- | HIDE
@@ -190,7 +203,11 @@ data CreateUser = CreateUser with
 instance IsQuestion CreateUser (Optional ()) where command = "CreateUser"
 
 -- | HIDE
-createUser': HasCallStack => User -> [UserRight] -> Optional ParticipantName -> Script ()
+createUser':
+  HasCallStack => User
+  -> [UserRight]
+  -> Optional ParticipantName
+  -> Script ()
 createUser' user rights participant = checkUserAlreadyExists user.userId $ lift CreateUser with
   participant = fmap participantName participant
   user
@@ -247,7 +264,11 @@ grantUserRights userId rights = grantUserRights' userId rights None
 
 -- | MOVE Daml.Script
 -- Grant rights to a user on the given participant. Returns the rights that have been newly granted. May throw UserNotFound.
-grantUserRightsOn: HasCallStack => UserId -> [UserRight] -> ParticipantName -> Script [UserRight]
+grantUserRightsOn:
+  HasCallStack => UserId
+  -> [UserRight]
+  -> ParticipantName
+  -> Script [UserRight]
 grantUserRightsOn userId rights participant = grantUserRights' userId rights (Some participant)
 
 -- | HIDE
@@ -259,7 +280,11 @@ data GrantUserRights = GrantUserRights with
 instance IsQuestion GrantUserRights (Optional [UserRight]) where command = "GrantUserRights"
 
 -- | HIDE
-grantUserRights': HasCallStack => UserId -> [UserRight] -> Optional ParticipantName -> Script [UserRight]
+grantUserRights':
+  HasCallStack => UserId
+  -> [UserRight]
+  -> Optional ParticipantName
+  -> Script [UserRight]
 grantUserRights' userId rights participant = checkUserNotFound userId $ lift GrantUserRights with
   participant = fmap participantName participant
   userId
@@ -272,7 +297,11 @@ revokeUserRights userId rights = revokeUserRights' userId rights None
 
 -- | MOVE Daml.Script
 -- Revoke rights for a user on the given participant. Returns the revoked rights. May throw UserNotFound.
-revokeUserRightsOn: HasCallStack => UserId -> [UserRight] -> ParticipantName -> Script [UserRight]
+revokeUserRightsOn:
+  HasCallStack => UserId
+  -> [UserRight]
+  -> ParticipantName
+  -> Script [UserRight]
 revokeUserRightsOn userId rights participant = revokeUserRights' userId rights (Some participant)
 
 -- | HIDE
@@ -284,7 +313,11 @@ data RevokeUserRights = RevokeUserRights with
 instance IsQuestion RevokeUserRights (Optional [UserRight]) where command = "RevokeUserRights"
 
 -- | HIDE
-revokeUserRights': HasCallStack => UserId -> [UserRight] -> Optional ParticipantName -> Script [UserRight]
+revokeUserRights':
+  HasCallStack => UserId
+  -> [UserRight]
+  -> Optional ParticipantName
+  -> Script [UserRight]
 revokeUserRights' userId rights participant = checkUserNotFound userId $ lift RevokeUserRights with
   participant = fmap participantName participant
   userId
@@ -321,7 +354,10 @@ listUserRights userId = listUserRights' userId None
 
 -- | MOVE Daml.Script
 -- List the rights of a user on the given participant. May throw UserNotFound.
-listUserRightsOn: HasCallStack => UserId -> ParticipantName -> Script [UserRight]
+listUserRightsOn:
+  HasCallStack => UserId
+  -> ParticipantName
+  -> Script [UserRight]
 listUserRightsOn userId participant = listUserRights' userId (Some participant)
 
 -- | HIDE
@@ -332,7 +368,10 @@ data ListUserRights = ListUserRights with
 instance IsQuestion ListUserRights (Optional [UserRight]) where command = "ListUserRights"
 
 -- | HIDE
-listUserRights': HasCallStack => UserId -> Optional ParticipantName -> Script [UserRight]
+listUserRights':
+  HasCallStack => UserId
+  -> Optional ParticipantName
+  -> Script [UserRight]
 listUserRights' userId participant = checkUserNotFound userId $ lift ListUserRights with
   participant = fmap participantName participant
   userId
@@ -344,11 +383,19 @@ submitUser userId cmds = submitUser' userId None cmds
 
 -- | MOVE Daml.Script
 -- Submit the commands with the actAs and readAs claims granted to the user on the given participant. May throw UserNotFound.
-submitUserOn: HasCallStack => UserId -> ParticipantName -> Commands a -> Script a
+submitUserOn:
+  HasCallStack => UserId
+  -> ParticipantName
+  -> Commands a
+  -> Script a
 submitUserOn userId participant cmds = submitUser' userId (Some participant) cmds
 
 -- | HIDE
-submitUser': HasCallStack => UserId -> Optional ParticipantName -> Commands a -> Script a
+submitUser':
+  HasCallStack => UserId
+  -> Optional ParticipantName
+  -> Commands a
+  -> Script a
 submitUser' userId participant cmds = do
   rights <- listUserRights' userId participant
   let actors = [ p | CanActAs p <- rights ]

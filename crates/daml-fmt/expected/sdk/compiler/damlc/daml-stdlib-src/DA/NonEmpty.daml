@@ -32,13 +32,14 @@ module DA.NonEmpty
   , foldl1A
   ) where
 
-import Prelude hiding (cons, reverse, find, foldr, foldl, one, map)
-import Prelude qualified as P
+import DA.Action qualified as M
 import DA.Foldable qualified as F
+import DA.List qualified as L
 import DA.NonEmpty.Types
 import DA.Traversable qualified as T
-import DA.List qualified as L
-import DA.Action qualified as M
+
+import Prelude hiding (cons, reverse, find, foldr, foldl, one, map)
+import Prelude qualified as P
 
 deriving instance Eq a => Eq (NonEmpty a)
 deriving instance Show a => Show (NonEmpty a)
@@ -89,7 +90,10 @@ append: NonEmpty a -> NonEmpty a -> NonEmpty a
 append l r =  NonEmpty l.hd (l.tl ++ toList r)
 
 -- | Apply a function over each element in the non-empty list.
-map: (a -> b) -> NonEmpty a -> NonEmpty b
+map:
+  (a -> b)
+  -> NonEmpty a
+  -> NonEmpty b
 map f ne = NonEmpty (f ne.hd) (P.map f ne.tl)
 
 -- | Turn a list into a non-empty list, if possible. Returns
@@ -111,14 +115,21 @@ reverse: NonEmpty a -> NonEmpty  a
 reverse l = let hd::tl = L.reverse $ toList l in NonEmpty with hd; tl
 
 -- | Find an element in a non-empty list.
-find: (a -> Bool) -> NonEmpty a -> Optional a
+find:
+  (a -> Bool)
+  -> NonEmpty a
+  -> Optional a
 find p (NonEmpty head tail)
   | p head = Some head
   | otherwise = L.find p tail
 
 -- | The 'deleteBy' function behaves like 'delete', but takes a
 -- user-supplied equality predicate.
-deleteBy: (a -> a -> Bool) -> a -> NonEmpty a -> [a]
+deleteBy:
+  (a -> a -> Bool)
+  -> a
+  -> NonEmpty a
+  -> [a]
 deleteBy eq a ts = L.deleteBy eq a (toList ts)
 
 -- | Remove the first occurence of x from the non-empty list, potentially
@@ -128,40 +139,68 @@ delete = deleteBy (==)
 
 -- | Apply a function repeatedly to pairs of elements from a non-empty list,
 -- from the left. For example, `foldl1 (+) (NonEmpty 1 [2,3,4]) = ((1 + 2) + 3) + 4`.
-foldl1: (a -> a -> a) -> NonEmpty a -> a
+foldl1:
+  (a -> a -> a)
+  -> NonEmpty a
+  -> a
 foldl1 f l = L.foldl f l.hd l.tl
 
 -- | Apply a function repeatedly to pairs of elements from a non-empty list,
 -- from the right. For example, `foldr1 (+) (NonEmpty 1 [2,3,4]) = 1 + (2 + (3 + 4))`.
-foldr1: (a -> a -> a) -> NonEmpty a -> a
+foldr1:
+  (a -> a -> a)
+  -> NonEmpty a
+  -> a
 foldr1 f l = foldl1 (flip f) (reverse l)
 
 -- | Apply a function repeatedly to pairs of elements from a non-empty list,
 -- from the right, with a given initial value. For example,
 -- `foldr (+) 0 (NonEmpty 1 [2,3,4]) = 1 + (2 + (3 + (4 + 0)))`.
-foldr: (a -> b -> b) -> b -> NonEmpty a -> b
+foldr:
+  (a -> b -> b)
+  -> b
+  -> NonEmpty a
+  -> b
 foldr f i l = L.foldr f i (toList l)
 
 -- | The same as `foldr` but running an action each time.
-foldrA: Action m => (a -> b -> m b) -> b -> NonEmpty a -> m b
+foldrA:
+  Action m => (a -> b -> m b)
+  -> b
+  -> NonEmpty a
+  -> m b
 foldrA f x xs = foldr (\ y acc -> do v <- acc; f y v) (pure x) xs
 
 -- | The same as `foldr1` but running an action each time.
-foldr1A: Action m => (a -> a -> m a) -> NonEmpty a -> m a
+foldr1A:
+  Action m => (a -> a -> m a)
+  -> NonEmpty a
+  -> m a
 foldr1A f l = M.foldrA f l.hd l.tl
 
 -- | Apply a function repeatedly to pairs of elements from a non-empty list,
 -- from the left, with a given initial value. For example,
 -- `foldl (+) 0 (NonEmpty 1 [2,3,4]) = (((0 + 1) + 2) + 3) + 4`.
-foldl: (b -> a -> b) -> b -> NonEmpty a -> b
+foldl:
+  (b -> a -> b)
+  -> b
+  -> NonEmpty a
+  -> b
 foldl f i l = L.foldl f i (toList l)
 
 -- | The same as `foldl` but running an action each time.
-foldlA: Action m => (b -> a -> m b) -> b -> NonEmpty a -> m b
+foldlA:
+  Action m => (b -> a -> m b)
+  -> b
+  -> NonEmpty a
+  -> m b
 foldlA f x xs = foldl (\ acc y -> do v <- acc; f v y) (pure x) xs
 
 -- | The same as `foldl1` but running an action each time.
-foldl1A: Action m => (a -> a -> m a) -> NonEmpty a -> m a
+foldl1A:
+  Action m => (a -> a -> m a)
+  -> NonEmpty a
+  -> m a
 foldl1A f l = M.foldlA f l.hd l.tl
 
 instance IsParties (NonEmpty Party) where

@@ -3,15 +3,17 @@
 //!   daml-fmt <file...>         print formatted source to stdout
 //!   daml-fmt -w <file...>      rewrite files in place (only when changed)
 //!   daml-fmt --check <file...> exit 1 if any file would change
+//!   daml-fmt --preserve-import-order <file...>
 //!   daml-fmt                   read stdin, write formatted source to stdout
 //!
 //! Malformed input (unterminated string / block comment) is reported to stderr
 //! and exits 2 in every mode; `-w` never rewrites it. Output is unchanged
 //! (byte-faithful passthrough) — only the success signal changes.
 //!
-//! Backend is the AST-driven formatter (`format_source` -> layout_ast).
+//! Backend is the AST-driven formatter (`format_source_with_options` ->
+//! layout_ast).
 
-use daml_fmt::{format_source, lex_diagnostics};
+use daml_fmt::{format_source_with_options, lex_diagnostics, FormatOptions};
 use std::io::Read;
 use std::process::exit;
 
@@ -31,6 +33,7 @@ fn usage(code: i32) -> ! {
          \n\
          \x20 -w, --write    rewrite files in place\n\
          \x20     --check    exit 1 if any file is not formatted\n\
+         \x20     --preserve-import-order  do not reorder import declarations\n\
          \x20 -h, --help     show this help\n\
          \x20 -v, --version  show version\n\
          \n\
@@ -42,11 +45,13 @@ fn usage(code: i32) -> ! {
 fn main() {
     let mut write = false;
     let mut check = false;
+    let mut options = FormatOptions::default();
     let mut files: Vec<String> = Vec::new();
     for a in std::env::args().skip(1) {
         match a.as_str() {
             "-w" | "--write" => write = true,
             "--check" => check = true,
+            "--preserve-import-order" => options.organize_imports = false,
             "-h" | "--help" => usage(0),
             "-v" | "--version" => {
                 println!("{}", env!("CARGO_PKG_VERSION"));
@@ -75,7 +80,7 @@ fn main() {
             exit(2);
         }
         let malformed = report_lex_errors("<stdin>", &text);
-        print!("{}", format_source(&text));
+        print!("{}", format_source_with_options(&text, options));
         exit(if malformed { 2 } else { 0 });
     }
 
@@ -96,11 +101,11 @@ fn main() {
         if report_lex_errors(file, &text) {
             failed += 1;
             if !check && !write {
-                print!("{}", format_source(&text));
+                print!("{}", format_source_with_options(&text, options));
             }
             continue;
         }
-        let out = format_source(&text);
+        let out = format_source_with_options(&text, options);
         if check {
             if out != text {
                 println!("{}", file);

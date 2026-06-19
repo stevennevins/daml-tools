@@ -22,37 +22,37 @@ import Daml.Script.Internal.Questions.Commands (AnyContractKey)
 -- SCU related submission errors
 data UpgradeErrorType
   = ValidationFailed with
-        coid: AnyContractId
-        srcTemplateId: TemplateTypeRep
-        dstTemplateId: TemplateTypeRep
-        srcPackageName: Text
-        dstPackageName: Text
-        originalSignatories: [Party]
-        originalObservers: [Party]
-        originalKeyOpt: Optional (AnyContractKey, [Party])
-        recomputedSignatories: [Party]
-        recomputedObservers: [Party]
-        recomputedKeyOpt: Optional (AnyContractKey, [Party])
+        coid : AnyContractId
+        srcTemplateId : TemplateTypeRep
+        dstTemplateId : TemplateTypeRep
+        srcPackageName : Text
+        dstPackageName : Text
+        originalSignatories : [Party]
+        originalObservers : [Party]
+        originalKeyOpt : Optional (AnyContractKey, [Party])
+        recomputedSignatories : [Party]
+        recomputedObservers : [Party]
+        recomputedKeyOpt : Optional (AnyContractKey, [Party])
   | TranslationFailed with
-        mCoid: Optional AnyContractId
-        srcTemplateId: TemplateTypeRep
-        dstTemplateId: TemplateTypeRep
-        createArg: AnyTemplate
+        mCoid : Optional AnyContractId
+        srcTemplateId : TemplateTypeRep
+        dstTemplateId : TemplateTypeRep
+        createArg : AnyTemplate
   | AuthenticationFailed with
-        coid: AnyContractId
-        srcTemplateId: TemplateTypeRep
-        dstTemplateId: TemplateTypeRep
-        createArg: AnyTemplate
+        coid : AnyContractId
+        srcTemplateId : TemplateTypeRep
+        dstTemplateId : TemplateTypeRep
+        createArg : AnyTemplate
 
 -- | MOVE Daml.Script
 -- Daml Crypto (Secp256k1) related submission errors
 data CryptoErrorType
   = MalformedByteEncoding with
-        value: Text
+        value : Text
     | MalformedKey with
-        keyValue: Text
+        keyValue : Text
     | MalformedSignature with
-        signatureValue: Text
+        signatureValue : Text
     deriving Show
 
 -- | HIDE
@@ -67,20 +67,20 @@ data DevErrorType
 data ContractNotFoundAdditionalInfo
   = NotFound -- The generic "this contract does not exist"
   | NotActive with -- The contract did exist, but has since been archived
-      additionalInfoCid: AnyContractId
+      additionalInfoCid : AnyContractId
   | NotEffective with -- The contract "will" exist, only thrown from the IDELedger where one can go backwards in time
-      additionalInfoCid: AnyContractId
-      effectiveAt: Text
+      additionalInfoCid : AnyContractId
+      effectiveAt : Text
   | NotVisible with -- The contract exists, but the readAs/actAs party union cannot see it
-      additionalInfoCid: AnyContractId
-      actAs: [Party]
-      readAs: [Party]
-      observers: [Party]
+      additionalInfoCid : AnyContractId
+      actAs : [Party]
+      readAs : [Party]
+      observers : [Party]
   deriving Show
 
 -- | MOVE Daml.Script.Internal
 -- Exacts nonactive contract ID from ContractNotFoundAdditionalInfo
-isNotActive: ContractNotFoundAdditionalInfo -> Optional AnyContractId
+isNotActive : ContractNotFoundAdditionalInfo -> Optional AnyContractId
 isNotActive (NotActive {additionalInfoCid}) = Some additionalInfoCid
 isNotActive _ = None
 
@@ -92,44 +92,44 @@ data SubmitError
     -- When run on Canton, there may be more than one contract ID, and additionalDebuggingInfo is always None
     -- On the other hand, when run on IDELedger, there is only ever one contract ID, and additionalDebuggingInfo is always Some
     ContractNotFound with
-      unknownContractIds: NonEmpty Text
+      unknownContractIds : NonEmpty Text
         -- ^ Provided as text, as we do not know the template ID of a contract if the lookup fails
-      additionalDebuggingInfo: Optional ContractNotFoundAdditionalInfo
+      additionalDebuggingInfo : Optional ContractNotFoundAdditionalInfo
        -- ^ should always be None in Canton's case, see https://github.com/digital-asset/daml/issues/17154
   | -- | Contract with given contract key could not be found
     ContractKeyNotFound with
-      contractKey: AnyContractKey
+      contractKey : AnyContractKey
   | -- | No vetted package with given package name could be found
     UnresolvedPackageName with
-      packageName: Text
+      packageName : Text
   | -- | Generic authorization failure, included missing party authority, invalid signatories, etc.
     AuthorizationError with
-      authorizationErrorMessage: Text -- We can't pass over the data at the moment, so we just give the full string error here, for anyone that wants to check it
+      authorizationErrorMessage : Text -- We can't pass over the data at the moment, so we just give the full string error here, for anyone that wants to check it
   | -- | Failed to hash a contract
     ContractHashingError with
-      contractId: AnyContractId
-      dstTemplateId: TemplateTypeRep
-      createArg: AnyTemplate
+      contractId : AnyContractId
+      dstTemplateId : TemplateTypeRep
+      createArg : AnyTemplate
       errorMessage: Text
   | -- | Given disclosed contract key does not match the contract key of the contract on ledger.
     DisclosedContractKeyHashingError with
-      contractId: AnyContractId
-      expectedKey: AnyContractKey
-      givenKeyHash: Text
+      contractId : AnyContractId
+      expectedKey : AnyContractKey
+      givenKeyHash : Text
   | -- | Attempted to create a contract with a contract key that already exists
     DuplicateContractKey with
-      duplicateContractKey: Optional AnyContractKey
+      duplicateContractKey : Optional AnyContractKey
         -- ^ Canton will often not provide this key, IDELedger will
   | -- | Contract key lookup yielded different results
     InconsistentContractKey with
-      contractKey: AnyContractKey
+      contractKey : AnyContractKey
   | -- | Unhandled user thrown exception
     UnhandledException with
-      exc: Optional AnyException
+      exc : Optional AnyException
         -- ^ Errors more complex than simple records cannot currently be encoded over the grpc status. Such errors will be missing here.
   | -- | Transaction failure due to abort/assert calls pre-exceptions
     UserError with
-      userErrorMessage: Text -- TODO[SW] Post LF 1.14, only `submitMustFail` can throw this. I'll refactor that later and likely remove this error
+      userErrorMessage : Text -- TODO[SW] Post LF 1.14, only `submitMustFail` can throw this. I'll refactor that later and likely remove this error
   | -- | Failure due to false result from `ensure`, strictly pre-exception.
     -- According to docs, not throwable with LF >= 1.14.
     -- On LF >= 1.14, a failed `ensure` will result in a `PreconditionFailed`
@@ -137,26 +137,26 @@ data SubmitError
     TemplatePreconditionViolated
   | -- | Attempted to create a contract with empty contract key maintainers
     CreateEmptyContractKeyMaintainers with
-      invalidTemplate: AnyTemplate
+      invalidTemplate : AnyTemplate
   | -- | Attempted to fetch a contract with empty contract key maintainers
     FetchEmptyContractKeyMaintainers with
-      failedTemplateKey: AnyContractKey
+      failedTemplateKey : AnyContractKey
   | -- | Attempted to exercise/fetch a contract with the wrong template type
     WronglyTypedContract with
-      contractId: AnyContractId -- ^ Any contract Id of the actual contract
-      expectedTemplateId: TemplateTypeRep
-      actualTemplateId: TemplateTypeRep
+      contractId : AnyContractId -- ^ Any contract Id of the actual contract
+      expectedTemplateId : TemplateTypeRep
+      actualTemplateId : TemplateTypeRep
   | -- | Attempted to use a contract as an interface that it does not implement
     ContractDoesNotImplementInterface with
-      contractId: AnyContractId
-      templateId: TemplateTypeRep
-      interfaceId: TemplateTypeRep -- Consider InterfaceTypeRep from DA.Internal.Interface.AnyView.Types (so exposing it in stdlib)
+      contractId : AnyContractId
+      templateId : TemplateTypeRep
+      interfaceId : TemplateTypeRep -- Consider InterfaceTypeRep from DA.Internal.Interface.AnyView.Types (so exposing it in stdlib)
   | -- | Attempted to use a contract as a required interface that it does not implement
     ContractDoesNotImplementRequiringInterface with
-      contractId: AnyContractId
-      templateId: TemplateTypeRep
-      requiredInterfaceId: TemplateTypeRep
-      requiringInterfaceId: TemplateTypeRep
+      contractId : AnyContractId
+      templateId : TemplateTypeRep
+      requiredInterfaceId : TemplateTypeRep
+      requiringInterfaceId : TemplateTypeRep
   | -- | Attempted to compare values that are not comparable
     NonComparableValues
   | -- | Illegal Contract ID found in Contract Key
@@ -168,47 +168,47 @@ data SubmitError
     -- Two contract IDs with the same prefix are incomparable if one of them is local and the other non-local
     -- or if one is relative and the other relative or absolute with a different suffix.
     ContractIdComparability with
-      globalExistingContractId: Text
+      globalExistingContractId : Text
         -- ^ We do not know the template ID at time of comparison.
   | -- | A value has been nested beyond a given depth limit
     ValueNesting with
-        limit: Int
+        limit : Int
           -- ^ Nesting limit that was exceeded
   | -- | The transaction refers to locked contracts which are in the process of being created, transferred, or
     -- archived by another transaction. If the other transaction fails, this transaction could be successfully retried.
     LocalVerdictLockedContracts with
-      localVerdictLockedContracts: [AnyContractId]
+      localVerdictLockedContracts : [AnyContractId]
           -- ^ Locked contract ids
   | -- | The transaction refers to locked keys which are in the process of being modified by another transaction.
     LocalVerdictLockedKeys with
-      localVerdictLockedKeys: [AnyContractKey]
+      localVerdictLockedKeys : [AnyContractKey]
           -- ^ Locked contract keys
   | -- | Upgrade exception
     UpgradeError with
-      errorType: UpgradeErrorType
-      errorMessage: Text
+      errorType : UpgradeErrorType
+      errorMessage : Text
   | -- | Exception resulting from call to `failWithStatus`
     FailureStatusError with
-      failureStatus: FailureStatus
+      failureStatus : FailureStatus
   | -- | Crypto exceptions
     CryptoError with
-      cryptoErrorType: CryptoErrorType
-      cryptoErrorMessage: Text
+      cryptoErrorType : CryptoErrorType
+      cryptoErrorMessage : Text
   | -- | Rollback exceptions
     EffectfulRollbackError with
-      effectfulRollbackErrorMsg: Text
+      effectfulRollbackErrorMsg : Text
   | -- | Development feature exceptions
     DevError with -- We just give the error's simple class name and the prettied message it generates. Scripts doesn't need anything more right now.
-      devErrorType: DevErrorType
-      devErrorMessage: Text
+      devErrorType : DevErrorType
+      devErrorMessage : Text
   | -- | Generic catch-all for missing errors.
     UnknownError with
-      unknownErrorMessage: Text
+      unknownErrorMessage : Text
   | -- | One of the above error types where the full exception body did not fit into the response, and was incomplete.
     TruncatedError with
-      truncatedErrorType: Text
+      truncatedErrorType : Text
         -- ^ One of the constructor names of SubmitFailure except DevError, UnknownError, TruncatedError
-      truncatedErrorMessage: Text
+      truncatedErrorMessage : Text
 
 -- TODO(https://github.com/digital-asset/daml/issues/18328): improve error messages involving types
 -- | MOVE Daml.Script

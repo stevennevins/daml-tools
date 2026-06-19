@@ -6,8 +6,9 @@
 module Daml.Script.Internal.Questions.TransactionTree where
 
 import Daml.Script.Internal.Questions.Util
-import DA.Optional
+
 import DA.List.Total
+import DA.Optional
 
 -- | MOVE Daml.Script
 data TransactionTree = TransactionTree
@@ -106,7 +107,14 @@ fromTreeGo (ExercisedIndex index) events =
     [] -> error $ "No exercised events for choice " <> index.choice <> " found"
     childEventsList ->
       let msg = "ExercisedIndex on choice " <> index.choice <> " out of bound"
-          childEvents = fromSomeNote msg $ childEventsList !! index.offset in
+          childEvents =
+            fromSomeNote
+              msg
+              $
+              childEventsList
+              !!
+              index.offset
+              in
       fromTreeGo index.child childEvents
   where
     fromExercised: TreeEvent -> Optional [TreeEvent]
@@ -115,9 +123,9 @@ fromTreeGo (ExercisedIndex index) events =
       | AnyChoice _ rep <- exercised.argument
       , rep == index.templateId
       , exercised.choice == index.choice
-      = Some exercised.childEvents
+        = Some exercised.childEvents
       | otherwise
-      = None
+        = None
 
 -- | MOVE Daml.Script
 -- Index for the first create event of a given template
@@ -138,14 +146,21 @@ createdN offset = CreatedIndex CreatedIndexPayload
 -- | MOVE Daml.Script
 -- Index for the first exercise of a given choice on a given template
 -- e.g. `exercised @MyTemplate "MyChoice"`
-exercised: forall t t'. HasTemplateTypeRep t => Text -> TreeIndex t' -> TreeIndex t'
+exercised:
+  forall t t'. HasTemplateTypeRep t => Text
+  -> TreeIndex t'
+  -> TreeIndex t'
 exercised choice = exercisedN @t choice 0
 
 -- | MOVE Daml.Script
 -- Index for the Nth exercise of a given choice on a given template
 -- e.g. `exercisedN @MyTemplate "MyChoice" 2`
 -- `exercised c = exercisedN c 0`
-exercisedN: forall t t'. HasTemplateTypeRep t => Text -> Int -> TreeIndex t' -> TreeIndex t'
+exercisedN:
+  forall t t'. HasTemplateTypeRep t => Text
+  -> Int
+  -> TreeIndex t'
+  -> TreeIndex t'
 exercisedN choice offset child = ExercisedIndex ExercisedIndexPayload
   with
     templateId = templateTypeRep @t

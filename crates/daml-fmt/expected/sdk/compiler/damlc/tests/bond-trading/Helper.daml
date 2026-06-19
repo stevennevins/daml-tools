@@ -5,14 +5,14 @@ module Helper where
 
 import Daml.Script
 
+import DA.Action
+import DA.Assert
+import DA.Date
+
 import Bond
 import Cash
 import Dvp
 import DvpTerms
-
-import DA.Assert
-import DA.Action
-import DA.Date
 
 data HandleCashResult = HandleCashResult
   with
@@ -130,7 +130,14 @@ main = script do
         cashIssuer = acmeBank
         cashCurrency = "USD"
         cashAmount = 50.0
-        settleTime = datetime 2018 May 16 0 0 0
+        settleTime =
+          datetime
+            2018
+            May
+            16
+            0
+            0
+            0
         dvpId = "abc"
 
   dvp2Cid <- alice `submit` createCmd
@@ -144,7 +151,14 @@ main = script do
         cashIssuer = acmeBank
         cashCurrency = "USD"
         cashAmount = 20.0
-        settleTime = datetime 2018 May 16 0 0 0
+        settleTime =
+          datetime
+            2018
+            May
+            16
+            0
+            0
+            0
         dvpId = "abc"
 
   dvp1Cid <- bob `submit` exerciseCmd dvp1Cid Dvp.Accept

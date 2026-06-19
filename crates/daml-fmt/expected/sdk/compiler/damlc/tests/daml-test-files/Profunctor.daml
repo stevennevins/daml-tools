@@ -7,7 +7,11 @@
 module Profunctor where
 
 class Profunctor p where
-  dimap: (a2 -> a1) -> (b1 -> b2) -> p a1 b1 -> p a2 b2
+  dimap:
+    (a2 -> a1)
+    -> (b1 -> b2)
+    -> p a1 b1
+    -> p a2 b2
 
 instance Profunctor (->) where
   dimap f g h = g . h . f

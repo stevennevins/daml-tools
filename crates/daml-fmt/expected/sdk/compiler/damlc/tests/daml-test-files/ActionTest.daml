@@ -4,13 +4,17 @@
 module ActionTest where
 
 import Daml.Script
-import DA.Assert
+
 import DA.Action
+import DA.Assert
 import DA.Optional
 
 import Iou12
 
-checkSome: (a -> Bool) -> Optional a -> Bool
+checkSome:
+  (a -> Bool)
+  -> Optional a
+  -> Bool
 checkSome _ None = False
 checkSome p (Some a) = p a
 

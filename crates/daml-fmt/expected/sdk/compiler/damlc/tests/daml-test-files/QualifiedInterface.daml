@@ -9,8 +9,10 @@
 module QualifiedInterface where
 
 import Daml.Script
-import qualified QualifiedInterface.Interface as Interface
+
 import DA.Assert ((===))
+
+import qualified QualifiedInterface.Interface as Interface
 import ScriptAssertHelpers
 
 template Asset

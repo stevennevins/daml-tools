@@ -3,8 +3,8 @@
 
 -- UPGRADE_MODULE_BEGIN
 module UpgradeFromCoinV1 where
-import CoinV2
 import CoinV1
+import CoinV2
 -- UPGRADE_MODULE_END
 
 -- UPGRADE_PROPOSAL_BEGIN

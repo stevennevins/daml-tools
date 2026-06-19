@@ -40,7 +40,14 @@ myTest = script do
               decimalField = 17.42
               boolField = False
               partyField = bob
-              timeField = datetime 2018 May 16 0 0 0
+              timeField =
+                datetime
+                  2018
+                  May
+                  16
+                  0
+                  0
+                  0
               listField = [1,2,3]
               contractIdField = someCid
 -- PRODUCT_TYPE_CREATE_END

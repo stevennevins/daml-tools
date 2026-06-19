@@ -4,8 +4,9 @@
 module Tuple where
 
 -- TUPLE_TEST_BEGIN
-import DA.Tuple
 import Daml.Script
+
+import DA.Tuple
 
 tuple_test = script do
   let

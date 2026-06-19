@@ -11,7 +11,10 @@ data Phantom a = Phantom {}
 phantom: Phantom (Party -> Party)
 phantom = Phantom {}
 
-showOptional: (a -> Text) -> Optional a -> Text
+showOptional:
+  (a -> Text)
+  -> Optional a
+  -> Text
 showOptional f x = optional "None" f x
 
 main = script do

@@ -7,10 +7,11 @@
 module RoundingModeOrder where
 
 import Daml.Script
+
 import DA.Assert ((===))
+import DA.BigNumeric
 import qualified DA.List
 import qualified DA.List.BuiltinOrder
-import DA.BigNumeric
 
 roundingModes =
     [ RoundingUp

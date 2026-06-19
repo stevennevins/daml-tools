@@ -7,8 +7,9 @@
 
 module ExplicitDisclosureWithKeys where
 
-import DA.Optional(fromSome)
 import Daml.Script
+
+import DA.Optional(fromSome)
 
 template Box with
     s: Party

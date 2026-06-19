@@ -37,7 +37,10 @@ double = (* 2)
 -- INFIX2_END
 
 -- UNCURRY_SIG_BEGIN
-uncurry: (a -> b -> c) -> (a, b) -> c
+uncurry:
+  (a -> b -> c)
+  -> (a, b)
+  -> c
 -- UNCURRY_SIG_END
 
 -- UNCURRY_BEGIN
@@ -79,7 +82,10 @@ doError t = case t of
 -- TEXT_TO_BOOL_END
 
 -- IFELSE_BEGIN
-ifelse b t e = if b then t else e
+ifelse b t e =
+  if b
+    then t
+    else e
 boom = ifelse True 1 (error "Boom")
 -- IFELSE_END
 
@@ -89,7 +95,7 @@ typeError b = if b
   then 1
   else "a"
 -- TYPE_ERROR_END
--}
+    -}
 
 -- INT_OR_TEXT_BEGIN
 intOrText: Bool -> Either Int Text
@@ -118,7 +124,7 @@ typeError b p = if b
   then create T with p
   else create S with p
 -- TYPE_ERROR2_END
--}
+    -}
 
 -- S_OR_T_BEGIN
 ifThenSElseT1 b p = if b

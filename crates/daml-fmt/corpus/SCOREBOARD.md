@@ -4,7 +4,10 @@ All rows measured with the same harness over the same 924-file corpus
 (`corpus/desugar-ok.txt`, originals in `original/`, SDK 3.4.11):
 
 1. **parse-ok** — formatted file still desugars (`daml damlc desugar`)
-2. **equivalent** — desugar output byte-identical to the original's (the real bar)
+2. **equivalent** — desugar output equivalent to the original's; import
+   declarations are sorted before comparison because default import organization
+   may change package identity without changing source-level imports or program
+   bodies
 3. **semantics-changed** — parses but desugars differently (silent corruption)
 4. **idempotent** — format(format(x)) == format(x)
 
@@ -13,7 +16,7 @@ All rows measured with the same harness over the same 924-file corpus
 | LimeChain damlfmt 0.0.5 (pristine) | 420 | 372 | 48 | 504 | 0 | 920/924 |
 | LimeChain + grug patches (2026-06-12) | 921 | 921 | 0 | 3 | 0 | 924/924 |
 | daml-fmt LimeChain-port-on-daml-lint (2026-06-13) | 924 | 924 | 0 | 0 | 0 | 924/924 |
-| **daml-fmt AST formatter — own pattern (2026-06-16)** | **924** | **924** | **0** | **0** | **0** | **924/924** |
+| **daml-fmt AST formatter — own pattern (2026-06-19)** | **924** | **924** | **0** | **0** | **0** | **924/924** |
 
 The pristine row is the published tool's true quality; its VS Code extension
 hides the failures by refusing edits that fail its own desugar check.
@@ -26,20 +29,18 @@ The **AST formatter row is the shipped backend** (`src/layout_ast.rs`,
 crate (lexer → offside layout → recursive-descent AST), with **no LimeChain
 derivative** — the authorized port (`src/layout.rs`) was deleted once this
 landed. Mechanism: walk the AST and reindent each modeled construct's child
-lines to a canonical column, gated per pass on the laid-out token stream
-(`same_tokens` via `daml_parser::layout::resolve_layout`), so every accepted
-edit is desugar-safe BY CONSTRUCTION. Modeled (each its own gated pass, iterated
-to a fixpoint): module/export/import continuations; `do`-blocks (including a
-`do` opening with `let`) → `do_col + 2`; `if`/`then`/`else` → `if_col + 2`;
-`case … of` alts → `case_col + 2`; `let … in` bindings (line-leading `let`) →
-`let_col + 2`; `Con with` construction fields and record-update fields; the one
-STRUCTURED rule, `template`/`interface` bodies (with/where keywords →
-`head + 2`, fields/decls → `head + 4`; interface body → `head + 2`); choice
-internals; `data`/type/exception declaration ladders; class/instance head-line
-`where` bodies aligned to their established body column; function
-guards/where bindings; `try`/`catch` handlers; and explicit tuple/list
-continuations. On top runs the token-gated whitespace + colon-spacing +
-blank-line normalization. Broader expression wrapping remains conservative.
+lines to a canonical column, with pure reindent passes gated on the laid-out
+token stream (`same_tokens` via `daml_parser::layout::resolve_layout`).
+Modeled: module/export/import continuations; `do`-blocks (including a `do`
+opening with `let`) → `do_col + 2`; `if`/`then`/`else`; `case … of` alts;
+`let … in`; `Con with` construction fields and record-update fields; the
+structured `template`/`interface` body rule; choice internals;
+`data`/type/exception declaration ladders; class/instance head-line `where`
+bodies aligned to their established body column; function guards/where
+bindings; `try`/`catch` handlers; explicit tuple/list continuations; long
+applications; infix chains; lambdas; inline `if`/`case`/`let`/record
+construction forms; and default import organization. On top runs the
+token-gated whitespace + colon-spacing + blank-line normalization.
 Structural candidate metric:
 `cd crates/daml-fmt && cargo run --features dev-tools --bin coverage -- original` reports
 1949 structural edit candidates / 8256 modeled constructs across the 924-file

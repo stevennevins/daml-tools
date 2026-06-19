@@ -5,12 +5,13 @@
 
 module HexString where
 
+import Daml.Script
+
 import DA.Assert ((===))
+import DA.Crypto.Text
 import DA.Exception (GeneralError (..))
 import DA.Numeric()
 import DA.Optional (fromSome)
-import DA.Crypto.Text
-import Daml.Script
 
 n0_0: Numeric 0
 n0_0 = 0.0

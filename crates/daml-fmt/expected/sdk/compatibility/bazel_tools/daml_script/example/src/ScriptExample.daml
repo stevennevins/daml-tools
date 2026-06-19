@@ -5,8 +5,9 @@
 
 module ScriptExample where
 
-import DA.Assert
 import Daml.Script
+
+import DA.Assert
 
 template Coin
   with

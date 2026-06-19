@@ -5,8 +5,9 @@
 module LfExperimental where
 
 import Daml.Script (script)
-import DA.Experimental.Example (answer)
+
 import DA.Assert ((===))
+import DA.Experimental.Example (answer)
 
 run = script do
   answer () === 42

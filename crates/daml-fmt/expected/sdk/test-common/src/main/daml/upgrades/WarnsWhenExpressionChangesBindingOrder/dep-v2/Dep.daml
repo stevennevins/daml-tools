@@ -3,7 +3,10 @@
 
 module Dep where
 
-useParty: Party -> (Party -> Party -> Party) -> Party
+useParty:
+  Party
+  -> (Party -> Party -> Party)
+  -> Party
 useParty p f = f p p
 
 data IsSchemaPackage = IsSchemaPackage { field : Text }

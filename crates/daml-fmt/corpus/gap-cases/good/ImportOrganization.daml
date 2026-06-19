@@ -5,5 +5,5 @@ import Daml.Script
 import DA.List
 import DA.Optional
 
-example : Optional Text
+example: Optional Text
 example = Some "ok"

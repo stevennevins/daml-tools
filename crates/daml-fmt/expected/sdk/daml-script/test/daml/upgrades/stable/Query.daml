@@ -10,7 +10,7 @@ import qualified V2.Query as V2
 {- PACKAGE
 name: query
 versions: 2
--}
+  -}
 
 {- MODULE
 package: query
@@ -23,7 +23,7 @@ contents: |
       newField : Optional Text -- @V 2
     where
       signatory party
--}
+        -}
 
 main: TestTree
 main = tests

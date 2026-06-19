@@ -9,13 +9,16 @@
 #
 # Tiers:
 #   idempotence  (always)            format(format(x)) == format(x)
-#   equivalence  (default subset)     desugar(format(x)) byte-identical to desugar(x)
+#   equivalence  (default subset)     desugar(format(x)) matches desugar(x),
+#                                     with import declarations sorted
 #   equivalence  (--desugar)          same check over the whole corpus
 #
 # Idempotence is the bar the Rust harness owns and is fast. Desugar is the
 # semantic oracle; a curated representative subset runs by default so common
-# regressions fail close to the formatter change. The full desugar sweep is slow
-# (two SDK invocations per file), so it remains explicit.
+# regressions fail close to the formatter change. Import ordering is normalized
+# because default import organization may change package identity without
+# changing the source-level imports or program body. The full desugar sweep is
+# slow (two SDK invocations per file), so it remains explicit.
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -59,6 +62,16 @@ nonidem="$tmp/nonidem.txt"; : > "$nonidem"
 neq="$tmp/neq.txt"; : > "$neq"
 desugar_warnings="$tmp/desugar-warnings.txt"; : > "$desugar_warnings"
 desugar_list="$tmp/desugar-list.txt"; : > "$desugar_list"
+
+normalize_desugar_import_order() {
+  in_file=$1
+  out_file=$2
+  body_file="$out_file.body"
+  imports_file="$out_file.imports"
+  sed '/^import /d' "$in_file" > "$body_file"
+  sed -n '/^import /p' "$in_file" | sort > "$imports_file"
+  cat "$body_file" "$imports_file" > "$out_file"
+}
 
 if [ "$desugar_mode" = full ]; then
   cp "$list" "$desugar_list"
@@ -124,7 +137,13 @@ if [ "$desugar_mode" != none ] && command -v daml >/dev/null 2>&1; then
       file_arg=$(basename "$f")
     fi
 
-    d="$tmp/desugar"; rm -rf "$d"; mkdir -p "$d/$(dirname "$file_arg")"
+    d="$tmp/desugar"; rm -rf "$d"; mkdir -p "$d"
+    # Full-corpus files often import sibling modules from the same source root.
+    # Compile the formatted file in a symlinked source tree so those imports are
+    # available without copying the whole corpus for every comparison.
+    cp -R -s "$source_root/." "$d/"
+    mkdir -p "$d/$(dirname "$file_arg")"
+    rm -f "$d/$file_arg"
     cp "$one" "$d/$file_arg"
     a_file="$tmp/original.desugar"; b_file="$tmp/formatted.desugar"
     rm -f "$a_file" "$b_file"
@@ -135,7 +154,13 @@ if [ "$desugar_mode" != none ] && command -v daml >/dev/null 2>&1; then
     if [ ! -f "$a_file" ] || [ ! -f "$b_file" ]; then
       echo "$f (desugar produced no output)" >> "$neq"
     elif ! cmp -s "$a_file" "$b_file"; then
-      echo "$f" >> "$neq"
+      a_norm="$tmp/original.import-normalized.desugar"
+      b_norm="$tmp/formatted.import-normalized.desugar"
+      normalize_desugar_import_order "$a_file" "$a_norm"
+      normalize_desugar_import_order "$b_file" "$b_norm"
+      if ! cmp -s "$a_norm" "$b_norm"; then
+        echo "$f" >> "$neq"
+      fi
     elif [ "$a_status" -ne 0 ] || [ "$b_status" -ne 0 ]; then
       echo "$f (compiler exit $a_status/$b_status; output byte-identical)" >> "$desugar_warnings"
     fi

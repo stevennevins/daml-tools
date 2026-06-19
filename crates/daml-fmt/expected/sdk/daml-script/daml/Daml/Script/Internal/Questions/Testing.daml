@@ -5,9 +5,10 @@ module Daml.Script.Internal.Questions.Testing where
 
 import Daml.Script.Internal.LowLevel
 import Daml.Script.Internal.Questions.Exceptions ()
+
 import DA.Bifunctor
-import qualified DA.TextMap as TextMap
 import DA.Fail
+import qualified DA.TextMap as TextMap
 
 -- | MOVE Daml.Script.Internal
 -- Name of the Daml Script Command (or Question) that failed

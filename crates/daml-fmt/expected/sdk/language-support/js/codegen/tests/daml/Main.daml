@@ -5,12 +5,12 @@
 
 module Main where
 
-import DA.TextMap
 import DA.Functor ((<&>))
 import qualified DA.Map
+import DA.TextMap
+
 import qualified Lib.Mod hiding (Overridden)
 import qualified Lib.ModIfaceOnly
-
 import T
 
 template AllTypes with

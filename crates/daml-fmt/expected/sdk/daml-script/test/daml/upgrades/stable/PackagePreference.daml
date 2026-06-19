@@ -5,15 +5,15 @@
 
 module PackagePreference (main) where
 
+import PackageIds
 import UpgradeTestLib
 import qualified V1.PackagePreference as V1
 import qualified V2.PackagePreference as V2
-import PackageIds
 
 {- PACKAGE
 name: package-preference
 versions: 2
--}
+  -}
 
 {- MODULE
 package: package-preference
@@ -29,7 +29,7 @@ contents: |
         controller party
         do pure "V1"                  -- @V 1
         do pure "V2"                  -- @V  2
--}
+          -}
 
 v1PackageId: PackageId
 v1PackageId = getPackageId "package-preference-1.0.0"

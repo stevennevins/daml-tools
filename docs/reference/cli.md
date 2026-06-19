@@ -20,6 +20,7 @@ stdout.
 |--------|-------------|
 | `-w`, `--write` | Rewrite each file in place when the formatted output differs. Requires file arguments. |
 | `--check` | Print each file that would change and exit `1` if any file is not formatted. Requires file arguments. |
+| `--preserve-import-order` | Keep import declarations in source order instead of applying default import organization. |
 | `-h`, `--help` | Show usage text and exit `0`. |
 | `-v`, `--version` | Print the crate version and exit `0`. |
 
@@ -36,6 +37,10 @@ stdout.
 
 Malformed lexical input, such as an unterminated string or block comment, is
 reported on stderr. In write mode, malformed input is not rewritten.
+
+Import organization is enabled by default. It may change Daml package identity
+because import declaration order contributes to the compiled package; pass
+`--preserve-import-order` when package identity stability matters.
 
 ### Exit codes
 

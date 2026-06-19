@@ -5,28 +5,27 @@
 
 module VariantChanges (main) where
 
-import UpgradeTestLib
 import DA.Text
 
-import qualified V1.VariantUnchanged as V1
-import qualified V1.VariantRemCon as V1
-import qualified V1.VariantRemFld as V1
+import UpgradeTestLib
 import qualified V1.VariantAddCon as V1
-import qualified V1.VariantAddOptFld as V1
-import qualified V1.VariantAddOptNestedFld as V1
 import qualified V1.VariantAddNonOptFld as V1
 import qualified V1.VariantAddNonOptNestedFld as V1
+import qualified V1.VariantAddOptFld as V1
+import qualified V1.VariantAddOptNestedFld as V1
 import qualified V1.VariantNonLastAdditional as V1
-
-import qualified V2.VariantUnchanged as V2
-import qualified V2.VariantRemCon as V2
-import qualified V2.VariantRemFld as V2
+import qualified V1.VariantRemCon as V1
+import qualified V1.VariantRemFld as V1
+import qualified V1.VariantUnchanged as V1
 import qualified V2.VariantAddCon as V2
-import qualified V2.VariantAddOptFld as V2
-import qualified V2.VariantAddOptNestedFld as V2
 import qualified V2.VariantAddNonOptFld as V2
 import qualified V2.VariantAddNonOptNestedFld as V2
+import qualified V2.VariantAddOptFld as V2
+import qualified V2.VariantAddOptNestedFld as V2
 import qualified V2.VariantNonLastAdditional as V2
+import qualified V2.VariantRemCon as V2
+import qualified V2.VariantRemFld as V2
+import qualified V2.VariantUnchanged as V2
 
 main: TestTree
 main = tests
@@ -50,7 +49,11 @@ main = tests
     , ("Fails if downgrading a variant from a new case in the middle", templateVariantDowngradeNonLastDifferentRank)
   ]
 
-templateInvalidChange: forall t2 t1 c2. (Template t1, HasEnsure t1, Choice t2 c2 Text) => Bool -> (Party -> t1) -> c2 -> Test
+templateInvalidChange:
+  forall t2 t1 c2. (Template t1, HasEnsure t1, Choice t2 c2 Text) => Bool
+  -> (Party -> t1)
+  -> c2
+  -> Test
 templateInvalidChange shouldSucceed makeV1Contract v2Choice = test $ do
   a <- allocatePartyOn "alice" participant0
   cid <- a `submit` createExactCmd (makeV1Contract a)
@@ -70,7 +73,7 @@ templateInvalidChange shouldSucceed makeV1Contract v2Choice = test $ do
 {- PACKAGE
 name: variant-changes
 versions: 2
--}
+  -}
 
 {- MODULE
 package: variant-changes
@@ -91,7 +94,7 @@ contents: |
         controller party
         do pure "V1" -- @V 1
         do pure "V2" -- @V  2
--}
+          -}
 
 unchanged: Test
 unchanged =
@@ -122,7 +125,7 @@ contents: |
         controller party
         do pure "V1" -- @V 1
         do pure "V2" -- @V  2
--}
+          -}
 
 upgradeToRemovedCon: Test
 upgradeToRemovedCon =
@@ -152,7 +155,7 @@ contents: |
         controller party
         do pure "V1" -- @V 1
         do pure "V2" -- @V  2
--}
+          -}
 
 downgradeFromNewCon: Test
 downgradeFromNewCon =
@@ -199,7 +202,7 @@ contents: |
         controller party
         do pure "V1" -- @V 1
         do pure "V2" -- @V  2
--}
+          -}
 
 upgradeToRemovedField: Test
 upgradeToRemovedField =
@@ -232,7 +235,7 @@ contents: |
         controller party
         do pure "V1" -- @V 1
         do pure "V2" -- @V  2
--}
+          -}
 
 upgradeToNewNonOptField: Test
 upgradeToNewNonOptField =
@@ -265,7 +268,7 @@ contents: |
         controller party
         do pure "V1" -- @V 1
         do pure "V2" -- @V  2
--}
+          -}
 
 upgradeToNewNonOptNestedField: Test
 upgradeToNewNonOptNestedField =
@@ -303,7 +306,7 @@ contents: |
         controller party
         do pure "V1" -- @V 1
         do pure "V2" -- @V  2
--}
+          -}
 
 upgradeToNewOptField: Test
 upgradeToNewOptField =
@@ -353,7 +356,7 @@ contents: |
         controller party
         do pure "V1" -- @V 1
         do pure "V2" -- @V  2
--}
+          -}
 
 upgradeToNewOptNestedField: Test
 upgradeToNewOptNestedField =
@@ -415,7 +418,7 @@ contents: |
         controller party
         do pure "V1" -- @V 1
         do pure "V2" -- @V  2
--}
+          -}
 
 templateVariantUpgradeNonLastSameRank: Test
 templateVariantUpgradeNonLastSameRank =

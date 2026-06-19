@@ -19,7 +19,10 @@ pattern Filled x = Some x
 
 {-# COMPLETE Empty, Filled : Optional #-}
 
-mapOptional: (a -> b) -> Optional a -> Optional b
+mapOptional:
+  (a -> b)
+  -> Optional a
+  -> Optional b
 mapOptional f = \case
   Empty -> Empty
   Filled x -> Filled (f x)

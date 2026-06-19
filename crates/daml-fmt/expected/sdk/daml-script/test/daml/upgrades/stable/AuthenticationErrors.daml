@@ -4,18 +4,17 @@
 -- Tests scenarios prevented by the authentication of v >= 12 contract IDs
 module AuthenticationErrors (main) where
 
-import UpgradeTestLib
 import PackageIds
-
+import UpgradeTestLib
 import qualified V1.AuthenticationErrors as V1
-import qualified V2.AuthenticationErrors as V2
-import qualified V1.Iface as Iface
 import qualified V1.Client as Client
+import qualified V1.Iface as Iface
+import qualified V2.AuthenticationErrors as V2
 
 {- PACKAGE
 name: authentication-errors-iface
 versions: 1
--}
+  -}
 
 {- MODULE
 package: authentication-errors-iface
@@ -34,13 +33,13 @@ contents: |
       controller ctl
       do
         pure ()
--}
+          -}
 
 {- PACKAGE
 name: authentication-errors
 versions: 2
 depends: authentication-errors-iface-1.0.0
--}
+  -}
 
 {- MODULE
 package: authentication-errors
@@ -152,7 +151,7 @@ contents: |
       choice ContractIdPayloadChoice : ()
         controller sig
         do pure ()
--}
+          -}
 
 {- PACKAGE
 name: authentication-errors-client
@@ -161,7 +160,7 @@ depends: |
   authentication-errors-iface-1.0.0
   authentication-errors-1.0.0
   authentication-errors-2.0.0
--}
+    -}
 
 {- MODULE
 package: authentication-errors-client
@@ -343,7 +342,7 @@ contents: |
         do
           dummyCid <- create V1.DummyTemplate { sig = sig }
           create V1.ContractIdPayloadTemplate { sig = sig, cidField = dummyCid }
--}
+            -}
 
 main: TestTree
 main = tests

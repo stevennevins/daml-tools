@@ -10,8 +10,9 @@
 module ExceptionSyntax where
 
 import Daml.Script
-import DA.Exception (throw)
+
 import DA.Assert ((===))
+import DA.Exception (throw)
 
 exception MyException
   with

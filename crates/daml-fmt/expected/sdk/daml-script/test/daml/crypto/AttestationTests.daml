@@ -5,12 +5,14 @@
 
 module AttestationTests where
 
-import AttestationTestData
+import Daml.Script
+
 import DA.Assert ((===))
 import DA.Crypto.Text
 import DA.Foldable (forA_)
 import DA.Optional (fromSome)
-import Daml.Script
+
+import AttestationTestData
 
 template ValidateTestMessageSignature with
     signature: SignatureHex

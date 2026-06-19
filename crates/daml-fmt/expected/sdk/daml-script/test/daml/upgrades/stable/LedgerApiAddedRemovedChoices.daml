@@ -5,15 +5,16 @@
 
 module LedgerApiAddedRemovedChoices (main) where
 
+import DA.Text
+
 import UpgradeTestLib
 import qualified V1.AddedRemovedChoice as V1
 import qualified V2.AddedRemovedChoice as V2
-import DA.Text
 
 {- PACKAGE
 name: ledger-api-added-removed-choice-upgrades
 versions: 2
--}
+  -}
 
 {- MODULE
 package: ledger-api-added-removed-choice-upgrades
@@ -34,7 +35,7 @@ contents: |
       choice NewAddedChoice : Text   -- @V  2
         controller party             -- @V  2
         do pure "V2"                 -- @V  2
--}
+        -}
 
 main: TestTree
 main = tests
@@ -49,7 +50,7 @@ main = tests
 genericUpgradeTest
   : forall t2 t1 c2 r
   . (Template t1, HasEnsure t1, Choice t2 c2 r)
-  => (Party -> t1)
+    => (Party -> t1)
   -> c2
   -> Bool
   -> (Either SubmitError r -> Script ())
@@ -61,7 +62,12 @@ genericUpgradeTest makeV1Contract v2Choice explicitPackageIds handleRes = test $
   res <- a `trySubmit` (if explicitPackageIds then exerciseExactCmd else exerciseCmd) cidV2 v2Choice
   handleRes res
 
-choiceTest: forall t2 t1 c2 r. (Template t1, HasEnsure t1, Choice t2 c2 r, Eq r, Show r) => (Party -> t1) -> c2 -> Bool -> r -> Test
+choiceTest:
+  forall t2 t1 c2 r. (Template t1, HasEnsure t1, Choice t2 c2 r, Eq r, Show r) => (Party -> t1)
+  -> c2
+  -> Bool
+  -> r
+  -> Test
 choiceTest makeV1Contract v2Choice explicitPackageIds expectedResult = genericUpgradeTest @t2 makeV1Contract v2Choice explicitPackageIds $ \res ->
   case res of
     Right returnValue -> returnValue === expectedResult

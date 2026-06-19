@@ -4,8 +4,9 @@
 module List where
 
 -- LIST_TEST_BEGIN
-import DA.List
 import Daml.Script
+
+import DA.List
 
 list_test = script do
   let

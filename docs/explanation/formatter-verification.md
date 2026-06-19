@@ -14,22 +14,28 @@ reviews tractable for humans.
 Together, these checks let the formatter make layout decisions while keeping
 semantic risk visible.
 
-## Token equivalence is the construction gate
+## Token equivalence is a construction gate
 
 The formatter is built on `daml-parser`, which records source tokens, trivia,
 layout, and byte spans. Formatting works by rewriting layout around known
 syntax while preserving comments, strings, and unmodeled regions.
 
-Before a candidate output is accepted, it is re-lexed and compared against the
-original laid-out token stream, including virtual layout tokens for Daml's
-offside rule. If the tokens differ, the formatter falls back to a safer output
-and can ultimately return the input unchanged.
+For pure reindentation and final whitespace normalization, candidate output is
+re-lexed and compared against the previous laid-out token stream, including
+virtual layout tokens for Daml's offside rule. If the tokens differ, the
+formatter falls back to a safer output and can ultimately return the input
+unchanged.
 
 This gate matters because spacing can change meaning in subtle ways. For
 example, changing whitespace around operators or layout-sensitive blocks can
 alter the token stream even when the text looks harmless. Token equivalence
 keeps the formatter from returning a rewrite that changes the parser's view of
 the program.
+
+Some formatter rules intentionally change layout form, such as expanding inline
+expressions or organizing imports. Those rules are not token-equivalence
+preserving; their safety is checked by focused fixtures, idempotence, and the
+compiler desugar oracle.
 
 ## Desugar equivalence is the semantic oracle
 
@@ -41,6 +47,13 @@ Daml compiler's desugar step, and the resulting byte streams are compared.
 If desugared output is byte-identical, the compiler has seen the same program
 after formatting. This is the highest semantic bar in the formatter's
 verification story.
+
+Import organization is the one narrower comparison. Reordering imports can
+change package identity even when the import set and program body are
+unchanged, so the verifier falls back to comparing desugar output with import
+declarations sorted. That still catches changed program bodies and added or
+removed imports, while permitting import-order/package-identity noise for this
+rule.
 
 The distinction between token equivalence and desugar equivalence is important.
 Token equivalence explains why individual formatter rewrites are designed to be
@@ -109,6 +122,7 @@ it is safer for the formatter to leave syntax alone than to guess at a layout
 it cannot yet justify.
 
 The result is a conservative formatter architecture. It can grow by modeling
-more syntax over time, but each new rule has to pass through the same safety
-layers: preserve the token stream, preserve compiler desugaring, stay
-idempotent, update expected baselines deliberately, and survive human audit.
+more syntax over time, but each new rule has to pass through the relevant
+safety layers: preserve the token stream where the rule is pure reindentation,
+preserve compiler desugaring, stay idempotent, update expected baselines
+deliberately, and survive human audit.

@@ -59,13 +59,19 @@ _ !! i | i < 0 = None
 -- | Fold left starting with the head of the list.
 -- For example, `foldl1 f [a,b,c] = f (f a b) c`.
 -- Return `None` if list is empty.
-foldl1: (a -> a -> a) -> [a] -> Optional a
+foldl1:
+  (a -> a -> a)
+  -> [a]
+  -> Optional a
 foldl1 f (x::xs) = Some (foldl f x xs)
 foldl1 _  [] = None
 
 -- | Fold right starting with the last element of the list.
 -- For example, `foldr1 f [a,b,c] = f a (f b c)`
-foldr1: (a -> a -> a) -> [a] -> Optional a
+foldr1:
+  (a -> a -> a)
+  -> [a]
+  -> Optional a
 foldr1 f [] = None
 foldr1 f xs = foldl1 (flip f) (reverse xs)
 
@@ -77,32 +83,47 @@ foldr1 f xs = foldl1 (flip f) (reverse xs)
 -- same result as `foldl1` or `foldr1`.
 --
 -- Return `None` if list is empty.
-foldBalanced1: (a -> a -> a) -> [a] -> Optional a
+foldBalanced1:
+  (a -> a -> a)
+  -> [a]
+  -> Optional a
 foldBalanced1 f [] = None
 foldBalanced1 f xs = Some (DA.List.foldBalanced1 f xs)
 
 -- | Return the least element of a list according to the given comparison function.
 -- Return `None` if list  is empty.
-minimumBy: (a -> a -> Ordering) -> [a] -> Optional a
+minimumBy:
+  (a -> a -> Ordering)
+  -> [a]
+  -> Optional a
 minimumBy _ [] = None
 minimumBy f xs = Some (DA.List.minimumBy f xs)
 
 -- | Return the greatest element of a list according to the given comparison function.
 -- Return `None` if list is empty.
-maximumBy: (a -> a -> Ordering) -> [a] -> Optional a
+maximumBy:
+  (a -> a -> Ordering)
+  -> [a]
+  -> Optional a
 maximumBy _ [] = None
 maximumBy f xs = Some (DA.List.maximumBy f xs)
 
 -- | Return the least element of a list when comparing by a key function.
 -- For example `minimumOn (\(x,y) -> x + y) [(1,2), (2,0)] == Some (2,0)`.
 -- Return `None` if list is empty.
-minimumOn: (Ord k) => (a -> k) -> [a] -> Optional a
+minimumOn:
+  (Ord k) => (a -> k)
+  -> [a]
+  -> Optional a
 minimumOn _ [] = None
 minimumOn f xs = Some (DA.List.minimumOn f xs)
 
 -- | Return the greatest element of a list when comparing by a key function.
 -- For example `maximumOn (\(x,y) -> x + y) [(1,2), (2,0)] == Some (1,2)`.
 -- Return `None` if list is empty.
-maximumOn: (Ord k) => (a -> k) -> [a] -> Optional a
+maximumOn:
+  (Ord k) => (a -> k)
+  -> [a]
+  -> Optional a
 maximumOn _ [] = None
 maximumOn f xs = Some (DA.List.maximumOn f xs)

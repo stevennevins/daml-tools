@@ -9,12 +9,11 @@
 -- ```
 module DA.Foldable where
 
-import Prelude hiding (foldr, foldl, any, all)
-
-import DA.Monoid
-
 import DA.List qualified as L
+import DA.Monoid
 import DA.Optional qualified as O
+
+import Prelude hiding (foldr, foldl, any, all)
 
 -- | Class of data structures that can be folded to a summary value.
 class Foldable t where
@@ -26,26 +25,43 @@ class Foldable t where
   fold = foldMap identity
 
   -- | Combine the elements of a structure using a monoid.
-  foldMap: Monoid m => (a -> m) -> t a -> m
+  foldMap:
+    Monoid m => (a -> m)
+    -> t a
+    -> m
   foldMap f = foldr ((<>) . f) mempty
 
   -- | Right-associative fold of a structure.
-  foldr: (a -> b -> b) -> b -> t a -> b
+  foldr:
+    (a -> b -> b)
+    -> b
+    -> t a
+    -> b
   foldr f z t = appEndo (foldMap (Endo . f) t) z
 
   -- | Left-associative fold of a structure.
-  foldl: (b -> a -> b) -> b -> t a -> b
+  foldl:
+    (b -> a -> b)
+    -> b
+    -> t a
+    -> b
   foldl f z xs = foldr f' identity xs z
     where f' x k z = k (f z x)
 
   -- | A variant of foldr that has no base case, and thus should only be applied to non-empty structures.
-  foldr1: (a -> a -> a) -> t a -> a
+  foldr1:
+    (a -> a -> a)
+    -> t a
+    -> a
   foldr1 f xs = O.fromSomeNote "foldr1: empty input" (foldr mf None xs)
     where
       mf x m = Some (case m of None -> x; Some y -> f x y)
 
   -- | A variant of foldl that has no base case, and thus should only be applied to non-empty structures.
-  foldl1: (a -> a -> a) -> t a -> a
+  foldl1:
+    (a -> a -> a)
+    -> t a
+    -> a
   foldl1 f xs = O.fromSomeNote "foldl1: empty input" (foldl mf None xs)
     where
       mf m x = Some (case m of None -> x; Some y -> f y x)
@@ -85,16 +101,25 @@ class Foldable t where
 -- | Map each element of a structure to an action, evaluate these
 -- actions from left to right, and ignore the results. For a version
 -- that doesn't ignore the results see 'DA.Traversable.mapA'.
-mapA_: (Foldable t, Applicative f) => (a -> f b) -> t a -> f ()
+mapA_:
+  (Foldable t, Applicative f) => (a -> f b)
+  -> t a
+  -> f ()
 mapA_ f = foldr ((*>) . f) (pure ())
 
 -- | 'for_' is 'mapA_' with its arguments flipped. For a version
 -- that doesn't ignore the results see 'DA.Traversable.forA'.
-forA_: (Foldable t, Applicative f) => t a -> (a -> f b) -> f ()
+forA_:
+  (Foldable t, Applicative f) => t a
+  -> (a -> f b)
+  -> f ()
 forA_ = flip mapA_
 
 {-# DEPRECATED forM_ "Daml compatibility helper, use 'forA_' instead of 'forM_'" #-}
-forM_: (Foldable t, Applicative f) => t a -> (a -> f b) -> f ()
+forM_:
+  (Foldable t, Applicative f) => t a
+  -> (a -> f b)
+  -> f ()
 forM_ = forA_
 
 -- | Evaluate each action in the structure from left to right,
@@ -116,11 +141,17 @@ or: Foldable t => t Bool -> Bool
 or = getAny . foldMap Any
 
 -- | Determines whether any element of the structure satisfies the predicate.
-any: Foldable t => (a -> Bool) -> t a -> Bool
+any:
+  Foldable t => (a -> Bool)
+  -> t a
+  -> Bool
 any p = getAny . foldMap (Any . p)
 
 -- | Determines whether all elements of the structure satisfy the predicate.
-all: Foldable t => (a -> Bool) -> t a -> Bool
+all:
+  Foldable t => (a -> Bool)
+  -> t a
+  -> Bool
 all p = getAll . foldMap (All . p)
 
 --

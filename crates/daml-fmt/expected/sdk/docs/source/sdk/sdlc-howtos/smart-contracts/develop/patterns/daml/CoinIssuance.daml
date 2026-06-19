@@ -151,7 +151,11 @@ template TransferProposal
       controller newOwner
       do return ()
 
-createCoin: Party -> Party -> Decimal -> Script (ContractId Coin)
+createCoin:
+  Party
+  -> Party
+  -> Decimal
+  -> Script (ContractId Coin)
 createCoin issuer owner amount =
   do
     masterId <- issuer `submit` createCmd CoinMaster with issuer

@@ -5,7 +5,12 @@ module Batching where
 
 import DA.Foldable
 
-doUpdate: Bool -> Party -> Party -> [ContractId Example] -> Update ()
+doUpdate:
+  Bool
+  -> Party
+  -> Party
+  -> [ContractId Example]
+  -> Update ()
 
 doUpdate efficient owner obs batch = do
   if efficient then do

@@ -4,9 +4,9 @@
 -- | HIDE
 module DA.Random (Minstd, minstd_rand, minstd_init, minstd_initFromTime) where
 
-import DA.Time
 import DA.Date
 import DA.Random.Types (Minstd (..))
+import DA.Time
 
 next: Int -> Int
 next s = (48271 * s) % 2147483647

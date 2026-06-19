@@ -3,18 +3,17 @@
 
 module Lib_2_dev where
 
-import Tests.Template1()
-import Tests.Template2()
-import Tests.RecordTest()
-import Tests.OptionalTest()
-import Tests.ListTest()
-import Tests.VariantTest()
-import Tests.NumericTest()
-
-import Tests.Import()
+import Tests.ContractKeys()
 import Tests.Escape()
 import Tests.GenMapTest()
-import Tests.TextMapTest()
-import Tests.ContractKeys()
+import Tests.Import()
+import Tests.ListTest()
+import Tests.NumericTest()
+import Tests.OptionalTest()
 import Tests.ParametersOrder()
+import Tests.RecordTest()
+import Tests.Template1()
+import Tests.Template2()
+import Tests.TextMapTest()
 import Tests.UpgradeTest()
+import Tests.VariantTest()

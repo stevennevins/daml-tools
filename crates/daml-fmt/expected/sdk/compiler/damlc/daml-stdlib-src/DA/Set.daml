@@ -58,9 +58,10 @@ module DA.Set
   ) where
 
 import qualified DA.Foldable as Foldable
-import DA.Set.Types
 import DA.Map (Map)
 import DA.Map qualified as M
+import DA.Set.Types
+
 import Prelude hiding (filter, null)
 
 -- | The empty set.
@@ -106,7 +107,10 @@ insert: Ord k => k -> Set k -> Set k
 insert k (Set m) = Set (M.insert k () m)
 
 -- | Filter all elements that satisfy the predicate.
-filter: Ord k => (k -> Bool) -> Set k -> Set k
+filter:
+  Ord k => (k -> Bool)
+  -> Set k
+  -> Set k
 filter f (Set m) = Set (M.fromList [ (k, ()) | (k, _) <- M.toList m, f k ])
 
 -- | Delete an element from a set.

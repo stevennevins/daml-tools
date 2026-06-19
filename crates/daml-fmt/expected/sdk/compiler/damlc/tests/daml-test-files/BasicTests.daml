@@ -9,8 +9,9 @@
 module BasicTests where
 
 import Daml.Script
-import DA.Time
+
 import DA.Date
+import DA.Time
 
 data MyRec = MyRec { foo: Text }
 
@@ -20,18 +21,30 @@ r: MyRec
 r = MyRec { foo = "bar" }
 
 r2: MyNestedRec
-r2 = MyNestedRec{ bar = "foo"; nested = r }
+r2 = MyNestedRec with
+  bar = "foo"
+  nested = r
 
 data XYZ = XYZ { x: Int; y: Int; z: Int }
 
-xyz: Int -> Int -> Int -> XYZ
+xyz:
+  Int
+  -> Int
+  -> Int
+  -> XYZ
 xyz x y z =
-  XYZ with x = x; y = y+x; z = z+x
+  XYZ with
+    x = x
+    y = y+x
+    z = z+x
 
 data XYZ2 = XYZ2 { a: XYZ; b: XYZ; c: XYZ }
 
 testXyz: XYZ2
-testXyz = XYZ2 with a = xyz 1 2 3; b = xyz 2 4 5; c = xyz 3 4 5
+testXyz = XYZ2 with
+  a = xyz 1 2 3
+  b = xyz 2 4 5
+  c = xyz 3 4 5
 
 test_testXyzTest = script do
   pure testXyz

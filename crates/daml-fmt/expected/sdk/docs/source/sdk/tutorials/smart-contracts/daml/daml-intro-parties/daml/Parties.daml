@@ -3,8 +3,9 @@
 
 module Parties where
 
-import DA.Time
 import Daml.Script
+
+import DA.Time
 
 data Cash = Cash with
   currency: Text

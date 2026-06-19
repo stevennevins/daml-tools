@@ -4,15 +4,15 @@
 module PackageSelection (main) where
 
 import UpgradeTestLib
-import qualified V1.PackageSelection as V1
+import V1.Client
 import V1.Interface
 import V1.InterfaceInstance
-import V1.Client
+import qualified V1.PackageSelection as V1
 
 {- PACKAGE
 name: package-selection
 versions: 2
--}
+  -}
 
 {- MODULE
 package: package-selection
@@ -24,7 +24,7 @@ contents: |
       party: Party
     where
       signatory party
--}
+        -}
 
 main: TestTree
 main = tests
@@ -47,7 +47,7 @@ packageSelectionChoosesVettedPackages = test $
 {- PACKAGE
 name: interface-def
 versions: 1
--}
+  -}
 
 {- MODULE
 package: interface-def
@@ -66,13 +66,13 @@ contents: |
       controller ctl
       do
         pure $ iChoice this
--}
+          -}
 
 {- PACKAGE
 name: interface-instance
 versions: 1
 depends: interface-def-1.0.0
--}
+  -}
 
 {- MODULE
 package: interface-instance
@@ -89,13 +89,13 @@ contents: |
     interface instance I for InterfaceInstance where
       view = IV {}
       iChoice = "V1"
--}
+        -}
 
 {- PACKAGE
 name: client
 versions: 1
 depends: interface-def-1.0.0
--}
+  -}
 
 {- MODULE
 package: client
@@ -124,7 +124,7 @@ contents: |
           do
             i <- fetch iid
             pure (view i)
--}
+              -}
 
 exercisingInterfaceWithMissingInstanceFails: Test
 exercisingInterfaceWithMissingInstanceFails = test $ do

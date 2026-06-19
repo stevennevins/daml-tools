@@ -4,8 +4,9 @@
 module Tuple where
 
 import Daml.Script
-import DA.Tuple
+
 import DA.Assert
+import DA.Tuple
 
 testFirst = script do
   (12, "abc") === first (*4) (3, "abc")

@@ -4,6 +4,6 @@
 module LibraryModule where
 
 import Check()
-import OptionalDemo()
 import MustChoose()
 import ObligableErrors()
+import OptionalDemo()

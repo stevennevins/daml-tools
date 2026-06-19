@@ -58,3 +58,21 @@ fn check_reports_unformatted_file_with_exit_one() {
     assert_eq!(output.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&output.stdout).contains(path.to_str().unwrap()));
 }
+
+#[test]
+fn preserve_import_order_disables_import_organization() {
+    let input = "module M where\n\nimport DA.Optional\nimport Daml.Script\nimport DA.List\n\nx: Optional Text\nx = Some \"ok\"\n";
+    let output = cmd()
+        .arg("--preserve-import-order")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            child.stdin.as_mut().unwrap().write_all(input.as_bytes())?;
+            child.wait_with_output()
+        })
+        .unwrap();
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), input);
+}

@@ -3,10 +3,11 @@
 
 module LedgerTime where
 
+import Daml.Script
+
 import DA.Assert ((===), assertDeadlineExceeded, assertWithinDeadline)
 import DA.Text (isInfixOf)
 import DA.Time
-import Daml.Script
 
 template LabeledContract with
     party: Party

@@ -22,7 +22,11 @@ after time message =
     t <- getTime
     assertMsg message (t > time)
 
-between: (Time) -> (Time) -> (Text) -> Update ()
+between:
+  (Time)
+  -> (Time)
+  -> (Text)
+  -> Update ()
 between t1 t2 message =
   do
     now <- getTime

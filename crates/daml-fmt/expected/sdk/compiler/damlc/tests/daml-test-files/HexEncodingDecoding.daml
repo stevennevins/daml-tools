@@ -3,11 +3,12 @@
 
 module HexEncodingDecoding where
 
+import Daml.Script
+
 import DA.Assert ((===))
 import DA.Crypto.Text
 import DA.Optional (fromSome)
 import DA.Text (fromCodePoints)
-import Daml.Script
 
 replaceChar: Text
 replaceChar = fromCodePoints [255, 253]

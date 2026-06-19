@@ -12,7 +12,7 @@ import qualified V2.UpgradedChoiceNested as V2
 {- PACKAGE
 name: ledger-api-choice-nested-upgrades
 versions: 2
--}
+  -}
 
 {- MODULE
 package: ledger-api-choice-nested-upgrades
@@ -48,7 +48,7 @@ contents: |
             (choiceData.firstArg <> ":V1")                               -- @V 1
             (choiceData.firstArg <> ":V2:" <> show choiceData.secondArg) -- @V  2
             choiceData.secondArg                                         -- @V  2
--}
+            -}
 
 main: TestTree
 main = tests
@@ -64,7 +64,7 @@ main = tests
 choiceTest
   : forall t2 t1 c2 r
   . (Template t1, HasEnsure t1, Choice t2 c2 r, Eq r, Show r)
-  => (Party -> t1)
+    => (Party -> t1)
   -> c2
   -> Bool
   -> r

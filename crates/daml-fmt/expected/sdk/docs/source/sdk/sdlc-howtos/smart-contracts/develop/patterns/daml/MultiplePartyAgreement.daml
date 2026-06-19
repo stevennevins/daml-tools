@@ -7,8 +7,9 @@ module MultiplePartyAgreement where
 
 import Daml.Script
 
-import Utilities
 import DA.List
+
+import Utilities
 
 -- start snippet: agreement template
 template Agreement

@@ -3,8 +3,8 @@
 
 module Hidden where
 
-import Main (Cloneable)
 import Lib.Mod (EmptyInterfaceView(..))
+import Main (Cloneable)
 
 template NotVisibleInTs with
     owner: Party

@@ -4,7 +4,7 @@
 module Reference where
 type ExampleReturnType = ()
 
-exampleFunction: (Party, Text) -> Party
+exampleFunction : (Party, Text) -> Party
 exampleFunction key = key._1
 
 -- start template intro snippet
@@ -12,10 +12,10 @@ template NameOfTemplate
 -- end template intro snippet
 -- start template params snippet
   with
-    exampleParty: Party
-    exampleParty2: Party
-    exampleParty3: Party
-    exampleParam: Text
+    exampleParty : Party
+    exampleParty2 : Party
+    exampleParty3 : Party
+    exampleParam : Text
     -- more parameters here
 -- end template params snippet
   where
@@ -38,7 +38,7 @@ template NameOfTemplate
     choice NameOfChoice
       : ()  -- replace () with the actual return type
       with
-        exampleParameter: Text -- parameters here
+        exampleParameter : Text -- parameters here
       controller exampleParty
       do
         return () -- replace this line with the choice body
@@ -50,7 +50,7 @@ template NameOfTemplate
 -- end choice name snippet
 -- start choice params snippet
       with
-        exampleParameter: Text
+        exampleParameter : Text
 -- end choice params snippet
 -- start controller snippet
       controller exampleParty

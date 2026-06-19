@@ -10,7 +10,11 @@ import DA.Assert
 import DA.Text
 
 -- PARTIAL_APPLICATION_START
-multiplyThreeNumbers: Int -> Int -> Int -> Int
+multiplyThreeNumbers:
+  Int
+  -> Int
+  -> Int
+  -> Int
 multiplyThreeNumbers xx yy zz =
   xx * yy * zz
 

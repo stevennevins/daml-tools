@@ -66,7 +66,11 @@ template BondTransferRequest
       controller owner
       do create Bond with ..
 
-bondSplitMay: Party -> BondId -> Decimal -> Update (BondId, Optional BondId)
+bondSplitMay:
+  Party
+  -> BondId
+  -> Decimal
+  -> Update (BondId, Optional BondId)
 bondSplitMay owner bondCid splitAmount = do
   bond <- fetch bondCid
   bond.owner === owner

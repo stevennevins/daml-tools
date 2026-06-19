@@ -266,7 +266,10 @@ template BranchingSignatories
 
 ctrl: BranchingControllers -> Party
 ctrl BranchingControllers { whichCtrl, ctrlTrue, ctrlFalse } =
-  if whichCtrl then ctrlTrue else ctrlFalse
+
+  if whichCtrl
+    then ctrlTrue
+    else ctrlFalse
 
 template BranchingControllers
   with

@@ -65,7 +65,7 @@ failing_test_1 = do
   submit bob do
     createCmd Token with owner = alice
 -- FAILURE_TEST_1_END
--}
+      -}
 
 -- TOKEN_TEST_2_BEGIN
 token_test_2 = do

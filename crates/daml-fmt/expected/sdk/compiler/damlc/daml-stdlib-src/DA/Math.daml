@@ -121,7 +121,11 @@ to36dig (x, n)
 -- to a depth where t * x^k * n! / k! < 10^-10.
 -- The sole purpose is to calculate `exp = expInner 1.0 1.0`
 -- In the most precision-preserving way.
-expInner: Decimal -> Decimal -> Decimal -> Sci
+expInner:
+  Decimal
+  -> Decimal
+  -> Decimal
+  -> Sci
 expInner n t x
   | t == 0.0 = (1.0, 0)
   | otherwise =
@@ -189,7 +193,13 @@ cordic n r
            else last ks
 
 -- | `cordicInner` implements the inner loop of the CORDIC algorithm
-cordicInner: Int -> Decimal -> (Decimal, Decimal) -> Decimal -> [Decimal] -> (Decimal, Decimal)
+cordicInner:
+  Int
+  -> Decimal
+  -> (Decimal, Decimal)
+  -> Decimal
+  -> [Decimal]
+  -> (Decimal, Decimal)
 cordicInner n r v pt angles
   | n == 1 = nv
   | otherwise = cordicInner (n-1) nr nv npt nangles

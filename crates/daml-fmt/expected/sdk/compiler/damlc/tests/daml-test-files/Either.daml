@@ -4,8 +4,9 @@
 module Either where
 
 import Daml.Script
-import DA.Either
+
 import DA.Assert
+import DA.Either
 
 testLefts = script do
   ["a", "b", "c"] === lefts [Right 1, Left "a", Left "b", Right 2, Left "c"]

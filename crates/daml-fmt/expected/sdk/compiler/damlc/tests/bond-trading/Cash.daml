@@ -109,7 +109,11 @@ template CashTransferRequest
       do whenSome lockMaturity assertAfter
          create Cash with lockMaturity = None, ..
 
-cashSplitMay: Party -> CashId -> Decimal -> Update (CashId, Optional CashId)
+cashSplitMay:
+  Party
+  -> CashId
+  -> Decimal
+  -> Update (CashId, Optional CashId)
 cashSplitMay owner cashCid splitAmount = do
   cash <- fetch cashCid
   cash.owner === owner

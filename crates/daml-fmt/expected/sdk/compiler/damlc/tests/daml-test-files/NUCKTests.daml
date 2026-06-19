@@ -8,9 +8,9 @@ module NUCKTests where
 
 import Daml.Script
 
+import DA.Assert ((===))
 import DA.ContractKeys
 import DA.Optional
-import DA.Assert ((===))
 
 template WithKey
   with
