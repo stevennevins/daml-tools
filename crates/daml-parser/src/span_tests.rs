@@ -28,6 +28,23 @@ fn text(src: &str, span: Span) -> &str {
     &src[span.start..span.end]
 }
 
+fn finance_corpus_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus/daml-finance/daml")
+}
+
+fn finance_corpus_present(root: &Path) -> bool {
+    if root.exists() {
+        return true;
+    }
+    assert!(
+        std::env::var_os("CI").is_none(),
+        "vendored corpus missing under CI (was it committed?): {}",
+        root.display()
+    );
+    eprintln!("corpus absent (published crate?), skipping");
+    false
+}
+
 fn first_function<'a>(m: &'a Module, name: &str) -> &'a FunctionDecl {
     m.decls
         .iter()
@@ -247,15 +264,49 @@ fn run_corpus(root: &Path) -> (usize, Vec<String>) {
     (files.len(), failures)
 }
 
+/// Parse-clean gate over the vendored daml-finance corpus. Skips gracefully
+/// off-workspace (published crate), but fails loud under CI so a missing
+/// corpus can never pass green.
+#[test]
+fn finance_corpus_parses_clean() {
+    let root = finance_corpus_root();
+    if !finance_corpus_present(&root) {
+        return;
+    }
+    let mut files = Vec::new();
+    collect(&root, &mut files);
+    assert!(
+        files.len() > 600,
+        "corpus incomplete: {} files",
+        files.len()
+    );
+    let mut failures = Vec::new();
+    for f in &files {
+        let src = std::fs::read_to_string(f).unwrap();
+        let (_, diagnostics) = parse_module(&src);
+        if !diagnostics.is_empty() {
+            failures.push(format!("{}: {:?}", f.display(), diagnostics));
+        }
+    }
+    if !failures.is_empty() {
+        let shown: Vec<_> = failures.iter().take(20).cloned().collect();
+        panic!(
+            "{} / {} files had parse diagnostics:\n{}",
+            failures.len(),
+            files.len(),
+            shown.join("\n")
+        );
+    }
+}
+
 /// Run the `render_from_ast` losslessness/nesting oracle over the vendored
-/// daml-finance corpus (shared at the workspace root). Skips gracefully when
-/// the corpus is absent (e.g. a published crate built outside the workspace),
-/// so it runs in CI yet never panics off-machine.
+/// daml-finance corpus (shared at the workspace root). Skips gracefully
+/// off-workspace (published crate), but fails loud under CI so a missing
+/// corpus can never pass green.
 #[test]
 fn span_oracle_over_finance_corpus() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus/daml-finance/daml");
-    if !root.exists() {
-        eprintln!("corpus absent (published crate?), skipping");
+    let root = finance_corpus_root();
+    if !finance_corpus_present(&root) {
         return;
     }
     let (n, failures) = run_corpus(&root);
@@ -279,14 +330,8 @@ fn span_oracle_over_finance_corpus() {
 /// corpus can never pass green.
 #[test]
 fn render_lossless_over_finance_corpus() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus/daml-finance/daml");
-    if !root.exists() {
-        assert!(
-            std::env::var_os("CI").is_none(),
-            "vendored corpus missing under CI (was it committed?): {}",
-            root.display()
-        );
-        eprintln!("corpus absent (published crate?), skipping");
+    let root = finance_corpus_root();
+    if !finance_corpus_present(&root) {
         return;
     }
     let mut files = Vec::new();

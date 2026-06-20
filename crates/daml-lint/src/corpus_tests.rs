@@ -1,8 +1,9 @@
 //! AST ground-truth integration tests against the daml-finance corpus.
 //!
 //! Facts below were hand-verified against the sources once (grep + read);
-//! these tests pin them so parser changes cannot silently regress structure
-//! extraction. The corpus is vendored under corpus/daml-finance/.
+//! these tests pin them so parser changes cannot silently regress linter IR
+//! extraction. Parser-owned whole-corpus parse and lossless gates live in
+//! daml-parser. The corpus is vendored under corpus/daml-finance/.
 
 #![cfg(test)]
 
@@ -12,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 pub fn corpus_root() -> PathBuf {
     // Shared integration corpus, vendored once at the workspace root and used
-    // by both daml-parser (lex/layout gate) and daml-lint (parse/IR gate).
+    // by both daml-parser (lex/layout gates) and daml-lint (IR corpus facts).
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus/daml-finance/daml")
 }
 
@@ -345,29 +346,6 @@ fn lifecycle_distribution_rule_template() {
     assert_eq!(instances, vec!["Lifecycle.I"]);
 }
 
-/// Whole-corpus phase gate at the parser level: every file parses with
-/// zero diagnostics.
-#[test]
-fn corpus_parses_clean() {
-    if !corpus_present() {
-        return;
-    }
-    let root = corpus_root();
-    let mut files = Vec::new();
-    collect(&root, &mut files);
-    assert!(files.len() > 600, "corpus incomplete: {}", files.len());
-    let mut diag_count = 0;
-    for f in &files {
-        let src = std::fs::read_to_string(f).unwrap();
-        let (_, diags) = parse_daml_with_diagnostics(&src, f);
-        if !diags.is_empty() {
-            eprintln!("{}: {:?}", f.display(), diags);
-        }
-        diag_count += diags.len();
-    }
-    assert_eq!(diag_count, 0, "parse diagnostics across corpus");
-}
-
 /// Lossless-trivia gate over a corpus: every file that lexes clean must
 /// reconstruct byte-for-byte from token + trivia spans. Returns
 /// (files_checked, files_with_lex_errors); panics on any round-trip failure.
@@ -399,24 +377,11 @@ fn round_trip_corpus(root: &Path) -> (usize, usize) {
     (checked, lex_error_files)
 }
 
-/// Formatter phase gate: the linting corpus is fully lossless — every one of
-/// the 634 vendored daml-finance files reconstructs byte-for-byte from token +
-/// trivia spans, none excused by lex errors. Runs in CI over the vendored
-/// corpus; skips gracefully when absent (a published crate off the workspace).
-#[test]
-fn finance_corpus_round_trips_byte_identical() {
-    if !corpus_present() {
-        return;
-    }
-    let root = corpus_root();
-    let (checked, lex_error_files) = round_trip_corpus(&root);
-    assert!(checked > 600, "corpus incomplete: {}", checked);
-    assert_eq!(lex_error_files, 0, "finance corpus must lex clean");
-}
-
 /// Same gate over the full, hostile Daml SDK corpus (stdlib internals, broken
 /// fixtures). That corpus is NOT vendored (too large), so this is an opt-in
 /// LOCAL check: clone the SDK to /tmp/daml-repo to run it; it skips in CI.
+/// It remains here until parser-owned SDK corpus tooling exists in this
+/// worktree.
 #[test]
 fn sdk_corpus_round_trips_byte_identical() {
     let root = Path::new("/tmp/daml-repo");

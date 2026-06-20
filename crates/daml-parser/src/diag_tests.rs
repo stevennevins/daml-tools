@@ -95,6 +95,74 @@ fn each_deep_declaration_reports_its_own_recursion_limit() {
 }
 
 #[test]
+fn deep_pattern_nesting_does_not_panic() {
+    let mut src = String::from("module M where\nf ");
+    src.push_str(&"(Just ".repeat(2000));
+    src.push('x');
+    src.push_str(&")".repeat(2000));
+    src.push_str(" = 1\n");
+
+    let _ = parse_module(&src);
+}
+
+#[test]
+fn hostile_incomplete_inputs_terminate() {
+    for hostile in [
+        "module M where\nf = \"never closed\ng = 2\n",
+        "module M where\n{- never closed",
+        "module M where\nf = (((((\n",
+        "module M where\ntemplate T\n  with\n",
+        "module M where\nf = do\n",
+        "module M where\nf = let x = \n",
+        "template",
+        "",
+        "\n\n\n",
+        "-- only a comment\n",
+        "\u{FEFF}module M where\nf = 1\n",
+    ] {
+        let _ = parse_module(hostile);
+    }
+}
+
+#[test]
+fn huge_single_line_expression_terminates() {
+    let mut src = String::from("module M where\nf = ");
+    for i in 0..20_000 {
+        src.push_str(&format!("g{i} "));
+    }
+    src.push('\n');
+
+    let (module, _) = parse_module(&src);
+    assert!(
+        module
+            .decls
+            .iter()
+            .any(|decl| matches!(decl, Decl::Function(function) if function.name == "f")),
+        "huge single-line expression should still produce the owning function"
+    );
+}
+
+#[test]
+fn large_module_parses_clean() {
+    let mut src = String::from("module Big where\n\n");
+    for i in 0..1000 {
+        src.push_str(&format!(
+            "template T{i}\n  with\n    owner : Party\n    amount : Decimal\n  where\n    signatory owner\n    ensure amount > 0.0\n\n    choice C{i} : ()\n      controller owner\n      do\n        pure ()\n\n"
+        ));
+    }
+    assert!(src.lines().count() > 10_000);
+
+    let (module, ds) = parse_module(&src);
+    assert!(ds.is_empty(), "large module diagnostics: {ds:?}");
+    let templates = module
+        .decls
+        .iter()
+        .filter(|decl| matches!(decl, Decl::Template(_)))
+        .count();
+    assert_eq!(templates, 1000);
+}
+
+#[test]
 fn lex_error_span_is_tab_correct() {
     // The lexer's columns are tab-aware; the byte span must replay that, so a
     // lex error on a tab-indented line points at the real offending byte (a

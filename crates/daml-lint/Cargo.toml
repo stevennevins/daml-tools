@@ -45,3 +45,8 @@ custom-rules = []
 name = "daml-lint"
 path = "src/main.rs"
 required-features = ["cli", "js-runtime"]
+
+[[test]]
+name = "cli"
+path = "tests/cli.rs"
+required-features = ["cli", "js-runtime"]
