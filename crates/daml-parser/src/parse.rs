@@ -214,8 +214,8 @@ impl Parser {
         )
     }
 
-    /// Skip tokens until the end of the current block item: a VSemi or
-    /// VRBrace at nesting depth zero (relative to here). Consumes neither.
+    /// Skip tokens until the end of the current block item: a `VSemi` or
+    /// `VRBrace` at nesting depth zero (relative to here). Consumes neither.
     fn skip_to_item_end(&mut self) {
         let mut depth = 0usize;
         let mut brackets = 0usize;
@@ -261,7 +261,7 @@ impl Parser {
             if let Some(Tok::UpperId { qualifier, name: n }) = self.peek().cloned() {
                 self.bump();
                 name = match qualifier {
-                    Some(q) => format!("{}.{}", q, n),
+                    Some(q) => format!("{q}.{n}"),
                     None => n,
                 };
             }
@@ -283,7 +283,7 @@ impl Parser {
             while self.eat(&Tok::VSemi) || self.eat(&Tok::Semi) {}
             match self.peek() {
                 None => break,
-                Some(Tok::VRBrace) | Some(Tok::RBrace) => {
+                Some(Tok::VRBrace | Tok::RBrace) => {
                     self.bump();
                     break;
                 }
@@ -291,7 +291,7 @@ impl Parser {
                 // failed item parse — record it as an Unknown declaration so
                 // its bytes stay covered, then continue (skip_to_item_end
                 // deliberately stops before unmatched closers).
-                Some(Tok::RParen) | Some(Tok::RBracket) => {
+                Some(Tok::RParen | Tok::RBracket) => {
                     let cpos = self.pos();
                     let cstart = self.i;
                     self.bump();
@@ -447,7 +447,7 @@ impl Parser {
                     Some(Tok::UpperId { qualifier, name }) => {
                         let n = qualifier
                             .as_ref()
-                            .map_or_else(|| name.clone(), |q| format!("{}.{}", q, name));
+                            .map_or_else(|| name.clone(), |q| format!("{q}.{name}"));
                         self.bump();
                         n
                     }
@@ -485,7 +485,7 @@ impl Parser {
                 });
             }
             // Top-level pattern binding: `[a, b, c] = ...`, `(x, y) = ...`.
-            Some(Tok::LParen) | Some(Tok::LBracket) => {
+            Some(Tok::LParen | Tok::LBracket) => {
                 if self.binding().is_none() {
                     self.diag_cat(
                         DiagnosticCategory::SkippedDecl,
@@ -529,7 +529,7 @@ impl Parser {
             Some(Tok::UpperId { qualifier, name }) => {
                 self.bump();
                 match qualifier {
-                    Some(q) => format!("{}.{}", q, name),
+                    Some(q) => format!("{q}.{name}"),
                     None => name,
                 }
             }
@@ -547,7 +547,7 @@ impl Parser {
             if let Some(Tok::UpperId { qualifier, name }) = self.peek().cloned() {
                 self.bump();
                 alias = Some(match qualifier {
-                    Some(q) => format!("{}.{}", q, name),
+                    Some(q) => format!("{q}.{name}"),
                     None => name,
                 });
             }
@@ -569,7 +569,7 @@ impl Parser {
             Some(Tok::UpperId { qualifier, name }) => {
                 self.bump();
                 Some(match qualifier {
-                    Some(q) => format!("{}.{}", q, name),
+                    Some(q) => format!("{q}.{name}"),
                     None => name,
                 })
             }
@@ -608,7 +608,7 @@ impl Parser {
     /// Returns the fields plus a "dangling" flag: true when the block was
     /// entered but abandoned early because its first item is not a field
     /// (an empty `with` whose layout block swallowed the next clause) —
-    /// the caller must discard the block's eventual closing VRBrace.
+    /// the caller must discard the block's eventual closing `VRBrace`.
     fn field_block(&mut self) -> (Vec<FieldDecl>, bool) {
         let mut fields = Vec::new();
         if !(self.eat(&Tok::VLBrace) || self.eat(&Tok::LBrace)) {
@@ -618,7 +618,7 @@ impl Parser {
             while self.eat(&Tok::VSemi) || self.eat(&Tok::Semi) {}
             match self.peek() {
                 None => break,
-                Some(Tok::VRBrace) | Some(Tok::RBrace) => {
+                Some(Tok::VRBrace | Tok::RBrace) => {
                     self.bump();
                     break;
                 }
@@ -626,7 +626,7 @@ impl Parser {
                 // failed item parse — discard it or the loop cannot make
                 // progress (skip_to_item_end deliberately stops before
                 // unmatched closers).
-                Some(Tok::RParen) | Some(Tok::RBracket) => {
+                Some(Tok::RParen | Tok::RBracket) => {
                     self.bump();
                     continue;
                 }
@@ -717,7 +717,7 @@ impl Parser {
             while self.eat(&Tok::VSemi) || self.eat(&Tok::Semi) {}
             match self.peek() {
                 None => break,
-                Some(Tok::VRBrace) | Some(Tok::RBrace) => {
+                Some(Tok::VRBrace | Tok::RBrace) => {
                     self.bump();
                     break;
                 }
@@ -725,7 +725,7 @@ impl Parser {
                 // failed item parse — discard it or the loop cannot make
                 // progress (skip_to_item_end deliberately stops before
                 // unmatched closers).
-                Some(Tok::RParen) | Some(Tok::RBracket) => {
+                Some(Tok::RParen | Tok::RBracket) => {
                     self.bump();
                     continue;
                 }
@@ -813,20 +813,19 @@ impl Parser {
                     span: self.node_span(start),
                 }
             }
-            Some("choice")
-            | Some("nonconsuming")
-            | Some("preconsuming")
-            | Some("postconsuming") => self.choice_decl().map_or_else(
-                || {
-                    self.skip_to_item_end();
-                    TemplateBodyDecl::Other {
-                        raw: self.slice_text(start),
-                        span: self.node_span(start),
-                        pos,
-                    }
-                },
-                TemplateBodyDecl::Choice,
-            ),
+            Some("choice" | "nonconsuming" | "preconsuming" | "postconsuming") => {
+                self.choice_decl().map_or_else(
+                    || {
+                        self.skip_to_item_end();
+                        TemplateBodyDecl::Other {
+                            raw: self.slice_text(start),
+                            span: self.node_span(start),
+                            pos,
+                        }
+                    },
+                    TemplateBodyDecl::Choice,
+                )
+            }
             Some("interface") => self.interface_instance_decl().map_or_else(
                 || {
                     self.skip_to_item_end();
@@ -1016,7 +1015,7 @@ impl Parser {
             while self.eat(&Tok::VSemi) || self.eat(&Tok::Semi) {}
             match self.peek() {
                 None => break,
-                Some(Tok::VRBrace) | Some(Tok::RBrace) => {
+                Some(Tok::VRBrace | Tok::RBrace) => {
                     self.bump();
                     break;
                 }
@@ -1024,7 +1023,7 @@ impl Parser {
                 // failed item parse — discard it or the loop cannot make
                 // progress (skip_to_item_end deliberately stops before
                 // unmatched closers).
-                Some(Tok::RParen) | Some(Tok::RBracket) => {
+                Some(Tok::RParen | Tok::RBracket) => {
                     self.bump();
                     continue;
                 }
@@ -1036,10 +1035,7 @@ impl Parser {
                     viewtype = self.upper_name();
                     self.skip_to_item_end();
                 }
-                Some("choice")
-                | Some("nonconsuming")
-                | Some("preconsuming")
-                | Some("postconsuming") => {
+                Some("choice" | "nonconsuming" | "preconsuming" | "postconsuming") => {
                     if let Some(c) = self.choice_decl() {
                         choices.push(c);
                     } else {
@@ -1106,12 +1102,12 @@ impl Parser {
                 while self.eat(&Tok::VSemi) || self.eat(&Tok::Semi) {}
                 match self.peek() {
                     None => break,
-                    Some(Tok::VRBrace) | Some(Tok::RBrace) => {
+                    Some(Tok::VRBrace | Tok::RBrace) => {
                         self.bump();
                         break;
                     }
                     // Stray closer: discard so the loop always progresses.
-                    Some(Tok::RParen) | Some(Tok::RBracket) => {
+                    Some(Tok::RParen | Tok::RBracket) => {
                         self.bump();
                         continue;
                     }
@@ -1222,9 +1218,8 @@ impl Parser {
                 return None;
             }
             match self.peek() {
-                None | Some(Tok::VSemi) | Some(Tok::VRBrace) | Some(Tok::Semi)
-                | Some(Tok::RBrace) => {
-                    self.diag(format!("could not parse equation for '{}'", name));
+                None | Some(Tok::VSemi | Tok::VRBrace | Tok::Semi | Tok::RBrace) => {
+                    self.diag(format!("could not parse equation for '{name}'"));
                     return None;
                 }
                 _ => {}
@@ -1232,7 +1227,7 @@ impl Parser {
             match self.pattern_atom() {
                 Some(p) => params.push(p),
                 None => {
-                    self.diag(format!("bad parameter pattern in '{}'", name));
+                    self.diag(format!("bad parameter pattern in '{name}'"));
                     return None;
                 }
             }
@@ -1300,7 +1295,7 @@ impl Parser {
             while self.eat(&Tok::VSemi) || self.eat(&Tok::Semi) {}
             match self.peek() {
                 None => break,
-                Some(Tok::VRBrace) | Some(Tok::RBrace) => {
+                Some(Tok::VRBrace | Tok::RBrace) => {
                     self.bump();
                     break;
                 }
@@ -1308,7 +1303,7 @@ impl Parser {
                 // failed item parse — discard it or the loop cannot make
                 // progress (skip_to_item_end deliberately stops before
                 // unmatched closers).
-                Some(Tok::RParen) | Some(Tok::RBracket) => {
+                Some(Tok::RParen | Tok::RBracket) => {
                     self.bump();
                     continue;
                 }
@@ -1396,8 +1391,7 @@ impl Parser {
                 return None;
             }
             match self.peek() {
-                None | Some(Tok::VSemi) | Some(Tok::VRBrace) | Some(Tok::Semi)
-                | Some(Tok::RBrace) => return None,
+                None | Some(Tok::VSemi | Tok::VRBrace | Tok::Semi | Tok::RBrace) => return None,
                 _ => {}
             }
             params.push(self.pattern_atom()?);
@@ -1674,16 +1668,18 @@ impl Parser {
 
     fn try_pattern_atom(&mut self) -> Option<Pat> {
         match self.peek() {
-            Some(Tok::LowerId {
-                qualifier: None, ..
-            })
-            | Some(Tok::UpperId { .. })
-            | Some(Tok::IntLit(_))
-            | Some(Tok::DecimalLit(_))
-            | Some(Tok::StringLit(_))
-            | Some(Tok::CharLit(_))
-            | Some(Tok::LParen)
-            | Some(Tok::LBracket) => self.pattern_atom(),
+            Some(
+                Tok::LowerId {
+                    qualifier: None, ..
+                }
+                | Tok::UpperId { .. }
+                | Tok::IntLit(_)
+                | Tok::DecimalLit(_)
+                | Tok::StringLit(_)
+                | Tok::CharLit(_)
+                | Tok::LParen
+                | Tok::LBracket,
+            ) => self.pattern_atom(),
             _ => None,
         }
     }
@@ -1798,16 +1794,17 @@ impl Parser {
                 Some(Tok::Backtick) => {
                     // `e `div` e` — infix function application.
                     let name = match self.peek_at(1) {
-                        Some(Tok::LowerId { qualifier, name })
-                        | Some(Tok::UpperId { qualifier, name }) => qualifier
+                        Some(
+                            Tok::LowerId { qualifier, name } | Tok::UpperId { qualifier, name },
+                        ) => qualifier
                             .as_ref()
-                            .map_or_else(|| name.clone(), |q| format!("{}.{}", q, name)),
+                            .map_or_else(|| name.clone(), |q| format!("{q}.{name}")),
                         _ => break,
                     };
                     if self.peek_at(2) != Some(&Tok::Backtick) {
                         break;
                     }
-                    (format!("`{}`", name), 9, false)
+                    (format!("`{name}`"), 9, false)
                 }
                 _ => break,
             };
@@ -1891,7 +1888,7 @@ impl Parser {
             if self.at_op("@") {
                 self.bump();
                 match self.peek() {
-                    Some(Tok::UpperId { .. }) | Some(Tok::LowerId { .. }) => {
+                    Some(Tok::UpperId { .. } | Tok::LowerId { .. }) => {
                         self.bump();
                     }
                     Some(Tok::LParen) => self.skip_balanced_parens(),
@@ -1953,7 +1950,7 @@ impl Parser {
                     break;
                 }
                 // Stray closer: discard so the loop always progresses.
-                Some(Tok::RParen) | Some(Tok::RBracket) => {
+                Some(Tok::RParen | Tok::RBracket) => {
                     self.bump();
                     continue;
                 }
@@ -2021,13 +2018,15 @@ impl Parser {
                     _ => self.atom(allow_do),
                 }
             }
-            Some(Tok::UpperId { .. })
-            | Some(Tok::IntLit(_))
-            | Some(Tok::DecimalLit(_))
-            | Some(Tok::StringLit(_))
-            | Some(Tok::CharLit(_))
-            | Some(Tok::LParen)
-            | Some(Tok::LBracket) => self.atom(allow_do),
+            Some(
+                Tok::UpperId { .. }
+                | Tok::IntLit(_)
+                | Tok::DecimalLit(_)
+                | Tok::StringLit(_)
+                | Tok::CharLit(_)
+                | Tok::LParen
+                | Tok::LBracket,
+            ) => self.atom(allow_do),
             // Bare trailing lambda argument: `forA xs \x -> ...`.
             Some(Tok::Op(o)) if o == "\\" => self.atom(allow_do),
             _ => None,
@@ -2242,12 +2241,12 @@ impl Parser {
                 while self.eat(&Tok::VSemi) || self.eat(&Tok::Semi) {}
                 match self.peek() {
                     None => break,
-                    Some(Tok::VRBrace) | Some(Tok::RBrace) => {
+                    Some(Tok::VRBrace | Tok::RBrace) => {
                         self.bump();
                         break;
                     }
                     // Stray closer: discard so the loop always progresses.
-                    Some(Tok::RParen) | Some(Tok::RBracket) => {
+                    Some(Tok::RParen | Tok::RBracket) => {
                         self.bump();
                         continue;
                     }
@@ -2330,12 +2329,12 @@ impl Parser {
                 while self.eat(&Tok::VSemi) || self.eat(&Tok::Semi) {}
                 match self.peek() {
                     None => break,
-                    Some(Tok::VRBrace) | Some(Tok::RBrace) => {
+                    Some(Tok::VRBrace | Tok::RBrace) => {
                         self.bump();
                         break;
                     }
                     // Stray closer: discard so the loop always progresses.
-                    Some(Tok::RParen) | Some(Tok::RBracket) => {
+                    Some(Tok::RParen | Tok::RBracket) => {
                         self.bump();
                         continue;
                     }
@@ -2446,12 +2445,12 @@ impl Parser {
                     while self.eat(&Tok::VSemi) || self.eat(&Tok::Semi) {}
                     match self.peek() {
                         None => break,
-                        Some(Tok::VRBrace) | Some(Tok::RBrace) => {
+                        Some(Tok::VRBrace | Tok::RBrace) => {
                             self.bump();
                             break;
                         }
                         // Stray closer: discard so the loop always progresses.
-                        Some(Tok::RParen) | Some(Tok::RBracket) => {
+                        Some(Tok::RParen | Tok::RBracket) => {
                             self.bump();
                             continue;
                         }
@@ -2487,11 +2486,11 @@ impl Parser {
                     while self.eat(&Tok::VSemi) || self.eat(&Tok::Semi) {}
                     match self.peek() {
                         None => break,
-                        Some(Tok::VRBrace) | Some(Tok::RBrace) => {
+                        Some(Tok::VRBrace | Tok::RBrace) => {
                             self.bump();
                             break;
                         }
-                        Some(Tok::RParen) | Some(Tok::RBracket) => {
+                        Some(Tok::RParen | Tok::RBracket) => {
                             self.bump();
                             continue;
                         }
@@ -2892,12 +2891,14 @@ impl<'a> TypeTokenParser<'a> {
     fn is_at_type_atom_start(&self) -> bool {
         matches!(
             self.peek().map(|t| &t.tok),
-            Some(Tok::UpperId { .. })
-                | Some(Tok::LowerId { .. })
-                | Some(Tok::IntLit(_))
-                | Some(Tok::DecimalLit(_))
-                | Some(Tok::LBracket)
-                | Some(Tok::LParen)
+            Some(
+                Tok::UpperId { .. }
+                    | Tok::LowerId { .. }
+                    | Tok::IntLit(_)
+                    | Tok::DecimalLit(_)
+                    | Tok::LBracket
+                    | Tok::LParen
+            )
         )
     }
 
@@ -2929,28 +2930,28 @@ impl<'a> TypeTokenParser<'a> {
                 let start = tok.start;
                 self.cursor += 1;
                 let inner = self.parse_type()?;
-                self.eat_token(Tok::RBracket).map(|end| {
+                self.eat_token(&Tok::RBracket).map(|end| {
                     TypeAtom::ParsedType(Type::List(Box::new(inner), Span::new(start, end.end)))
                 })
             }
             Tok::LParen => {
                 let start = tok.start;
                 self.cursor += 1;
-                if let Some(end) = self.eat_token(Tok::RParen) {
+                if let Some(end) = self.eat_token(&Tok::RParen) {
                     // ()
                     return Some(TypeAtom::ParsedType(Type::Unit(Span::new(start, end.end))));
                 }
                 let first = self.parse_type()?;
                 if self.peek().map(|t| &t.tok) == Some(&Tok::Comma) {
                     let mut items = vec![first];
-                    while self.eat_token(Tok::Comma).is_some() {
+                    while self.eat_token(&Tok::Comma).is_some() {
                         items.push(self.parse_type()?);
                     }
-                    self.eat_token(Tok::RParen).map(|end| {
+                    self.eat_token(&Tok::RParen).map(|end| {
                         TypeAtom::ParsedType(Type::Tuple(items, Span::new(start, end.end)))
                     })
                 } else {
-                    self.eat_token(Tok::RParen).map(|end| {
+                    self.eat_token(&Tok::RParen).map(|end| {
                         // Grouping parens.
                         TypeAtom::ParsedType(first.with_span(Span::new(start, end.end)))
                     })
@@ -2960,8 +2961,8 @@ impl<'a> TypeTokenParser<'a> {
         }
     }
 
-    fn eat_token(&mut self, tok: Tok) -> Option<&'a Token> {
-        if self.peek().is_some_and(|t| t.tok == tok) {
+    fn eat_token(&mut self, tok: &Tok) -> Option<&'a Token> {
+        if self.peek().is_some_and(|t| t.tok == *tok) {
             let t = self.peek();
             self.cursor += 1;
             t
@@ -2979,14 +2980,14 @@ fn render_token_slice(tokens: &[Token]) -> String {
             Tok::LowerId { qualifier, name } | Tok::UpperId { qualifier, name } => (
                 qualifier
                     .as_ref()
-                    .map_or_else(|| name.clone(), |q| format!("{}.{}", q, name)),
+                    .map_or_else(|| name.clone(), |q| format!("{q}.{name}")),
                 false,
                 false,
             ),
             Tok::Op(o) => (o.clone(), false, false),
             Tok::IntLit(n) | Tok::DecimalLit(n) => (n.clone(), false, false),
-            Tok::StringLit(v) => (format!("{:?}", v), false, false),
-            Tok::CharLit(v) => (format!("'{}'", v), false, false),
+            Tok::StringLit(v) => (format!("{v:?}"), false, false),
+            Tok::CharLit(v) => (format!("'{v}'"), false, false),
             Tok::LParen => ("(".to_string(), false, true),
             Tok::RParen => (")".to_string(), true, false),
             Tok::LBracket => ("[".to_string(), false, true),

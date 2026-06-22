@@ -30,7 +30,8 @@ struct Context {
     bracket_depth: usize,
 }
 
-pub fn resolve_layout(tokens: Vec<Token>) -> Vec<Token> {
+pub fn resolve_layout(tokens: impl AsRef<[Token]>) -> Vec<Token> {
+    let tokens = tokens.as_ref();
     let mut out: Vec<Token> = Vec::with_capacity(tokens.len() + tokens.len() / 4);
     let mut stack: Vec<Context> = Vec::new();
     let mut bracket_depth = 0usize;
@@ -69,7 +70,7 @@ pub fn resolve_layout(tokens: Vec<Token>) -> Vec<Token> {
         out.push(virtual_tok(Tok::VRBrace, pos));
     };
 
-    for token in &tokens {
+    for token in tokens {
         let pos = token.pos;
         let col = pos.column;
 
@@ -241,7 +242,7 @@ mod tests {
     /// token text otherwise.
     fn layout_str(src: &str) -> String {
         let (tokens, errors) = lex(src);
-        assert!(errors.is_empty(), "lex errors: {:?}", errors);
+        assert!(errors.is_empty(), "lex errors: {errors:?}");
         resolve_layout(tokens)
             .iter()
             .map(|t| match &t.tok {
@@ -250,11 +251,11 @@ mod tests {
                 Tok::VSemi => ";".to_string(),
                 Tok::LowerId { qualifier, name } | Tok::UpperId { qualifier, name } => qualifier
                     .as_ref()
-                    .map_or_else(|| name.clone(), |q| format!("{}.{}", q, name)),
+                    .map_or_else(|| name.clone(), |q| format!("{q}.{name}")),
                 Tok::Op(o) => o.clone(),
                 Tok::IntLit(n) | Tok::DecimalLit(n) => n.clone(),
-                Tok::StringLit(s) => format!("{:?}", s),
-                Tok::CharLit(c) => format!("'{}'", c),
+                Tok::StringLit(s) => format!("{s:?}"),
+                Tok::CharLit(c) => format!("'{c}'"),
                 Tok::LParen => "(".into(),
                 Tok::RParen => ")".into(),
                 Tok::LBracket => "[".into(),
@@ -371,7 +372,7 @@ mod tests {
             let laid = resolve_layout(tokens);
             let opens = laid.iter().filter(|t| t.tok == Tok::VLBrace).count();
             let closes = laid.iter().filter(|t| t.tok == Tok::VRBrace).count();
-            assert_eq!(opens, closes, "unbalanced virtual braces in {:?}", f);
+            assert_eq!(opens, closes, "unbalanced virtual braces in {f:?}");
         }
         assert_eq!(lex_errors, 0, "lex errors across corpus");
     }

@@ -334,12 +334,12 @@ impl PartialEq for Type {
                 },
             ) => aq == bq && an == bn,
             (Self::App(ah, aa, _), Self::App(bh, ba, _)) => ah == bh && aa == ba,
-            (Self::List(a, _), Self::List(b, _)) => a == b,
+            (Self::List(a, _), Self::List(b, _))
+            | (Self::Constrained(a, _), Self::Constrained(b, _)) => a == b,
             (Self::Tuple(a, _), Self::Tuple(b, _)) => a == b,
             (Self::Fun(al, ar, _), Self::Fun(bl, br, _)) => al == bl && ar == br,
             (Self::Var(a, _), Self::Var(b, _)) => a == b,
             (Self::Unit(_), Self::Unit(_)) => true,
-            (Self::Constrained(a, _), Self::Constrained(b, _)) => a == b,
             _ => false,
         }
     }
@@ -627,10 +627,10 @@ impl Expr {
                 qualifier, name, ..
             } => qualifier
                 .as_ref()
-                .map_or_else(|| name.clone(), |q| format!("{}.{}", q, name)),
+                .map_or_else(|| name.clone(), |q| format!("{q}.{name}")),
             Self::Lit { kind, text, .. } => match kind {
-                LitKind::Text => format!("{:?}", text),
-                LitKind::Char => format!("'{}'", text),
+                LitKind::Text => format!("{text:?}"),
+                LitKind::Char => format!("'{text}'"),
                 _ => text.clone(),
             },
             Self::App { func, args, .. } => {
@@ -714,7 +714,7 @@ impl Expr {
             } => match (operand, left) {
                 (Some(e), true) => format!("({} {})", e.render(), op),
                 (Some(e), false) => format!("({} {})", op, e.render()),
-                (None, _) => format!("({})", op),
+                (None, _) => format!("({op})"),
             },
             Self::Error { raw, .. } => raw.clone(),
         }
@@ -813,7 +813,7 @@ impl Pat {
             } => {
                 let head = qualifier
                     .as_ref()
-                    .map_or_else(|| name.clone(), |q| format!("{}.{}", q, name));
+                    .map_or_else(|| name.clone(), |q| format!("{q}.{name}"));
                 if args.is_empty() {
                     head
                 } else {
@@ -830,8 +830,8 @@ impl Pat {
                 format!("[{}]", xs.join(", "))
             }
             Self::Lit { kind, text, .. } => match kind {
-                LitKind::Text => format!("{:?}", text),
-                LitKind::Char => format!("'{}'", text),
+                LitKind::Text => format!("{text:?}"),
+                LitKind::Char => format!("'{text}'"),
                 _ => text.clone(),
             },
             Self::As { name, pat, .. } => format!("{}@{}", name, pat.render()),

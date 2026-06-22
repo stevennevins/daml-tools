@@ -95,15 +95,13 @@ fn tile(source: &str, module: &Module, trivia: &[Trivia]) -> Result<String, Stri
                 continue;
             }
             return Err(format!(
-                "span/trivia interval [{}, {}) overlaps previous tile ending at {}",
-                start, end, prev
+                "span/trivia interval [{start}, {end}) overlaps previous tile ending at {prev}"
             ));
         }
         let gap = &source[prev..start];
         if !gap.chars().all(char::is_whitespace) {
             return Err(format!(
-                "bytes {}..{} not covered by any node or trivia span: {:?}",
-                prev, start, gap
+                "bytes {prev}..{start} not covered by any node or trivia span: {gap:?}"
             ));
         }
         out.push_str(gap);
@@ -112,7 +110,7 @@ fn tile(source: &str, module: &Module, trivia: &[Trivia]) -> Result<String, Stri
     }
     let tail = &source[prev..];
     if !tail.chars().all(char::is_whitespace) {
-        return Err(format!("bytes {}.. lost at EOF: {:?}", prev, tail));
+        return Err(format!("bytes {prev}.. lost at EOF: {tail:?}"));
     }
     out.push_str(tail);
 
