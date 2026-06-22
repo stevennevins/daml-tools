@@ -8,7 +8,14 @@ hooks = [
   { id = "cargo-doc", name = "cargo doc", entry = "bash -c 'RUSTDOCFLAGS=\"-D warnings\" cargo doc --workspace --all-features --no-deps --locked'", language = "system", pass_filenames = false, stages = ["pre-commit"] },
   { id = "cargo-test", name = "cargo test", entry = "cargo test --workspace --all-features --locked", language = "system", pass_filenames = false, stages = ["pre-push"] },
   { id = "daml-fmt-diff", name = "daml-fmt differential", entry = "bash -c 'cd crates/daml-fmt && node test/diff.js'", language = "system", pass_filenames = false, stages = ["pre-push"] },
-  { id = "cargo-semver-checks", name = "cargo semver-checks", entry = "bash -c 'command -v cargo-semver-checks >/dev/null || { echo cargo-semver-checks is required: cargo install cargo-semver-checks --locked; exit 1; }; for package in daml-parser daml-lint daml-fmt; do cargo semver-checks check-release --package $package; done'", language = "system", pass_filenames = false, stages = ["pre-push"] },
+  # Advisory, mirroring CI's `continue-on-error` semver job: report API breaks
+  # for EVERY published crate without blocking the push (release-plz owns the
+  # version bump). The old `for ...; done` masked all but the last package's
+  # result because a loop's exit status is only its final iteration; collect
+  # every failure instead, and `verbose = true` so prek shows the report even
+  # though the hook passes. Flip to a blocking gate (exit non-zero on $failed)
+  # if/when CI drops `continue-on-error`.
+  { id = "cargo-semver-checks", name = "cargo semver-checks", entry = "bash -c 'command -v cargo-semver-checks >/dev/null || { echo cargo-semver-checks is required: cargo install cargo-semver-checks --locked; exit 1; }; failed=\"\"; for package in daml-parser daml-lint daml-fmt; do cargo semver-checks check-release --package $package || failed=\"$failed $package\"; done; [ -z \"$failed\" ] || echo \"NOTE: cargo-semver-checks reports API breaks in:$failed — advisory (matches CI continue-on-error); release-plz will choose the version bump.\"'", language = "system", pass_filenames = false, stages = ["pre-push"], verbose = true },
 ]
 
 [[repos]]
