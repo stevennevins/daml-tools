@@ -1,4 +1,5 @@
-use daml_parser::ast::{Span as ParserSpan, Type};
+use daml_parser::ast::Type;
+use daml_syntax::{LineIndex, SourceFile, TextRange};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -23,73 +24,23 @@ pub struct SourceSpan {
     pub byte_end: usize,
 }
 
-pub(crate) struct SourceTextMap<'a> {
-    file: &'a Path,
-    source: &'a str,
-    line_start_bytes: Vec<usize>,
-    utf16_offset_by_byte: Vec<usize>,
-}
-
-impl<'a> SourceTextMap<'a> {
-    pub(crate) fn new(file: &'a Path, source: &'a str) -> Self {
-        let mut line_start_bytes = vec![0];
-        for (idx, byte) in source.bytes().enumerate() {
-            if byte == b'\n' {
-                line_start_bytes.push(idx + 1);
-            }
-        }
-        let mut utf16_offset_by_byte = vec![0; source.len() + 1];
-        let mut utf16 = 0usize;
-        let mut prev = 0usize;
-        for (idx, ch) in source.char_indices() {
-            for slot in utf16_offset_by_byte.iter_mut().take(idx).skip(prev) {
-                *slot = utf16;
-            }
-            let char_end = idx + ch.len_utf8();
-            for slot in utf16_offset_by_byte.iter_mut().take(char_end).skip(idx) {
-                *slot = utf16;
-            }
-            utf16 += ch.len_utf16();
-            prev = char_end;
-        }
-        for slot in utf16_offset_by_byte
-            .iter_mut()
-            .take(source.len() + 1)
-            .skip(prev)
-        {
-            *slot = utf16;
-        }
+impl SourceSpan {
+    fn from_text_range(
+        file: &Path,
+        source: &str,
+        line_index: &LineIndex,
+        range: TextRange,
+    ) -> Self {
+        let byte_start = usize::from(range.start());
+        let byte_end = usize::from(range.end());
+        let line_col = line_index.char_line_col(source, range.start());
+        let (start, end) = line_index.utf16_range(range);
         Self {
-            file,
-            source,
-            line_start_bytes,
-            utf16_offset_by_byte,
-        }
-    }
-
-    fn line_column_for_byte(&self, byte: usize) -> (usize, usize) {
-        let byte = byte.min(self.source.len());
-        let line_idx = match self.line_start_bytes.binary_search(&byte) {
-            Ok(idx) => idx,
-            Err(idx) => idx.saturating_sub(1),
-        };
-        let line_start = self.line_start_bytes[line_idx];
-        (
-            line_idx + 1,
-            self.source[line_start..byte].chars().count() + 1,
-        )
-    }
-
-    fn source_span_for_parser_span(&self, span: ParserSpan) -> SourceSpan {
-        let byte_start = span.start.min(self.source.len());
-        let byte_end = span.end.min(self.source.len()).max(byte_start);
-        let (line, column) = self.line_column_for_byte(byte_start);
-        SourceSpan {
-            file: self.file.to_path_buf(),
-            line,
-            column,
-            start: self.utf16_offset_by_byte[byte_start],
-            end: self.utf16_offset_by_byte[byte_end],
+            file: file.to_path_buf(),
+            line: line_col.line,
+            column: line_col.column,
+            start,
+            end,
             byte_start,
             byte_end,
         }
@@ -135,8 +86,15 @@ pub enum TypeNode {
 }
 
 impl TypeNode {
-    pub(crate) fn from_type(t: &Type, source_map: &SourceTextMap<'_>) -> Self {
-        let source_span = || source_map.source_span_for_parser_span(t.span());
+    pub(crate) fn from_type(t: &Type, file: &Path, source_file: &SourceFile) -> Self {
+        let source_span = || {
+            SourceSpan::from_text_range(
+                file,
+                source_file.source(),
+                source_file.line_index(),
+                source_file.parser_span_to_text_range(t.span()),
+            )
+        };
         match t {
             Type::Con {
                 qualifier, name, ..
@@ -146,27 +104,27 @@ impl TypeNode {
                 span: source_span(),
             },
             Type::App(head, args, _) => Self::App {
-                head: Box::new(Self::from_type(head, source_map)),
+                head: Box::new(Self::from_type(head, file, source_file)),
                 args: args
                     .iter()
-                    .map(|arg| Self::from_type(arg, source_map))
+                    .map(|arg| Self::from_type(arg, file, source_file))
                     .collect(),
                 span: source_span(),
             },
             Type::List(inner, _) => Self::List {
-                inner: Box::new(Self::from_type(inner, source_map)),
+                inner: Box::new(Self::from_type(inner, file, source_file)),
                 span: source_span(),
             },
             Type::Tuple(items, _) => Self::Tuple {
                 items: items
                     .iter()
-                    .map(|item| Self::from_type(item, source_map))
+                    .map(|item| Self::from_type(item, file, source_file))
                     .collect(),
                 span: source_span(),
             },
             Type::Fun(param, result, _) => Self::Fun {
-                param: Box::new(Self::from_type(param, source_map)),
-                result: Box::new(Self::from_type(result, source_map)),
+                param: Box::new(Self::from_type(param, file, source_file)),
+                result: Box::new(Self::from_type(result, file, source_file)),
                 span: source_span(),
             },
             Type::Var(name, _) => Self::Var {
@@ -177,7 +135,7 @@ impl TypeNode {
                 span: source_span(),
             },
             Type::Constrained(body, _) => Self::Constrained {
-                body: Box::new(Self::from_type(body, source_map)),
+                body: Box::new(Self::from_type(body, file, source_file)),
                 span: source_span(),
             },
         }

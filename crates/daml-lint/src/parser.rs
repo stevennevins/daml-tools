@@ -7,7 +7,7 @@
 
 use crate::ir::*;
 use daml_parser::ast::{self, Consuming, Decl, DoStmt, TemplateBodyDecl};
-use daml_parser::parse::parse_module;
+use daml_syntax::SourceFile;
 use std::path::Path;
 
 #[cfg(test)]
@@ -31,8 +31,8 @@ pub struct Diagnostic {
 }
 
 pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> (DamlModule, Vec<Diagnostic>) {
-    let (module, diags) = parse_module(source);
-    let source_map = SourceTextMap::new(file, source);
+    let source_file = SourceFile::parse(source);
+    let module = source_file.module();
     let imports = module
         .imports
         .iter()
@@ -50,13 +50,13 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> (DamlModule, Ve
 
     for decl in &module.decls {
         match decl {
-            Decl::Template(t) => templates.push(lower_template(t, file, &source_map)),
-            Decl::Interface(i) => interfaces.push(lower_interface(i, file, &source_map)),
+            Decl::Template(t) => templates.push(lower_template(t, file, &source_file)),
+            Decl::Interface(i) => interfaces.push(lower_interface(i, file, &source_file)),
             Decl::Function(f) => {
                 if f.equations.is_empty() {
                     continue; // type signature without a body
                 }
-                functions.push(lower_function(f, file, &source_map));
+                functions.push(lower_function(f, file, &source_file));
             }
             _ => {}
         }
@@ -64,7 +64,7 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> (DamlModule, Ve
 
     let ir = DamlModule {
         ir_version: 3,
-        name: module.name,
+        name: module.name.clone(),
         file: file.to_path_buf(),
         source: source.to_string(),
         imports,
@@ -72,22 +72,15 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> (DamlModule, Ve
         interfaces,
         functions,
     };
-    let diags = diags
-        .into_iter()
-        .map(|d| {
-            // Derive an end column from the byte span when it stays on one line
-            // (the slice has no newline): columns advance one per character.
-            let end_column = source
-                .get(d.span.start..d.span.end)
-                .filter(|s| !s.is_empty() && !s.contains('\n'))
-                .map(|s| d.pos.column + s.chars().count());
-            Diagnostic {
-                line: d.pos.line,
-                column: d.pos.column,
-                end_column,
-                message: d.message,
-                category: d.category.as_str(),
-            }
+    let diags = source_file
+        .diagnostics()
+        .iter()
+        .map(|d| Diagnostic {
+            line: d.line,
+            column: d.column,
+            end_column: d.end_column,
+            message: d.message.clone(),
+            category: d.category,
         })
         .collect();
     (ir, diags)
@@ -238,13 +231,16 @@ fn binding_name(b: &ast::Binding) -> String {
 
 // ----- declarations ------------------------------------------------------
 
-fn lower_template(t: &ast::TemplateDecl, file: &Path, source_map: &SourceTextMap<'_>) -> Template {
+fn lower_template(t: &ast::TemplateDecl, file: &Path, source_file: &SourceFile) -> Template {
     let fields = t
         .fields
         .iter()
         .map(|f| Field {
             name: f.name.clone(),
-            type_: f.ty.as_ref().map(|ty| TypeNode::from_type(ty, source_map)),
+            type_: f
+                .ty
+                .as_ref()
+                .map(|ty| TypeNode::from_type(ty, file, source_file)),
             span: span_at(file, f.pos),
         })
         .collect();
@@ -274,12 +270,14 @@ fn lower_template(t: &ast::TemplateDecl, file: &Path, source_map: &SourceTextMap
             }
             TemplateBodyDecl::Key { expr, ty, .. } => {
                 key_expr = Some(lower_expr(expr));
-                key_type = ty.as_ref().map(|ty| TypeNode::from_type(ty, source_map));
+                key_type = ty
+                    .as_ref()
+                    .map(|ty| TypeNode::from_type(ty, file, source_file));
             }
             TemplateBodyDecl::Maintainer { expr, .. } => {
                 maintainer_exprs.push(lower_expr(expr));
             }
-            TemplateBodyDecl::Choice(c) => choices.push(lower_choice(c, file, source_map)),
+            TemplateBodyDecl::Choice(c) => choices.push(lower_choice(c, file, source_file)),
             TemplateBodyDecl::InterfaceInstance(ii) => {
                 interface_instances.push(InterfaceInstance {
                     interface_name: ii.interface_name.clone(),
@@ -306,11 +304,7 @@ fn lower_template(t: &ast::TemplateDecl, file: &Path, source_map: &SourceTextMap
     }
 }
 
-fn lower_interface(
-    i: &ast::InterfaceDecl,
-    file: &Path,
-    source_map: &SourceTextMap<'_>,
-) -> Interface {
+fn lower_interface(i: &ast::InterfaceDecl, file: &Path, source_file: &SourceFile) -> Interface {
     Interface {
         name: i.name.clone(),
         requires: i.requires.clone(),
@@ -320,26 +314,32 @@ fn lower_interface(
             .iter()
             .map(|m| InterfaceMethod {
                 name: m.name.clone(),
-                type_: m.ty.as_ref().map(|ty| TypeNode::from_type(ty, source_map)),
+                type_: m
+                    .ty
+                    .as_ref()
+                    .map(|ty| TypeNode::from_type(ty, file, source_file)),
                 span: span_at(file, m.pos),
             })
             .collect(),
         choices: i
             .choices
             .iter()
-            .map(|c| lower_choice(c, file, source_map))
+            .map(|c| lower_choice(c, file, source_file))
             .collect(),
         span: span_at(file, i.pos),
     }
 }
 
-fn lower_choice(c: &ast::ChoiceDecl, file: &Path, source_map: &SourceTextMap<'_>) -> Choice {
+fn lower_choice(c: &ast::ChoiceDecl, file: &Path, source_file: &SourceFile) -> Choice {
     let parameters = c
         .params
         .iter()
         .map(|f| Field {
             name: f.name.clone(),
-            type_: f.ty.as_ref().map(|ty| TypeNode::from_type(ty, source_map)),
+            type_: f
+                .ty
+                .as_ref()
+                .map(|ty| TypeNode::from_type(ty, file, source_file)),
             span: span_at(file, f.pos),
         })
         .collect();
@@ -358,13 +358,13 @@ fn lower_choice(c: &ast::ChoiceDecl, file: &Path, source_map: &SourceTextMap<'_>
         return_type: c
             .return_ty
             .as_ref()
-            .map(|ty| TypeNode::from_type(ty, source_map)),
+            .map(|ty| TypeNode::from_type(ty, file, source_file)),
         body,
         span: span_at(file, c.pos),
     }
 }
 
-fn lower_function(f: &ast::FunctionDecl, file: &Path, source_map: &SourceTextMap<'_>) -> Function {
+fn lower_function(f: &ast::FunctionDecl, file: &Path, source_file: &SourceFile) -> Function {
     let mut body = Vec::new();
     for eq in &f.equations {
         if eq.guards.is_empty() {
@@ -385,7 +385,10 @@ fn lower_function(f: &ast::FunctionDecl, file: &Path, source_map: &SourceTextMap
 
     Function {
         name: f.name.clone(),
-        type_signature: f.ty.as_ref().map(|ty| TypeNode::from_type(ty, source_map)),
+        type_signature: f
+            .ty
+            .as_ref()
+            .map(|ty| TypeNode::from_type(ty, file, source_file)),
         body,
         span: span_at(file, f.pos),
     }

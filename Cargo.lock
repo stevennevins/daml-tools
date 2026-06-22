@@ -127,6 +127,7 @@ version = "0.3.11"
 dependencies = [
  "clap",
  "daml-parser",
+ "daml-syntax",
  "rquickjs",
  "serde",
  "serde_json",
