@@ -42,8 +42,9 @@ custom = { engines = { node = ">=18" }, publishConfig = { access = "public" } }
 workspace = true
 
 [dependencies]
-# daml-fmt depends on the parser ONLY. It must never pull in daml-lint.
+# daml-fmt depends on parser/syntax only. It must never pull in daml-lint.
 daml-parser.workspace = true
+daml-syntax.workspace = true
 
 [features]
 # The corpus-harness bins below are dev tools (they read the unpublished

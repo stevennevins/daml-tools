@@ -13,6 +13,7 @@ on one shared, **lossless** parser.
 | Crate | Kind | What it is |
 |-------|------|------------|
 | [`daml-parser`](crates/daml-parser) | library | Lossless lexer + offside layout + parser. The shared foundation. Zero deps. |
+| [`daml-syntax`](crates/daml-syntax) | library | Shared parsed-source surface: diagnostics, line mapping, tokens, trivia, and ranges. |
 | [`daml-lint`](crates/daml-lint) | lib + CLI | Static analysis scanner — lowers the AST to an IR and runs detectors. |
 | [`daml-fmt`](crates/daml-fmt) | lib + CLI | Canonical code formatter, differential-tested against a compiler-verified corpus. |
 
@@ -33,14 +34,15 @@ setup and local verification, see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 ## The shape
 
 ```
-daml-parser  ◄── daml-lint   (parser + rules/IR/detectors)
-     ▲
-     └──────────  daml-fmt    (parser ONLY — never depends on daml-lint)
+daml-parser  ◄── daml-syntax  ◄── daml-lint   (syntax + rules/IR/detectors)
+                    ▲
+                    └──────────  daml-fmt     (syntax + layout — never depends on daml-lint)
 ```
 
-Both tools sit on `daml-parser`. The formatter deliberately does **not** depend
-on the linter — it only wants the parse tree, not the rules engine. That
-boundary is enforced:
+Both tools sit on `daml-syntax`, which wraps `daml-parser` with source-facing
+diagnostics, line/UTF-16 mapping, token/trivia access, and range conversion.
+The formatter deliberately does **not** depend on the linter — it only wants
+syntax facts and layout, not the rules engine. That boundary is enforced:
 
 ```sh
 cargo tree -p daml-fmt | grep daml-lint   # prints nothing

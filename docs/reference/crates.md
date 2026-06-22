@@ -1,6 +1,6 @@
 # Crate reference
 
-The workspace contains three independently versioned crates. Workspace
+The workspace contains four independently versioned crates. Workspace
 membership is declared in [`Cargo.toml`](../../Cargo.toml).
 
 ## Workspace metadata
@@ -16,9 +16,10 @@ membership is declared in [`Cargo.toml`](../../Cargo.toml).
 
 | Crate | Version | Kind | Package description |
 |-------|---------|------|---------------------|
-| [`daml-parser`](../../crates/daml-parser) | `0.2.0` | library | Lossless lexer, layout resolver, and parser for the Daml smart-contract language. |
-| [`daml-lint`](../../crates/daml-lint) | `0.2.0` | library and CLI | Static analysis scanner for Daml smart contracts. |
-| [`daml-fmt`](../../crates/daml-fmt) | `0.2.0` | library and CLI | Canonical code formatter for the Daml smart-contract language, built on `daml-parser`. |
+| [`daml-parser`](../../crates/daml-parser) | `0.2.3` | library | Lossless lexer, layout resolver, and parser for the Daml smart-contract language. |
+| [`daml-syntax`](../../crates/daml-syntax) | `0.1.0` | library | Shared parsed-source surface for Daml tools. |
+| [`daml-lint`](../../crates/daml-lint) | `0.3.11` | library and CLI | Static analysis scanner for Daml smart contracts. |
+| [`daml-fmt`](../../crates/daml-fmt) | `0.2.8` | library and CLI | Canonical code formatter for the Daml smart-contract language, built on shared syntax. |
 
 ## `daml-parser`
 
@@ -28,8 +29,8 @@ Library root: [`crates/daml-parser/src/lib.rs`](../../crates/daml-parser/src/lib
 
 README: [`crates/daml-parser/README.md`](../../crates/daml-parser/README.md)
 
-`daml-parser` has no external dependencies. It is the shared foundation used by
-`daml-lint` and `daml-fmt`.
+`daml-parser` has no external dependencies. It is the low-level foundation used
+by `daml-syntax`.
 
 ### Public modules
 
@@ -44,6 +45,28 @@ README: [`crates/daml-parser/README.md`](../../crates/daml-parser/README.md)
 The normal construction path is parser-created AST values. The AST modules are
 public for inspection by tools.
 
+## `daml-syntax`
+
+Manifest: [`crates/daml-syntax/Cargo.toml`](../../crates/daml-syntax/Cargo.toml)
+
+Library root: [`crates/daml-syntax/src/lib.rs`](../../crates/daml-syntax/src/lib.rs)
+
+README: [`crates/daml-syntax/README.md`](../../crates/daml-syntax/README.md)
+
+`daml-syntax` depends on `daml-parser` and `text-size`. It does not depend on
+`daml-lint`, `daml-fmt`, `serde`, `serde_json`, `clap`, or `rquickjs`.
+
+### Public API
+
+| Item | Description |
+|------|-------------|
+| `SourceFile` | Parsed source plus diagnostics, line index, tokens, trivia, laid-out tokens, and parser-span conversion. |
+| `SourceTokens` | Tokenized source for callers that need tokens, trivia, lex errors, or laid-out tokens without a full parse. |
+| `LineIndex` | Byte, line/column, and UTF-16 offset mapping over one source string. |
+| `Diagnostic` | Parser diagnostic with source range, line/column, message, and category. |
+| `LineCol` | 1-based line and column pair. |
+| `TextRange`, `TextSize` | Re-exported `text-size` range and offset types used by public range APIs. |
+
 ## `daml-lint`
 
 Manifest: [`crates/daml-lint/Cargo.toml`](../../crates/daml-lint/Cargo.toml)
@@ -52,8 +75,9 @@ Library root: [`crates/daml-lint/src/lib.rs`](../../crates/daml-lint/src/lib.rs)
 
 README: [`crates/daml-lint/README.md`](../../crates/daml-lint/README.md)
 
-`daml-lint` depends on `daml-parser`, `serde`, and `serde_json`. `clap` and
-`rquickjs` are optional dependencies controlled by features.
+`daml-lint` depends on `daml-parser`, `daml-syntax`, `serde`, and
+`serde_json`. `clap` and `rquickjs` are optional dependencies controlled by
+features.
 
 ### Features
 
@@ -79,7 +103,7 @@ and the rule-facing IR without pulling in clap or QuickJS.
 | `detectors` | Built-in detector registration through `create_builtin_detectors` when `js-runtime` is enabled. |
 | `detectors::script` | JavaScript rule runtime support when `js-runtime` is enabled; file loading is available with `custom-rules`. |
 | `ir` | Rule-facing Daml intermediate representation. |
-| `parser` | Lowering from `daml-parser` AST to the linter IR, including parse diagnostics. |
+| `parser` | Lowering from `daml-syntax` parsed source to the linter IR, including parse diagnostics. |
 | `reporter` | Markdown, JSON, and SARIF report formatting plus exit-code support. |
 
 ### Built-in detectors
@@ -101,7 +125,8 @@ Library root: [`crates/daml-fmt/src/lib.rs`](../../crates/daml-fmt/src/lib.rs)
 
 README: [`crates/daml-fmt/README.md`](../../crates/daml-fmt/README.md)
 
-`daml-fmt` depends on `daml-parser` only. It does not depend on `daml-lint`.
+`daml-fmt` depends on `daml-parser` and `daml-syntax`. It does not depend on
+`daml-lint`.
 
 ### Features
 
@@ -135,6 +160,5 @@ the `dev-tools` feature is explicitly enabled.
 
 ## Versioning and API stability
 
-All three crates are pre-1.0. The current manifest version is `0.2.0` for each
-crate. Public API breaking changes use 0.x minor releases; patch releases
-should remain compatible.
+All four crates are pre-1.0. Public API breaking changes use 0.x minor
+releases; patch releases should remain compatible.

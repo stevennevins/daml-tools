@@ -33,6 +33,7 @@ workspace = true
 
 [dependencies]
 daml-parser.workspace = true
+daml-syntax.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 # clap (CLI) and rquickjs (custom-rule JS engine) are optional so a library

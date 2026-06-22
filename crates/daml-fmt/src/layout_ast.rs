@@ -37,9 +37,8 @@
 //! (`crate::normalize_gaps`).
 
 use daml_parser::ast::*;
-use daml_parser::layout::resolve_layout;
-use daml_parser::lexer::{lex_with_trivia, TriviaKind};
-use daml_parser::parse::parse_module;
+use daml_parser::lexer::TriviaKind;
+use daml_syntax::{SourceFile, SourceTokens};
 
 const INDENT: i64 = 2;
 
@@ -110,8 +109,8 @@ fn run_structural_passes(src: &str) -> String {
 /// Do-block reindent of `src`, accepted only if it passes the `same_tokens`
 /// gate; otherwise `src` unchanged.
 fn gated_do_pass(src: &str) -> String {
-    let (module, _) = parse_module(src);
-    let r = reindent_do_blocks(src, &module);
+    let source_file = SourceFile::parse(src);
+    let r = reindent_do_blocks(src, source_file.module());
     if r != src && same_tokens(src, &r) {
         r
     } else {
@@ -122,8 +121,8 @@ fn gated_do_pass(src: &str) -> String {
 /// if/then/else clause reindent of `src`, gated like the do-pass. Re-parses its
 /// own input so spans match the (possibly already do-reindented) bytes.
 fn gated_if_pass(src: &str) -> String {
-    let (module, _) = parse_module(src);
-    let r = reindent_ifs(src, &module);
+    let source_file = SourceFile::parse(src);
+    let r = reindent_ifs(src, source_file.module());
     if r != src && same_tokens(src, &r) {
         r
     } else {
@@ -133,8 +132,8 @@ fn gated_if_pass(src: &str) -> String {
 
 /// case-alternative reindent of `src`, gated like the do-pass.
 fn gated_case_pass(src: &str) -> String {
-    let (module, _) = parse_module(src);
-    let r = reindent_cases(src, &module);
+    let source_file = SourceFile::parse(src);
+    let r = reindent_cases(src, source_file.module());
     if r != src && same_tokens(src, &r) {
         r
     } else {
@@ -144,8 +143,8 @@ fn gated_case_pass(src: &str) -> String {
 
 /// `let … in` binding-block reindent of `src`, gated like the do-pass.
 fn gated_letin_pass(src: &str) -> String {
-    let (module, _) = parse_module(src);
-    let r = reindent_letins(src, &module);
+    let source_file = SourceFile::parse(src);
+    let r = reindent_letins(src, source_file.module());
     if r != src && same_tokens(src, &r) {
         r
     } else {
@@ -155,8 +154,8 @@ fn gated_letin_pass(src: &str) -> String {
 
 /// `Con with` construction field-block reindent of `src`, gated like the do-pass.
 fn gated_con_with_pass(src: &str) -> String {
-    let (module, _) = parse_module(src);
-    let r = reindent_con_with(src, &module);
+    let source_file = SourceFile::parse(src);
+    let r = reindent_con_with(src, source_file.module());
     if r != src && same_tokens(src, &r) {
         r
     } else {
@@ -166,8 +165,8 @@ fn gated_con_with_pass(src: &str) -> String {
 
 /// Structured template-body reindent of `src`, gated like the do-pass.
 fn gated_template_pass(src: &str) -> String {
-    let (module, _) = parse_module(src);
-    let r = reindent_templates(src, &module);
+    let source_file = SourceFile::parse(src);
+    let r = reindent_templates(src, source_file.module());
     if r != src && same_tokens(src, &r) {
         r
     } else {
@@ -177,8 +176,8 @@ fn gated_template_pass(src: &str) -> String {
 
 /// Module headers and import/export-list continuations.
 fn gated_module_pass(src: &str) -> String {
-    let (module, _) = parse_module(src);
-    let r = reindent_modules_and_imports(src, &module);
+    let source_file = SourceFile::parse(src);
+    let r = reindent_modules_and_imports(src, source_file.module());
     if r != src && same_tokens(src, &r) {
         r
     } else {
@@ -188,8 +187,8 @@ fn gated_module_pass(src: &str) -> String {
 
 /// Choice signature/parameter/controller/observer/body ladders.
 fn gated_choice_pass(src: &str) -> String {
-    let (module, _) = parse_module(src);
-    let r = reindent_choices(src, &module);
+    let source_file = SourceFile::parse(src);
+    let r = reindent_choices(src, source_file.module());
     if r != src && same_tokens(src, &r) {
         r
     } else {
@@ -199,8 +198,8 @@ fn gated_choice_pass(src: &str) -> String {
 
 /// Top-level `data`/`type`/`class`/`instance`/`exception` declaration ladders.
 fn gated_type_def_pass(src: &str) -> String {
-    let (module, _) = parse_module(src);
-    let r = reindent_type_defs(src, &module);
+    let source_file = SourceFile::parse(src);
+    let r = reindent_type_defs(src, source_file.module());
     if r != src && same_tokens(src, &r) {
         r
     } else {
@@ -210,8 +209,8 @@ fn gated_type_def_pass(src: &str) -> String {
 
 /// Guard bars and their bodies in function equations.
 fn gated_guard_pass(src: &str) -> String {
-    let (module, _) = parse_module(src);
-    let r = reindent_guards(src, &module);
+    let source_file = SourceFile::parse(src);
+    let r = reindent_guards(src, source_file.module());
     if r != src && same_tokens(src, &r) {
         r
     } else {
@@ -221,8 +220,8 @@ fn gated_guard_pass(src: &str) -> String {
 
 /// Record UPDATE field blocks (`expr with`) distinct from constructor `Con with`.
 fn gated_record_update_pass(src: &str) -> String {
-    let (module, _) = parse_module(src);
-    let r = reindent_record_updates(src, &module);
+    let source_file = SourceFile::parse(src);
+    let r = reindent_record_updates(src, source_file.module());
     if r != src && same_tokens(src, &r) {
         r
     } else {
@@ -232,8 +231,8 @@ fn gated_record_update_pass(src: &str) -> String {
 
 /// `try`/`catch` body and handler ladders.
 fn gated_try_pass(src: &str) -> String {
-    let (module, _) = parse_module(src);
-    let r = reindent_tries(src, &module);
+    let source_file = SourceFile::parse(src);
+    let r = reindent_tries(src, source_file.module());
     if r != src && same_tokens(src, &r) {
         r
     } else {
@@ -243,8 +242,8 @@ fn gated_try_pass(src: &str) -> String {
 
 /// Existing multiline expression continuations inside explicit delimiters.
 fn gated_continuation_pass(src: &str) -> String {
-    let (module, _) = parse_module(src);
-    let r = reindent_continuations(src, &module);
+    let source_file = SourceFile::parse(src);
+    let r = reindent_continuations(src, source_file.module());
     if r != src && same_tokens(src, &r) {
         r
     } else {
@@ -259,21 +258,22 @@ fn gated_continuation_pass(src: &str) -> String {
 /// and template/interface bodies. This is not a normalized coverage ratio: one
 /// construct can produce multiple edits.
 pub fn coverage(src: &str) -> (usize, usize) {
-    let (module, _diags) = parse_module(src);
-    let candidates = do_block_edits(src, &module).len()
-        + module_edits(src, &module).len()
-        + choice_edits(src, &module).len()
-        + type_def_edits(src, &module).len()
-        + guard_edits(src, &module).len()
-        + record_update_edits(src, &module).len()
-        + try_edits(src, &module).len()
-        + continuation_edits(src, &module).len()
-        + if_edits(src, &module).len()
-        + case_edits(src, &module).len()
-        + letin_edits(src, &module).len()
-        + con_with_edits(src, &module).len()
-        + template_edits(src, &module).len();
-    (candidates, modeled_construct_count(&module))
+    let source_file = SourceFile::parse(src);
+    let module = source_file.module();
+    let candidates = do_block_edits(src, module).len()
+        + module_edits(src, module).len()
+        + choice_edits(src, module).len()
+        + type_def_edits(src, module).len()
+        + guard_edits(src, module).len()
+        + record_update_edits(src, module).len()
+        + try_edits(src, module).len()
+        + continuation_edits(src, module).len()
+        + if_edits(src, module).len()
+        + case_edits(src, module).len()
+        + letin_edits(src, module).len()
+        + con_with_edits(src, module).len()
+        + template_edits(src, module).len();
+    (candidates, modeled_construct_count(module))
 }
 
 fn modeled_construct_count(module: &Module) -> usize {
@@ -302,9 +302,11 @@ fn modeled_construct_count(module: &Module) -> usize {
 /// True iff `a` and `b` share the same LAID-OUT token stream (offside virtuals
 /// included) — the desugar-safety gate.
 fn same_tokens(a: &str, b: &str) -> bool {
-    let la = resolve_layout(lex_with_trivia(a).0);
-    let lb = resolve_layout(lex_with_trivia(b).0);
-    la.len() == lb.len() && la.iter().zip(&lb).all(|(x, y)| x.tok == y.tok)
+    let a = SourceTokens::lex(a);
+    let b = SourceTokens::lex(b);
+    let la = a.laid_out_tokens();
+    let lb = b.laid_out_tokens();
+    la.len() == lb.len() && la.iter().zip(lb).all(|(x, y)| x.tok == y.tok)
 }
 
 fn has_source_location_expectation(src: &str) -> bool {
@@ -352,9 +354,9 @@ fn rewrite_layout_forms(src: &str) -> String {
     base = rewrite_lambda_bodies(&base);
     base = rewrite_infix_continuations(&base);
 
-    let (module, _) = parse_module(&base);
+    let source_file = SourceFile::parse(&base);
     let mut replacements = Vec::new();
-    collect_inline_expression_rewrites(&base, &module, &mut replacements);
+    collect_inline_expression_rewrites(&base, source_file.module(), &mut replacements);
     apply_replacements(&base, &replacements)
 }
 
@@ -857,7 +859,8 @@ fn has_trailing_with_comment(src: &str) -> bool {
 }
 
 fn organize_imports(src: &str) -> String {
-    let (module, _) = parse_module(src);
+    let source_file = SourceFile::parse(src);
+    let module = source_file.module();
     if module.imports.len() < 2 {
         return src.to_string();
     }
@@ -934,10 +937,11 @@ fn import_group(module_name: &str) -> u8 {
 }
 
 fn rewrite_lambda_bodies(src: &str) -> String {
-    let (module, _) = parse_module(src);
+    let source_file = SourceFile::parse(src);
+    let module = source_file.module();
     let line_starts = line_start_table(src);
     let mut edits = Vec::new();
-    walk_module_expressions(&module, &mut |expr| {
+    walk_module_expressions(module, &mut |expr| {
         let Expr::Lambda { span, body, .. } = expr else {
             return;
         };
@@ -968,7 +972,8 @@ fn rewrite_lambda_bodies(src: &str) -> String {
 }
 
 fn rewrite_infix_continuations(src: &str) -> String {
-    let (module, _) = parse_module(src);
+    let source_file = SourceFile::parse(src);
+    let module = source_file.module();
     let line_starts = line_start_table(src);
     let comments = comment_spans(src);
     let mut edits = Vec::new();
@@ -1125,8 +1130,9 @@ fn apply_shifts(src: &str, edits: &[Edit]) -> String {
 
 /// Byte spans of every comment (line + block); sorted by start.
 fn comment_spans(src: &str) -> Vec<(usize, usize)> {
-    let (_t, trivia, _e) = lex_with_trivia(src);
-    let mut v: Vec<(usize, usize)> = trivia
+    let source_tokens = SourceTokens::lex(src);
+    let mut v: Vec<(usize, usize)> = source_tokens
+        .trivia()
         .iter()
         .filter(|t| matches!(t.kind, TriviaKind::LineComment | TriviaKind::BlockComment))
         .map(|t| (t.start, t.end))

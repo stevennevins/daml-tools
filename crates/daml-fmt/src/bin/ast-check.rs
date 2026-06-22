@@ -9,8 +9,7 @@
 //! Usage: `ast-check <dir-or-file>...`
 
 use daml_parser::ast_span::render_from_ast;
-use daml_parser::lexer::lex_with_trivia;
-use daml_parser::parse::parse_module;
+use daml_syntax::SourceFile;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 
@@ -53,9 +52,8 @@ fn main() {
                 continue;
             }
         };
-        let (module, _diags) = parse_module(&src);
-        let (_tokens, trivia, _lex_errors) = lex_with_trivia(&src);
-        match render_from_ast(&src, &module, &trivia) {
+        let source_file = SourceFile::parse(&src);
+        match render_from_ast(&src, source_file.module(), source_file.trivia()) {
             Ok(rendered) if rendered == src => ok += 1,
             Ok(_) => {
                 println!("DIFF {}", f.display());
