@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.14](https://github.com/stevennevins/daml-tools/compare/daml-lint-v0.3.13...daml-lint-v0.3.14) - 2026-06-22
+
+### Other
+
+- updated the following local packages: daml-parser, daml-syntax
+
 ## [0.3.12](https://github.com/stevennevins/daml-tools/compare/daml-lint-v0.3.11...daml-lint-v0.3.12) - 2026-06-22
 
 ### Added
