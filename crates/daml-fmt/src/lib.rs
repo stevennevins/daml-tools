@@ -30,7 +30,8 @@
 // shipping backend. See src/layout_ast.rs.
 mod layout_ast;
 
-use daml_parser::lexer::{lex_with_trivia, Tok, TriviaKind};
+use daml_parser::lexer::{Tok, TriviaKind};
+use daml_syntax::SourceFile;
 
 /// Lexer diagnostics for `src`.
 ///
@@ -41,10 +42,16 @@ use daml_parser::lexer::{lex_with_trivia, Tok, TriviaKind};
 /// mistaken for parse success. All 924 corpus files lex clean, so this never
 /// flags them.
 pub fn lex_diagnostics(src: &str) -> Vec<String> {
-    let (_tokens, _trivia, errors) = lex_with_trivia(src);
-    errors
+    SourceFile::parse(src)
+        .diagnostics()
         .iter()
-        .map(|e| format!("{}:{}: {}", e.pos.line, e.pos.column, e.message))
+        .filter(|diagnostic| diagnostic.category == "lexical-error")
+        .map(|diagnostic| {
+            format!(
+                "{}:{}: {}",
+                diagnostic.line, diagnostic.column, diagnostic.message
+            )
+        })
         .collect()
 }
 
@@ -96,11 +103,12 @@ pub(crate) fn normalize_gaps(src: &str, colon: bool) -> String {
 }
 
 fn rewrite(src: &str, colon: bool) -> String {
-    let (tokens, trivia, _lex_errors) = lex_with_trivia(src);
+    let source_file = SourceFile::parse(src);
 
     // Items that carry bytes, in source order. For each: brace-depth delta
     // (+1/-1 for `{`/`}`/parens), is-lone-colon, is-rparen, is-token (vs trivia).
-    let mut items: Vec<(usize, usize, i32, bool, bool, bool)> = tokens
+    let mut items: Vec<(usize, usize, i32, bool, bool, bool)> = source_file
+        .tokens()
         .iter()
         .filter(|t| !matches!(t.tok, Tok::VLBrace | Tok::VRBrace | Tok::VSemi))
         .map(|t| {
@@ -114,7 +122,8 @@ fn rewrite(src: &str, colon: bool) -> String {
             )
         })
         .chain(
-            trivia
+            source_file
+                .trivia()
                 .iter()
                 .filter(|t| !matches!(t.kind, TriviaKind::BlankLines(_)))
                 .map(|t| (t.start, t.end, 0, false, false, false)),
@@ -281,7 +290,7 @@ mod tests {
     #[test]
     fn render_from_ast_lossless_over_corpus() {
         use daml_parser::ast_span::render_from_ast;
-        use daml_parser::parse::parse_module;
+        use daml_syntax::SourceFile;
         use std::path::{Path, PathBuf};
 
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("original");
@@ -323,14 +332,22 @@ mod tests {
             let Ok(src) = std::fs::read_to_string(f) else {
                 continue;
             };
-            let (tokens, trivia, errors) = lex_with_trivia(&src);
-            if let Err(e) = render_from_ast(&src, &parse_module(&src).0, &trivia) {
+            let source_file = SourceFile::parse(&src);
+            if let Err(e) = render_from_ast(&src, source_file.module(), source_file.trivia()) {
                 failures.push(format!("render_from_ast {}: {}", f.display(), e));
             }
             // Lex errors drop bytes by design; losslessness is only promised for
             // files that lex clean (all 924 do).
-            if errors.is_empty() {
-                if let Err(e) = daml_parser::lexer::render_lossless(&src, &tokens, &trivia) {
+            if source_file
+                .diagnostics()
+                .iter()
+                .all(|diagnostic| diagnostic.category != "lexical-error")
+            {
+                if let Err(e) = daml_parser::lexer::render_lossless(
+                    &src,
+                    source_file.tokens(),
+                    source_file.trivia(),
+                ) {
                     failures.push(format!("render_lossless {}: {}", f.display(), e));
                 }
             }

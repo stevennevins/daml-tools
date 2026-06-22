@@ -119,6 +119,7 @@ name = "daml-fmt"
 version = "0.2.8"
 dependencies = [
  "daml-parser",
+ "daml-syntax",
 ]
 
 [[package]]

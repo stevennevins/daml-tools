@@ -6,7 +6,8 @@
 //! Exit 0 iff every file round-trips byte-identical through
 //! lex_with_trivia -> render_lossless.
 
-use daml_parser::lexer::{lex_with_trivia, render_lossless};
+use daml_parser::lexer::render_lossless;
+use daml_syntax::SourceFile;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 
@@ -50,8 +51,8 @@ fn main() {
                 continue;
             }
         };
-        let (tokens, trivia, _lex_errors) = lex_with_trivia(&src);
-        match render_lossless(&src, &tokens, &trivia) {
+        let source_file = SourceFile::parse(&src);
+        match render_lossless(&src, source_file.tokens(), source_file.trivia()) {
             Ok(rendered) if rendered == src => ok += 1,
             Ok(_) => {
                 println!("DIFF {}", f.display());
