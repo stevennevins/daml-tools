@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.9](https://github.com/stevennevins/daml-tools/compare/daml-fmt-v0.2.8...daml-fmt-v0.2.9) - 2026-06-22
+
+### Added
+
+- *(syntax)* add shared source surface ([#56](https://github.com/stevennevins/daml-tools/pull/56))
+
+### Other
+
+- [codex] expand daml formatter layouts ([#54](https://github.com/stevennevins/daml-tools/pull/54))
+
 ## [0.2.7](https://github.com/stevennevins/daml-tools/compare/daml-fmt-v0.2.6...daml-fmt-v0.2.7) - 2026-06-19
 
 ### Other
