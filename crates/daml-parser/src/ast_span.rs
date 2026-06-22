@@ -30,7 +30,7 @@ pub fn render_from_ast(source: &str, module: &Module, trivia: &[Trivia]) -> Resu
 /// V2 — every child span is contained in its parent, and sibling spans are
 /// ordered and disjoint. Validates the whole node set (module container
 /// included) as a laminar family via a containment stack.
-pub fn check_nesting(module: &Module) -> Result<(), String> {
+fn check_nesting(module: &Module) -> Result<(), String> {
     let mut spans: Vec<Span> = Vec::new();
     collect_module(module, &mut spans);
     spans.retain(|s| !s.is_empty());

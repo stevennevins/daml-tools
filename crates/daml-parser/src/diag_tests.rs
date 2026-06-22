@@ -58,6 +58,32 @@ fn legacy_controller_can_is_unsupported_syntax() {
 }
 
 #[test]
+fn malformed_expression_is_categorized_malformed() {
+    // The common recovery case: a recognized declaration whose body is broken.
+    // `if x then 1` is missing its `else`, so the parser emits a `Malformed`
+    // diagnostic (not `SkippedDecl`/`UnsupportedSyntax`) yet the `f` declaration
+    // is still produced. `Malformed` is the most-emitted category and must have
+    // a behavior test, not only an `as_str` string-mapping check.
+    let src = "module M where\nf = if x then 1\n";
+    let (module, ds) = parse_module(src);
+    assert!(
+        ds.iter()
+            .any(|d| d.category == DiagnosticCategory::Malformed),
+        "missing `else` must surface a Malformed diagnostic, got {:?}",
+        ds.iter()
+            .map(|d| (d.category, &d.message))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        module
+            .decls
+            .iter()
+            .any(|d| matches!(d, Decl::Function(f) if f.name == "f")),
+        "the malformed body must not drop the surrounding `f` declaration"
+    );
+}
+
+#[test]
 fn deep_nesting_emits_recursion_limit_and_does_not_panic() {
     // Well past MAX_DEPTH (128). The parser must not overflow the stack; it
     // degrades and reports the truncation.

@@ -30,6 +30,22 @@ struct Context {
     bracket_depth: usize,
 }
 
+/// Resolve indentation-sensitive layout: insert virtual `VLBrace`/`VRBrace`/
+/// `VSemi` tokens per the offside rule so the parser never inspects columns.
+///
+/// Input is the raw lexer token stream; the output preserves every input token
+/// in order and interleaves the virtual layout tokens. This is a total function
+/// over any token slice — it never panics, even on unbalanced or truncated
+/// input (stray brackets and unclosed blocks are tolerated, not rejected).
+///
+/// ```
+/// use daml_parser::lexer::lex;
+/// use daml_parser::layout::resolve_layout;
+///
+/// let (tokens, _errors) = lex("module M where\nfoo = 1\n");
+/// let laid_out = resolve_layout(&tokens);
+/// assert!(laid_out.len() >= tokens.len());
+/// ```
 pub fn resolve_layout(tokens: impl AsRef<[Token]>) -> Vec<Token> {
     let tokens = tokens.as_ref();
     let mut out: Vec<Token> = Vec::with_capacity(tokens.len() + tokens.len() / 4);
