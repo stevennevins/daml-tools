@@ -10,7 +10,7 @@
 //! safety bar for those rules.
 //!
 //! The shipping backend is `layout_ast` (AST-driven, our own pattern — NOT a
-//! LimeChain derivative, and NOT aimed at matching the `expected/` baseline).
+//! `LimeChain` derivative, and NOT aimed at matching the `expected/` baseline).
 //! `normalize_gaps` below is the proven, token-gated whitespace + colon-spacing
 //! pass it composes on top of the structural reindent:
 //! - trailing-whitespace: strip spaces/tabs before a newline; one final newline.
@@ -287,17 +287,6 @@ mod tests {
         use daml_syntax::SourceFile;
         use std::path::{Path, PathBuf};
 
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("original");
-        if !root.exists() {
-            assert!(
-                std::env::var_os("CI").is_none(),
-                "corpus missing under CI (was crates/daml-fmt/original committed?): {}",
-                root.display()
-            );
-            eprintln!("corpus absent (published crate?), skipping");
-            return;
-        }
-
         fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
             for e in std::fs::read_dir(dir).unwrap().flatten() {
                 let p = e.path();
@@ -307,6 +296,17 @@ mod tests {
                     out.push(p);
                 }
             }
+        }
+
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("original");
+        if !root.exists() {
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "corpus missing under CI (was crates/daml-fmt/original committed?): {}",
+                root.display()
+            );
+            eprintln!("corpus absent (published crate?), skipping");
+            return;
         }
 
         let mut files = Vec::new();

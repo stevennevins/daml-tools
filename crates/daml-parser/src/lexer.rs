@@ -198,13 +198,12 @@ pub fn render_lossless(
     let mut prev = 0usize;
     for (start, end) in items {
         if start < prev {
-            return Err(format!("overlapping spans at byte {}", start));
+            return Err(format!("overlapping spans at byte {start}"));
         }
         let gap = &source[prev..start];
         if !gap.chars().all(char::is_whitespace) {
             return Err(format!(
-                "bytes {}..{} lost (not covered by any token/trivia): {:?}",
-                prev, start, gap
+                "bytes {prev}..{start} lost (not covered by any token/trivia): {gap:?}"
             ));
         }
         out.push_str(gap);
@@ -213,7 +212,7 @@ pub fn render_lossless(
     }
     let tail = &source[prev..];
     if !tail.chars().all(char::is_whitespace) {
-        return Err(format!("bytes {}.. lost at EOF: {:?}", prev, tail));
+        return Err(format!("bytes {prev}.. lost at EOF: {tail:?}"));
     }
     out.push_str(tail);
     Ok(out)
@@ -402,7 +401,7 @@ impl<'a> Lexer<'a> {
                 c if is_symbol_char(c) => self.operator(pos),
                 _ => {
                     self.bump();
-                    self.error(format!("unexpected character '{}'", c), pos);
+                    self.error(format!("unexpected character '{c}'"), pos);
                 }
             }
         }
@@ -534,7 +533,7 @@ impl<'a> Lexer<'a> {
     fn number(&mut self, pos: Pos) {
         let start = self.byte;
         let mut text = String::new();
-        if self.peek() == Some('0') && matches!(self.peek_at(1), Some('x') | Some('X')) {
+        if self.peek() == Some('0') && matches!(self.peek_at(1), Some('x' | 'X')) {
             text.push(self.bump().unwrap());
             text.push(self.bump().unwrap());
             while self
@@ -558,14 +557,14 @@ impl<'a> Lexer<'a> {
                 text.push(self.bump().unwrap());
             }
         }
-        if matches!(self.peek(), Some('e') | Some('E'))
+        if matches!(self.peek(), Some('e' | 'E'))
             && (self.peek_at(1).is_some_and(|c| c.is_ascii_digit())
-                || (matches!(self.peek_at(1), Some('+') | Some('-'))
+                || (matches!(self.peek_at(1), Some('+' | '-'))
                     && self.peek_at(2).is_some_and(|c| c.is_ascii_digit())))
         {
             decimal = true;
             text.push(self.bump().unwrap());
-            if matches!(self.peek(), Some('+') | Some('-')) {
+            if matches!(self.peek(), Some('+' | '-')) {
                 text.push(self.bump().unwrap());
             }
             while self.peek().is_some_and(|c| c.is_ascii_digit()) {
@@ -679,7 +678,7 @@ mod tests {
 
     fn toks(src: &str) -> Vec<Tok> {
         let (tokens, errors) = lex(src);
-        assert!(errors.is_empty(), "lex errors: {:?}", errors);
+        assert!(errors.is_empty(), "lex errors: {errors:?}");
         tokens.into_iter().map(|t| t.tok).collect()
     }
 
@@ -837,12 +836,11 @@ mod tests {
     /// reconstruction must be byte-identical.
     fn assert_round_trip(src: &str) {
         let (tokens, trivia, errors) = lex_with_trivia(src);
-        assert!(errors.is_empty(), "lex errors: {:?}", errors);
+        assert!(errors.is_empty(), "lex errors: {errors:?}");
         assert_eq!(
             render_lossless(src, &tokens, &trivia).as_deref(),
             Ok(src),
-            "round trip failed for {:?}",
-            src
+            "round trip failed for {src:?}"
         );
     }
 
@@ -895,7 +893,7 @@ mod tests {
     fn blank_looking_lines_inside_block_comment_are_not_blank_trivia() {
         let src = "x = 1 {- a\n\nb -}\ny = 2\n";
         let trivia = trivia_of(src);
-        assert_eq!(trivia.len(), 1, "{:?}", trivia);
+        assert_eq!(trivia.len(), 1, "{trivia:?}");
         assert_eq!(trivia[0].kind, TriviaKind::BlockComment);
     }
 

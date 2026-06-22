@@ -19,7 +19,7 @@ pub fn corpus_root() -> PathBuf {
 /// True if the vendored corpus is present. Absent corpus is a legitimate skip
 /// OFF the workspace (e.g. a published crate), but under CI it must be present —
 /// fail loud so a missing/forgotten corpus can't pass green. Mirrors the guard
-/// in daml-parser's span_tests.
+/// in daml-parser's `span_tests`.
 fn corpus_present() -> bool {
     let root = corpus_root();
     if root.exists() {
@@ -42,12 +42,7 @@ fn load(rel: &str) -> Option<DamlModule> {
     assert!(path.exists(), "corpus file missing: {}", path.display());
     let source = std::fs::read_to_string(&path).unwrap();
     let (module, diags) = parse_daml_with_diagnostics(&source, Path::new(rel));
-    assert!(
-        diags.is_empty(),
-        "parse diagnostics in {}: {:?}",
-        rel,
-        diags
-    );
+    assert!(diags.is_empty(), "parse diagnostics in {rel}: {diags:?}");
     Some(module)
 }
 
@@ -55,14 +50,14 @@ fn template<'a>(m: &'a DamlModule, name: &str) -> &'a Template {
     m.templates
         .iter()
         .find(|t| t.name == name)
-        .unwrap_or_else(|| panic!("template {} not found", name))
+        .unwrap_or_else(|| panic!("template {name} not found"))
 }
 
 fn interface<'a>(m: &'a DamlModule, name: &str) -> &'a Interface {
     m.interfaces
         .iter()
         .find(|i| i.name == name)
-        .unwrap_or_else(|| panic!("interface {} not found", name))
+        .unwrap_or_else(|| panic!("interface {name} not found"))
 }
 
 fn expr_text(expr: &Expr) -> String {
@@ -97,11 +92,23 @@ fn expr_texts(exprs: &[Expr]) -> Vec<String> {
     exprs.iter().map(expr_text).collect()
 }
 
-fn con_name(ty: &Option<TypeNode>) -> Option<&str> {
+fn con_name(ty: Option<&TypeNode>) -> Option<&str> {
     match ty {
         Some(TypeNode::Con { name, .. }) => Some(name.as_str()),
         _ => None,
     }
+}
+
+fn has_kind(stmts: &[Statement], pred: &dyn Fn(&Statement) -> bool) -> bool {
+    stmts.iter().any(|s| {
+        pred(s)
+            || matches!(s, Statement::TryCatch { try_body, catch_body, .. }
+                if has_kind(try_body, pred) || has_kind(catch_body, pred))
+            // An `if`/`case` keeps its arms as separate scopes; the effect
+            // may live inside one of them.
+            || matches!(s, Statement::Branch { arms, .. }
+                if arms.iter().any(|arm| has_kind(&arm.body, pred)))
+    })
 }
 
 #[test]
@@ -128,7 +135,7 @@ fn settlement_instruction_template() {
             "signedReceivers"
         ]
     );
-    assert_eq!(con_name(&t.key_type), Some("InstructionKey"));
+    assert_eq!(con_name(t.key_type.as_ref()), Some("InstructionKey"));
     assert!(t.key_expr.is_some());
     let instances: Vec<&str> = t
         .interface_instances
@@ -144,17 +151,6 @@ fn settlement_instruction_template() {
         .iter()
         .find(|f| f.name == "releasePreviousAllocation")
         .expect("function releasePreviousAllocation");
-    fn has_kind(stmts: &[Statement], pred: &dyn Fn(&Statement) -> bool) -> bool {
-        stmts.iter().any(|s| {
-            pred(s)
-                || matches!(s, Statement::TryCatch { try_body, catch_body, .. }
-                    if has_kind(try_body, pred) || has_kind(catch_body, pred))
-                // An `if`/`case` keeps its arms as separate scopes; the effect
-                // may live inside one of them.
-                || matches!(s, Statement::Branch { arms, .. }
-                    if arms.iter().any(|arm| has_kind(&arm.body, pred)))
-        })
-    }
     assert!(has_kind(&f.body, &|s| matches!(
         s,
         Statement::Exercise { .. }
@@ -227,7 +223,7 @@ fn interface_account_reference_template() {
     // The Reference helper template: choices controlled by `signatory this`.
     let r = template(&m, "Reference");
     assert_eq!(r.fields.len(), 3);
-    assert_eq!(con_name(&r.key_type), Some("AccountKey"));
+    assert_eq!(con_name(r.key_type.as_ref()), Some("AccountKey"));
     let by_name = |n: &str| r.choices.iter().find(|c| c.name == n).unwrap();
     assert!(!by_name("GetCid").consuming);
     assert_eq!(
@@ -248,7 +244,7 @@ fn interface_account_reference_template() {
             assert!(matches!(&**func, Expr::Var { name, .. } if name == "signatory"));
             assert!(matches!(&args[0], Expr::Var { name, .. } if name == "this"));
         }
-        other => panic!("expected App for 'signatory this', got {:?}", other),
+        other => panic!("expected App for 'signatory this', got {other:?}"),
     }
 }
 
@@ -294,7 +290,7 @@ fn settlement_batch_module() {
     );
     let fns: Vec<&str> = m.functions.iter().map(|f| f.name.as_str()).collect();
     for expected in ["routedSteps", "instructionIds", "buildKey"] {
-        assert!(fns.contains(&expected), "function {} missing", expected);
+        assert!(fns.contains(&expected), "function {expected} missing");
     }
 }
 
@@ -370,7 +366,7 @@ fn corpus_parses_clean() {
 
 /// Lossless-trivia gate over a corpus: every file that lexes clean must
 /// reconstruct byte-for-byte from token + trivia spans. Returns
-/// (files_checked, files_with_lex_errors); panics on any round-trip failure.
+/// (`files_checked`, `files_with_lex_errors`); panics on any round-trip failure.
 fn round_trip_corpus(root: &Path) -> (usize, usize) {
     let mut files = Vec::new();
     collect(root, &mut files);
@@ -393,7 +389,7 @@ fn round_trip_corpus(root: &Path) -> (usize, usize) {
         }
         checked += 1;
         if let Err(e) = daml_parser::lexer::render_lossless(&src, &tokens, &trivia) {
-            panic!("round trip failed for {}: {}", f.display(), e);
+            panic!("round trip failed for {}: {e}", f.display());
         }
     }
     (checked, lex_error_files)
@@ -410,7 +406,7 @@ fn finance_corpus_round_trips_byte_identical() {
     }
     let root = corpus_root();
     let (checked, lex_error_files) = round_trip_corpus(&root);
-    assert!(checked > 600, "corpus incomplete: {}", checked);
+    assert!(checked > 600, "corpus incomplete: {checked}");
     assert_eq!(lex_error_files, 0, "finance corpus must lex clean");
 }
 
@@ -424,7 +420,7 @@ fn sdk_corpus_round_trips_byte_identical() {
         return;
     }
     let (checked, exempt) = round_trip_corpus(root);
-    assert!(checked > 1000, "corpus incomplete: {}", checked);
+    assert!(checked > 1000, "corpus incomplete: {checked}");
     // The single exempt file is the deliberately invalid
     // compiler/damlc/tests/daml-test-files/BadUTF8.daml fixture.
     assert_eq!(exempt, 1, "exempt files beyond BadUTF8.daml");

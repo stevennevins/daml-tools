@@ -1,6 +1,7 @@
 use crate::detector::{Finding, Severity};
 use serde::Serialize;
 use serde_json::json;
+use std::fmt::Write as _;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
@@ -154,12 +155,15 @@ fn format_markdown(findings: &[Finding], parse_errors: &[ParseError]) -> String 
     out.push_str("# daml-lint Report\n\n");
 
     if !parse_errors.is_empty() {
-        out.push_str(&format!("## Parse Errors ({})\n\n", parse_errors.len()));
+        write!(out, "## Parse Errors ({})\n\n", parse_errors.len())
+            .expect("writing to a String cannot fail");
         for e in parse_errors {
-            out.push_str(&format!(
-                "- `{}:{}:{}` [{}] {}\n",
+            writeln!(
+                out,
+                "- `{}:{}:{}` [{}] {}",
                 e.file, e.line, e.column, e.category, e.message
-            ));
+            )
+            .expect("writing to a String cannot fail");
         }
         out.push('\n');
     }
@@ -174,7 +178,8 @@ fn format_markdown(findings: &[Finding], parse_errors: &[ParseError]) -> String 
     }
 
     let (critical, high, medium, low, info) = count_by_severity(findings);
-    out.push_str(&format!(
+    write!(
+        out,
         "**Summary:** {} finding(s) — {} Critical, {} High, {} Medium, {} Low, {} Info\n\n",
         findings.len(),
         critical,
@@ -182,7 +187,8 @@ fn format_markdown(findings: &[Finding], parse_errors: &[ParseError]) -> String 
         medium,
         low,
         info
-    ));
+    )
+    .expect("writing to a String cannot fail");
 
     // Group by severity
     for severity in &[
@@ -200,16 +206,17 @@ fn format_markdown(findings: &[Finding], parse_errors: &[ParseError]) -> String 
             continue;
         }
 
-        out.push_str(&format!("## {} ({})\n\n", severity, group.len()));
+        write!(out, "## {severity} ({})\n\n", group.len())
+            .expect("writing to a String cannot fail");
 
         for f in &group {
-            out.push_str(&format!("### {} `{}`\n\n", f.severity, f.detector));
-            out.push_str(&format!("**{}**\n\n", f.message));
-            out.push_str(&format!("- **File:** `{}:{}`\n", f.file.display(), f.line));
-            out.push_str(&format!(
-                "- **Evidence:**\n  ```\n  {}\n  ```\n\n",
-                f.evidence
-            ));
+            write!(out, "### {} `{}`\n\n", f.severity, f.detector)
+                .expect("writing to a String cannot fail");
+            write!(out, "**{}**\n\n", f.message).expect("writing to a String cannot fail");
+            writeln!(out, "- **File:** `{}:{}`", f.file.display(), f.line)
+                .expect("writing to a String cannot fail");
+            write!(out, "- **Evidence:**\n  ```\n  {}\n  ```\n\n", f.evidence)
+                .expect("writing to a String cannot fail");
         }
     }
 

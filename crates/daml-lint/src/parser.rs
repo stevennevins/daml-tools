@@ -989,7 +989,7 @@ fn template_name_of(arg: Option<&ast::Expr>) -> String {
             qualifier, name, ..
         }) => qualifier
             .as_ref()
-            .map_or_else(|| name.clone(), |q| format!("{}.{}", q, name)),
+            .map_or_else(|| name.clone(), |q| format!("{q}.{name}")),
         Some(ast::Expr::Var { name, .. }) if name == "this" => "this".to_string(),
         _ => String::new(),
     }
@@ -1002,7 +1002,7 @@ fn choice_name_of(arg: Option<&ast::Expr>) -> String {
             qualifier, name, ..
         }) => qualifier
             .as_ref()
-            .map_or_else(|| name.clone(), |q| format!("{}.{}", q, name)),
+            .map_or_else(|| name.clone(), |q| format!("{q}.{name}")),
         Some(ast::Expr::App { func, .. }) => choice_name_of(Some(func)),
         _ => String::new(),
     }
@@ -1157,7 +1157,7 @@ template Foo
                 .choices
                 .iter()
                 .find(|c| c.name == n)
-                .unwrap_or_else(|| panic!("choice {} not found", n))
+                .unwrap_or_else(|| panic!("choice {n} not found"))
         };
         assert!(by("Drain").consuming, "preconsuming archives -> consuming");
         assert!(by("Close").consuming, "postconsuming archives -> consuming");
@@ -1185,8 +1185,7 @@ template Foo
         let body = &module.templates[0].choices[0].body;
         assert!(
             !body.iter().any(|s| matches!(s, Statement::Exercise { .. })),
-            "comment text must not become an Exercise statement: {:?}",
-            body
+            "comment text must not become an Exercise statement: {body:?}"
         );
     }
 

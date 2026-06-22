@@ -53,6 +53,10 @@ fn expected_severity(rule_name: &str) -> Severity {
     }
 }
 
+#[allow(
+    clippy::match_same_arms,
+    reason = "table-driven regression expectations intentionally repeat counts"
+)]
 fn expected_count(rule_name: &str, case_name: &str) -> usize {
     match (rule_name, case_name) {
         ("archive-before-execute", "archive after try passes") => 0,
@@ -1023,8 +1027,7 @@ template T
         ("zero equality still flags", "amount == 0.0"),
     ] {
         let source = format!(
-            "module T where\n\ntemplate M\n  with\n    owner : Party\n    amount : Decimal\n  where\n    signatory owner\n    ensure {}\n",
-            ensure
+            "module T where\n\ntemplate M\n  with\n    owner : Party\n    amount : Decimal\n  where\n    signatory owner\n    ensure {ensure}\n"
         );
         assert_rule_findings(
             case_name,

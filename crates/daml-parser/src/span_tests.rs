@@ -35,7 +35,7 @@ fn first_function<'a>(m: &'a Module, name: &str) -> &'a FunctionDecl {
             Decl::Function(f) if f.name == name => Some(f),
             _ => None,
         })
-        .unwrap_or_else(|| panic!("function {} not found", name))
+        .unwrap_or_else(|| panic!("function {name} not found"))
 }
 
 #[test]
@@ -55,10 +55,10 @@ fn leaf_and_composite_spans_are_tight() {
                     assert_eq!(text(src, items[0].span()), "a");
                     assert_eq!(text(src, items[1].span()), "b");
                 }
-                other => panic!("expected tuple, got {:?}", other),
+                other => panic!("expected tuple, got {other:?}"),
             }
         }
-        other => panic!("expected app, got {:?}", other),
+        other => panic!("expected app, got {other:?}"),
     }
 }
 
@@ -191,8 +191,8 @@ fn render_from_ast_roundtrips_small_programs() {
     ];
     for src in cases {
         match render(src) {
-            Ok(out) => assert_eq!(out, src, "roundtrip mismatch for {:?}", src),
-            Err(e) => panic!("render_from_ast failed for {:?}: {}", src, e),
+            Ok(out) => assert_eq!(out, src, "roundtrip mismatch for {src:?}"),
+            Err(e) => panic!("render_from_ast failed for {src:?}: {e}"),
         }
     }
 }
@@ -259,7 +259,7 @@ fn span_oracle_over_finance_corpus() {
         return;
     }
     let (n, failures) = run_corpus(&root);
-    assert!(n > 600, "finance corpus incomplete: {} files", n);
+    assert!(n > 600, "finance corpus incomplete: {n} files");
     if !failures.is_empty() {
         let shown: Vec<_> = failures.iter().take(20).cloned().collect();
         panic!(
@@ -310,7 +310,7 @@ fn render_lossless_over_finance_corpus() {
             panic!("round trip failed for {}: {}", f.display(), e);
         }
     }
-    assert!(checked > 600, "too few files round-tripped: {}", checked);
+    assert!(checked > 600, "too few files round-tripped: {checked}");
 }
 
 fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
