@@ -18,6 +18,10 @@ name = "daml-parser"
 allow = ["AGPL-3.0-only"]
 
 [[licenses.exceptions]]
+name = "daml-syntax"
+allow = ["AGPL-3.0-only"]
+
+[[licenses.exceptions]]
 name = "daml-lint"
 allow = ["AGPL-3.0-only"]
 
