@@ -1,9 +1,9 @@
 //! AST-driven canonical layout.
 //!
-//! This is OUR OWN pattern, NOT a port of the LimeChain heuristic: no LimeChain
+//! This is OUR OWN pattern, NOT a port of the `LimeChain` heuristic: no `LimeChain`
 //! code is consulted; design is from the daml-parser AST.
 //! We do NOT aim to match `expected/`: the formatter makes its own consistent
-//! layout decisions and may diverge from the LimeChain baseline). This is the
+//! layout decisions and may diverge from the `LimeChain` baseline). This is the
 //! shipping backend behind `format_source`.
 //!
 //! Main mechanism:
@@ -41,6 +41,7 @@ use daml_parser::lexer::TriviaKind;
 use daml_syntax::{SourceFile, SourceTokens};
 
 const INDENT: i64 = 2;
+const INDENT_WIDTH: usize = 2;
 
 /// Upper bound on structural-reindent iterations. The do-pass and if-pass can
 /// unblock one another (the if-pass's `else` shift can remove a collision that
@@ -362,7 +363,7 @@ fn rewrite_layout_forms(src: &str) -> String {
 
 fn rewrite_line_forms(src: &str) -> String {
     let mut out = String::with_capacity(src.len());
-    let mut last_expr_indent = None;
+    let mut last_expr_indent: Option<usize> = None;
     for line in src.split_inclusive('\n') {
         let (body, ending) = split_line_ending(line);
         let leading = body.len() - body.trim_start_matches(' ').len();
@@ -380,7 +381,7 @@ fn rewrite_line_forms(src: &str) -> String {
 
         if starts_with_infix_operator(trimmed) {
             if let Some(prev) = last_expr_indent {
-                let target = prev + INDENT as usize;
+                let target = prev.saturating_add(INDENT_WIDTH);
                 if leading != target {
                     out.push_str(&" ".repeat(target));
                     out.push_str(trimmed);
@@ -511,8 +512,8 @@ fn rewrite_inline_let_line(body: &str, ending: &str) -> Option<String> {
     if !bindings.contains(';') {
         return None;
     }
-    let indent = " ".repeat(leading + INDENT as usize);
-    let nested = " ".repeat(leading + 2 * INDENT as usize);
+    let indent = " ".repeat(leading.saturating_add(INDENT_WIDTH));
+    let nested = " ".repeat(leading.saturating_add(2 * INDENT_WIDTH));
     let mut out = format!("{}{}{}", " ".repeat(leading), prefix, ending);
     out.push_str(&indent);
     out.push_str("let");
@@ -575,8 +576,8 @@ fn rewrite_long_application_line(body: &str, ending: &str) -> Option<String> {
     {
         return None;
     }
-    let indent = " ".repeat(leading + INDENT as usize);
-    let nested = " ".repeat(leading + 2 * INDENT as usize);
+    let indent = " ".repeat(leading.saturating_add(INDENT_WIDTH));
+    let nested = " ".repeat(leading.saturating_add(2 * INDENT_WIDTH));
     let mut out = format!("{}{}{}", " ".repeat(leading), prefix, ending);
     out.push_str(&indent);
     out.push_str(parts[0]);
@@ -604,7 +605,8 @@ fn collect_inline_expression_rewrites(
             if leading_has_tab(src, line_starts[eq_line]) {
                 continue;
             }
-            let body_indent = indent_of(src, &line_starts, eq_line) as usize + INDENT as usize;
+            let body_indent =
+                indent_of_usize(src, &line_starts, eq_line).saturating_add(INDENT_WIDTH);
             collect_expr_rewrite(src, &eq.body, body_indent, true, replacements);
         }
     }
@@ -630,7 +632,7 @@ fn collect_expr_rewrite(
             && inline_if_parts_are_simple(src, cond, then_branch, else_branch) =>
         {
             let ind = " ".repeat(indent);
-            let nested = " ".repeat(indent + INDENT as usize);
+            let nested = " ".repeat(indent.saturating_add(INDENT_WIDTH));
             let mut text = String::new();
             if break_before_expr {
                 text.push('\n');
@@ -676,7 +678,7 @@ fn collect_expr_rewrite(
             if break_before_expr && same_line_span(src, span) && !bindings.is_empty() =>
         {
             let ind = " ".repeat(indent);
-            let nested = " ".repeat(indent + INDENT as usize);
+            let nested = " ".repeat(indent.saturating_add(INDENT_WIDTH));
             let mut text = String::new();
             if break_before_expr {
                 text.push('\n');
@@ -728,7 +730,7 @@ fn collect_expr_rewrite(
                 && app_args_are_simple(src, args) =>
         {
             let ind = " ".repeat(indent);
-            let nested = " ".repeat(indent + INDENT as usize);
+            let nested = " ".repeat(indent.saturating_add(INDENT_WIDTH));
             let mut text = String::new();
             if break_before_expr {
                 text.push('\n');
@@ -749,9 +751,9 @@ fn collect_expr_rewrite(
         _ => {
             let expr_line = line_of(&line_starts, span.start);
             let child_indent = if expr_line < line_starts.len() {
-                indent_of(src, &line_starts, expr_line) as usize + INDENT as usize
+                indent_of_usize(src, &line_starts, expr_line).saturating_add(INDENT_WIDTH)
             } else {
-                indent + INDENT as usize
+                indent.saturating_add(INDENT_WIDTH)
             };
             match expr {
                 Expr::App { func, args, .. } => {
@@ -1119,7 +1121,7 @@ fn apply_shifts(src: &str, edits: &[Edit]) -> String {
             out.push_str(line);
             continue;
         }
-        let new = (cur as i64 + delta).max(0) as usize;
+        let new = add_signed_to_usize_saturating(cur, delta);
         out.push_str(&" ".repeat(new));
         out.push_str(&line[cur..]);
     }
@@ -1161,11 +1163,24 @@ fn line_of(line_starts: &[usize], byte: usize) -> usize {
         Err(i) => i - 1,
     }
 }
-fn indent_of(src: &str, line_starts: &[usize], line: usize) -> i64 {
+fn indent_of_usize(src: &str, line_starts: &[usize], line: usize) -> usize {
     src[line_starts[line]..]
         .chars()
         .take_while(|&c| c == ' ')
-        .count() as i64
+        .count()
+}
+fn indent_of(src: &str, line_starts: &[usize], line: usize) -> i64 {
+    usize_to_i64_saturating(indent_of_usize(src, line_starts, line))
+}
+fn usize_to_i64_saturating(value: usize) -> i64 {
+    i64::try_from(value).unwrap_or(i64::MAX)
+}
+fn add_signed_to_usize_saturating(value: usize, delta: i64) -> usize {
+    if delta >= 0 {
+        value.saturating_add(usize::try_from(delta).unwrap_or(usize::MAX))
+    } else {
+        value.saturating_sub(usize::try_from(delta.unsigned_abs()).unwrap_or(usize::MAX))
+    }
 }
 /// True if the line beginning at `line_start` has a tab anywhere in its leading
 /// whitespace. Such lines are left verbatim (we measure/emit spaces only).
@@ -1423,7 +1438,7 @@ fn if_edits(src: &str, module: &Module) -> Vec<Edit> {
         // Visual column of the `if` keyword on its line — count CHARACTERS, not
         // bytes, so a multibyte char before `if` does not over-indent (the shift
         // emits spaces and `indent_of` counts chars, so these must agree).
-        let if_col = src[line_starts[if_line]..if_byte].chars().count() as i64;
+        let if_col = usize_to_i64_saturating(src[line_starts[if_line]..if_byte].chars().count());
         let target = if_col + INDENT;
 
         let then_byte = find_keyword(src, cond_end, then_span.start, "then", &comments);
@@ -2385,7 +2400,8 @@ fn try_edits(src: &str, module: &Module) -> Vec<Edit> {
         if leading_has_tab(src, line_starts[try_line]) {
             continue;
         }
-        let try_col = src[line_starts[try_line]..try_span.start].chars().count() as i64;
+        let try_col =
+            usize_to_i64_saturating(src[line_starts[try_line]..try_span.start].chars().count());
         let nested_target = try_col + INDENT;
         push_block_edit(
             &mut edits,
@@ -3052,7 +3068,7 @@ mod tests {
         // A CRLF file must not end up with a lone LF on its last line.
         let src = "module M where\r\nx = 1   \r\n";
         let out = format_ast(src);
-        assert!(out.ends_with("\r\n"), "got: {:?}", out);
+        assert!(out.ends_with("\r\n"), "got: {out:?}");
         assert!(!out.ends_with("\n\n"));
         assert_eq!(format_ast(&out), out); // idempotent
     }

@@ -11,7 +11,7 @@
 //! (byte-faithful passthrough) — only the success signal changes.
 //!
 //! Backend is the AST-driven formatter (`format_source_with_options` ->
-//! layout_ast).
+//! `layout_ast`).
 
 use daml_fmt::{format_source_with_options, lex_diagnostics, FormatOptions};
 use std::io::Read;
@@ -22,7 +22,7 @@ use std::process::exit;
 fn report_lex_errors(label: &str, src: &str) -> bool {
     let diags = lex_diagnostics(src);
     for d in &diags {
-        eprintln!("daml-fmt: {}: {}", label, d);
+        eprintln!("daml-fmt: {label}: {d}");
     }
     !diags.is_empty()
 }
@@ -58,7 +58,7 @@ fn main() {
                 exit(0);
             }
             s if s.starts_with('-') => {
-                eprintln!("daml-fmt: unknown option '{}'", s);
+                eprintln!("daml-fmt: unknown option '{s}'");
                 usage(2);
             }
             _ => files.push(a),
@@ -90,7 +90,7 @@ fn main() {
         let text = match std::fs::read_to_string(file) {
             Ok(t) => t,
             Err(e) => {
-                eprintln!("daml-fmt: {}: {}", file, e);
+                eprintln!("daml-fmt: {file}: {e}");
                 failed += 1;
                 continue;
             }
@@ -108,18 +108,18 @@ fn main() {
         let out = format_source_with_options(&text, options);
         if check {
             if out != text {
-                println!("{}", file);
+                println!("{file}");
                 unformatted += 1;
             }
         } else if write {
             if out != text {
                 if let Err(e) = std::fs::write(file, &out) {
-                    eprintln!("daml-fmt: {}: {}", file, e);
+                    eprintln!("daml-fmt: {file}: {e}");
                     failed += 1;
                 }
             }
         } else {
-            print!("{}", out);
+            print!("{out}");
         }
     }
     exit(if failed > 0 {
