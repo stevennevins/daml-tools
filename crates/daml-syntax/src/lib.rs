@@ -7,8 +7,9 @@
 
 use daml_parser::ast::{Module, Span as ParserSpan};
 use daml_parser::layout::resolve_layout;
-use daml_parser::lexer::{lex_with_trivia, Token, Trivia};
+use daml_parser::lexer::{lex_with_trivia, LexError, Token, Trivia};
 use daml_parser::parse::parse_module;
+use std::sync::OnceLock;
 
 pub use text_size::{TextRange, TextSize};
 
@@ -125,22 +126,60 @@ impl LineIndex {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
+pub struct SourceTokens {
+    tokens: Vec<Token>,
+    trivia: Vec<Trivia>,
+    lex_errors: Vec<LexError>,
+    laid_out_tokens: OnceLock<Vec<Token>>,
+}
+
+impl SourceTokens {
+    #[must_use]
+    pub fn lex(source: &str) -> Self {
+        let (tokens, trivia, lex_errors) = lex_with_trivia(source);
+        Self {
+            tokens,
+            trivia,
+            lex_errors,
+            laid_out_tokens: OnceLock::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn tokens(&self) -> &[Token] {
+        &self.tokens
+    }
+
+    #[must_use]
+    pub fn trivia(&self) -> &[Trivia] {
+        &self.trivia
+    }
+
+    #[must_use]
+    pub fn lex_errors(&self) -> &[LexError] {
+        &self.lex_errors
+    }
+
+    #[must_use]
+    pub fn laid_out_tokens(&self) -> &[Token] {
+        self.laid_out_tokens
+            .get_or_init(|| resolve_layout(self.tokens.clone()))
+    }
+}
+
+#[derive(Debug)]
 pub struct SourceFile {
     source: String,
     module: Module,
     diagnostics: Vec<Diagnostic>,
     line_index: LineIndex,
-    tokens: Vec<Token>,
-    trivia: Vec<Trivia>,
-    laid_out_tokens: Vec<Token>,
+    tokens: OnceLock<SourceTokens>,
 }
 
 impl SourceFile {
     #[must_use]
     pub fn parse(source: &str) -> Self {
-        let (tokens, trivia, _lex_errors) = lex_with_trivia(source);
-        let laid_out_tokens = resolve_layout(tokens.clone());
         let (module, parse_diagnostics) = parse_module(source);
         let line_index = LineIndex::new(source);
         let diagnostics = parse_diagnostics
@@ -168,9 +207,7 @@ impl SourceFile {
             module,
             diagnostics,
             line_index,
-            tokens,
-            trivia,
-            laid_out_tokens,
+            tokens: OnceLock::new(),
         }
     }
 
@@ -196,22 +233,26 @@ impl SourceFile {
 
     #[must_use]
     pub fn tokens(&self) -> &[Token] {
-        &self.tokens
+        self.source_tokens().tokens()
     }
 
     #[must_use]
     pub fn trivia(&self) -> &[Trivia] {
-        &self.trivia
+        self.source_tokens().trivia()
     }
 
     #[must_use]
     pub fn laid_out_tokens(&self) -> &[Token] {
-        &self.laid_out_tokens
+        self.source_tokens().laid_out_tokens()
     }
 
     #[must_use]
     pub fn parser_span_to_text_range(&self, span: ParserSpan) -> TextRange {
         parser_span_to_text_range(&self.source, span)
+    }
+
+    fn source_tokens(&self) -> &SourceTokens {
+        self.tokens.get_or_init(|| SourceTokens::lex(&self.source))
     }
 }
 
@@ -302,6 +343,20 @@ mod tests {
         );
         assert_eq!(
             render_from_ast(source, file.module(), file.trivia()).as_deref(),
+            Ok(source)
+        );
+    }
+
+    #[test]
+    fn source_tokens_exposes_lex_only_pipeline_facts() {
+        let source = "module M where\nfoo : Int\nfoo = 1\n";
+        let tokens = SourceTokens::lex(source);
+
+        assert!(tokens.lex_errors().is_empty());
+        assert!(!tokens.tokens().is_empty());
+        assert!(!tokens.laid_out_tokens().is_empty());
+        assert_eq!(
+            render_lossless(source, tokens.tokens(), tokens.trivia()).as_deref(),
             Ok(source)
         );
     }

@@ -31,7 +31,7 @@
 mod layout_ast;
 
 use daml_parser::lexer::{Tok, TriviaKind};
-use daml_syntax::SourceFile;
+use daml_syntax::SourceTokens;
 
 /// Lexer diagnostics for `src`.
 ///
@@ -42,16 +42,10 @@ use daml_syntax::SourceFile;
 /// mistaken for parse success. All 924 corpus files lex clean, so this never
 /// flags them.
 pub fn lex_diagnostics(src: &str) -> Vec<String> {
-    SourceFile::parse(src)
-        .diagnostics()
+    SourceTokens::lex(src)
+        .lex_errors()
         .iter()
-        .filter(|diagnostic| diagnostic.category == "lexical-error")
-        .map(|diagnostic| {
-            format!(
-                "{}:{}: {}",
-                diagnostic.line, diagnostic.column, diagnostic.message
-            )
-        })
+        .map(|error| format!("{}:{}: {}", error.pos.line, error.pos.column, error.message))
         .collect()
 }
 
@@ -103,11 +97,11 @@ pub(crate) fn normalize_gaps(src: &str, colon: bool) -> String {
 }
 
 fn rewrite(src: &str, colon: bool) -> String {
-    let source_file = SourceFile::parse(src);
+    let source_tokens = SourceTokens::lex(src);
 
     // Items that carry bytes, in source order. For each: brace-depth delta
     // (+1/-1 for `{`/`}`/parens), is-lone-colon, is-rparen, is-token (vs trivia).
-    let mut items: Vec<(usize, usize, i32, bool, bool, bool)> = source_file
+    let mut items: Vec<(usize, usize, i32, bool, bool, bool)> = source_tokens
         .tokens()
         .iter()
         .filter(|t| !matches!(t.tok, Tok::VLBrace | Tok::VRBrace | Tok::VSemi))
@@ -122,7 +116,7 @@ fn rewrite(src: &str, colon: bool) -> String {
             )
         })
         .chain(
-            source_file
+            source_tokens
                 .trivia()
                 .iter()
                 .filter(|t| !matches!(t.kind, TriviaKind::BlankLines(_)))

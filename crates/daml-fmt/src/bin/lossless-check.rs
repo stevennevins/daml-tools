@@ -7,7 +7,7 @@
 //! lex_with_trivia -> render_lossless.
 
 use daml_parser::lexer::render_lossless;
-use daml_syntax::SourceFile;
+use daml_syntax::SourceTokens;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 
@@ -51,8 +51,8 @@ fn main() {
                 continue;
             }
         };
-        let source_file = SourceFile::parse(&src);
-        match render_lossless(&src, source_file.tokens(), source_file.trivia()) {
+        let source_tokens = SourceTokens::lex(&src);
+        match render_lossless(&src, source_tokens.tokens(), source_tokens.trivia()) {
             Ok(rendered) if rendered == src => ok += 1,
             Ok(_) => {
                 println!("DIFF {}", f.display());

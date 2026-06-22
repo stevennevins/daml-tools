@@ -38,7 +38,7 @@
 
 use daml_parser::ast::*;
 use daml_parser::lexer::TriviaKind;
-use daml_syntax::SourceFile;
+use daml_syntax::{SourceFile, SourceTokens};
 
 const INDENT: i64 = 2;
 
@@ -302,8 +302,8 @@ fn modeled_construct_count(module: &Module) -> usize {
 /// True iff `a` and `b` share the same LAID-OUT token stream (offside virtuals
 /// included) — the desugar-safety gate.
 fn same_tokens(a: &str, b: &str) -> bool {
-    let a = SourceFile::parse(a);
-    let b = SourceFile::parse(b);
+    let a = SourceTokens::lex(a);
+    let b = SourceTokens::lex(b);
     let la = a.laid_out_tokens();
     let lb = b.laid_out_tokens();
     la.len() == lb.len() && la.iter().zip(lb).all(|(x, y)| x.tok == y.tok)
@@ -1130,8 +1130,8 @@ fn apply_shifts(src: &str, edits: &[Edit]) -> String {
 
 /// Byte spans of every comment (line + block); sorted by start.
 fn comment_spans(src: &str) -> Vec<(usize, usize)> {
-    let source_file = SourceFile::parse(src);
-    let mut v: Vec<(usize, usize)> = source_file
+    let source_tokens = SourceTokens::lex(src);
+    let mut v: Vec<(usize, usize)> = source_tokens
         .trivia()
         .iter()
         .filter(|t| matches!(t.kind, TriviaKind::LineComment | TriviaKind::BlockComment))

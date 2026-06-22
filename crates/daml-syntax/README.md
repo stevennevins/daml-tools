@@ -12,3 +12,13 @@ assert!(file.diagnostics().is_empty());
 assert_eq!(file.module().name, "M");
 assert_eq!(file.line_index().line_col(0.into()).line, 1);
 ```
+
+For callers that only need lexer, trivia, or laid-out token facts, use the
+lighter tokenized surface:
+
+```rust
+let tokens = daml_syntax::SourceTokens::lex(source);
+
+assert!(tokens.lex_errors().is_empty());
+assert!(!tokens.laid_out_tokens().is_empty());
+```

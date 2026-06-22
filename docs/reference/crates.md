@@ -61,6 +61,7 @@ README: [`crates/daml-syntax/README.md`](../../crates/daml-syntax/README.md)
 | Item | Description |
 |------|-------------|
 | `SourceFile` | Parsed source plus diagnostics, line index, tokens, trivia, laid-out tokens, and parser-span conversion. |
+| `SourceTokens` | Tokenized source for callers that need tokens, trivia, lex errors, or laid-out tokens without a full parse. |
 | `LineIndex` | Byte, line/column, and UTF-16 offset mapping over one source string. |
 | `Diagnostic` | Parser diagnostic with source range, line/column, message, and category. |
 | `LineCol` | 1-based line and column pair. |
