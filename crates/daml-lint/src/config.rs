@@ -20,9 +20,9 @@ impl LintConfig {
         };
 
         let source = std::fs::read_to_string(&path)
-            .map_err(|e| format!("could not read config {}: {}", path.display(), e))?;
+            .map_err(|e| format!("could not read config {}: {e}", path.display()))?;
         let raw: RawConfig = serde_json::from_str(&source)
-            .map_err(|e| format!("invalid config {}: {}", path.display(), e))?;
+            .map_err(|e| format!("invalid config {}: {e}", path.display()))?;
         let base_dir = path
             .parent()
             .unwrap_or_else(|| Path::new("."))
@@ -42,7 +42,7 @@ impl LintConfig {
     }
 
     pub fn load_plugin_detectors(&self) -> Result<Vec<Box<dyn Detector>>, String> {
-        let mut detectors = Vec::new();
+        let mut detectors: Vec<Box<dyn Detector>> = Vec::new();
         for plugin in &self.plugins {
             let package_dir = self.resolve_plugin_package(plugin)?;
             let manifest = read_plugin_manifest(plugin, &package_dir)?;
@@ -73,7 +73,7 @@ impl LintConfig {
                     detector,
                     Some(rule_id.to_string()),
                     None,
-                )) as Box<dyn Detector>);
+                )));
             }
         }
         Ok(detectors)
@@ -89,8 +89,9 @@ impl LintConfig {
                 }
                 let severity = setting.and_then(|setting| setting.severity);
                 if severity.is_some() {
-                    Some(Box::new(ConfiguredDetector::new(detector, None, severity))
-                        as Box<dyn Detector>)
+                    let configured: Box<dyn Detector> =
+                        Box::new(ConfiguredDetector::new(detector, None, severity));
+                    Some(configured)
                 } else {
                     Some(detector)
                 }
@@ -103,7 +104,7 @@ impl LintConfig {
             detectors.iter().map(|detector| detector.name()).collect();
         for (rule_id, setting) in &self.rules {
             if setting.enabled && !detector_names.contains(rule_id.as_str()) {
-                return Err(format!("configures unknown rule '{}'", rule_id));
+                return Err(format!("configures unknown rule '{rule_id}'"));
             }
         }
         Ok(())
@@ -112,7 +113,7 @@ impl LintConfig {
     fn default_for_cwd() -> Result<Self, String> {
         Ok(Self {
             base_dir: std::env::current_dir()
-                .map_err(|e| format!("could not resolve current directory: {}", e))?,
+                .map_err(|e| format!("could not resolve current directory: {e}"))?,
             plugin_paths: Vec::new(),
             plugins: Vec::new(),
             rules: BTreeMap::new(),
@@ -153,8 +154,7 @@ impl LintConfig {
             .collect::<Vec<_>>()
             .join(", ");
         Err(format!(
-            "could not resolve plugin '{}'. Tried: {}",
-            plugin, tried
+            "could not resolve plugin '{plugin}'. Tried: {tried}"
         ))
     }
 
@@ -190,14 +190,14 @@ struct RuleSetting {
 impl RuleSetting {
     fn from_value(value: Value) -> Result<Self, String> {
         match value {
-            Value::Array(items) => Self::from_array(items),
+            Value::Array(items) => Self::from_array(&items),
             level => {
                 Self::from_level_value(&level).map(|level| Self::from_level(level, empty_options()))
             }
         }
     }
 
-    fn from_array(items: Vec<Value>) -> Result<Self, String> {
+    fn from_array(items: &[Value]) -> Result<Self, String> {
         let Some((level_value, option_values)) = items.split_first() else {
             return Err("rule setting array must include a severity or 'off'".to_string());
         };
@@ -272,7 +272,7 @@ fn find_config_path(explicit_path: Option<&Path>) -> Result<Option<PathBuf>, Str
     }
 
     let path = std::env::current_dir()
-        .map_err(|e| format!("could not resolve current directory: {}", e))?
+        .map_err(|e| format!("could not resolve current directory: {e}"))?
         .join(".daml-lint.json");
     Ok(path.is_file().then_some(path))
 }
@@ -288,13 +288,12 @@ fn resolve_config_path(base_dir: &Path, path: PathBuf) -> PathBuf {
 fn read_plugin_manifest(plugin: &str, package_dir: &Path) -> Result<PluginManifest, String> {
     let package_json_path = package_dir.join("package.json");
     let source = std::fs::read_to_string(&package_json_path)
-        .map_err(|e| format!("could not read {}: {}", package_json_path.display(), e))?;
+        .map_err(|e| format!("could not read {}: {e}", package_json_path.display()))?;
     let package_json: PackageJson = serde_json::from_str(&source)
-        .map_err(|e| format!("invalid {}: {}", package_json_path.display(), e))?;
+        .map_err(|e| format!("invalid {}: {e}", package_json_path.display()))?;
     package_json.daml_lint.ok_or_else(|| {
         format!(
-            "plugin '{}' package {} is missing damlLint.rules",
-            plugin,
+            "plugin '{plugin}' package {} is missing damlLint.rules",
             package_json_path.display()
         )
     })
@@ -332,16 +331,13 @@ fn strip_plugin_prefix(package: &str) -> &str {
 fn parse_level_string(level: &str) -> Result<RuleLevel, String> {
     match level.to_lowercase().as_str() {
         "off" => Ok(RuleLevel::Off),
-        "warn" | "warning" => Ok(RuleLevel::Severity(Severity::Medium)),
-        "error" => Ok(RuleLevel::Severity(Severity::High)),
+        "warn" | "warning" | "medium" => Ok(RuleLevel::Severity(Severity::Medium)),
+        "error" | "high" => Ok(RuleLevel::Severity(Severity::High)),
         "critical" => Ok(RuleLevel::Severity(Severity::Critical)),
-        "high" => Ok(RuleLevel::Severity(Severity::High)),
-        "medium" => Ok(RuleLevel::Severity(Severity::Medium)),
         "low" => Ok(RuleLevel::Severity(Severity::Low)),
         "info" => Ok(RuleLevel::Severity(Severity::Info)),
         _ => Err(format!(
-            "unknown rule severity '{}'. Use off, critical, high, medium, low, info, warn, or error.",
-            level
+            "unknown rule severity '{level}'. Use off, critical, high, medium, low, info, warn, or error."
         )),
     }
 }

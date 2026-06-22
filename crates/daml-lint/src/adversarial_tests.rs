@@ -6,6 +6,7 @@
 
 use crate::ir::*;
 use crate::parser::parse_daml_with_diagnostics;
+use std::fmt::Write as _;
 use std::path::Path;
 
 fn parse(source: &str) -> DamlModule {
@@ -95,9 +96,11 @@ fn unicode_identifiers() {
 fn ten_thousand_line_file_parses_quickly() {
     let mut src = String::from("module Big where\n\n");
     for i in 0..1000 {
-        src.push_str(&format!(
+        write!(
+            src,
             "template T{i}\n  with\n    owner : Party\n    amount : Decimal\n  where\n    signatory owner\n    ensure amount > 0.0\n\n    choice C{i} : ()\n      controller owner\n      do\n        pure ()\n\n"
-        ));
+        )
+        .expect("writing to a String cannot fail");
     }
     assert!(src.lines().count() > 10_000);
     let start = std::time::Instant::now();
@@ -347,7 +350,7 @@ fn sdk_corpus_syntax_gaps() {
 fn huge_single_line() {
     let mut src = String::from("module M where\nf = ");
     for i in 0..20_000 {
-        src.push_str(&format!("g{} ", i));
+        write!(src, "g{i} ").expect("writing to a String cannot fail");
     }
     src.push('\n');
     let _ = parse(&src);

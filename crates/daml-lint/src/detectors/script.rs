@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
 
-/// AST-based custom detector: a JavaScript rule loaded via --rules.
+/// AST-based custom detector: a JavaScript rule loaded via `--rules`.
 ///
 /// Modeled on solhint custom rules: the script declares metadata constants
 /// and subscribes to AST node types by defining visitor functions. Each
@@ -18,14 +18,14 @@ use std::rc::Rc;
 /// const SEVERITY = "medium";
 /// const DESCRIPTION = "Templates cannot be named Foo";   // optional
 ///
-/// function on_template(template) {
+/// function `on_template(template)` {
 ///     if (template.name === "Foo") {
 ///         report(template, "Templates cannot be named Foo");
 ///     }
 /// }
 ///
-/// Visitors: on_template(template), on_choice(choice, template),
-/// on_field(field, template), on_function(function), on_import(import),
+/// Visitors: `on_template(template)`, `on_choice(choice, template)`,
+/// `on_field(field, template)`, `on_function(function)`, `on_import(import)`,
 /// and check(module) for whole-module logic. Visitors must be `function`
 /// declarations (arrow functions assigned to const are not discovered).
 const VISITORS: &[&str] = &[
@@ -38,7 +38,7 @@ const VISITORS: &[&str] = &[
     "check",
 ];
 
-/// Interrupt-handler invocations before a script is killed. QuickJS calls the
+/// Interrupt-handler invocations before a script is killed. `QuickJS` calls the
 /// handler periodically during execution; a runaway loop must not hang CI.
 const MAX_INTERRUPT_CHECKS: u64 = 100_000;
 
@@ -48,7 +48,7 @@ pub struct ScriptDetector {
     description: String,
     path: String,
     /// One runtime+context per rule, with the script evaluated once at load
-    /// time and reused across modules (a fresh QuickJS runtime + re-eval per
+    /// time and reused across modules (a fresh `QuickJS` runtime + re-eval per
     /// file made large scans QuickJS-bound, not parser-bound). Visitor
     /// functions are stateless by contract; the per-module `report` sink is
     /// swapped in before each run.
@@ -72,7 +72,7 @@ fn new_runtime() -> Result<(Runtime, Rc<std::cell::Cell<u64>>), String> {
 /// Read a top-level string constant. `const` bindings are lexical, not
 /// globalThis properties, so they're read by evaluating an expression.
 fn read_const(ctx: &Ctx<'_>, name: &str) -> Option<String> {
-    ctx.eval::<Option<String>, _>(format!("typeof {n} === 'string' ? {n} : null", n = name))
+    ctx.eval::<Option<String>, _>(format!("typeof {name} === 'string' ? {name} : null"))
         .ok()
         .flatten()
 }
@@ -86,13 +86,13 @@ fn invoke<'js, A: rquickjs::function::IntoArgs<'js>>(
 ) -> Result<(), String> {
     f.call::<_, ()>(args)
         .catch(ctx)
-        .map_err(|e| format!("rule '{}': {} failed: {}", rule, visitor, e))
+        .map_err(|e| format!("rule '{rule}': {visitor} failed: {e}"))
 }
 
 fn parse_node<'js>(ctx: &Ctx<'js>, rule: &str, json: String) -> Result<Value<'js>, String> {
     ctx.json_parse(json)
         .catch(ctx)
-        .map_err(|e| format!("rule '{}': {}", rule, e))
+        .map_err(|e| format!("rule '{rule}': {e}"))
 }
 
 #[cfg(feature = "custom-rules")]
@@ -107,7 +107,7 @@ pub fn load_script_with_options(
     options: &serde_json::Value,
 ) -> Result<Box<dyn Detector>, String> {
     let source = std::fs::read_to_string(path)
-        .map_err(|e| format!("could not read rules script {}: {}", path.display(), e))?;
+        .map_err(|e| format!("could not read rules script {}: {e}", path.display()))?;
     load_script_source_with_options(&path.display().to_string(), &source, options)
 }
 
@@ -129,16 +129,15 @@ pub(crate) fn load_script_source_with_options(
         register_config(&ctx, options)?;
         ctx.eval::<(), _>(source.as_bytes())
             .catch(&ctx)
-            .map_err(|e| format!("invalid rules script {}: {}", label, e))?;
+            .map_err(|e| format!("invalid rules script {label}: {e}"))?;
 
         let name = read_const(&ctx, "NAME")
-            .ok_or_else(|| format!("rules script {}: missing `const NAME = \"...\"`", label))?;
+            .ok_or_else(|| format!("rules script {label}: missing `const NAME = \"...\"`"))?;
         let severity_str = read_const(&ctx, "SEVERITY")
-            .ok_or_else(|| format!("rules script {}: missing `const SEVERITY = \"...\"`", label))?;
+            .ok_or_else(|| format!("rules script {label}: missing `const SEVERITY = \"...\"`"))?;
         let severity = parse_severity(&severity_str).ok_or_else(|| {
             format!(
-                "rule '{}': unknown severity '{}'. Use critical, high, medium, low, or info.",
-                name, severity_str
+                "rule '{name}': unknown severity '{severity_str}'. Use critical, high, medium, low, or info."
             )
         })?;
         let description = read_const(&ctx, "DESCRIPTION").unwrap_or_default();
@@ -158,7 +157,7 @@ pub(crate) fn load_script_source_with_options(
         Ok((name, severity, description))
     });
     let (name, severity, description) = loaded?;
-    Ok(Box::new(ScriptDetector {
+    let detector: Box<dyn Detector> = Box::new(ScriptDetector {
         name,
         severity,
         description,
@@ -166,7 +165,8 @@ pub(crate) fn load_script_source_with_options(
         _runtime: rt,
         context,
         interrupt_count,
-    }) as Box<dyn Detector>)
+    });
+    Ok(detector)
 }
 
 /// (line, column, message, explicit evidence) reported by the script.
@@ -180,12 +180,27 @@ fn empty_options() -> serde_json::Value {
     serde_json::Value::Object(serde_json::Map::new())
 }
 
+fn positive_truncated_usize(value: f64) -> usize {
+    if !value.is_finite() {
+        return 1;
+    }
+    let truncated = value.trunc();
+    if truncated < 1.0 {
+        return 1;
+    }
+    format!("{truncated:.0}").parse().unwrap_or(usize::MAX)
+}
+
+fn positive_i64_to_usize(value: i64) -> usize {
+    usize::try_from(value.max(1)).unwrap_or(usize::MAX)
+}
+
 fn register_config(ctx: &Ctx<'_>, options: &serde_json::Value) -> Result<(), String> {
     let config_json = serde_json::to_string(options).map_err(|e| e.to_string())?;
     let config = ctx
         .json_parse(config_json)
         .catch(ctx)
-        .map_err(|e| format!("could not parse rule CONFIG: {}", e))?;
+        .map_err(|e| format!("could not parse rule CONFIG: {e}"))?;
     ctx.globals()
         .set("__daml_lint_config", config)
         .map_err(|e| e.to_string())?;
@@ -218,17 +233,17 @@ globalThis.report = function(arg, message, evidence) {
     .map_err(|e| e.to_string())
 }
 
-/// First argument of report(): a node object (location from its span) or a
+/// First argument of `report()`: a node object (location from its span) or a
 /// line number.
 fn location_of(arg: &Value<'_>) -> (usize, usize) {
     if let Some(line) = arg.as_number() {
-        return ((line as i64).max(1) as usize, 1);
+        return (positive_truncated_usize(line), 1);
     }
     if let Some(obj) = arg.as_object() {
         if let Ok(span) = obj.get::<_, Object<'_>>("span") {
             let line: i64 = span.get("line").unwrap_or(1);
             let column: i64 = span.get("column").unwrap_or(1);
-            return (line.max(1) as usize, column.max(1) as usize);
+            return (positive_i64_to_usize(line), positive_i64_to_usize(column));
         }
     }
     (1, 1)
@@ -687,7 +702,7 @@ function on_template(t) {}
             name: name.to_string(),
             severity: Severity::Low,
             description: String::new(),
-            path: format!("{}.js", name),
+            path: format!("{name}.js"),
             _runtime: runtime,
             context,
             interrupt_count,
@@ -746,7 +761,7 @@ function on_template(t) { let x = 0; for (let i = 0; i < 200000; i++) { x += i; 
 
     /// Exercises every script-visible node kind: all scalar and parameterized
     /// field types, ensure clauses, choice parameters, nonconsuming choices,
-    /// every Statement variant (with TryCatch recursion), qualified aliased
+    /// every `Statement` variant (with `TryCatch` recursion), qualified aliased
     /// imports, and top-level functions.
     #[test]
     fn test_every_node_kind_reaches_scripts() {
@@ -997,9 +1012,7 @@ function check(m) {
         ] {
             assert!(
                 seen.iter().any(|m| m == expected),
-                "node kind '{}' did not reach the script; saw: {:?}",
-                expected,
-                seen
+                "node kind '{expected}' did not reach the script; saw: {seen:?}"
             );
         }
     }

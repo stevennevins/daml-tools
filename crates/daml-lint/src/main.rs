@@ -63,14 +63,14 @@ fn main() {
     #[cfg(feature = "custom-rules")]
     let detectors = {
         let lint_config = config::LintConfig::load(cli.config.as_deref()).unwrap_or_else(|e| {
-            eprintln!("Error: {}", e);
+            eprintln!("Error: {e}");
             std::process::exit(2);
         });
         let mut detectors = detectors::create_builtin_detectors();
         match lint_config.load_plugin_detectors() {
             Ok(plugin_detectors) => detectors.extend(plugin_detectors),
             Err(e) => {
-                eprintln!("Error: {}", e);
+                eprintln!("Error: {e}");
                 std::process::exit(2);
             }
         }
@@ -78,14 +78,14 @@ fn main() {
             match detectors::script::load_script(rules_path) {
                 Ok(rule) => detectors.push(rule),
                 Err(e) => {
-                    eprintln!("Error: {}", e);
+                    eprintln!("Error: {e}");
                     std::process::exit(2);
                 }
             }
         }
         let detectors = lint_config.apply_rule_settings(detectors);
         if let Err(e) = lint_config.validate_rule_settings(&detectors) {
-            eprintln!("Error: {}", e);
+            eprintln!("Error: {e}");
             std::process::exit(2);
         }
         detectors
@@ -94,8 +94,7 @@ fn main() {
     let detectors = detectors::create_builtin_detectors();
     if let Some(duplicate_detector_name) = detector::find_duplicate_detector_name(&detectors) {
         eprintln!(
-            "Error: rule '{}': name collides with a built-in detector or another rule",
-            duplicate_detector_name
+            "Error: rule '{duplicate_detector_name}': name collides with a built-in detector or another rule"
         );
         std::process::exit(2);
     }
@@ -115,7 +114,7 @@ fn main() {
         let source = match std::fs::read_to_string(file) {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("Warning: could not read {}: {}", file.display(), e);
+                eprintln!("Warning: could not read {}: {e}", file.display());
                 continue;
             }
         };
@@ -144,7 +143,7 @@ fn main() {
             match det.try_detect(&module) {
                 Ok(findings) => all_findings.extend(findings),
                 Err(e) => {
-                    eprintln!("Error: {}", e);
+                    eprintln!("Error: {e}");
                     std::process::exit(2);
                 }
             }
@@ -164,7 +163,7 @@ fn main() {
 
     if let Some(output_path) = &cli.output {
         std::fs::write(output_path, &output).unwrap_or_else(|e| {
-            eprintln!("Error writing to {}: {}", output_path.display(), e);
+            eprintln!("Error writing to {}: {e}", output_path.display());
             std::process::exit(2);
         });
         eprintln!(
@@ -173,7 +172,7 @@ fn main() {
             output_path.display()
         );
     } else {
-        println!("{}", output);
+        println!("{output}");
     }
 
     // Parse failures mean the scan is not authoritative: signal that with a
