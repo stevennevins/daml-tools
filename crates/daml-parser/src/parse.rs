@@ -8,6 +8,20 @@ use crate::ast::*;
 use crate::layout::resolve_layout;
 use crate::lexer::{lex, Pos, Tok, Token};
 
+/// Parse Daml `source` into a [`Module`] plus any [`ParseDiagnostic`]s, in
+/// source order.
+///
+/// This is the crate's entry point. It **never panics and never aborts the
+/// file**: recovery is per-declaration, so an unparseable declaration becomes a
+/// [`Decl::Unknown`] (with a diagnostic) and parsing continues at the next
+/// declaration. A `Module` is therefore always returned, even for badly broken
+/// input — a non-empty diagnostics list signals problems, not a missing tree.
+///
+/// ```
+/// let (module, diagnostics) = daml_parser::parse::parse_module("module M where\n");
+/// assert_eq!(module.name, "M");
+/// assert!(diagnostics.is_empty());
+/// ```
 pub fn parse_module(source: &str) -> (Module, Vec<ParseDiagnostic>) {
     let (tokens, lex_errors) = lex(source);
     let tokens = resolve_layout(tokens);
@@ -278,7 +292,10 @@ impl Parser {
         let mut imports = Vec::new();
         let mut decls: Vec<Decl> = Vec::new();
 
-        let in_block = self.eat(&Tok::VLBrace) || self.eat(&Tok::LBrace);
+        // Consume the opening brace of the module body if present. The result
+        // is unused: the loop below terminates on the matching close brace or
+        // end-of-input regardless of whether the block was braced.
+        let _ = self.eat(&Tok::VLBrace) || self.eat(&Tok::LBrace);
         loop {
             while self.eat(&Tok::VSemi) || self.eat(&Tok::Semi) {}
             match self.peek() {
@@ -311,7 +328,6 @@ impl Parser {
                 self.bump();
             }
         }
-        let _ = in_block;
 
         merge_functions(&mut decls);
 

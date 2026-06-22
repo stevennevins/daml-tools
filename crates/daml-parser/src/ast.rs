@@ -617,7 +617,15 @@ impl Expr {
         }
     }
 
-    /// Render back to compact source-like text (raw-field compatibility).
+    /// Render back to compact, source-*like* text for diagnostics and `raw`
+    /// fields.
+    ///
+    /// This is **lossy and normalizing**, not byte-faithful: original layout is
+    /// dropped (e.g. `do`/`let` statements are joined with `; `), operators and
+    /// spacing are normalized, and comments/trivia are gone. Use it for a quick
+    /// human-readable echo of an expression; for source-exact reconstruction use
+    /// the node's [`span`](Self::span) into the original text (that is how
+    /// `daml-fmt` and [`crate::ast_span::render_from_ast`] stay lossless).
     pub fn render(&self) -> String {
         match self {
             Self::Var {
@@ -744,7 +752,9 @@ impl Expr {
         }
     }
 
-    /// Application arguments, empty for non-apps.
+    /// Application arguments, empty for non-apps. The `App` spine is flattened
+    /// (see the [`App`](Self::App) variant), so for `f a b c` this returns all
+    /// three arguments `[a, b, c]`, not a single curried layer.
     pub fn application_args(&self) -> &[Self] {
         match self {
             Self::App { args, .. } => args,
@@ -801,6 +811,9 @@ impl Pat {
         }
     }
 
+    /// Render back to compact, source-*like* text. Lossy and normalizing in the
+    /// same way as [`Expr::render`]; use the node's [`span`](Self::span) for
+    /// byte-faithful text.
     pub fn render(&self) -> String {
         match self {
             Self::Var { name, .. } => name.clone(),

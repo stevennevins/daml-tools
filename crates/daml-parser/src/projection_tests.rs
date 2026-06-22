@@ -14,7 +14,14 @@ use crate::lexer::lex_with_trivia;
 use crate::parse::parse_module;
 
 fn parse(src: &str) -> Module {
-    parse_module(src).0
+    let (module, diagnostics) = parse_module(src);
+    // Every fixture here is well-formed Daml; assert it so a typo in a fixture
+    // fails with a clear cause instead of a baffling structural panic later.
+    assert!(
+        diagnostics.is_empty(),
+        "fixture should parse clean, got {diagnostics:?}"
+    );
+    module
 }
 
 fn text(src: &str, span: Span) -> &str {
@@ -129,9 +136,13 @@ fn spaced_dot_stays_composition_not_projection() {
     match body {
         Expr::BinOp { op, lhs, rhs, .. } if op == "." => {
             // Tight projection would have made the dot abut its neighbours; a
-            // spaced dot keeps `g` and `h` as the operands.
+            // spaced dot keeps `g` and `h` as the operands. Pin each operand's
+            // byte-extent to exactly the bare name: that is the evidence the dot
+            // did NOT fold a neighbour into a projection argument.
             assert!(matches!(lhs.as_ref(), Expr::Var { name, .. } if name == "g"));
             assert!(matches!(rhs.as_ref(), Expr::Var { name, .. } if name == "h"));
+            assert_eq!(text(src, lhs.span()), "g");
+            assert_eq!(text(src, rhs.span()), "h");
         }
         other => panic!("expected composition BinOp, got {other:?}"),
     }
@@ -158,6 +169,10 @@ fn newline_separated_dot_stays_composition() {
         Expr::BinOp { op, lhs, rhs, .. } if op == "." => {
             assert!(matches!(lhs.as_ref(), Expr::Var { name, .. } if name == "g"));
             assert!(matches!(rhs.as_ref(), Expr::Var { name, .. } if name == "h"));
+            // The operands stay the bare names across the line break — the
+            // dedented `.` was not mistaken for a tight projection.
+            assert_eq!(text(src, lhs.span()), "g");
+            assert_eq!(text(src, rhs.span()), "h");
         }
         other => panic!("expected composition BinOp across newline, got {other:?}"),
     }

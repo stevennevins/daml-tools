@@ -226,9 +226,17 @@ fn separated_signature_does_not_straddle_sibling() {
     assert_eq!(render(src).as_deref(), Ok(src));
     let f = first_function(&m, "f");
     let g = first_function(&m, "g");
-    // f's span is its equation `f = 1`; it must not contain sibling g.
+    // f's span is its equation `f = 1`, which appears *after* sibling g in the
+    // source; it must start strictly after g ends (disjoint, not straddling).
+    // `contains` is the wrong guard here: g starts before f, so containment is
+    // vacuously false and could never catch a straddle.
     assert_eq!(text(src, f.span), "f = 1");
-    assert!(!f.span.contains(&g.span));
+    assert!(
+        f.span.start > g.span.end,
+        "f's equation must begin after sibling g ends: f={:?} g={:?}",
+        f.span,
+        g.span
+    );
 }
 
 /// Run the oracle over an entire corpus directory; returns (files, failures).
