@@ -9,12 +9,13 @@
 Static analysis scanner for [Daml](https://www.digitalasset.com/developers) smart contracts. Catches security vulnerabilities and anti-patterns through AST pattern matching, similar to what [Slither](https://github.com/crytic/slither) does for Solidity.
 
 Part of the [daml-tools](https://github.com/stevennevins/daml-tools) workspace.
-Parsing is the shared [`daml-parser`](https://crates.io/crates/daml-parser) crate — lexer (comments,
-strings, layout-aware spans) → Haskell offside-rule layout resolution →
-recursive-descent parser producing a typed AST with positions on every node.
-daml-lint lowers that AST to a rule-facing IR and runs detectors over it. Files
-that fail to parse degrade to partial structure with a diagnostic on stderr
-(`file:line:col`); a scan never aborts on bad input.
+Parsing comes through the shared [`daml-syntax`](https://crates.io/crates/daml-syntax)
+seam over `daml-parser` — lexer (comments, strings, layout-aware spans) →
+Haskell offside-rule layout resolution → recursive-descent parser producing a
+typed AST with positions on every node. daml-lint lowers that AST to a
+rule-facing IR and runs detectors over it. Files that fail to parse degrade to
+partial structure with a diagnostic on stderr (`file:line:col`); a scan never
+aborts on bad input.
 
 ## Documentation
 
@@ -32,7 +33,7 @@ The workspace docs split task guides, reference, and design background:
 - [Rule authoring model](../../docs/explanation/daml-lint-rule-authoring.md)
   for why TypeScript authoring is bundled to JavaScript
 - [Workspace architecture](../../docs/explanation/workspace-architecture.md)
-  for how `daml-lint` uses `daml-parser`
+  for how `daml-lint` uses shared syntax
 
 ## Detectors
 
@@ -303,7 +304,7 @@ cargo test
 Tests run entirely offline: parser and layout integration tests use a vendored
 copy of the [daml-finance](https://github.com/digital-asset/daml-finance)
 sources under [corpus/daml-finance/](https://github.com/stevennevins/daml-tools/tree/main/corpus/daml-finance) (634 real
-`.daml` files) — shared at the workspace root with `daml-parser` — as a
+`.daml` files) — shared at the workspace root with the parser/syntax crates — as a
 ground-truth corpus; see
 [corpus/daml-finance/README.md](https://github.com/stevennevins/daml-tools/blob/main/corpus/daml-finance/README.md) for
 provenance and licensing.

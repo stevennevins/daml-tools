@@ -1,5 +1,4 @@
-use daml_parser::ast::Type;
-use daml_syntax::{LineIndex, SourceFile, TextRange};
+use daml_syntax::{ast::Type, LineIndex, SourceFile, TextRange};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 

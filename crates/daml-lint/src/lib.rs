@@ -1,8 +1,8 @@
 //! daml-lint as a library.
 //!
 //! The binary (`src/main.rs`) is a thin CLI over these modules. The parser
-//! pipeline — `lexer` → `layout` → `parse` over the AST types — lives in the
-//! separate [`daml_parser`] crate. This crate lowers that AST into a
+//! pipeline — `lexer` → `layout` → `parse` over the AST types — is consumed
+//! through the shared [`daml_syntax`] seam. This crate lowers that AST into a
 //! rule-facing IR ([`ir`], via [`parser`]) and runs [`detectors`] over it.
 //! Start at [`parser::parse_daml_with_diagnostics`].
 //! The IR is public so custom rules and library callers can inspect it; parser

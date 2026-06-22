@@ -6,7 +6,7 @@ safe with the compiler itself as the oracle. No official Daml formatter exists.
 ## Current state
 
 The shipped formatter is an **AST-driven, own-design** layout in Rust, built on
-the `daml-parser` pipeline (lexer → offside-rule layout →
+the `daml-syntax` seam over the parser pipeline (lexer → offside-rule layout →
 recursive-descent AST). Over the 924-file corpus it is **924/924
 desugar-equivalent and 924/924 idempotent**.
 
@@ -38,7 +38,7 @@ wrong.
 
 The whole design is one safe mechanism applied per construct:
 
-1. **Walk the AST** (`daml_parser::parse::parse_module`). Every node carries a
+1. **Walk the AST** (`daml_syntax::SourceFile::parse`). Every node carries a
    byte `Span{start,end}`.
 2. **Reindent a block's child lines** to a canonical column (e.g. a `do`-block's
    statements to `do_col + 2`). The block's *anchor* line never moves, so the

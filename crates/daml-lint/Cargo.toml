@@ -32,7 +32,6 @@ custom = { engines = { node = ">=18" }, publishConfig = { access = "public" } }
 workspace = true
 
 [dependencies]
-daml-parser.workspace = true
 daml-syntax.workspace = true
 serde.workspace = true
 serde_json.workspace = true

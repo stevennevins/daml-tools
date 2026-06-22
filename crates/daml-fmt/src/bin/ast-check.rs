@@ -8,8 +8,7 @@
 //!
 //! Usage: `ast-check <dir-or-file>...`
 
-use daml_parser::ast_span::render_from_ast;
-use daml_syntax::SourceFile;
+use daml_syntax::{verification::render_from_ast, SourceFile};
 use std::path::{Path, PathBuf};
 use std::process::exit;
 

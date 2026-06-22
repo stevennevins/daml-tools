@@ -6,8 +6,7 @@
 //! Exit 0 iff every file round-trips byte-identical through
 //! lex_with_trivia -> render_lossless.
 
-use daml_parser::lexer::render_lossless;
-use daml_syntax::SourceTokens;
+use daml_syntax::{verification::render_lossless, SourceTokens};
 use std::path::{Path, PathBuf};
 use std::process::exit;
 

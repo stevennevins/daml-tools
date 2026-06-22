@@ -5,13 +5,39 @@
 //! diagnostics, line/UTF-16 mapping, tokens, trivia, laid-out tokens, and
 //! conversion from parser byte spans to `text-size` ranges.
 
-use daml_parser::ast::{Module, Span as ParserSpan};
+/// Parser AST types intentionally exposed through the shared syntax seam.
+///
+/// Tools in this workspace should import parser-created AST values through
+/// this module rather than depending on `daml-parser` directly.
+pub mod ast {
+    pub use daml_parser::ast::*;
+}
+
+/// Token and trivia types intentionally exposed through the shared syntax seam.
+///
+/// Use [`SourceTokens`] for normal lexing; these exports let callers name the
+/// token/trivia types returned by the source-facing interface.
+pub mod tokens {
+    pub use daml_parser::lexer::{LexError, Tok, Token, Trivia, TriviaKind};
+}
+
+/// Losslessness oracles for parser and token verification.
+///
+/// These helpers are for tests and dev tools that prove a parsed source still
+/// reconstructs byte-for-byte from AST spans or token/trivia spans.
+pub mod verification {
+    pub use daml_parser::ast_span::{check_nesting, render_from_ast};
+    pub use daml_parser::lexer::render_lossless;
+}
+
 use daml_parser::layout::resolve_layout;
-use daml_parser::lexer::{lex_with_trivia, LexError, Token, Trivia};
+use daml_parser::lexer::lex_with_trivia;
 use daml_parser::parse::parse_module;
 use std::sync::OnceLock;
 
+pub use ast::{Module, Span as ParserSpan};
 pub use text_size::{TextRange, TextSize};
+pub use tokens::{LexError, Token, Trivia};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LineCol {
@@ -269,8 +295,7 @@ pub fn parser_span_to_text_range(source: &str, span: ParserSpan) -> TextRange {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use daml_parser::ast_span::render_from_ast;
-    use daml_parser::lexer::render_lossless;
+    use crate::verification::{render_from_ast, render_lossless};
 
     #[test]
     fn maps_empty_source_to_first_line() {

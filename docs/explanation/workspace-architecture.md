@@ -6,8 +6,8 @@ source-facing syntax surface, and two independent tools built on top of them.
 The central crate is `daml-parser`: a zero-dependency, pure-Rust lexer, layout
 resolver, and parser for Daml. `daml-syntax` depends on it and owns the
 source-facing facts shared by tools: parse diagnostics, line and UTF-16
-mapping, token/trivia access, laid-out tokens, and conversion from parser byte
-spans to `TextRange`.
+mapping, parser AST/token/trivia access, laid-out tokens, parser verification
+helpers, and conversion from parser byte spans to `TextRange`.
 
 Both `daml-lint` and `daml-fmt` depend on `daml-syntax`, but they use it for
 different purposes. The linter reads meaning from the parsed tree and maps
@@ -44,9 +44,10 @@ formatting, serialization, or JavaScript runtime dependencies, every consumer
 would inherit them even when it only wanted a syntax tree.
 
 `daml-syntax` is the narrow layer above the parser. It is allowed to depend on
-`text-size` because its public API speaks in `TextRange` and `TextSize`, but it
-does not own lint policy, formatter layout, CLI behavior, serialization, or a
-JavaScript runtime.
+`text-size` because its public API speaks in `TextRange` and `TextSize`. It is
+also the public seam where workspace tools name parser-created AST and token
+types. It does not own lint policy, formatter layout, CLI behavior,
+serialization, or a JavaScript runtime.
 
 ## Why losslessness matters
 
@@ -68,9 +69,10 @@ fixes in parser behavior would not automatically benefit both tools.
 
 ## Why the formatter does not depend on the linter
 
-`daml-fmt` must depend on `daml-syntax` and `daml-parser` only. The formatter
-needs syntax and source preservation; it does not need lint rules, lint IR,
-detector policy, reporting, CLI behavior, or custom-rule runtime support.
+`daml-fmt` must depend on `daml-syntax` only. The formatter needs syntax and
+source preservation; it does not need a direct parser dependency, lint rules,
+lint IR, detector policy, reporting, CLI behavior, or custom-rule runtime
+support.
 
 That boundary keeps formatting independent from lint policy. A formatter should
 be able to format any syntactically valid Daml file without asking whether the
@@ -89,7 +91,8 @@ either tool. It is the common contract.
 
 Parser invariants, such as tokenization, offside layout resolution, byte spans,
 lossless reconstruction, diagnostics, and source range mapping sit below both
-tools. Tool-specific behavior sits above that line:
+tools behind the `daml-syntax` seam. Tool-specific behavior sits above that
+line:
 
 - `daml-lint` lowers syntax output into lint-oriented IR and detectors.
 - `daml-fmt` walks syntax output, applies modeled layout decisions, and passes
@@ -98,5 +101,6 @@ tools. Tool-specific behavior sits above that line:
 This structure keeps the repo extensible without adding speculative
 abstraction. New Daml tooling should start by asking whether it needs parser
 internals, source-facing syntax, policy, or layout. Parser internals belong in
-`daml-parser`; shared source-facing syntax belongs in `daml-syntax`; policy
-belongs in a tool such as `daml-lint`; layout belongs in `daml-fmt`.
+`daml-parser`; shared source-facing syntax and parser facade exports belong in
+`daml-syntax`; policy belongs in a tool such as `daml-lint`; layout belongs in
+`daml-fmt`.

@@ -36,9 +36,7 @@
 //! Final whitespace + colon-spacing normalization remains token-gated
 //! (`crate::normalize_gaps`).
 
-use daml_parser::ast::*;
-use daml_parser::lexer::TriviaKind;
-use daml_syntax::{SourceFile, SourceTokens};
+use daml_syntax::{ast::*, tokens::TriviaKind, SourceFile, SourceTokens};
 
 const INDENT: i64 = 2;
 

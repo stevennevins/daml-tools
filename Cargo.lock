@@ -118,7 +118,6 @@ checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 name = "daml-fmt"
 version = "0.2.9"
 dependencies = [
- "daml-parser",
  "daml-syntax",
 ]
 
@@ -127,7 +126,6 @@ name = "daml-lint"
 version = "0.3.12"
 dependencies = [
  "clap",
- "daml-parser",
  "daml-syntax",
  "rquickjs",
  "serde",

@@ -18,8 +18,8 @@ membership is declared in [`Cargo.toml`](../../Cargo.toml).
 |-------|---------|------|---------------------|
 | [`daml-parser`](../../crates/daml-parser) | `0.2.3` | library | Lossless lexer, layout resolver, and parser for the Daml smart-contract language. |
 | [`daml-syntax`](../../crates/daml-syntax) | `0.1.0` | library | Shared parsed-source surface for Daml tools. |
-| [`daml-lint`](../../crates/daml-lint) | `0.3.11` | library and CLI | Static analysis scanner for Daml smart contracts. |
-| [`daml-fmt`](../../crates/daml-fmt) | `0.2.8` | library and CLI | Canonical code formatter for the Daml smart-contract language, built on shared syntax. |
+| [`daml-lint`](../../crates/daml-lint) | `0.3.12` | library and CLI | Static analysis scanner for Daml smart contracts. |
+| [`daml-fmt`](../../crates/daml-fmt) | `0.2.9` | library and CLI | Canonical code formatter for the Daml smart-contract language, built on shared syntax. |
 
 ## `daml-parser`
 
@@ -66,6 +66,9 @@ README: [`crates/daml-syntax/README.md`](../../crates/daml-syntax/README.md)
 | `Diagnostic` | Parser diagnostic with source range, line/column, message, and category. |
 | `LineCol` | 1-based line and column pair. |
 | `TextRange`, `TextSize` | Re-exported `text-size` range and offset types used by public range APIs. |
+| `ast` | Facade exports for parser-created AST types such as `Module`, `Decl`, `Expr`, `Type`, and parser `Span`. |
+| `tokens` | Facade exports for token and trivia types such as `Tok`, `Token`, `Trivia`, `TriviaKind`, and `LexError`. |
+| `verification` | Parser and token losslessness helpers for dev tools and tests. |
 
 ## `daml-lint`
 
@@ -75,9 +78,10 @@ Library root: [`crates/daml-lint/src/lib.rs`](../../crates/daml-lint/src/lib.rs)
 
 README: [`crates/daml-lint/README.md`](../../crates/daml-lint/README.md)
 
-`daml-lint` depends on `daml-parser`, `daml-syntax`, `serde`, and
-`serde_json`. `clap` and `rquickjs` are optional dependencies controlled by
-features.
+`daml-lint` depends on `daml-syntax`, `serde`, and `serde_json`. It consumes
+parser AST and token facts through the `daml-syntax` facade rather than a direct
+`daml-parser` dependency. `clap` and `rquickjs` are optional dependencies
+controlled by features.
 
 ### Features
 
@@ -125,8 +129,8 @@ Library root: [`crates/daml-fmt/src/lib.rs`](../../crates/daml-fmt/src/lib.rs)
 
 README: [`crates/daml-fmt/README.md`](../../crates/daml-fmt/README.md)
 
-`daml-fmt` depends on `daml-parser` and `daml-syntax`. It does not depend on
-`daml-lint`.
+`daml-fmt` depends on `daml-syntax`. It does not depend directly on
+`daml-parser` or on `daml-lint`.
 
 ### Features
 

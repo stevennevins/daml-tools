@@ -8,8 +8,9 @@ compiler-verified corpus. No official Daml formatter exists; this project
 builds one and proves it safe with the compiler itself as the oracle.
 
 Part of the [daml-tools](https://github.com/stevennevins/daml-tools) workspace.
-The formatter is **Rust on the [`daml-parser`](https://crates.io/crates/daml-parser) crate** (lexer →
-offside-rule layout → recursive-descent AST). It is an **AST-driven, own-design** layout —
+The formatter is **Rust on the [`daml-syntax`](https://crates.io/crates/daml-syntax) seam**
+over the shared parser pipeline (lexer → offside-rule layout →
+recursive-descent AST). It is an **AST-driven, own-design** layout —
 it walks the parse tree, reindents the constructs it models, and passes
 everything else through verbatim. Pure reindentation remains gated on the
 laid-out token stream; layout-organizing rules are checked by the compiler
@@ -54,10 +55,11 @@ The workspace docs split task guides, reference, and design background:
 
 ## Build & install
 
-daml-fmt depends only on the [`daml-parser`](https://crates.io/crates/daml-parser) crate (the shared
-lexer + offside layout + parser), never on `daml-lint`. Both live in the
-[daml-tools](https://github.com/stevennevins/daml-tools) workspace, so a normal
-workspace checkout has everything it needs.
+daml-fmt depends only on the [`daml-syntax`](https://crates.io/crates/daml-syntax) crate,
+which exposes the shared lexer + offside layout + parser facts it needs. It
+never depends on `daml-lint` or directly on `daml-parser`. All crates live in
+the [daml-tools](https://github.com/stevennevins/daml-tools) workspace, so a
+normal workspace checkout has everything it needs.
 
 For JavaScript/TypeScript projects that want `daml-fmt` as a dev dependency:
 

@@ -383,8 +383,8 @@ fn round_trip_corpus(root: &Path) -> (usize, usize) {
             lex_error_files += 1;
             continue;
         };
-        let (tokens, trivia, errors) = daml_parser::lexer::lex_with_trivia(&src);
-        if !errors.is_empty() {
+        let source_tokens = daml_syntax::SourceTokens::lex(&src);
+        if !source_tokens.lex_errors().is_empty() {
             // A lex error drops bytes by design (e.g. stray character);
             // losslessness is only promised for lexable files.
             eprintln!("lex errors (round trip exempt): {}", f.display());
@@ -392,7 +392,11 @@ fn round_trip_corpus(root: &Path) -> (usize, usize) {
             continue;
         }
         checked += 1;
-        if let Err(e) = daml_parser::lexer::render_lossless(&src, &tokens, &trivia) {
+        if let Err(e) = daml_syntax::verification::render_lossless(
+            &src,
+            source_tokens.tokens(),
+            source_tokens.trivia(),
+        ) {
             panic!("round trip failed for {}: {}", f.display(), e);
         }
     }

@@ -25,12 +25,12 @@ root-cause fixes — the remaining 3 failures are one family (the
 deeper-with field-indent conflict) that needs a real parser.
 
 The **AST formatter row is the shipped backend** (`src/layout_ast.rs`,
-`format_source` -> `format_ast`). It is OUR OWN design on the `daml-parser`
-crate (lexer → offside layout → recursive-descent AST), with **no LimeChain
+`format_source` -> `format_ast`). It is OUR OWN design on the `daml-syntax`
+seam over the parser pipeline (lexer → offside layout → recursive-descent AST), with **no LimeChain
 derivative** — the authorized port (`src/layout.rs`) was deleted once this
 landed. Mechanism: walk the AST and reindent each modeled construct's child
 lines to a canonical column, with pure reindent passes gated on the laid-out
-token stream (`same_tokens` via `daml_parser::layout::resolve_layout`).
+token stream (`same_tokens` via `daml_syntax::SourceTokens::laid_out_tokens`).
 Modeled: module/export/import continuations; `do`-blocks (including a `do`
 opening with `let`) → `do_col + 2`; `if`/`then`/`else`; `case … of` alts;
 `let … in`; `Con with` construction fields and record-update fields; the

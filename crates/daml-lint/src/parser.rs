@@ -6,8 +6,10 @@
 //! payloads carry the actual parse tree.
 
 use crate::ir::*;
-use daml_parser::ast::{self, Consuming, Decl, DoStmt, TemplateBodyDecl};
-use daml_syntax::SourceFile;
+use daml_syntax::{
+    ast::{self, Consuming, Decl, DoStmt, TemplateBodyDecl},
+    SourceFile,
+};
 use std::path::Path;
 
 #[cfg(test)]

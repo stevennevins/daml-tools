@@ -3,6 +3,8 @@
 `daml-syntax` is the shared parsed-source surface for Daml tools in this
 workspace. It owns source presentation around `daml-parser`: diagnostics, line
 mapping, UTF-16 offsets, token/trivia access, and parser span conversion.
+Workspace tools should depend on this crate for parser-created AST/token facts
+instead of reaching through to `daml-parser` directly.
 
 ```rust
 let source = "module M where\nfoo : Int\nfoo = 1\n";
@@ -22,3 +24,10 @@ let tokens = daml_syntax::SourceTokens::lex(source);
 assert!(tokens.lex_errors().is_empty());
 assert!(!tokens.laid_out_tokens().is_empty());
 ```
+
+Parser facade exports are grouped by role:
+
+- `daml_syntax::ast` for parser-created AST types.
+- `daml_syntax::tokens` for token and trivia types.
+- `daml_syntax::verification` for lossless reconstruction helpers used by dev
+  tools and tests.

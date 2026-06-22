@@ -1,7 +1,7 @@
 [package]
 name = "daml-fmt"
 version = "0.2.9"
-description = "A canonical code formatter for the Daml smart-contract language, built on daml-parser"
+description = "A canonical code formatter for the Daml smart-contract language, built on shared syntax"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -42,8 +42,8 @@ custom = { engines = { node = ">=18" }, publishConfig = { access = "public" } }
 workspace = true
 
 [dependencies]
-# daml-fmt depends on parser/syntax only. It must never pull in daml-lint.
-daml-parser.workspace = true
+# daml-fmt depends on the shared syntax seam only. It must never pull in
+# daml-lint or reach around daml-syntax to the parser implementation crate.
 daml-syntax.workspace = true
 
 [features]

@@ -16,9 +16,9 @@ semantic risk visible.
 
 ## Token equivalence is a construction gate
 
-The formatter is built on `daml-parser`, which records source tokens, trivia,
-layout, and byte spans. Formatting works by rewriting layout around known
-syntax while preserving comments, strings, and unmodeled regions.
+The formatter is built on `daml-syntax`, which exposes the parser's source
+tokens, trivia, layout, and byte spans. Formatting works by rewriting layout
+around known syntax while preserving comments, strings, and unmodeled regions.
 
 For pure reindentation and final whitespace normalization, candidate output is
 re-lexed and compared against the previous laid-out token stream, including

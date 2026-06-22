@@ -30,8 +30,10 @@
 // shipping backend. See src/layout_ast.rs.
 mod layout_ast;
 
-use daml_parser::lexer::{Tok, TriviaKind};
-use daml_syntax::SourceTokens;
+use daml_syntax::{
+    tokens::{Tok, TriviaKind},
+    SourceTokens,
+};
 
 /// Lexer diagnostics for `src`.
 ///
@@ -283,8 +285,7 @@ mod tests {
     /// corpus can't pass green.
     #[test]
     fn render_from_ast_lossless_over_corpus() {
-        use daml_parser::ast_span::render_from_ast;
-        use daml_syntax::SourceFile;
+        use daml_syntax::{verification::render_from_ast, SourceFile};
         use std::path::{Path, PathBuf};
 
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("original");
@@ -337,7 +338,7 @@ mod tests {
                 .iter()
                 .all(|diagnostic| diagnostic.category != "lexical-error")
             {
-                if let Err(e) = daml_parser::lexer::render_lossless(
+                if let Err(e) = daml_syntax::verification::render_lossless(
                     &src,
                     source_file.tokens(),
                     source_file.trivia(),
