@@ -1,6 +1,11 @@
 [workspace]
 resolver = "2"
-members = ["crates/daml-parser", "crates/daml-lint", "crates/daml-fmt"]
+members = [
+    "crates/daml-parser",
+    "crates/daml-syntax",
+    "crates/daml-lint",
+    "crates/daml-fmt",
+]
 
 # Shared metadata. Each crate keeps its own name/version/description/keywords so
 # they can be released and SemVer'd independently (parser stays boring; tools
@@ -19,10 +24,12 @@ authors = ["Steven Nevins"]
 # Inter-crate dep declared once; crates opt in with `daml-parser.workspace = true`.
 # Carries BOTH path (for local builds) and version (for crates.io publish).
 daml-parser = { path = "crates/daml-parser", version = "0.2.3" }
+daml-syntax = { path = "crates/daml-syntax", version = "0.1.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }
 rquickjs = "0.12.0"
+text-size = "1"
 
 # The lint contract lives here (not just in CI) so the same denies fire on a dev
 # laptop. Each crate opts in with `[lints] workspace = true`. `priority = -1`

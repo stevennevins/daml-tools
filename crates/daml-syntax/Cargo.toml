@@ -1,0 +1,19 @@
+[package]
+name = "daml-syntax"
+version = "0.1.0"
+description = "Shared parsed-source surface for Daml tools"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["daml", "syntax", "parser", "diagnostics", "source-map"]
+categories = ["parser-implementations", "development-tools"]
+
+[lints]
+workspace = true
+
+[dependencies]
+daml-parser.workspace = true
+text-size.workspace = true

@@ -137,6 +137,14 @@ name = "daml-parser"
 version = "0.2.3"
 
 [[package]]
+name = "daml-syntax"
+version = "0.1.0"
+dependencies = [
+ "daml-parser",
+ "text-size",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -316,6 +324,12 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
+
+[[package]]
+name = "text-size"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f18aa187839b2bdb1ad2fa35ead8c4c2976b64e4363c386d45ac0f7ee85c9233"
 
 [[package]]
 name = "unicode-ident"
