@@ -15,3 +15,10 @@ agent-routing, prompt, validation, or observability improvements that would make
 future runs safer or more effective. Surface those opportunities to the user in
 plain language, and suggest concrete AGENTS.md, workflow, component, or prompt
 changes instead of silently working around recurring friction.
+
+## Smithers Worktree Preference
+
+Codex sessions for this repository already run inside fresh git worktrees. Do
+not wrap Smithers tasks in Smithers `<Worktree>` by default, because that hides
+diffs from the user's editor. Use Smithers `<Worktree>` only when the user
+explicitly asks for additional Smithers-managed isolation.
