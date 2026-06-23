@@ -269,6 +269,90 @@ template Iou
 }
 
 #[test]
+#[cfg(feature = "custom-rules")]
+fn findings_at_high_threshold_exit_one_for_high_or_critical() {
+    let path = temp_file(
+        "finding-high.daml",
+        r#"module Threshold where
+
+template Threshold
+  with
+    owner : Party
+  where
+    signatory owner
+    ensure owner != owner
+"#,
+    );
+    let low_rule = temp_file(
+        "low-rule.js",
+        r#"
+const NAME = "cli-low";
+const SEVERITY = "low";
+
+function on_template(template) {
+  report(template, "low severity report");
+}
+"#,
+    );
+    let high_rule = temp_file(
+        "high-rule.js",
+        r#"
+const NAME = "cli-high";
+const SEVERITY = "high";
+
+function on_template(template) {
+  report(template, "high severity report");
+}
+"#,
+    );
+
+    let low_output = cmd()
+        .arg(&path)
+        .arg("--rules")
+        .arg(&low_rule)
+        .arg("--fail-on")
+        .arg("high")
+        .output()
+        .unwrap();
+    let high_output = cmd()
+        .arg(&path)
+        .arg("--rules")
+        .arg(&high_rule)
+        .arg("--fail-on")
+        .arg("high")
+        .output()
+        .unwrap();
+    let mixed_output = cmd()
+        .arg(&path)
+        .arg("--rules")
+        .arg(&low_rule)
+        .arg("--rules")
+        .arg(&high_rule)
+        .arg("--fail-on")
+        .arg("info")
+        .output()
+        .unwrap();
+
+    std::fs::remove_file(&path).ok();
+    std::fs::remove_file(&low_rule).ok();
+    std::fs::remove_file(&high_rule).ok();
+
+    assert_eq!(low_output.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&low_output.stdout).contains("low severity report"));
+    assert_eq!(high_output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&high_output.stdout).contains("high severity report"));
+    assert!(String::from_utf8_lossy(&high_output.stdout).contains("cli-high"));
+
+    let mixed_stdout = String::from_utf8_lossy(&mixed_output.stdout);
+    let high_pos = mixed_stdout.find("high severity report").unwrap();
+    let low_pos = mixed_stdout.find("low severity report").unwrap();
+    assert!(
+        high_pos < low_pos,
+        "higher severity finding should be reported first: {mixed_stdout}"
+    );
+}
+
+#[test]
 fn parse_error_exits_three() {
     let path = temp_file("malformed.daml", "module Bad where\nf = \"unterminated\n");
     let output = cmd().arg(&path).output().unwrap();

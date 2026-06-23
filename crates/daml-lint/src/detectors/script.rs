@@ -1,4 +1,4 @@
-use crate::detector::{parse_severity, DetectError, Detector, Finding, Severity};
+use crate::detector::{parse_severity, DetectError, Detector, Finding, FindingLocation, Severity};
 use crate::ir::DamlModule;
 use rquickjs::{CatchResultExt, Context, Ctx, Function, Object, Runtime, Value};
 use std::cell::RefCell;
@@ -471,22 +471,22 @@ impl ScriptDetector {
         let findings = reported
             .borrow()
             .iter()
-            .map(|(line, column, message, evidence)| Finding {
-                detector: self.name.clone(),
-                severity: self.severity,
-                file: module.file.clone(),
-                line: *line,
-                column: *column,
-                message: message.clone(),
-                evidence: evidence.clone().unwrap_or_else(|| {
-                    module
-                        .source
-                        .lines()
-                        .nth(line.saturating_sub(1))
-                        .unwrap_or("")
-                        .trim()
-                        .to_string()
-                }),
+            .map(|(line, column, message, evidence)| {
+                Finding::new(
+                    self.name.clone(),
+                    self.severity,
+                    FindingLocation::new(module.file.clone(), *line, *column),
+                    message,
+                    evidence.clone().unwrap_or_else(|| {
+                        module
+                            .source
+                            .lines()
+                            .nth(line.saturating_sub(1))
+                            .unwrap_or("")
+                            .trim()
+                            .to_string()
+                    }),
+                )
             })
             .collect();
         Ok(findings)
@@ -562,7 +562,11 @@ function on_template(template) {
         let findings = det.detect(&module);
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].detector, "template-requires-ensure");
+        assert_eq!(findings[0].file, Path::new("Test.daml"));
+        assert_eq!(findings[0].line, 3);
+        assert_eq!(findings[0].column, 1);
         assert!(findings[0].message.contains("Iou"));
+        assert_eq!(findings[0].evidence, "template Iou");
     }
 
     #[test]
