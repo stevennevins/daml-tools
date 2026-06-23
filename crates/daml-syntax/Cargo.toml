@@ -1,6 +1,10 @@
 [package]
 name = "daml-syntax"
+<<<<<<< Updated upstream
 version = "0.3.0"
+=======
+version = "0.4.1"
+>>>>>>> Stashed changes
 description = "Shared parsed-source surface for Daml tools"
 edition.workspace = true
 rust-version.workspace = true
