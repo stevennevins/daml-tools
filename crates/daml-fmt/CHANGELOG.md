@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.14](https://github.com/stevennevins/daml-tools/compare/daml-fmt-v0.2.13...daml-fmt-v0.2.14) - 2026-06-23
+
+### Other
+
+- remove formatter scoreboard references ([#75](https://github.com/stevennevins/daml-tools/pull/75))
+- *(parser)* improve public API quality ([#68](https://github.com/stevennevins/daml-tools/pull/68))
+
 ## [0.2.13](https://github.com/stevennevins/daml-tools/compare/daml-fmt-v0.2.12...daml-fmt-v0.2.13) - 2026-06-23
 
 ### Other
