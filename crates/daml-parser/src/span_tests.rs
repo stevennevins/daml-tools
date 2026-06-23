@@ -244,10 +244,14 @@ fn separated_signature_does_not_straddle_sibling() {
     );
 }
 
+fn finance_corpus_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus/daml-finance/daml")
+}
+
 /// Run the oracle over an entire corpus directory; returns (files, failures).
-fn run_corpus(root: &Path) -> std::io::Result<(usize, Vec<String>)> {
+fn run_finance_corpus_oracle(root: &Path) -> std::io::Result<(usize, Vec<String>)> {
     let mut files = Vec::new();
-    collect(root, &mut files)?;
+    collect_daml_files(root, &mut files)?;
     let mut failures = Vec::new();
     for f in &files {
         let src = std::fs::read_to_string(f)?;
@@ -264,12 +268,13 @@ fn run_corpus(root: &Path) -> std::io::Result<(usize, Vec<String>)> {
 /// so it runs in CI yet never panics off-machine.
 #[test]
 fn span_oracle_over_finance_corpus() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus/daml-finance/daml");
+    let root = finance_corpus_root();
     if !root.exists() {
         eprintln!("corpus absent (published crate?), skipping");
         return;
     }
-    let (n, failures) = run_corpus(&root).expect("run span oracle over finance corpus");
+    let (n, failures) =
+        run_finance_corpus_oracle(&root).expect("run span oracle over finance corpus");
     assert!(n > 600, "finance corpus incomplete: {n} files");
     if !failures.is_empty() {
         let shown: Vec<_> = failures.iter().take(20).cloned().collect();
@@ -290,7 +295,7 @@ fn span_oracle_over_finance_corpus() {
 /// corpus can never pass green.
 #[test]
 fn render_lossless_over_finance_corpus() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus/daml-finance/daml");
+    let root = finance_corpus_root();
     if !root.exists() {
         assert!(
             std::env::var_os("CI").is_none(),
@@ -301,7 +306,7 @@ fn render_lossless_over_finance_corpus() {
         return;
     }
     let mut files = Vec::new();
-    collect(&root, &mut files).expect("collect finance corpus files");
+    collect_daml_files(&root, &mut files).expect("collect finance corpus files");
     assert!(
         files.len() > 600,
         "corpus incomplete: {} files",
@@ -323,12 +328,12 @@ fn render_lossless_over_finance_corpus() {
     assert!(checked > 600, "too few files round-tripped: {checked}");
 }
 
-fn collect(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
+fn collect_daml_files(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let p = entry.path();
         if p.is_dir() {
-            collect(&p, out)?;
+            collect_daml_files(&p, out)?;
         } else if p.extension().is_some_and(|e| e == "daml") {
             out.push(p);
         }

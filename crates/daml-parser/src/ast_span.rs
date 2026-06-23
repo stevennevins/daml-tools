@@ -152,157 +152,157 @@ fn validate_interval(source: &str, start: usize, end: usize) -> Result<(), Strin
 
 // ----- span collection ---------------------------------------------------
 
-fn collect_module(m: &Module, out: &mut Vec<Span>) {
-    out.push(m.span);
-    if !m.header.is_empty() {
-        out.push(m.header);
+fn collect_module(module: &Module, spans: &mut Vec<Span>) {
+    spans.push(module.span);
+    if !module.header.is_empty() {
+        spans.push(module.header);
     }
-    for imp in &m.imports {
-        out.push(imp.span);
+    for import in &module.imports {
+        spans.push(import.span);
     }
-    for d in &m.decls {
-        collect_decl(d, out);
+    for decl in &module.decls {
+        collect_decl(decl, spans);
     }
 }
 
-fn collect_decl(d: &Decl, out: &mut Vec<Span>) {
-    match d {
-        Decl::Template(t) => {
-            out.push(t.span);
-            for f in &t.fields {
-                out.push(f.span);
+fn collect_decl(decl: &Decl, spans: &mut Vec<Span>) {
+    match decl {
+        Decl::Template(template) => {
+            spans.push(template.span);
+            for field in &template.fields {
+                spans.push(field.span);
             }
-            for b in &t.body {
-                collect_tbody(b, out);
-            }
-        }
-        Decl::Interface(i) => {
-            out.push(i.span);
-            for m in &i.methods {
-                out.push(m.span);
-            }
-            for c in &i.choices {
-                collect_choice(c, out);
+            for body_decl in &template.body {
+                collect_tbody(body_decl, spans);
             }
         }
-        Decl::Function(f) => {
-            // `f.span` is the equations' extent (contiguous); the signature,
+        Decl::Interface(interface) => {
+            spans.push(interface.span);
+            for method in &interface.methods {
+                spans.push(method.span);
+            }
+            for choice in &interface.choices {
+                collect_choice(choice, spans);
+            }
+        }
+        Decl::Function(function) => {
+            // `function.span` is the equations' extent (contiguous); the signature,
             // which may sit apart, is a separate sibling span.
-            out.push(f.span);
-            for eq in &f.equations {
-                collect_eq(eq, out);
+            spans.push(function.span);
+            for equation in &function.equations {
+                collect_eq(equation, spans);
             }
-            if let Some(sig) = f.sig_span {
-                out.push(sig);
+            if let Some(sig) = function.sig_span {
+                spans.push(sig);
             }
         }
-        Decl::TypeDef { span, .. } | Decl::Unknown { span, .. } => out.push(*span),
+        Decl::TypeDef { span, .. } | Decl::Unknown { span, .. } => spans.push(*span),
     }
 }
 
-fn collect_tbody(b: &TemplateBodyDecl, out: &mut Vec<Span>) {
-    match b {
+fn collect_tbody(template_body_decl: &TemplateBodyDecl, spans: &mut Vec<Span>) {
+    match template_body_decl {
         TemplateBodyDecl::Signatory { parties, span, .. }
         | TemplateBodyDecl::Observer { parties, span, .. } => {
-            out.push(*span);
-            for e in parties {
-                collect_expr(e, out);
+            spans.push(*span);
+            for party in parties {
+                collect_expr(party, spans);
             }
         }
         TemplateBodyDecl::Ensure { expr, span, .. }
         | TemplateBodyDecl::Maintainer { expr, span, .. }
         | TemplateBodyDecl::Key { expr, span, .. } => {
-            out.push(*span);
-            collect_expr(expr, out);
+            spans.push(*span);
+            collect_expr(expr, spans);
         }
-        TemplateBodyDecl::Choice(c) => collect_choice(c, out),
-        TemplateBodyDecl::InterfaceInstance(ii) => {
-            out.push(ii.span);
-            for m in &ii.methods {
-                collect_binding(m, out);
+        TemplateBodyDecl::Choice(choice) => collect_choice(choice, spans),
+        TemplateBodyDecl::InterfaceInstance(interface_instance) => {
+            spans.push(interface_instance.span);
+            for method in &interface_instance.methods {
+                collect_binding(method, spans);
             }
         }
-        TemplateBodyDecl::Other { span, .. } => out.push(*span),
+        TemplateBodyDecl::Other { span, .. } => spans.push(*span),
     }
 }
 
-fn collect_choice(c: &ChoiceDecl, out: &mut Vec<Span>) {
-    out.push(c.span);
-    for p in &c.params {
-        out.push(p.span);
+fn collect_choice(choice: &ChoiceDecl, spans: &mut Vec<Span>) {
+    spans.push(choice.span);
+    for param in &choice.params {
+        spans.push(param.span);
     }
-    for e in &c.controllers {
-        collect_expr(e, out);
+    for controller in &choice.controllers {
+        collect_expr(controller, spans);
     }
-    for e in &c.observers {
-        collect_expr(e, out);
+    for observer in &choice.observers {
+        collect_expr(observer, spans);
     }
-    if let Some(b) = &c.body {
-        collect_expr(b, out);
-    }
-}
-
-fn collect_eq(eq: &Equation, out: &mut Vec<Span>) {
-    out.push(eq.span);
-    for p in &eq.params {
-        collect_pat(p, out);
-    }
-    collect_expr(&eq.body, out);
-    for (g, b) in &eq.guards {
-        collect_expr(g, out);
-        collect_expr(b, out);
-    }
-    for wb in &eq.where_bindings {
-        collect_binding(wb, out);
+    if let Some(body) = &choice.body {
+        collect_expr(body, spans);
     }
 }
 
-fn collect_binding(b: &Binding, out: &mut Vec<Span>) {
-    out.push(b.span);
-    collect_pat(&b.pat, out);
-    for p in &b.params {
-        collect_pat(p, out);
+fn collect_eq(equation: &Equation, spans: &mut Vec<Span>) {
+    spans.push(equation.span);
+    for param in &equation.params {
+        collect_pat(param, spans);
     }
-    collect_expr(&b.expr, out);
+    collect_expr(&equation.body, spans);
+    for (guard, body) in &equation.guards {
+        collect_expr(guard, spans);
+        collect_expr(body, spans);
+    }
+    for where_binding in &equation.where_bindings {
+        collect_binding(where_binding, spans);
+    }
 }
 
-fn collect_pat(p: &Pat, out: &mut Vec<Span>) {
-    out.push(p.span());
-    match p {
+fn collect_binding(binding: &Binding, spans: &mut Vec<Span>) {
+    spans.push(binding.span);
+    collect_pat(&binding.pat, spans);
+    for param in &binding.params {
+        collect_pat(param, spans);
+    }
+    collect_expr(&binding.expr, spans);
+}
+
+fn collect_pat(pattern: &Pat, spans: &mut Vec<Span>) {
+    spans.push(pattern.span());
+    match pattern {
         Pat::Con { args, .. } => {
-            for a in args {
-                collect_pat(a, out);
+            for arg in args {
+                collect_pat(arg, spans);
             }
         }
         Pat::Tuple { items, .. } | Pat::List { items, .. } => {
-            for it in items {
-                collect_pat(it, out);
+            for item in items {
+                collect_pat(item, spans);
             }
         }
-        Pat::As { pat, .. } => collect_pat(pat, out),
-        _ => {}
+        Pat::As { pat, .. } => collect_pat(pat, spans),
+        Pat::Var { .. } | Pat::Wild { .. } | Pat::Lit { .. } | Pat::Other { .. } => {}
     }
 }
 
-fn collect_expr(e: &Expr, out: &mut Vec<Span>) {
-    out.push(e.span());
-    match e {
+fn collect_expr(expr: &Expr, spans: &mut Vec<Span>) {
+    spans.push(expr.span());
+    match expr {
         Expr::App { func, args, .. } => {
-            collect_expr(func, out);
-            for a in args {
-                collect_expr(a, out);
+            collect_expr(func, spans);
+            for arg in args {
+                collect_expr(arg, spans);
             }
         }
         Expr::BinOp { lhs, rhs, .. } => {
-            collect_expr(lhs, out);
-            collect_expr(rhs, out);
+            collect_expr(lhs, spans);
+            collect_expr(rhs, spans);
         }
-        Expr::Neg { expr, .. } => collect_expr(expr, out),
+        Expr::Neg { expr, .. } => collect_expr(expr, spans),
         Expr::Lambda { params, body, .. } => {
-            for p in params {
-                collect_pat(p, out);
+            for param in params {
+                collect_pat(param, spans);
             }
-            collect_expr(body, out);
+            collect_expr(body, spans);
         }
         Expr::If {
             cond,
@@ -310,84 +310,89 @@ fn collect_expr(e: &Expr, out: &mut Vec<Span>) {
             else_branch,
             ..
         } => {
-            collect_expr(cond, out);
-            collect_expr(then_branch, out);
-            collect_expr(else_branch, out);
+            collect_expr(cond, spans);
+            collect_expr(then_branch, spans);
+            collect_expr(else_branch, spans);
         }
         Expr::Case {
             scrutinee, alts, ..
         } => {
-            collect_expr(scrutinee, out);
-            for a in alts {
-                collect_alt(a, out);
+            collect_expr(scrutinee, spans);
+            for alt in alts {
+                collect_alt(alt, spans);
             }
         }
         Expr::Do { stmts, .. } => {
-            for s in stmts {
-                collect_dostmt(s, out);
+            for stmt in stmts {
+                collect_dostmt(stmt, spans);
             }
         }
         Expr::LetIn { bindings, body, .. } => {
-            for b in bindings {
-                collect_binding(b, out);
+            for binding in bindings {
+                collect_binding(binding, spans);
             }
-            collect_expr(body, out);
+            collect_expr(body, spans);
         }
         Expr::Record { base, fields, .. } => {
-            collect_expr(base, out);
-            for f in fields {
-                collect_field_assign(f, out);
+            collect_expr(base, spans);
+            for field in fields {
+                collect_field_assign(field, spans);
             }
         }
         Expr::Tuple { items, .. } | Expr::List { items, .. } => {
-            for it in items {
-                collect_expr(it, out);
+            for item in items {
+                collect_expr(item, spans);
             }
         }
         Expr::Try { body, handlers, .. } => {
-            collect_expr(body, out);
-            for h in handlers {
-                collect_alt(h, out);
+            collect_expr(body, spans);
+            for handler in handlers {
+                collect_alt(handler, spans);
             }
         }
         Expr::Section {
-            operand: Some(o), ..
-        } => collect_expr(o, out),
-        _ => {}
+            operand: Some(operand),
+            ..
+        } => collect_expr(operand, spans),
+        Expr::Var { .. }
+        | Expr::Con { .. }
+        | Expr::Lit { .. }
+        | Expr::Section { operand: None, .. }
+        | Expr::Error { .. } => {}
     }
 }
 
-fn collect_alt(a: &Alt, out: &mut Vec<Span>) {
-    out.push(a.span);
-    collect_pat(&a.pat, out);
-    collect_expr(&a.body, out);
+fn collect_alt(alt: &Alt, spans: &mut Vec<Span>) {
+    spans.push(alt.span);
+    collect_pat(&alt.pat, spans);
+    collect_expr(&alt.body, spans);
 }
 
-fn collect_field_assign(f: &FieldAssign, out: &mut Vec<Span>) {
-    out.push(f.span);
-    if let Some(v) = &f.value {
-        collect_expr(v, out);
+fn collect_field_assign(field_assign: &FieldAssign, spans: &mut Vec<Span>) {
+    spans.push(field_assign.span);
+    if let Some(value) = &field_assign.value {
+        collect_expr(value, spans);
     }
 }
 
-fn collect_dostmt(s: &DoStmt, out: &mut Vec<Span>) {
-    match s {
+fn collect_dostmt(do_stmt: &DoStmt, spans: &mut Vec<Span>) {
+    match do_stmt {
         DoStmt::Bind {
             pat, expr, span, ..
         } => {
-            out.push(*span);
-            collect_pat(pat, out);
-            collect_expr(expr, out);
+            spans.push(*span);
+            collect_pat(pat, spans);
+            collect_expr(expr, spans);
         }
         DoStmt::Let { bindings, span, .. } => {
-            out.push(*span);
-            for b in bindings {
-                collect_binding(b, out);
+            spans.push(*span);
+            for binding in bindings {
+                collect_binding(binding, spans);
             }
         }
         DoStmt::Expr { expr, span, .. } => {
-            out.push(*span);
-            collect_expr(expr, out);
+            spans.push(*span);
+            collect_expr(expr, spans);
         }
     }
 }
