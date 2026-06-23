@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5](https://github.com/stevennevins/daml-tools/compare/daml-syntax-v0.1.4...daml-syntax-v0.1.5) - 2026-06-23
+
+### Fixed
+
+- *(syntax)* avoid utf8 boundary panic ([#80](https://github.com/stevennevins/daml-tools/pull/80))
+
 ## [0.1.4](https://github.com/stevennevins/daml-tools/compare/daml-syntax-v0.1.3...daml-syntax-v0.1.4) - 2026-06-23
 
 ### Other

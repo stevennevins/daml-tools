@@ -116,7 +116,7 @@ checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 
 [[package]]
 name = "daml-fmt"
-version = "0.2.14"
+version = "0.2.15"
 dependencies = [
  "daml-parser",
  "daml-syntax",
@@ -124,7 +124,7 @@ dependencies = [
 
 [[package]]
 name = "daml-lint"
-version = "0.3.17"
+version = "0.3.18"
 dependencies = [
  "clap",
  "daml-parser",
@@ -140,7 +140,7 @@ version = "0.4.0"
 
 [[package]]
 name = "daml-syntax"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "daml-parser",
  "text-size",
