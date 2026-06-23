@@ -46,11 +46,11 @@ rquickjs = { workspace = true, optional = true }
 [features]
 default = ["cli", "js-runtime", "custom-rules"]
 # `cli`: the clap-based `daml-lint` binary.
-cli = ["dep:clap"]
+cli = ["dep:clap", "js-runtime"]
 # `js-runtime`: enable the QuickJS-backed rule runtime used by shipped built-ins.
 js-runtime = ["dep:rquickjs"]
 # `custom-rules`: enable loading user-provided JavaScript AST rule files.
-custom-rules = []
+custom-rules = ["js-runtime"]
 
 # The CLI binary needs the clap CLI and the JS runtime for built-ins. The
 # `custom-rules` feature adds `--rules`. With `default-features = false` the bin

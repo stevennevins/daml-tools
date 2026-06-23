@@ -118,6 +118,21 @@ impl Default for FormatOptions {
     }
 }
 
+impl FormatOptions {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            import_order: ImportOrder::Organize,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_import_order(mut self, import_order: ImportOrder) -> Self {
+        self.import_order = import_order;
+        self
+    }
+}
+
 /// Format Daml source with default formatter options.
 ///
 /// Delegates to the AST-driven backend (`layout_ast::format_ast`): an
@@ -315,6 +330,13 @@ fn normalize_final_newline(out: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn format_options_can_be_created_and_built() {
+        let options = FormatOptions::new().with_import_order(ImportOrder::Preserve);
+
+        assert_eq!(options.import_order, ImportOrder::Preserve);
+    }
 
     #[test]
     fn clean_source_has_no_lex_diagnostics() {

@@ -183,7 +183,7 @@ impl SourceTokens {
     #[must_use]
     pub fn laid_out_tokens(&self) -> &[Token] {
         self.laid_out_tokens
-            .get_or_init(|| resolve_layout(self.tokens.clone()))
+            .get_or_init(|| resolve_layout(self.tokens.as_slice()))
     }
 }
 

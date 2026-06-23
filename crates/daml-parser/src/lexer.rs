@@ -15,6 +15,12 @@ impl Identifier {
     }
 }
 
+impl AsRef<str> for Identifier {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
 impl std::fmt::Display for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
@@ -86,6 +92,12 @@ impl Operator {
     }
 }
 
+impl AsRef<str> for Operator {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
 impl std::fmt::Display for Operator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
@@ -154,6 +166,12 @@ pub struct ModuleName(String);
 impl ModuleName {
     pub const fn as_str(&self) -> &str {
         self.0.as_str()
+    }
+}
+
+impl AsRef<str> for ModuleName {
+    fn as_ref(&self) -> &str {
+        self.as_str()
     }
 }
 
@@ -1123,6 +1141,17 @@ mod tests {
             qualifier: None,
             name: name.into(),
         }
+    }
+
+    #[test]
+    fn identifier_as_ref_str() {
+        let identifier = Identifier::from("value");
+        let operator = Operator::from("+");
+        let module = ModuleName::from("DA.Map");
+
+        assert_eq!(identifier.as_ref(), "value");
+        assert_eq!(operator.as_ref(), "+");
+        assert_eq!(module.as_ref(), "DA.Map");
     }
 
     #[test]
