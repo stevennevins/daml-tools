@@ -31,7 +31,7 @@
 mod layout_ast;
 
 use daml_parser::lexer::{TokenKind, TriviaKind};
-use daml_syntax::SourceTokens;
+use daml_syntax::{SourceFile, SourceTokens};
 
 /// Lexer diagnostics for `src`.
 ///
@@ -46,6 +46,22 @@ pub fn lex_diagnostics(src: &str) -> Vec<String> {
         .lex_errors()
         .iter()
         .map(|error| format!("{}:{}: {}", error.pos.line, error.pos.column, error))
+        .collect()
+}
+
+/// Parser diagnostics for `src`, including lexical and parser diagnostics.
+///
+/// Returns one `line:col: [category] message` string per error.
+pub fn source_diagnostics(src: &str) -> Vec<String> {
+    SourceFile::parse(src)
+        .diagnostics()
+        .iter()
+        .map(|diagnostic| {
+            format!(
+                "{}:{}: [{}] {}",
+                diagnostic.line, diagnostic.column, diagnostic.category, diagnostic.message
+            )
+        })
         .collect()
 }
 
@@ -267,6 +283,12 @@ mod tests {
     }
 
     #[test]
+    fn parser_diagnostics_are_reported() {
+        let src = "module M where\nfoo = if x then 1\n";
+        assert!(!source_diagnostics(src).is_empty());
+    }
+
+    #[test]
     fn unterminated_string_is_diagnosed() {
         // Malformed input must be flagged so a format "success" is not mistaken
         // for parse success; output stays a verbatim passthrough.
@@ -376,6 +398,10 @@ mod tests {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("corpus/gap-cases");
         let bad_dir = root.join("bad");
         let good_dir = root.join("good");
+        if !bad_dir.exists() || !good_dir.exists() {
+            eprintln!("gap cases corpus missing (published crate test fixture), skipping");
+            return;
+        }
         let mut checked = 0usize;
         for entry in std::fs::read_dir(&bad_dir).unwrap() {
             let path = entry.unwrap().path();
