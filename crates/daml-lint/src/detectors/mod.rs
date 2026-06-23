@@ -9,6 +9,7 @@ use crate::detector::Detector;
 
 /// Built-in detectors shipped with `daml-lint`.
 #[cfg(feature = "js-runtime")]
+#[must_use]
 pub fn create_builtin_detectors() -> Vec<Box<dyn Detector>> {
     vec![
         built_in_rule(

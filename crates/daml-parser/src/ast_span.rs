@@ -124,6 +124,7 @@ impl std::error::Error for AstSpanError {}
 /// no span covers (content the AST dropped).
 ///
 /// Obtain `trivia` from [`crate::lexer::lex_with_trivia`].
+#[must_use = "check and handle render failures"]
 pub fn render_from_ast(
     source: &str,
     module: &Module,

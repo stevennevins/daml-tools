@@ -52,6 +52,7 @@ const MAX_STRUCTURAL_PASSES: usize = 6;
 
 /// Format with AST-driven structural reindents, layout-organizing rewrites, and
 /// final token-gated gap normalization.
+#[must_use]
 pub fn format_ast(src: &str, options: crate::FormatOptions) -> String {
     if has_source_location_expectation(src) || has_trailing_with_comment(src) {
         return src.to_string();
@@ -258,6 +259,7 @@ fn gated_continuation_pass(src: &str) -> String {
 /// every current AST layout family: do, if, case, let-in, constructor `with`,
 /// and template/interface bodies. This is not a normalized coverage ratio: one
 /// construct can produce multiple edits.
+#[must_use]
 pub fn coverage(src: &str) -> crate::FormatCoverage {
     let source_file = SourceFile::parse(src);
     let module = source_file.module();
@@ -610,16 +612,28 @@ fn collect_inline_expression_rewrites(
             }
             let body_indent =
                 indent_of_usize(src, &line_starts, eq_line).saturating_add(INDENT_WIDTH);
-            collect_expr_rewrite(src, &eq.body, body_indent, true, replacements);
+            collect_expr_rewrite(
+                src,
+                &eq.body,
+                body_indent,
+                RewriteLeadMode::LeadCandidate,
+                replacements,
+            );
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RewriteLeadMode {
+    LeadCandidate,
+    InlineOnly,
 }
 
 fn collect_expr_rewrite(
     src: &str,
     expr: &Expr,
     indent: usize,
-    break_before_expr: bool,
+    rewrite_mode: RewriteLeadMode,
     replacements: &mut Vec<Replacement>,
 ) {
     let span = expr.span();
@@ -630,14 +644,14 @@ fn collect_expr_rewrite(
             then_branch,
             else_branch,
             ..
-        } if break_before_expr
+        } if rewrite_mode == RewriteLeadMode::LeadCandidate
             && same_line_span(src, span)
             && inline_if_parts_are_simple(src, cond, then_branch, else_branch) =>
         {
             let ind = " ".repeat(indent);
             let nested = " ".repeat(indent.saturating_add(INDENT_WIDTH));
             let mut text = String::new();
-            if break_before_expr {
+            if rewrite_mode == RewriteLeadMode::LeadCandidate {
                 text.push('\n');
                 text.push_str(&ind);
             }
@@ -659,7 +673,10 @@ fn collect_expr_rewrite(
         }
         Expr::Case {
             scrutinee, alts, ..
-        } if break_before_expr && same_line_span(src, span) && !alts.is_empty() => {
+        } if rewrite_mode == RewriteLeadMode::LeadCandidate
+            && same_line_span(src, span)
+            && !alts.is_empty() =>
+        {
             let ind = " ".repeat(indent);
             let mut text = String::from("case ");
             text.push_str(src[scrutinee.span().start..scrutinee.span().end].trim());
@@ -678,12 +695,14 @@ fn collect_expr_rewrite(
             });
         }
         Expr::LetIn { bindings, body, .. }
-            if break_before_expr && same_line_span(src, span) && !bindings.is_empty() =>
+            if rewrite_mode == RewriteLeadMode::LeadCandidate
+                && same_line_span(src, span)
+                && !bindings.is_empty() =>
         {
             let ind = " ".repeat(indent);
             let nested = " ".repeat(indent.saturating_add(INDENT_WIDTH));
             let mut text = String::new();
-            if break_before_expr {
+            if rewrite_mode == RewriteLeadMode::LeadCandidate {
                 text.push('\n');
                 text.push_str(&ind);
             }
@@ -704,7 +723,7 @@ fn collect_expr_rewrite(
             });
         }
         Expr::Record { base, fields, .. }
-            if break_before_expr
+            if rewrite_mode == RewriteLeadMode::LeadCandidate
                 && same_line_span(src, span)
                 && src[span.start..span.end].contains(';')
                 && matches!(base.as_ref(), Expr::Con { .. })
@@ -726,7 +745,7 @@ fn collect_expr_rewrite(
             });
         }
         Expr::App { func, args, .. }
-            if break_before_expr
+            if rewrite_mode == RewriteLeadMode::LeadCandidate
                 && same_line_span(src, span)
                 && args.len() >= 6
                 && root_app_func(func).is_some()
@@ -735,7 +754,7 @@ fn collect_expr_rewrite(
             let ind = " ".repeat(indent);
             let nested = " ".repeat(indent.saturating_add(INDENT_WIDTH));
             let mut text = String::new();
-            if break_before_expr {
+            if rewrite_mode == RewriteLeadMode::LeadCandidate {
                 text.push('\n');
                 text.push_str(&ind);
             }
@@ -760,14 +779,38 @@ fn collect_expr_rewrite(
             };
             match expr {
                 Expr::App { func, args, .. } => {
-                    collect_expr_rewrite(src, func, child_indent, false, replacements);
+                    collect_expr_rewrite(
+                        src,
+                        func,
+                        child_indent,
+                        RewriteLeadMode::InlineOnly,
+                        replacements,
+                    );
                     for arg in args {
-                        collect_expr_rewrite(src, arg, child_indent, false, replacements);
+                        collect_expr_rewrite(
+                            src,
+                            arg,
+                            child_indent,
+                            RewriteLeadMode::InlineOnly,
+                            replacements,
+                        );
                     }
                 }
                 Expr::BinOp { lhs, rhs, .. } => {
-                    collect_expr_rewrite(src, lhs, child_indent, false, replacements);
-                    collect_expr_rewrite(src, rhs, child_indent, false, replacements);
+                    collect_expr_rewrite(
+                        src,
+                        lhs,
+                        child_indent,
+                        RewriteLeadMode::InlineOnly,
+                        replacements,
+                    );
+                    collect_expr_rewrite(
+                        src,
+                        rhs,
+                        child_indent,
+                        RewriteLeadMode::InlineOnly,
+                        replacements,
+                    );
                 }
                 Expr::If {
                     cond,
@@ -775,34 +818,94 @@ fn collect_expr_rewrite(
                     else_branch,
                     ..
                 } => {
-                    collect_expr_rewrite(src, cond, child_indent, false, replacements);
-                    collect_expr_rewrite(src, then_branch, child_indent, false, replacements);
-                    collect_expr_rewrite(src, else_branch, child_indent, false, replacements);
+                    collect_expr_rewrite(
+                        src,
+                        cond,
+                        child_indent,
+                        RewriteLeadMode::InlineOnly,
+                        replacements,
+                    );
+                    collect_expr_rewrite(
+                        src,
+                        then_branch,
+                        child_indent,
+                        RewriteLeadMode::InlineOnly,
+                        replacements,
+                    );
+                    collect_expr_rewrite(
+                        src,
+                        else_branch,
+                        child_indent,
+                        RewriteLeadMode::InlineOnly,
+                        replacements,
+                    );
                 }
                 Expr::Case {
                     scrutinee, alts, ..
                 } => {
-                    collect_expr_rewrite(src, scrutinee, child_indent, false, replacements);
+                    collect_expr_rewrite(
+                        src,
+                        scrutinee,
+                        child_indent,
+                        RewriteLeadMode::InlineOnly,
+                        replacements,
+                    );
                     for alt in alts {
-                        collect_expr_rewrite(src, &alt.body, child_indent, false, replacements);
+                        collect_expr_rewrite(
+                            src,
+                            &alt.body,
+                            child_indent,
+                            RewriteLeadMode::InlineOnly,
+                            replacements,
+                        );
                     }
                 }
                 Expr::LetIn { bindings, body, .. } => {
                     for binding in bindings {
-                        collect_expr_rewrite(src, &binding.expr, child_indent, false, replacements);
+                        collect_expr_rewrite(
+                            src,
+                            &binding.expr,
+                            child_indent,
+                            RewriteLeadMode::InlineOnly,
+                            replacements,
+                        );
                     }
-                    collect_expr_rewrite(src, body, child_indent, false, replacements);
+                    collect_expr_rewrite(
+                        src,
+                        body,
+                        child_indent,
+                        RewriteLeadMode::InlineOnly,
+                        replacements,
+                    );
                 }
                 Expr::Record { base, fields, .. } => {
-                    collect_expr_rewrite(src, base, child_indent, false, replacements);
+                    collect_expr_rewrite(
+                        src,
+                        base,
+                        child_indent,
+                        RewriteLeadMode::InlineOnly,
+                        replacements,
+                    );
                     for field in fields {
                         if let Some(value) = &field.value {
-                            collect_expr_rewrite(src, value, child_indent, false, replacements);
+                            collect_expr_rewrite(
+                                src,
+                                value,
+                                child_indent,
+                                RewriteLeadMode::InlineOnly,
+                                replacements,
+                            );
                         }
                     }
                 }
                 Expr::Lambda { body, .. } | Expr::Neg { expr: body, .. } => {
-                    collect_expr_rewrite(src, body, child_indent, false, replacements);
+                    collect_expr_rewrite(
+                        src,
+                        body,
+                        child_indent,
+                        RewriteLeadMode::InlineOnly,
+                        replacements,
+                    );
                 }
                 _ => {}
             }

@@ -62,6 +62,8 @@ pub struct ParseError {
     pub category: DiagnosticCategory,
 }
 
+/// Format lint `findings` and parse errors into a stable output text format.
+#[must_use]
 pub fn format_findings(
     findings: &[Finding],
     parse_errors: &[ParseError],
@@ -365,6 +367,7 @@ fn count_by_severity(findings: &[Finding]) -> (usize, usize, usize, usize, usize
 }
 
 /// Returns exit code: 0 if no findings at or above the threshold, 1 otherwise.
+#[must_use]
 pub fn exit_code(findings: &[Finding], fail_on: Severity) -> i32 {
     if findings.iter().any(|f| f.severity <= fail_on) {
         1

@@ -17,6 +17,7 @@ pub struct DetectError {
 
 impl DetectError {
     /// Build a detector error for `detector` with a human-readable `message`.
+    #[must_use]
     pub fn new(detector: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             detector: detector.into(),
@@ -25,11 +26,13 @@ impl DetectError {
     }
 
     /// Detector or custom-rule name that produced the error.
+    #[must_use]
     pub fn detector(&self) -> &str {
         &self.detector
     }
 
     /// Human-readable error detail.
+    #[must_use]
     pub fn message(&self) -> &str {
         &self.message
     }
@@ -107,6 +110,7 @@ pub struct Finding {
 }
 
 /// Parse a severity string accepted by the CLI.
+#[must_use]
 pub fn parse_severity(s: &str) -> Option<Severity> {
     s.parse().ok()
 }
@@ -146,6 +150,7 @@ pub struct ConfiguredDetector {
 }
 
 impl ConfiguredDetector {
+    #[must_use]
     pub fn new(
         inner: Box<dyn Detector>,
         name_override: Option<String>,
@@ -198,6 +203,7 @@ impl Detector for ConfiguredDetector {
 }
 
 /// Returns the first detector name that appears more than once, if any.
+#[must_use]
 pub fn find_duplicate_detector_name(detectors: &[Box<dyn Detector>]) -> Option<String> {
     let mut seen = std::collections::HashSet::new();
     for det in detectors {

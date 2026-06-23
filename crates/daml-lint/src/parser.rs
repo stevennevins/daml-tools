@@ -31,6 +31,11 @@ pub struct Diagnostic {
     pub category: DiagnosticCategory,
 }
 
+/// Parse DAML source into the lint IR plus parse diagnostics.
+///
+/// Parsing is loss-tolerant: a `DamlModule` is returned even when `diags` is
+/// non-empty.
+#[must_use]
 pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> (DamlModule, Vec<Diagnostic>) {
     let source_file = SourceFile::parse(source);
     let module = source_file.module();

@@ -17,11 +17,25 @@ pub struct ParseModuleResult {
     pub diagnostics: Vec<ParseDiagnostic>,
 }
 
+#[derive(Clone, Copy, Debug)]
+enum DoExpressionMode {
+    Allow,
+    Disallow,
+}
+
+impl DoExpressionMode {
+    const fn allows_do(&self) -> bool {
+        matches!(self, Self::Allow)
+    }
+}
+
 impl ParseModuleResult {
+    #[must_use]
     pub const fn has_errors(&self) -> bool {
         !self.diagnostics.is_empty()
     }
 
+    #[must_use]
     pub fn into_parts(self) -> (Module, Vec<ParseDiagnostic>) {
         (self.module, self.diagnostics)
     }
@@ -41,6 +55,7 @@ impl ParseModuleResult {
 /// assert_eq!(result.module.name, "M");
 /// assert!(result.diagnostics.is_empty());
 /// ```
+#[must_use]
 pub fn parse_module(source: &str) -> ParseModuleResult {
     let lexed = lex(source);
     let tokens = lexed.tokens;
@@ -632,10 +647,11 @@ impl Parser {
         }
         let name = self.upper_name()?.to_string().into();
 
-        let mut fields = Vec::new();
-        if self.eat_keyword("with") {
-            (fields, _) = self.field_block();
-        }
+        let fields = self
+            .eat_keyword("with")
+            .then(|| self.field_block())
+            .map(|parsed| parsed.fields)
+            .unwrap_or_default();
         let body = if self.eat_keyword("where") {
             self.template_body()
         } else {
@@ -651,14 +667,18 @@ impl Parser {
     }
 
     /// `{ name : Type ; name2, name3 : Type ; ... }` (virtual or explicit).
-    /// Returns the fields plus a "dangling" flag: true when the block was
+    /// Returns the parsed fields and a "dangling" marker when the block was
     /// entered but abandoned early because its first item is not a field
-    /// (an empty `with` whose layout block swallowed the next clause) —
-    /// the caller must discard the block's eventual closing `VRBrace`.
-    fn field_block(&mut self) -> (Vec<FieldDecl>, bool) {
+    /// (an empty `with` whose layout block swallowed the next clause). The
+    /// caller should discard the block's eventual closing `VRBrace` when this
+    /// happens.
+    fn field_block(&mut self) -> FieldBlock {
         let mut fields = Vec::new();
         if !(self.eat(&TokenKind::VLBrace) || self.eat(&TokenKind::LBrace)) {
-            return (fields, false);
+            return FieldBlock {
+                fields,
+                dangling: false,
+            };
         }
         loop {
             while self.eat(&TokenKind::VSemi) || self.eat(&TokenKind::Semi) {}
@@ -701,7 +721,10 @@ impl Parser {
                         .map(|t| &t.kind)
                         .is_some_and(|t| t.is_op(":"));
                 if !is_field {
-                    return (fields, true);
+                    return FieldBlock {
+                        fields,
+                        dangling: true,
+                    };
                 }
             }
             // One or more comma-separated names, then `:`, then the type.
@@ -747,7 +770,10 @@ impl Parser {
                 });
             }
         }
-        (fields, false)
+        FieldBlock {
+            fields,
+            dangling: false,
+        }
     }
 
     // ----- template body ------------------------------------------------
@@ -937,11 +963,12 @@ impl Parser {
         } else {
             None
         };
-        let mut params = Vec::new();
-        let mut dangling = false;
-        if self.eat_keyword("with") {
-            (params, dangling) = self.field_block();
-        }
+        let (params, dangling) = if self.eat_keyword("with") {
+            let parsed = self.field_block();
+            (parsed.fields, parsed.dangling)
+        } else {
+            (Vec::new(), false)
+        };
         let mut observers = Vec::new();
         let mut controllers = Vec::new();
         loop {
@@ -1781,11 +1808,11 @@ impl Parser {
     // ----- expressions ---------------------------------------------------
 
     fn expr(&mut self) -> Expr {
-        self.expr_prec(0, true)
+        self.expr_prec(0, DoExpressionMode::Allow)
     }
 
     fn expr_no_do(&mut self) -> Expr {
-        self.expr_prec(0, false)
+        self.expr_prec(0, DoExpressionMode::Disallow)
     }
 
     /// Comma-separated expressions (signatory/observer/controller lists).
@@ -1805,7 +1832,7 @@ impl Parser {
         out
     }
 
-    fn expr_prec(&mut self, min_prec: u8, allow_do: bool) -> Expr {
+    fn expr_prec(&mut self, min_prec: u8, do_mode: DoExpressionMode) -> Expr {
         let pos = self.pos();
         let start_i = self.i;
         if self.depth >= MAX_RECURSION_DEPTH {
@@ -1829,13 +1856,19 @@ impl Parser {
             };
         }
         self.depth += 1;
-        let result = self.expr_prec_inner(min_prec, allow_do, pos, start_i);
+        let result = self.expr_prec_inner(min_prec, do_mode, pos, start_i);
         self.depth -= 1;
         result
     }
 
-    fn expr_prec_inner(&mut self, min_prec: u8, allow_do: bool, pos: Pos, start_i: usize) -> Expr {
-        let mut lhs = match self.unary(allow_do) {
+    fn expr_prec_inner(
+        &mut self,
+        min_prec: u8,
+        do_mode: DoExpressionMode,
+        pos: Pos,
+        start_i: usize,
+    ) -> Expr {
+        let mut lhs = match self.unary(do_mode) {
             Some(e) => e,
             None => {
                 // Unparseable here: degrade to raw text up to the item end.
@@ -1894,7 +1927,7 @@ impl Parser {
                 self.bump();
             }
             let next_min = if right_assoc { prec } else { prec + 1 };
-            let rhs = self.expr_prec(next_min, allow_do);
+            let rhs = self.expr_prec(next_min, do_mode);
             lhs = Expr::BinOp {
                 op,
                 lhs: Box::new(lhs),
@@ -1906,25 +1939,25 @@ impl Parser {
         lhs
     }
 
-    fn unary(&mut self, allow_do: bool) -> Option<Expr> {
+    fn unary(&mut self, do_mode: DoExpressionMode) -> Option<Expr> {
         let pos = self.pos();
         let start_i = self.i;
         if self.at_op("-") {
             self.bump();
-            let e = self.unary(allow_do)?;
+            let e = self.unary(do_mode)?;
             return Some(Expr::Neg {
                 expr: Box::new(e),
                 pos,
                 span: self.node_span(start_i),
             });
         }
-        self.application(allow_do)
+        self.application(do_mode)
     }
 
-    fn application(&mut self, allow_do: bool) -> Option<Expr> {
+    fn application(&mut self, do_mode: DoExpressionMode) -> Option<Expr> {
         let pos = self.pos();
         let start_i = self.i;
-        let head0 = self.atom(allow_do)?;
+        let head0 = self.atom(do_mode)?;
         let mut head = self.projection_tail(head0);
         let mut args = Vec::new();
         loop {
@@ -1958,7 +1991,7 @@ impl Parser {
                 }
                 continue;
             }
-            if !allow_do && self.at_keyword("do") {
+            if !do_mode.allows_do() && self.at_keyword("do") {
                 break;
             }
             // Type application `f @Type x` — consume and drop the type atom.
@@ -1993,7 +2026,7 @@ impl Parser {
                 }
                 continue;
             }
-            match self.try_atom(allow_do) {
+            match self.try_atom(do_mode) {
                 Some(a) => args.push(self.projection_tail(a)),
                 None => break,
             }
@@ -2065,7 +2098,7 @@ impl Parser {
                 }
             };
             if self.eat_op("=") {
-                let value = self.expr_prec(1, true);
+                let value = self.expr_prec(1, DoExpressionMode::Allow);
                 fields.push(FieldAssign {
                     name,
                     value: Some(value),
@@ -2085,20 +2118,20 @@ impl Parser {
         fields
     }
 
-    fn try_atom(&mut self, allow_do: bool) -> Option<Expr> {
+    fn try_atom(&mut self, do_mode: DoExpressionMode) -> Option<Expr> {
         match self.peek() {
             Some(TokenKind::LowerId { .. }) => {
                 let kw = self.peek().and_then(|t| t.keyword());
                 match kw {
                     // Block argument: `script do ...`, `submit p do ...`.
-                    Some("do") if allow_do => self.atom(allow_do),
+                    Some("do") if do_mode.allows_do() => self.atom(do_mode),
                     // Keywords that begin expressions are fine as atoms in
                     // head position but must not be slurped as arguments.
                     Some(
                         "if" | "case" | "do" | "let" | "try" | "where" | "then" | "else" | "of"
                         | "in" | "controller" | "with" | "catch",
                     ) => None,
-                    _ => self.atom(allow_do),
+                    _ => self.atom(do_mode),
                 }
             }
             Some(
@@ -2109,9 +2142,9 @@ impl Parser {
                 | TokenKind::CharLit(_)
                 | TokenKind::LParen
                 | TokenKind::LBracket,
-            ) => self.atom(allow_do),
+            ) => self.atom(do_mode),
             // Bare trailing lambda argument: `forA xs \x -> ...`.
-            Some(TokenKind::Op(o)) if o.as_str() == "\\" => self.atom(allow_do),
+            Some(TokenKind::Op(o)) if o.as_str() == "\\" => self.atom(do_mode),
             _ => None,
         }
     }
@@ -2185,7 +2218,7 @@ impl Parser {
         })
     }
 
-    fn atom(&mut self, allow_do: bool) -> Option<Expr> {
+    fn atom(&mut self, do_mode: DoExpressionMode) -> Option<Expr> {
         let pos = self.pos();
         let start_i = self.i;
         match self.peek().cloned() {
@@ -2194,7 +2227,7 @@ impl Parser {
                     "if" if qualifier.is_none() => return self.if_expr(),
                     "case" if qualifier.is_none() => return self.case_expr(),
                     "do" if qualifier.is_none() => {
-                        if !allow_do {
+                        if !do_mode.allows_do() {
                             return None;
                         }
                         return self.do_expr();
@@ -2898,6 +2931,12 @@ struct TypeTokenParser<'a> {
     cursor: usize,
 }
 
+#[derive(Debug)]
+struct FieldBlock {
+    fields: Vec<FieldDecl>,
+    dangling: bool,
+}
+
 /// Result of parsing one atom: a real type, or a dropped type-level nat literal
 /// (`Numeric 10` — not a type, so it never enters the App arg list).
 enum TypeAtom {
@@ -3454,6 +3493,40 @@ g = (+)
         ));
         assert_eq!(section_side_for_fn(&module, "f"), SectionSide::Right);
         assert_eq!(section_side_for_fn(&module, "g"), SectionSide::Right);
+    }
+
+    #[test]
+    fn do_expr_is_allowed_for_top_level_expression_parsing() {
+        let (module, diagnostics) = parse(
+            "module M where
+f = do
+  pure True
+",
+        );
+
+        assert!(diagnostics.is_empty());
+        assert!(matches!(
+            get_first_equation_body(&module, "f"),
+            Expr::Do { .. }
+        ));
+    }
+
+    #[test]
+    fn do_expr_is_disallowed_for_case_scrutinee_parsing() {
+        let (module, diagnostics) = parse(
+            "module M where
+f = case do 1 of
+  x -> x
+",
+        );
+
+        assert!(diagnostics
+            .iter()
+            .any(|d| d.message == "expected 'of' in case expression"));
+        assert!(matches!(
+            get_first_equation_body(&module, "f"),
+            Expr::Error { .. }
+        ));
     }
 
     fn get_first_equation_body<'a>(module: &'a Module, name: &str) -> &'a Expr {

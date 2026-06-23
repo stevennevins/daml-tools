@@ -1,5 +1,13 @@
+//! Rule-facing IR for `daml-lint`.
+//!
+//! This module intentionally prefers forward-compatible matching for public enum
+//! nodes. The IR mirrors the parsed Daml AST at a lossy-compatibility boundary:
+//! `TypeNode`, `LiteralKind`, `Expr`, `Consuming`, `Statement`, and
+//! `ImportStyle` are all `#[non_exhaustive]` so downstream crates should add
+//! wildcard arms when matching instead of exhaustiveness assumptions.
+
 use daml_parser::ast::Type;
-use daml_syntax::{LineIndex, SourceFile, TextRange};
+use daml_syntax::{SourceFile, TextRange};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -25,16 +33,11 @@ pub struct SourceSpan {
 }
 
 impl SourceSpan {
-    fn from_text_range(
-        file: &Path,
-        source: &str,
-        line_index: &LineIndex,
-        range: TextRange,
-    ) -> Self {
+    fn from_text_range(file: &Path, source_file: &SourceFile, range: TextRange) -> Self {
         let byte_start = usize::from(range.start());
         let byte_end = usize::from(range.end());
-        let line_col = line_index.char_line_col(source, range.start());
-        let (start, end) = line_index.utf16_range(range);
+        let line_col = source_file.line_index().char_line_col(range.start());
+        let (start, end) = source_file.line_index().utf16_range(range);
         Self {
             file: file.to_path_buf(),
             line: line_col.line,
@@ -47,6 +50,7 @@ impl SourceSpan {
     }
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub enum TypeNode {
     Con {
@@ -90,8 +94,7 @@ impl TypeNode {
         let source_span = || {
             SourceSpan::from_text_range(
                 file,
-                source_file.source(),
-                source_file.line_index(),
+                source_file,
                 source_file.parser_span_to_text_range(t.span()),
             )
         };
@@ -156,6 +159,7 @@ pub struct SrcPos {
     pub column: usize,
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub enum LiteralKind {
     Int,
@@ -166,6 +170,7 @@ pub enum LiteralKind {
 
 /// Expression AST exposed to rule scripts. Serialized as tagged unions:
 /// `{ "App": {...} }`, `{ "Lit": {...} }`, ... mirrored by daml-lint.d.ts.
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub enum Expr {
     /// Variable reference: `amount`, `Map.lookup` (qualifier "Map").
@@ -324,6 +329,7 @@ pub struct Choice {
     pub span: Span,
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Consuming {
@@ -332,6 +338,7 @@ pub enum Consuming {
 }
 
 impl Consuming {
+    #[must_use]
     pub const fn is_consuming(&self) -> bool {
         matches!(self, Self::Consuming)
     }
@@ -343,6 +350,7 @@ impl Consuming {
 /// rule-facing parse tree.
 /// `Other.raw` is the deliberate raw-source form for statements with no
 /// structured encoding.
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub enum Statement {
     Let {
@@ -433,6 +441,7 @@ pub struct Import {
     pub span: Span,
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ImportStyle {
@@ -441,6 +450,7 @@ pub enum ImportStyle {
 }
 
 impl ImportStyle {
+    #[must_use]
     pub const fn is_qualified(&self) -> bool {
         matches!(self, Self::Qualified)
     }
@@ -474,4 +484,26 @@ pub struct DamlModule {
     pub templates: Vec<Template>,
     pub interfaces: Vec<Interface>,
     pub functions: Vec<Function>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn source_span_line_calculation_tracks_its_source_file() {
+        let source_a = SourceFile::parse("module A where\nabcde\n");
+        let source_b = SourceFile::parse("module A where\nx\ncde\n");
+        let range = TextRange::new(17.into(), 18.into());
+
+        let span_a = SourceSpan::from_text_range(Path::new("A.daml"), &source_a, range);
+        let span_b = SourceSpan::from_text_range(Path::new("B.daml"), &source_b, range);
+
+        assert_eq!(span_a.line, 2);
+        assert_eq!(span_b.line, 3);
+        assert_ne!(span_a.column, span_b.column);
+        assert_eq!(span_a.column, 3);
+        assert_eq!(span_b.column, 1);
+    }
 }

@@ -208,12 +208,22 @@ fn parse_node<'js>(
 }
 
 #[cfg(feature = "custom-rules")]
+/// Load one custom rule script from disk.
+///
+/// Returns `Err` when the file cannot be read, JS initialization fails, script
+/// execution fails, or required rule metadata is missing/invalid.
+#[must_use = "handle script load failures instead of ignoring diagnostics"]
 pub fn load_script(path: &Path) -> Result<Box<dyn Detector>, ScriptLoadError> {
     let options = empty_options();
     load_script_with_options(path, &options)
 }
 
 #[cfg(feature = "custom-rules")]
+/// Load one custom rule script with detector `options`.
+///
+/// Returns `Err` for I/O errors, JS runtime initialization failures, malformed
+/// JS metadata, or execution/visitor contract violations.
+#[must_use = "use loaded detector or propagate load errors"]
 pub fn load_script_with_options(
     path: &Path,
     options: &serde_json::Value,

@@ -49,6 +49,7 @@ pub struct Diagnostic {
 pub struct LineIndex {
     source_len: usize,
     line_start_bytes: Vec<usize>,
+    char_offset_by_byte: Vec<usize>,
     utf16_offset_by_byte: Vec<usize>,
 }
 
@@ -60,6 +61,28 @@ impl LineIndex {
             if byte == b'\n' {
                 line_start_bytes.push(idx + 1);
             }
+        }
+
+        let mut char_offset_by_byte = vec![0; source.len() + 1];
+        let mut char_count = 0usize;
+        let mut prev = 0usize;
+        for (idx, ch) in source.char_indices() {
+            for slot in char_offset_by_byte.iter_mut().take(idx).skip(prev) {
+                *slot = char_count;
+            }
+            let char_end = idx + ch.len_utf8();
+            for slot in char_offset_by_byte.iter_mut().take(char_end).skip(idx) {
+                *slot = char_count;
+            }
+            char_count += 1;
+            prev = char_end;
+        }
+        for slot in char_offset_by_byte
+            .iter_mut()
+            .take(source.len() + 1)
+            .skip(prev)
+        {
+            *slot = char_count;
         }
 
         let mut utf16_offset_by_byte = vec![0; source.len() + 1];
@@ -87,6 +110,7 @@ impl LineIndex {
         Self {
             source_len: source.len(),
             line_start_bytes,
+            char_offset_by_byte,
             utf16_offset_by_byte,
         }
     }
@@ -105,11 +129,8 @@ impl LineIndex {
     }
 
     #[must_use]
-    pub fn char_line_col(&self, source: &str, offset: TextSize) -> LineCol {
-        let mut byte = usize::from(offset).min(self.source_len);
-        while !source.is_char_boundary(byte) {
-            byte = byte.saturating_sub(1);
-        }
+    pub fn char_line_col(&self, offset: TextSize) -> LineCol {
+        let byte = usize::from(offset).min(self.source_len);
         let line_idx = match self.line_start_bytes.binary_search(&byte) {
             Ok(idx) => idx,
             Err(idx) => idx.saturating_sub(1),
@@ -117,7 +138,7 @@ impl LineIndex {
         let line_start = self.line_start_bytes[line_idx];
         LineCol {
             line: line_idx + 1,
-            column: source[line_start..byte].chars().count() + 1,
+            column: self.char_offset_by_byte[byte] - self.char_offset_by_byte[line_start] + 1,
         }
     }
 
@@ -214,7 +235,7 @@ impl SourceFile {
                     .map(|s| diagnostic.pos.column + s.chars().count());
                 Diagnostic {
                     range,
-                    line: line_index.char_line_col(source, start).line,
+                    line: line_index.char_line_col(start).line,
                     column: diagnostic.pos.column,
                     end_column,
                     message: diagnostic.message,
@@ -289,6 +310,7 @@ impl SourceFile {
     /// untrusted sources where offsets may be invalid. Use
     /// [`SourceFile::parser_span_to_text_range`] for spans that originate from
     /// this source and are expected to map to valid UTF-8 bytes.
+    #[must_use = "handle invalid span offsets before using the range"]
     pub fn try_parser_span_to_text_range(
         &self,
         span: ParserSpan,
@@ -339,6 +361,7 @@ impl std::error::Error for ParserSpanToTextRangeError {}
 ///
 /// This is the fallible API and should be used for spans sourced outside
 /// `SourceFile` where invalid offsets are possible.
+#[must_use = "handle invalid span offsets before converting"]
 pub fn try_parser_span_to_text_range(
     source: &str,
     span: ParserSpan,
@@ -399,7 +422,7 @@ mod tests {
         );
         assert_eq!(index.utf16_col(1, 6), 3);
         assert_eq!(
-            index.char_line_col(source, 5.into()),
+            index.char_line_col(5.into()),
             LineCol { line: 1, column: 3 }
         );
     }
@@ -411,7 +434,7 @@ mod tests {
 
         // Offset 3 is inside the 4-byte 😀 sequence (1..5), so we expect snapping to 1.
         assert_eq!(
-            index.char_line_col(source, 3.into()),
+            index.char_line_col(3.into()),
             LineCol { line: 1, column: 2 }
         );
     }
