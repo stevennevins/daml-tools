@@ -9,8 +9,8 @@
 //! layout shape, so the corpus desugar oracle and idempotence checks are the
 //! safety bar for those rules.
 //!
-//! The shipping backend is `layout_ast` (AST-driven, our own pattern — NOT a
-//! `LimeChain` derivative, and NOT aimed at matching the `expected/` baseline).
+//! The shipping backend is `layout_ast` (AST-driven, own-design canonical
+//! layout, and NOT aimed at matching an external formatter baseline).
 //! `normalize_gaps` below is the proven, token-gated whitespace + colon-spacing
 //! pass it composes on top of the structural reindent:
 //! - trailing-whitespace: strip spaces/tabs before a newline; one final newline.
@@ -26,8 +26,8 @@
 //! assert_eq!(formatted, "module M where\nfoo: Int\nfoo = 1\n");
 //! ```
 
-// AST-driven layout (our own pattern, NO LimeChain derivative). This is the
-// shipping backend. See src/layout_ast.rs.
+// AST-driven layout (own-design canonical layout). This is the shipping
+// backend. See src/layout_ast.rs.
 mod layout_ast;
 
 use daml_parser::lexer::{TokenKind, TriviaKind};

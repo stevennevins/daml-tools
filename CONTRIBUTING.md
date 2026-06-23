@@ -108,10 +108,10 @@ For formatter-specific verification flows, see
 
 ## Prepare versioning and releases
 
-Each crate is versioned independently. Before the first crates.io baseline,
-`cargo-semver-checks` runs in CI and pre-push hooks. While the crates are
-pre-1.0, breaking public API changes use 0.x minor bumps and patch releases
-stay compatible.
+Each crate is versioned independently. `cargo-semver-checks` is a blocking CI
+and pre-push gate for published crates, so public API compatibility breaks must
+be resolved before merging. While the crates are pre-1.0, intentional breaking
+public API changes use 0.x minor bumps and patch releases stay compatible.
 
 Releases are driven by [release-plz](release-plz.toml) in dependency order:
 `daml-parser` first, then `daml-lint` and `daml-fmt`. The GitHub workflow

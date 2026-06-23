@@ -116,13 +116,11 @@ jobs:
         with:
           command: check
 
-  # Report public API compatibility for every published library target. The
-  # crates need crates.io baselines to diff against, so this is a SOFT signal
-  # (continue-on-error) until each 0.1.0 is published. Once those baselines
-  # exist, drop `continue-on-error` to make it a hard gate.
+  # Block public API compatibility regressions for every published library
+  # target. A failed cargo-semver-checks run must fail the PR rather than
+  # producing an unstable-but-mergeable status.
   semver:
     runs-on: ubuntu-latest
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:

@@ -235,8 +235,8 @@ assert!(laid_out.iter().any(|t| matches!(t.kind(), &TokenKind::VLBrace)));
 listed above, with `parse::parse_module` as the normal start. The AST is public
 so tools can inspect parser output; downstream code should prefer parser-created
 trees over manual construction. Breaking public API changes use 0.x minor bumps,
-and patch releases should stay compatible. `cargo-semver-checks` is a soft CI
-signal until the first crates.io baseline exists.
+and patch releases should stay compatible. `cargo-semver-checks` is a blocking
+CI signal for public API compatibility.
 
 `daml-parser` is syntax-only. It does not perform name resolution, package
 resolution, type checking, scenario/script execution, or authorization analysis.
