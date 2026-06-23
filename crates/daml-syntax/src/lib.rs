@@ -90,7 +90,10 @@ impl LineIndex {
 
     #[must_use]
     pub fn char_line_col(&self, source: &str, offset: TextSize) -> LineCol {
-        let byte = usize::from(offset).min(self.source_len);
+        let mut byte = usize::from(offset).min(self.source_len);
+        while !source.is_char_boundary(byte) {
+            byte = byte.saturating_sub(1);
+        }
         let line_idx = match self.line_start_bytes.binary_search(&byte) {
             Ok(idx) => idx,
             Err(idx) => idx.saturating_sub(1),
@@ -303,6 +306,18 @@ mod tests {
         assert_eq!(
             index.char_line_col(source, 5.into()),
             LineCol { line: 1, column: 3 }
+        );
+    }
+
+    #[test]
+    fn char_line_col_snaps_to_previous_utf8_boundary() {
+        let source = "a😀b";
+        let index = LineIndex::new(source);
+
+        // Offset 3 is inside the 4-byte 😀 sequence (1..5), so we expect snapping to 1.
+        assert_eq!(
+            index.char_line_col(source, 3.into()),
+            LineCol { line: 1, column: 2 }
         );
     }
 
