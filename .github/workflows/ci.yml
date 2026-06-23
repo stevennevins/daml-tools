@@ -13,7 +13,6 @@ on:
     paths-ignore:
       - "**/*.md"
       - "docs/**"
-      - ".smithers/**"
       - "AGENTS.md"
       - "LICENSE"
 
