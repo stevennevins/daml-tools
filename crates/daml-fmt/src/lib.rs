@@ -59,28 +59,44 @@ pub fn source_diagnostics(src: &str) -> Vec<String> {
         .map(|diagnostic| {
             format!(
                 "{}:{}: [{}] {}",
-                diagnostic.line, diagnostic.column, diagnostic.category, diagnostic.message
+                diagnostic.line,
+                diagnostic.column,
+                diagnostic.category.as_str(),
+                diagnostic.message
             )
         })
         .collect()
 }
 
+/// Import ordering strategy for formatter output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ImportOrder {
+    /// Sort import declarations into formatter-defined groups.
+    Organize,
+    /// Preserve declaration order exactly as written by the source.
+    Preserve,
+}
+
 /// Formatter behavior switches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FormatOptions {
-    /// Sort import declarations into formatter-defined groups.
+    /// How formatter handles import declarations:
     ///
-    /// This is enabled by default. Reordering imports can change package
-    /// identity even when the source-level declarations denote the same
-    /// imports; use `--preserve-import-order` in the CLI when package identity
-    /// stability matters more than import organization.
-    pub organize_imports: bool,
+    /// * `Organize` groups/sorts imports into canonical formatter order.
+    /// * `Preserve` keeps original declaration order.
+    ///
+    /// Reordering imports can change package identity even when the source-level
+    /// declarations denote the same imports; use `--preserve-import-order` in the
+    /// CLI when package identity stability matters more than import
+    /// organization.
+    pub import_order: ImportOrder,
 }
 
 impl Default for FormatOptions {
     fn default() -> Self {
         Self {
-            organize_imports: true,
+            import_order: ImportOrder::Organize,
         }
     }
 }
@@ -362,7 +378,7 @@ mod tests {
             if source_file
                 .diagnostics()
                 .iter()
-                .all(|diagnostic| diagnostic.category != "lexical-error")
+                .all(|diagnostic| diagnostic.category != daml_parser::ast::DiagnosticCategory::Lex)
             {
                 if let Err(e) = daml_parser::lexer::render_lossless(
                     &src,

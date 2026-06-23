@@ -6,9 +6,16 @@
 //! rule-facing IR ([`ir`], via [`parser`]) and runs [`detectors`] over it.
 //! Start at [`parser::parse_daml_with_diagnostics`].
 //! The IR is public so custom rules and library callers can inspect it; parser
-//! lowering is the supported construction path. This crate is pre-1.0, so
-//! breaking public API changes use 0.x minor bumps and patch releases should
-//! stay compatible.
+//! lowering is the supported construction path.
+//!
+//! ## API posture
+//!
+//! This crate is pre-1.0. Its public IR is also intentionally data-oriented;
+//! adding/removing fields, changing enum variants, or altering shapes is
+//! SemVer-relevant. Use constructors in the same crate for creation and treat
+//! these as versioned contracts with downstream rules/detectors.
+//! Existing exported enums are `#[non_exhaustive]` when extensibility is part of
+//! their contract; callers should include a wildcard arm when matching.
 //!
 //! # Example
 //!

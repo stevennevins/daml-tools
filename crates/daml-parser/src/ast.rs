@@ -53,6 +53,29 @@ pub enum LitKind {
     Char,
 }
 
+/// Side of an operator section.
+///
+/// `(+ 1)` stores `SectionSide::Right`, while `(1 +)` stores
+/// `SectionSide::Left`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SectionSide {
+    /// Right section: operator followed by right operand.
+    Right,
+    /// Left section: left operand followed by operator.
+    Left,
+}
+
+/// Import syntax style.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ImportStyle {
+    /// Qualified import (`import qualified Foo.Bar`, `import Foo.Bar qualified`).
+    Qualified,
+    /// Unqualified import (`import Foo.Bar`, `import Foo.Bar as Baz`).
+    Unqualified,
+}
+
 #[derive(Debug, Clone)]
 pub struct FieldAssign {
     pub name: String,
@@ -235,7 +258,7 @@ pub enum Expr {
     Section {
         op: String,
         operand: Option<Box<Self>>,
-        left: bool,
+        side: SectionSide,
         pos: Pos,
         span: Span,
     },
@@ -501,7 +524,7 @@ pub struct FunctionDecl {
 #[derive(Debug, Clone)]
 pub struct ImportDecl {
     pub module_name: String,
-    pub qualified: bool,
+    pub style: ImportStyle,
     pub alias: Option<String>,
     pub pos: Pos,
     pub span: Span,
@@ -737,10 +760,10 @@ impl Expr {
                 format!("try {} catch {}", body.render(), hs.join("; "))
             }
             Self::Section {
-                op, operand, left, ..
-            } => match (operand, left) {
-                (Some(e), true) => format!("({} {})", e.render(), op),
-                (Some(e), false) => format!("({} {})", op, e.render()),
+                op, operand, side, ..
+            } => match (operand, side) {
+                (Some(e), SectionSide::Left) => format!("({} {})", e.render(), op),
+                (Some(e), SectionSide::Right) => format!("({} {})", op, e.render()),
                 (None, _) => format!("({op})"),
             },
             Self::Error { raw, .. } => raw.clone(),
@@ -947,6 +970,37 @@ mod tests {
         };
 
         assert_eq!(expr.render(), "length (this.note)");
+    }
+
+    #[test]
+    fn section_render_depends_on_section_side() {
+        let expr_left = Expr::Section {
+            op: "+".to_string(),
+            operand: Some(Box::new(Expr::Var {
+                qualifier: None,
+                name: "x".to_string(),
+                pos: pos(),
+                span: span(0, 1),
+            })),
+            side: SectionSide::Left,
+            pos: pos(),
+            span: span(0, 4),
+        };
+        let expr_right = Expr::Section {
+            op: "+".to_string(),
+            operand: Some(Box::new(Expr::Lit {
+                kind: LitKind::Int,
+                text: "1".to_string(),
+                pos: pos(),
+                span: span(0, 1),
+            })),
+            side: SectionSide::Right,
+            pos: pos(),
+            span: span(0, 4),
+        };
+
+        assert_eq!(expr_left.render(), "(x +)");
+        assert_eq!(expr_right.render(), "(+ 1)");
     }
 
     #[test]

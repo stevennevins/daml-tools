@@ -6,7 +6,9 @@
 //! payloads carry the actual parse tree.
 
 use crate::ir::*;
-use daml_parser::ast::{self, Consuming, Decl, DoStmt, TemplateBodyDecl};
+use daml_parser::ast::{
+    self, Consuming, Decl, DiagnosticCategory, DoStmt, ImportStyle, TemplateBodyDecl,
+};
 use daml_syntax::SourceFile;
 use std::path::Path;
 
@@ -18,16 +20,14 @@ pub(crate) fn parse_daml(source: &str, file: &Path) -> DamlModule {
 /// A parse diagnostic for the caller to report.
 ///
 /// `end_column` is present when the offending span sits on a single line (most
-/// tokens); `category` is the parser's recovery classification
-/// (`skipped-declaration`, `malformed`, `unsupported-syntax`, `recursion-limit`,
-/// `lexical-error`).
+/// tokens); `category` is the parser's recovery classification.
 #[derive(Debug)]
 pub struct Diagnostic {
     pub line: usize,
     pub column: usize,
     pub end_column: Option<usize>,
     pub message: String,
-    pub category: &'static str,
+    pub category: DiagnosticCategory,
 }
 
 pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> (DamlModule, Vec<Diagnostic>) {
@@ -38,7 +38,7 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> (DamlModule, Ve
         .iter()
         .map(|i| Import {
             module_name: i.module_name.clone(),
-            qualified: i.qualified,
+            qualified: i.style == ImportStyle::Qualified,
             alias: i.alias.clone(),
             span: span_at(file, i.pos),
         })

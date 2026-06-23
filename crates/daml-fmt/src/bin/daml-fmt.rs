@@ -13,7 +13,7 @@
 //! Backend is the AST-driven formatter (`format_source_with_options` ->
 //! `layout_ast`).
 
-use daml_fmt::{format_source_with_options, source_diagnostics, FormatOptions};
+use daml_fmt::{format_source_with_options, source_diagnostics, FormatOptions, ImportOrder};
 use std::io::Read;
 use std::process::exit;
 
@@ -51,7 +51,7 @@ fn main() {
         match a.as_str() {
             "-w" | "--write" => write = true,
             "--check" => check = true,
-            "--preserve-import-order" => options.organize_imports = false,
+            "--preserve-import-order" => options.import_order = ImportOrder::Preserve,
             "-h" | "--help" => usage(0),
             "-v" | "--version" => {
                 println!("{}", env!("CARGO_PKG_VERSION"));

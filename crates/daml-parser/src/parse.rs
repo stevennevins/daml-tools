@@ -562,7 +562,11 @@ impl Parser {
         let pos = self.pos();
         let start_i = self.i;
         self.bump(); // import
-        let mut qualified = self.eat_keyword("qualified");
+        let mut style = if self.eat_keyword("qualified") {
+            ImportStyle::Qualified
+        } else {
+            ImportStyle::Unqualified
+        };
         // Package-qualified import: `import qualified "pkg-name" Main as V1`.
         if matches!(self.peek(), Some(TokenKind::StringLit(_))) {
             self.bump();
@@ -582,7 +586,7 @@ impl Parser {
         };
         // ImportQualifiedPost style: `import DA.Map qualified as Map`.
         if self.eat_keyword("qualified") {
-            qualified = true;
+            style = ImportStyle::Qualified;
         }
         let mut alias = None;
         if self.eat_keyword("as") {
@@ -597,7 +601,7 @@ impl Parser {
         // `hiding (...)` / import list — consumed by skip_to_item_end.
         Some(ImportDecl {
             module_name,
-            qualified,
+            style,
             alias,
             pos,
             span: self.node_span(start_i),
@@ -2651,7 +2655,7 @@ impl Parser {
                     return Some(Expr::Section {
                         op: o,
                         operand: None,
-                        left: false,
+                        side: SectionSide::Right,
                         pos,
                         span: self.node_span(start_i),
                     });
@@ -2661,7 +2665,7 @@ impl Parser {
                 return Some(Expr::Section {
                     op: o,
                     operand: Some(Box::new(operand)),
-                    left: false,
+                    side: SectionSide::Right,
                     pos,
                     span: self.node_span(start_i),
                 });
@@ -2688,7 +2692,7 @@ impl Parser {
                 return Some(Expr::Section {
                     op: o,
                     operand: Some(Box::new(first)),
-                    left: true,
+                    side: SectionSide::Left,
                     pos,
                     span: self.node_span(start_i),
                 });
@@ -3373,5 +3377,83 @@ interface I where
             "parser should recover to the following declaration: {:?}",
             module.decls
         );
+    }
+}
+
+#[cfg(test)]
+mod parser_tests {
+    use super::*;
+
+    fn parse(src: &str) -> (Module, Vec<ParseDiagnostic>) {
+        parse_module(src).into_parts()
+    }
+
+    fn section_side_for_fn(module: &Module, name: &str) -> SectionSide {
+        let body = get_first_equation_body(module, name);
+        match body {
+            Expr::Section { side, .. } => *side,
+            other => panic!("expected section body for {name}, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn import_style_distinguishes_qualified_prefix_and_postfix() {
+        let (module, diagnostics) = parse(
+            "module M where
+import qualified Foo.Bar as FB
+import DA.Map qualified as Map
+import Baz as B",
+        );
+
+        assert!(diagnostics.is_empty());
+        assert_eq!(
+            module.imports.iter().map(|i| i.style).collect::<Vec<_>>(),
+            vec![
+                ImportStyle::Qualified,
+                ImportStyle::Qualified,
+                ImportStyle::Unqualified,
+            ]
+        );
+    }
+
+    #[test]
+    fn expression_sections_encode_side_in_ast() {
+        let (module, diagnostics) = parse(
+            "module M where
+f = (+ 1)
+g = (+)
+",
+        );
+
+        assert!(diagnostics.is_empty());
+        assert!(matches!(
+            get_first_equation_body(&module, "f"),
+            Expr::Section {
+                operand: Some(_),
+                ..
+            }
+        ));
+        assert!(matches!(
+            get_first_equation_body(&module, "g"),
+            Expr::Section { operand: None, .. }
+        ));
+        assert_eq!(section_side_for_fn(&module, "f"), SectionSide::Right);
+        assert_eq!(section_side_for_fn(&module, "g"), SectionSide::Right);
+    }
+
+    fn get_first_equation_body<'a>(module: &'a Module, name: &str) -> &'a Expr {
+        let function = module
+            .decls
+            .iter()
+            .find_map(|d| match d {
+                Decl::Function(f) if f.name == name => Some(f),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("missing function declaration {name}"));
+        let first_equation = function
+            .equations
+            .first()
+            .unwrap_or_else(|| panic!("missing equation for function {name}"));
+        &first_equation.body
     }
 }
