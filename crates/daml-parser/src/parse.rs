@@ -69,11 +69,11 @@ pub fn parse_module(source: &str) -> ParseModuleResult {
         diags: lex_errors
             .into_iter()
             .map(|e| {
-                let b = byte_of_pos(source, e.pos);
+                let range = e.byte_range_in(source);
                 ParseDiagnostic {
                     message: e.to_string(),
                     pos: e.pos,
-                    span: crate::ast::Span::new(b, b),
+                    span: crate::ast::Span::new(range.start, range.end),
                     category: DiagnosticCategory::Lex,
                 }
             })
@@ -85,29 +85,6 @@ pub fn parse_module(source: &str) -> ParseModuleResult {
         module,
         diagnostics: p.diags,
     }
-}
-
-/// Byte offset of a 1-based (line, column) position, for mapping a lexer error
-/// (which carries only line/column) to a byte span. Replays the lexer's own
-/// column accounting, including tab stops, so the byte is exact even on lines
-/// with leading tabs.
-fn byte_of_pos(source: &str, pos: Pos) -> usize {
-    let mut line = 1usize;
-    let mut col = 1usize;
-    for (idx, ch) in source.char_indices() {
-        if line == pos.line && col == pos.column {
-            return idx;
-        }
-        match ch {
-            '\n' => {
-                line += 1;
-                col = 1;
-            }
-            '\t' => col = ((col - 1) / crate::lexer::TAB_STOP + 1) * crate::lexer::TAB_STOP + 1,
-            _ => col += 1,
-        }
-    }
-    source.len()
 }
 
 struct Parser {

@@ -369,7 +369,10 @@ fn count_by_severity(findings: &[Finding]) -> (usize, usize, usize, usize, usize
 /// Returns exit code: 0 if no findings at or above the threshold, 1 otherwise.
 #[must_use]
 pub fn exit_code(findings: &[Finding], fail_on: Severity) -> i32 {
-    if findings.iter().any(|f| f.severity <= fail_on) {
+    if findings
+        .iter()
+        .any(|f| f.severity.meets_or_exceeds(fail_on))
+    {
         1
     } else {
         0
@@ -379,6 +382,7 @@ pub fn exit_code(findings: &[Finding], fail_on: Severity) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::detector::FindingLocation;
 
     fn parse_err() -> ParseError {
         ParseError {
@@ -389,6 +393,16 @@ mod tests {
             message: "unterminated string literal".to_string(),
             category: DiagnosticCategory::Lex,
         }
+    }
+
+    fn finding(location: usize, severity: Severity) -> Finding {
+        Finding::new(
+            "test-rule",
+            severity,
+            FindingLocation::new("Test.daml", 3, location),
+            "finding message",
+            "evidence",
+        )
     }
 
     #[test]
@@ -475,5 +489,20 @@ mod tests {
         );
         // Parse errors are notifications, not findings.
         assert_eq!(sarif["runs"][0]["results"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn exit_code_uses_named_threshold_semantics() {
+        assert_eq!(
+            exit_code(&[finding(1, Severity::Critical)], Severity::High),
+            1
+        );
+        assert_eq!(exit_code(&[finding(2, Severity::High)], Severity::High), 1);
+        assert_eq!(
+            exit_code(&[finding(3, Severity::Medium)], Severity::High),
+            0
+        );
+        assert_eq!(exit_code(&[finding(4, Severity::Info)], Severity::High), 0);
+        assert_eq!(exit_code(&[finding(5, Severity::Low)], Severity::Info), 1);
     }
 }

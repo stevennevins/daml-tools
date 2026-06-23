@@ -239,10 +239,9 @@ impl LintConfig {
                         name: detector.name().to_string(),
                     });
                 }
-                detectors.push(Box::new(ConfiguredDetector::new(
+                detectors.push(Box::new(ConfiguredDetector::with_name(
                     detector,
-                    Some(rule_id.to_string()),
-                    None,
+                    rule_id.to_string(),
                 )));
             }
         }
@@ -261,9 +260,9 @@ impl LintConfig {
                     return None;
                 }
                 let severity = setting.and_then(|setting| setting.severity);
-                if severity.is_some() {
+                if let Some(severity) = severity {
                     let configured: Box<dyn Detector> =
-                        Box::new(ConfiguredDetector::new(detector, None, severity));
+                        Box::new(ConfiguredDetector::with_severity(detector, severity));
                     Some(configured)
                 } else {
                     Some(detector)

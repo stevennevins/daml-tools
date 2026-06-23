@@ -399,7 +399,158 @@ impl std::fmt::Display for LexError {
     }
 }
 
+impl LexError {
+    /// Byte span of the offending range, where available.
+    #[must_use]
+    pub fn byte_range_in(&self, source: &str) -> std::ops::Range<usize> {
+        let start = byte_of_pos(source, self.pos);
+        if start >= source.len() {
+            return start..start;
+        }
+
+        match &self.kind {
+            LexErrorKind::UnexpectedCharacter(c) => {
+                let end = (start + c.len_utf8()).min(source.len());
+                start..end
+            }
+            LexErrorKind::UnterminatedStringLiteral
+            | LexErrorKind::UnterminatedStringGap
+            | LexErrorKind::StraySingleQuote => {
+                let end = (start + 1).min(source.len());
+                start..end
+            }
+            LexErrorKind::UnterminatedBlockComment => start..source.len(),
+            LexErrorKind::InvalidEscapeSequence(_) => {
+                let first = char_len_at(source, start).unwrap_or(0);
+                let mut end = (start + first).min(source.len());
+                if let Some(second) = source.get(end..).and_then(|s| s.chars().next()) {
+                    end = (end + second.len_utf8()).min(source.len());
+                }
+                start..end
+            }
+            LexErrorKind::CharacterLiteralWrongLength => start..end_char_lit_error(source, start),
+            LexErrorKind::HexLiteralMissingDigits => start..end_hex_missing_digits(source, start),
+            LexErrorKind::DecimalExponentMissingDigits => {
+                start..end_decimal_exponent_missing_digits(source, start)
+            }
+        }
+    }
+}
 impl std::error::Error for LexError {}
+
+#[inline]
+fn char_len_at(source: &str, byte: usize) -> Option<usize> {
+    source
+        .get(byte..)
+        .and_then(|s| s.chars().next())
+        .map(char::len_utf8)
+}
+
+fn end_char_lit_error(source: &str, start: usize) -> usize {
+    if start >= source.len() {
+        return start;
+    }
+    if char_len_at(source, start).is_none() {
+        return start;
+    }
+
+    let mut i = start + char_len_at(source, start).unwrap_or(0);
+    let mut escaped = false;
+    while i < source.len() {
+        let len = char_len_at(source, i).unwrap_or(0);
+        if len == 0 {
+            return start + 1;
+        }
+        let ch = source[i..i + len].chars().next().unwrap();
+        i += len;
+
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == '\'' {
+            return i;
+        }
+    }
+
+    start + 1
+}
+
+fn end_hex_missing_digits(source: &str, start: usize) -> usize {
+    if start >= source.len() {
+        return start;
+    }
+    let after_prefix = start.saturating_add(2);
+    let prefix = source.get(start..after_prefix).unwrap_or("");
+    if prefix != "0x" && prefix != "0X" {
+        return start;
+    }
+
+    let mut end = after_prefix;
+    while let Some(len) = char_len_at(source, end) {
+        if source.get(end..end + len) != Some("_") {
+            break;
+        }
+        end += len;
+    }
+    end
+}
+
+fn end_decimal_exponent_missing_digits(source: &str, start: usize) -> usize {
+    let mut byte = start;
+    while byte < source.len() {
+        let len = match char_len_at(source, byte) {
+            Some(len) => len,
+            None => return start,
+        };
+        if len == 0 {
+            return start;
+        }
+        let ch = source[byte..byte + len].chars().next().unwrap();
+        if matches!(ch, 'e' | 'E') {
+            let mut end = byte + len;
+            if let Some(sign_len) = char_len_at(source, end) {
+                let sign = source[end..end + sign_len].chars().next().unwrap();
+                if matches!(sign, '+' | '-') {
+                    end += sign_len;
+                }
+            }
+            return end;
+        }
+
+        if ch.is_whitespace() {
+            return start;
+        }
+        byte += len;
+    }
+
+    start
+}
+
+/// Byte offset of a 1-based (line, column) position.
+#[inline]
+fn byte_of_pos(source: &str, pos: Pos) -> usize {
+    let mut line = 1usize;
+    let mut col = 1usize;
+    for (idx, ch) in source.char_indices() {
+        if line == pos.line && col == pos.column {
+            return idx;
+        }
+        match ch {
+            '\n' => {
+                line += 1;
+                col = 1;
+            }
+            '\t' => col = ((col - 1) / TAB_STOP + 1) * TAB_STOP + 1,
+            _ => col += 1,
+        }
+    }
+    source.len()
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]

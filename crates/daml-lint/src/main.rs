@@ -134,10 +134,11 @@ fn main() {
         }
     }
 
-    // Sort findings by severity, then file, then line
+    // Sort findings by explicit severity rank, then file, then line.
     all_findings.sort_by(|a, b| {
-        a.severity
-            .cmp(&b.severity)
+        b.severity
+            .rank()
+            .cmp(&a.severity.rank())
             .then_with(|| a.file.cmp(&b.file))
             .then_with(|| a.line.cmp(&b.line))
     });
