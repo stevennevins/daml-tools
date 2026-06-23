@@ -124,7 +124,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [daml-parser, daml-lint, daml-fmt]
+        package: [daml-parser, daml-syntax, daml-lint, daml-fmt]
     steps:
       - uses: actions/checkout@v6
       - uses: obi1kenobi/cargo-semver-checks-action@v2
