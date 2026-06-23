@@ -23,7 +23,7 @@ authors = ["Steven Nevins"]
 [workspace.dependencies]
 # Inter-crate dep declared once; crates opt in with `daml-parser.workspace = true`.
 # Carries BOTH path (for local builds) and version (for crates.io publish).
-daml-parser = { path = "crates/daml-parser", version = "0.4.0" }
+daml-parser = { path = "crates/daml-parser", version = "0.5.0" }
 daml-syntax = { path = "crates/daml-syntax", version = "0.1.5" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

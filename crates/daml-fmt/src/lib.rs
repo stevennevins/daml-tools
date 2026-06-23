@@ -49,10 +49,20 @@ pub fn lex_diagnostics(src: &str) -> Vec<String> {
         .collect()
 }
 
-/// Parser diagnostics for `src`, including lexical and parser diagnostics.
+/// Source diagnostics for `src`, including lexical and parser diagnostics.
+///
+/// CPP-conditional source is treated specially: Daml SDK sources can contain
+/// both active and inactive `#if`/`#else` module branches. The parser does not
+/// preprocess those branches, so parser recovery diagnostics there are not a
+/// reliable signal that formatter input is malformed. Lexical diagnostics are
+/// still reported.
 ///
 /// Returns one `line:col: [category] message` string per error.
 pub fn source_diagnostics(src: &str) -> Vec<String> {
+    if has_cpp_conditionals(src) {
+        return lex_diagnostics(src);
+    }
+
     SourceFile::parse(src)
         .diagnostics()
         .iter()
@@ -66,6 +76,13 @@ pub fn source_diagnostics(src: &str) -> Vec<String> {
             )
         })
         .collect()
+}
+
+fn has_cpp_conditionals(src: &str) -> bool {
+    src.lines().any(|line| {
+        let line = line.trim_start();
+        line.starts_with("#if") || line.starts_with("#else") || line.starts_with("#endif")
+    })
 }
 
 /// Import ordering strategy for formatter output.
@@ -302,6 +319,13 @@ mod tests {
     fn parser_diagnostics_are_reported() {
         let src = "module M where\nfoo = if x then 1\n";
         assert!(!source_diagnostics(src).is_empty());
+    }
+
+    #[test]
+    fn cpp_conditionals_do_not_surface_parser_recovery_diagnostics() {
+        let src =
+            "module A where\n#if defined(foo)\nmodule B where\n#else\nmodule C where\n#endif\n";
+        assert!(source_diagnostics(src).is_empty());
     }
 
     #[test]
