@@ -4,6 +4,22 @@
 //! This crate owns the source-facing facts tools need around that parser:
 //! diagnostics, line/UTF-16 mapping, tokens, trivia, laid-out tokens, and
 //! conversion from parser byte spans to `text-size` ranges.
+//!
+//! ```rust
+//! use daml_syntax::{parser_span_to_text_range, SourceFile};
+//!
+//! let source = "module M where\nfoo : Int\nfoo = 1\n";
+//! let file = SourceFile::parse(source);
+//!
+//! assert_eq!(file.module().name, "M");
+//! assert!(file.diagnostics().is_empty());
+//! assert!(!file.tokens().is_empty());
+//! assert!(!file.laid_out_tokens().is_empty());
+//!
+//! let header_range = parser_span_to_text_range(source, file.module().header);
+//! assert_eq!(usize::from(header_range.start()), 0);
+//! assert_eq!(header_range, file.parser_span_to_text_range(file.module().header));
+//! ```
 
 use daml_parser::ast::{DiagnosticCategory, Module, Span as ParserSpan};
 use daml_parser::layout::resolve_layout;

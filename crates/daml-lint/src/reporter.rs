@@ -2,7 +2,9 @@ use crate::detector::{Finding, Severity};
 use daml_parser::ast::DiagnosticCategory;
 use serde::Serialize;
 use serde_json::json;
+use std::error::Error;
 use std::fmt::Write as _;
+use std::fmt::{self, Display};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
@@ -11,21 +13,44 @@ pub enum OutputFormat {
     Json,
 }
 
+/// Error returned when parsing an unsupported output format value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutputFormatParseError {
+    value: String,
+}
+
+impl OutputFormatParseError {
+    fn new(value: impl Into<String>) -> Self {
+        Self {
+            value: value.into(),
+        }
+    }
+}
+
+impl Display for OutputFormatParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "invalid output format: {}", self.value)
+    }
+}
+
+impl Error for OutputFormatParseError {}
+
 impl std::str::FromStr for OutputFormat {
-    type Err = ();
+    type Err = OutputFormatParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "sarif" => Ok(Self::Sarif),
             "markdown" | "md" => Ok(Self::Markdown),
             "json" => Ok(Self::Json),
-            _ => Err(()),
+            _ => Err(OutputFormatParseError::new(s)),
         }
     }
 }
 
 /// A parse/lex diagnostic surfaced to the caller alongside findings. A file
 /// with parse errors is NOT clean, even when no findings were produced.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
     pub file: String,
     pub line: usize,
@@ -361,6 +386,22 @@ mod tests {
             message: "unterminated string literal".to_string(),
             category: DiagnosticCategory::Lex,
         }
+    }
+
+    #[test]
+    fn output_format_parses_known_values_and_reports_unknown_with_display_text() {
+        assert_eq!(
+            "sarif".parse::<OutputFormat>().unwrap(),
+            OutputFormat::Sarif
+        );
+        assert_eq!(
+            "MARKDOWN".parse::<OutputFormat>().unwrap(),
+            OutputFormat::Markdown
+        );
+        assert_eq!("JsOn".parse::<OutputFormat>().unwrap(), OutputFormat::Json);
+
+        let err = "yaml".parse::<OutputFormat>().unwrap_err();
+        assert_eq!(err.to_string(), "invalid output format: yaml");
     }
 
     // A valid file (no findings, no parse errors) must still read as clean.

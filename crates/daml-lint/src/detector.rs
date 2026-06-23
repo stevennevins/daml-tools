@@ -87,7 +87,7 @@ impl std::str::FromStr for Severity {
 }
 
 /// A single detector result reported for one source location.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
 pub struct Finding {
     /// Detector or custom-rule name.
@@ -209,6 +209,19 @@ pub fn find_duplicate_detector_name(detectors: &[Box<dyn Detector>]) -> Option<S
 #[cfg(all(test, feature = "js-runtime"))]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
+    fn finding() -> Finding {
+        Finding {
+            detector: "unused-foo".to_string(),
+            severity: Severity::High,
+            file: PathBuf::from("foo.daml"),
+            line: 10,
+            column: 4,
+            message: "consider removing".to_string(),
+            evidence: "foo".to_string(),
+        }
+    }
 
     #[test]
     fn returns_none_when_detector_names_are_unique() {
@@ -223,5 +236,10 @@ mod tests {
         let mut doubled = crate::detectors::create_builtin_detectors();
         doubled.extend(crate::detectors::create_builtin_detectors());
         assert!(find_duplicate_detector_name(&doubled).is_some());
+    }
+
+    #[test]
+    fn finding_is_comparable() {
+        assert_eq!(finding(), finding());
     }
 }

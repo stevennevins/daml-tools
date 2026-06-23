@@ -43,7 +43,7 @@ struct Cli {
 fn main() {
     let cli = Cli::parse();
 
-    let format = cli.format.parse::<OutputFormat>().unwrap_or_else(|()| {
+    let format = cli.format.parse::<OutputFormat>().unwrap_or_else(|_| {
         eprintln!(
             "Unknown format '{}'. Use sarif, markdown, or json.",
             cli.format
