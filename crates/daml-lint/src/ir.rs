@@ -138,6 +138,11 @@ impl TypeNode {
                 body: Box::new(Self::from_type(body, file, source_file)),
                 span: source_span(),
             },
+            _ => Self::Con {
+                qualifier: None,
+                name: "<unknown>".to_string(),
+                span: source_span(),
+            },
         }
     }
 }

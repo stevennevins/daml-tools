@@ -5,21 +5,32 @@
 //! with `VLBrace`/`VRBrace`/`VSemi` inserted, so the parser never has to
 //! look at columns.
 
-use crate::lexer::{Pos, Tok, Token};
+use crate::lexer::{Pos, Token, TokenKind};
 
 /// Keywords that open a layout block. DAML adds `with` (template fields,
 /// choice parameters, record construction) and `catch` (exception handler
 /// alternatives) to Haskell's set.
-fn layout_keyword(tok: &Tok) -> Option<&'static str> {
+fn layout_keyword(tok: &TokenKind) -> Option<LayoutKeyword> {
     match tok.keyword() {
-        Some("where") => Some("where"),
-        Some("do") => Some("do"),
-        Some("of") => Some("of"),
-        Some("let") => Some("let"),
-        Some("with") => Some("with"),
-        Some("catch") => Some("catch"),
+        Some("where") => Some(LayoutKeyword::Where),
+        Some("do") => Some(LayoutKeyword::Do),
+        Some("of") => Some(LayoutKeyword::Of),
+        Some("let") => Some(LayoutKeyword::Let),
+        Some("with") => Some(LayoutKeyword::With),
+        Some("catch") => Some(LayoutKeyword::Catch),
         _ => None,
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LayoutKeyword {
+    Module,
+    Where,
+    Do,
+    Of,
+    Let,
+    With,
+    Catch,
 }
 
 #[derive(Debug)]
@@ -28,8 +39,8 @@ struct Context {
     col: usize,
     /// Line the block was opened on (same-line `where` closure rule).
     line: usize,
-    /// Keyword that opened it ("let" matters for the `in` rule).
-    opened_by: &'static str,
+    /// Keyword that opened it (`let` matters for the `in` rule).
+    opened_by: LayoutKeyword,
     /// Bracket nesting depth at open time, so `)` can close blocks that
     /// were opened inside the parentheses: `(do stmts)`.
     bracket_depth: usize,
@@ -47,36 +58,37 @@ struct Context {
 /// use daml_parser::lexer::lex;
 /// use daml_parser::layout::resolve_layout;
 ///
-/// let (tokens, _errors) = lex("module M where\nfoo = 1\n");
-/// let laid_out = resolve_layout(&tokens);
-/// assert!(laid_out.len() >= tokens.len());
+/// let lexed = lex("module M where\nfoo = 1\n");
+/// let laid_out = resolve_layout(&lexed.tokens);
+/// assert!(laid_out.len() >= lexed.tokens.len());
 /// ```
+#[must_use]
 pub fn resolve_layout(tokens: impl AsRef<[Token]>) -> Vec<Token> {
     let tokens = tokens.as_ref();
     let mut out: Vec<Token> = Vec::with_capacity(tokens.len() + tokens.len() / 4);
     let mut stack: Vec<Context> = Vec::new();
     let mut bracket_depth = 0usize;
     // Set after a layout keyword: the next token starts a block.
-    let mut expecting_open: Option<&'static str> = None;
+    let mut expecting_open: Option<LayoutKeyword> = None;
     let mut last_line = 0usize;
 
     // A file that doesn't start with `module` opens an implicit top context
     // at its first token's column (Haskell rule for missing module headers).
     if let Some(first) = tokens.first() {
-        if !first.tok.is_keyword("module") {
+        if !first.kind.is_keyword("module") {
             stack.push(Context {
                 col: first.pos.column,
                 line: first.pos.line,
-                opened_by: "module",
+                opened_by: LayoutKeyword::Module,
                 bracket_depth: 0,
             });
-            out.push(virtual_tok(Tok::VLBrace, first.pos));
+            out.push(virtual_tok(TokenKind::VLBrace, first.pos));
             last_line = first.pos.line;
         }
     }
 
     let close = |out: &mut Vec<Token>, pos: Pos| {
-        out.push(virtual_tok(Tok::VRBrace, pos));
+        out.push(virtual_tok(TokenKind::VRBrace, pos));
     };
 
     for token in tokens {
@@ -84,7 +96,7 @@ pub fn resolve_layout(tokens: impl AsRef<[Token]>) -> Vec<Token> {
         let col = pos.column;
 
         if let Some(kw) = expecting_open.take() {
-            if matches!(token.tok, Tok::LBrace) {
+            if matches!(token.kind, TokenKind::LBrace) {
                 // Explicit block: push a no-offside context.
                 stack.push(Context {
                     col: 0,
@@ -104,14 +116,14 @@ pub fn resolve_layout(tokens: impl AsRef<[Token]>) -> Vec<Token> {
                     opened_by: kw,
                     bracket_depth,
                 });
-                out.push(virtual_tok(Tok::VLBrace, pos));
+                out.push(virtual_tok(TokenKind::VLBrace, pos));
                 last_line = pos.line;
                 // fall through to emit the token itself
             } else {
                 // Token not indented past the enclosing block: empty block,
                 // then let the normal offside logic below handle the token.
-                out.push(virtual_tok(Tok::VLBrace, pos));
-                out.push(virtual_tok(Tok::VRBrace, pos));
+                out.push(virtual_tok(TokenKind::VLBrace, pos));
+                out.push(virtual_tok(TokenKind::VRBrace, pos));
             }
         }
 
@@ -119,7 +131,7 @@ pub fn resolve_layout(tokens: impl AsRef<[Token]>) -> Vec<Token> {
         if pos.line != last_line {
             while let Some(top) = stack.last() {
                 if top.col > 0 && col < top.col {
-                    if token.tok.is_keyword("in") && top.opened_by == "let" {
+                    if token.kind.is_keyword("in") && top.opened_by == LayoutKeyword::Let {
                         close(&mut out, pos);
                         stack.pop();
                         break;
@@ -133,8 +145,8 @@ pub fn resolve_layout(tokens: impl AsRef<[Token]>) -> Vec<Token> {
             // `where` never starts a new block item — the rule below closes
             // the block instead, so a VSemi here would be orphaned.
             if let Some(top) = stack.last() {
-                if top.col > 0 && col == top.col && !token.tok.is_keyword("where") {
-                    out.push(virtual_tok(Tok::VSemi, pos));
+                if top.col > 0 && col == top.col && !token.kind.is_keyword("where") {
+                    out.push(virtual_tok(TokenKind::VSemi, pos));
                 }
             }
             last_line = pos.line;
@@ -143,14 +155,15 @@ pub fn resolve_layout(tokens: impl AsRef<[Token]>) -> Vec<Token> {
         // `where` closes any block at or right of it (`do ... where` at the
         // same indentation must end the do-block; GHC handles this via the
         // parse-error rule).
-        if token.tok.is_keyword("where") {
+        if token.kind.is_keyword("where") {
             while let Some(top) = stack.last() {
                 // Close blocks at/right of the `where`, and with-blocks
                 // opened on the same line (`template S with p : Party
                 // where ...` — the inline with-block ends at the where).
                 if top.col > 0
-                    && (top.col >= col || (top.line == pos.line && top.opened_by == "with"))
-                    && top.opened_by != "module"
+                    && (top.col >= col
+                        || (top.line == pos.line && top.opened_by == LayoutKeyword::With))
+                    && top.opened_by != LayoutKeyword::Module
                 {
                     close(&mut out, pos);
                     stack.pop();
@@ -164,9 +177,11 @@ pub fn resolve_layout(tokens: impl AsRef<[Token]>) -> Vec<Token> {
         // already have closed an inner `let` on this line; in that case the
         // current top context still decides whether this `in` belongs to an
         // enclosing `let`.
-        if token.tok.is_keyword("in") {
+        if token.kind.is_keyword("in") {
             if let Some(top) = stack.last() {
-                if top.col > 0 && top.opened_by == "let" && (top.line == pos.line || col <= top.col)
+                if top.col > 0
+                    && top.opened_by == LayoutKeyword::Let
+                    && (top.line == pos.line || col <= top.col)
                 {
                     close(&mut out, pos);
                     stack.pop();
@@ -174,13 +189,13 @@ pub fn resolve_layout(tokens: impl AsRef<[Token]>) -> Vec<Token> {
             }
         }
 
-        match token.tok {
-            Tok::LParen | Tok::LBracket => bracket_depth += 1,
-            Tok::RParen | Tok::RBracket | Tok::Comma => {
+        match token.kind {
+            TokenKind::LParen | TokenKind::LBracket => bracket_depth += 1,
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::Comma => {
                 // Close implicit blocks opened inside this bracket pair
                 // before the bracket closes over them: `(do stmts)`,
                 // `[f x, do y]`.
-                let target = if matches!(token.tok, Tok::Comma) {
+                let target = if matches!(token.kind, TokenKind::Comma) {
                     bracket_depth
                 } else {
                     bracket_depth.saturating_sub(1)
@@ -193,11 +208,11 @@ pub fn resolve_layout(tokens: impl AsRef<[Token]>) -> Vec<Token> {
                         break;
                     }
                 }
-                if !matches!(token.tok, Tok::Comma) {
+                if !matches!(token.kind, TokenKind::Comma) {
                     bracket_depth = bracket_depth.saturating_sub(1);
                 }
             }
-            Tok::RBrace
+            TokenKind::RBrace
                 // Close an explicit context if one is on top.
                 if stack.last().is_some_and(|c| c.col == 0) => {
                     stack.pop();
@@ -207,37 +222,37 @@ pub fn resolve_layout(tokens: impl AsRef<[Token]>) -> Vec<Token> {
 
         let was_backslash = out
             .last()
-            .is_some_and(|t| matches!(&t.tok, Tok::Op(o) if o == "\\"));
+            .is_some_and(|t| matches!(&t.kind, TokenKind::Op(o) if o == "\\"));
         out.push(token.clone());
 
-        if let Some(keyword) = layout_keyword(&token.tok) {
+        if let Some(keyword) = layout_keyword(&token.kind) {
             expecting_open = Some(keyword);
-        } else if token.tok.is_keyword("case") && was_backslash {
+        } else if token.kind.is_keyword("case") && was_backslash {
             // `\case` alternatives form a layout block like `of`.
-            expecting_open = Some("of");
+            expecting_open = Some(LayoutKeyword::Of);
         }
     }
 
     // EOF closes everything implicit.
     let eof = tokens.last().map_or(Pos { line: 1, column: 1 }, |t| t.pos);
     if expecting_open.is_some() {
-        out.push(virtual_tok(Tok::VLBrace, eof));
-        out.push(virtual_tok(Tok::VRBrace, eof));
+        out.push(virtual_tok(TokenKind::VLBrace, eof));
+        out.push(virtual_tok(TokenKind::VRBrace, eof));
     }
     for ctx in stack.iter().rev() {
         if ctx.col > 0 {
-            out.push(virtual_tok(Tok::VRBrace, eof));
+            out.push(virtual_tok(TokenKind::VRBrace, eof));
         }
     }
 
     out
 }
 
-const fn virtual_tok(tok: Tok, pos: Pos) -> Token {
+const fn virtual_tok(tok: TokenKind, pos: Pos) -> Token {
     // Layout tokens have no source bytes; zero-width span keeps the
     // lossless render (which skips them anyway) honest.
     Token {
-        tok,
+        kind: tok,
         pos,
         start: 0,
         end: 0,
@@ -252,30 +267,32 @@ mod tests {
     /// Render the laid-out stream compactly: `{` `}` `;` for virtual tokens,
     /// token text otherwise.
     fn layout_str(src: &str) -> String {
-        let (tokens, errors) = lex(src);
+        let (tokens, errors) = lex(src).into_parts();
         assert!(errors.is_empty(), "lex errors: {errors:?}");
         resolve_layout(tokens)
             .iter()
-            .map(|t| match &t.tok {
-                Tok::VLBrace => "{".to_string(),
-                Tok::VRBrace => "}".to_string(),
-                Tok::VSemi => ";".to_string(),
-                Tok::LowerId { qualifier, name } | Tok::UpperId { qualifier, name } => qualifier
-                    .as_ref()
-                    .map_or_else(|| name.clone(), |q| format!("{q}.{name}")),
-                Tok::Op(o) => o.clone(),
-                Tok::IntLit(n) | Tok::DecimalLit(n) => n.clone(),
-                Tok::StringLit(s) => format!("{s:?}"),
-                Tok::CharLit(c) => format!("'{c}'"),
-                Tok::LParen => "(".into(),
-                Tok::RParen => ")".into(),
-                Tok::LBracket => "[".into(),
-                Tok::RBracket => "]".into(),
-                Tok::LBrace => "{{".into(),
-                Tok::RBrace => "}}".into(),
-                Tok::Comma => ",".into(),
-                Tok::Semi => ";;".into(),
-                Tok::Backtick => "`".into(),
+            .map(|t| match &t.kind {
+                TokenKind::VLBrace => "{".to_string(),
+                TokenKind::VRBrace => "}".to_string(),
+                TokenKind::VSemi => ";".to_string(),
+                TokenKind::LowerId { qualifier, name } | TokenKind::UpperId { qualifier, name } => {
+                    qualifier
+                        .as_ref()
+                        .map_or_else(|| name.clone(), |q| format!("{q}.{name}"))
+                }
+                TokenKind::Op(o) => o.clone(),
+                TokenKind::IntLit(n) | TokenKind::DecimalLit(n) => n.clone(),
+                TokenKind::StringLit(s) => format!("{s:?}"),
+                TokenKind::CharLit(c) => format!("'{c}'"),
+                TokenKind::LParen => "(".into(),
+                TokenKind::RParen => ")".into(),
+                TokenKind::LBracket => "[".into(),
+                TokenKind::RBracket => "]".into(),
+                TokenKind::LBrace => "{{".into(),
+                TokenKind::RBrace => "}}".into(),
+                TokenKind::Comma => ",".into(),
+                TokenKind::Semi => ";;".into(),
+                TokenKind::Backtick => "`".into(),
             })
             .collect::<Vec<_>>()
             .join(" ")
@@ -388,11 +405,11 @@ mod tests {
         for f in &files {
             let src = std::fs::read_to_string(f)
                 .unwrap_or_else(|e| panic!("failed to read corpus file {}: {e}", f.display()));
-            let (tokens, errors) = lex(&src);
+            let (tokens, errors) = lex(&src).into_parts();
             lex_errors += errors.len();
             let laid = resolve_layout(tokens);
-            let opens = laid.iter().filter(|t| t.tok == Tok::VLBrace).count();
-            let closes = laid.iter().filter(|t| t.tok == Tok::VRBrace).count();
+            let opens = laid.iter().filter(|t| t.kind == TokenKind::VLBrace).count();
+            let closes = laid.iter().filter(|t| t.kind == TokenKind::VRBrace).count();
             assert_eq!(opens, closes, "unbalanced virtual braces in {f:?}");
         }
         assert_eq!(lex_errors, 0, "lex errors across corpus");

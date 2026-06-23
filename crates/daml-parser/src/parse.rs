@@ -6,8 +6,26 @@
 
 use crate::ast::*;
 use crate::layout::resolve_layout;
-use crate::lexer::{lex, Pos, Tok, Token};
+use crate::lexer::{lex, Pos, Token, TokenKind};
 use std::collections::HashMap;
+
+pub const MAX_RECURSION_DEPTH: u32 = 128;
+
+#[derive(Debug, Clone)]
+pub struct ParseModuleResult {
+    pub module: Module,
+    pub diagnostics: Vec<ParseDiagnostic>,
+}
+
+impl ParseModuleResult {
+    pub const fn has_errors(&self) -> bool {
+        !self.diagnostics.is_empty()
+    }
+
+    pub fn into_parts(self) -> (Module, Vec<ParseDiagnostic>) {
+        (self.module, self.diagnostics)
+    }
+}
 
 /// Parse Daml `source` into a [`Module`] plus any [`ParseDiagnostic`]s, in
 /// source order.
@@ -19,12 +37,14 @@ use std::collections::HashMap;
 /// input — a non-empty diagnostics list signals problems, not a missing tree.
 ///
 /// ```
-/// let (module, diagnostics) = daml_parser::parse::parse_module("module M where\n");
-/// assert_eq!(module.name, "M");
-/// assert!(diagnostics.is_empty());
+/// let result = daml_parser::parse::parse_module("module M where\n");
+/// assert_eq!(result.module.name, "M");
+/// assert!(result.diagnostics.is_empty());
 /// ```
-pub fn parse_module(source: &str) -> (Module, Vec<ParseDiagnostic>) {
-    let (tokens, lex_errors) = lex(source);
+pub fn parse_module(source: &str) -> ParseModuleResult {
+    let lexed = lex(source);
+    let tokens = lexed.tokens;
+    let lex_errors = lexed.errors;
     let tokens = resolve_layout(tokens);
     let mut p = Parser {
         toks: tokens,
@@ -36,7 +56,7 @@ pub fn parse_module(source: &str) -> (Module, Vec<ParseDiagnostic>) {
             .map(|e| {
                 let b = byte_of_pos(source, e.pos);
                 ParseDiagnostic {
-                    message: e.message,
+                    message: e.to_string(),
                     pos: e.pos,
                     span: crate::ast::Span::new(b, b),
                     category: DiagnosticCategory::Lex,
@@ -46,7 +66,10 @@ pub fn parse_module(source: &str) -> (Module, Vec<ParseDiagnostic>) {
     };
     let mut module = p.module();
     module.span = crate::ast::Span::new(0, source.len());
-    (module, p.diags)
+    ParseModuleResult {
+        module,
+        diagnostics: p.diags,
+    }
 }
 
 /// Byte offset of a 1-based (line, column) position, for mapping a lexer error
@@ -82,8 +105,6 @@ struct Parser {
     /// (thousands of nested parens) cannot overflow the stack.
     depth: u32,
 }
-
-const MAX_DEPTH: u32 = 128;
 
 impl Parser {
     /// Byte span of every non-virtual token consumed since token index `from`
@@ -135,12 +156,12 @@ impl Parser {
 impl Parser {
     // ----- cursor primitives -------------------------------------------
 
-    fn peek(&self) -> Option<&Tok> {
-        self.toks.get(self.i).map(|t| &t.tok)
+    fn peek(&self) -> Option<&TokenKind> {
+        self.toks.get(self.i).map(|t| &t.kind)
     }
 
-    fn peek_at(&self, n: usize) -> Option<&Tok> {
-        self.toks.get(self.i + n).map(|t| &t.tok)
+    fn peek_at(&self, n: usize) -> Option<&TokenKind> {
+        self.toks.get(self.i + n).map(|t| &t.kind)
     }
 
     fn pos(&self) -> Pos {
@@ -184,11 +205,11 @@ impl Parser {
         }
     }
 
-    fn at(&self, tok: &Tok) -> bool {
+    fn at(&self, tok: &TokenKind) -> bool {
         self.peek() == Some(tok)
     }
 
-    fn eat(&mut self, tok: &Tok) -> bool {
+    fn eat(&mut self, tok: &TokenKind) -> bool {
         if self.at(tok) {
             self.i += 1;
             true
@@ -236,16 +257,16 @@ impl Parser {
         let mut brackets = 0usize;
         while let Some(t) = self.peek() {
             match t {
-                Tok::VLBrace => depth += 1,
-                Tok::VRBrace => {
+                TokenKind::VLBrace => depth += 1,
+                TokenKind::VRBrace => {
                     if depth == 0 {
                         return;
                     }
                     depth -= 1;
                 }
-                Tok::VSemi if depth == 0 && brackets == 0 => return,
-                Tok::LParen | Tok::LBracket | Tok::LBrace => brackets += 1,
-                Tok::RParen | Tok::RBracket | Tok::RBrace => {
+                TokenKind::VSemi if depth == 0 && brackets == 0 => return,
+                TokenKind::LParen | TokenKind::LBracket | TokenKind::LBrace => brackets += 1,
+                TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
                     if brackets == 0 {
                         // Closing bracket of an enclosing construct: stop
                         // before it so the caller can match it.
@@ -273,7 +294,7 @@ impl Parser {
         let mut name = "Unknown".to_string();
 
         if self.eat_keyword("module") {
-            if let Some(Tok::UpperId { qualifier, name: n }) = self.peek().cloned() {
+            if let Some(TokenKind::UpperId { qualifier, name: n }) = self.peek().cloned() {
                 self.bump();
                 name = match qualifier {
                     Some(q) => format!("{q}.{n}"),
@@ -281,7 +302,7 @@ impl Parser {
                 };
             }
             // Optional export list.
-            if self.at(&Tok::LParen) {
+            if self.at(&TokenKind::LParen) {
                 self.skip_balanced_parens();
             }
             if !self.eat_keyword("where") {
@@ -296,12 +317,12 @@ impl Parser {
         // Consume the opening brace of the module body if present. The result
         // is unused: the loop below terminates on the matching close brace or
         // end-of-input regardless of whether the block was braced.
-        let _ = self.eat(&Tok::VLBrace) || self.eat(&Tok::LBrace);
+        let _ = self.eat(&TokenKind::VLBrace) || self.eat(&TokenKind::LBrace);
         loop {
-            while self.eat(&Tok::VSemi) || self.eat(&Tok::Semi) {}
+            while self.eat(&TokenKind::VSemi) || self.eat(&TokenKind::Semi) {}
             match self.peek() {
                 None => break,
-                Some(Tok::VRBrace | Tok::RBrace) => {
+                Some(TokenKind::VRBrace | TokenKind::RBrace) => {
                     self.bump();
                     break;
                 }
@@ -309,7 +330,7 @@ impl Parser {
                 // failed item parse — record it as an Unknown declaration so
                 // its bytes stay covered, then continue (skip_to_item_end
                 // deliberately stops before unmatched closers).
-                Some(Tok::RParen | Tok::RBracket) => {
+                Some(TokenKind::RParen | TokenKind::RBracket) => {
                     let cpos = self.pos();
                     let cstart = self.i;
                     self.bump();
@@ -346,8 +367,8 @@ impl Parser {
         let mut depth = 0usize;
         while let Some(t) = self.peek() {
             match t {
-                Tok::LParen => depth += 1,
-                Tok::RParen => {
+                TokenKind::LParen => depth += 1,
+                TokenKind::RParen => {
                     if depth == 0 {
                         return;
                     }
@@ -369,7 +390,8 @@ impl Parser {
     fn try_infix_operator_decl(&mut self) -> bool {
         let snap = self.i;
         let saved_diags = self.diags.len();
-        if self.pattern().is_some() && matches!(self.peek(), Some(Tok::Op(o)) if !is_reserved_op(o))
+        if self.pattern().is_some()
+            && matches!(self.peek(), Some(TokenKind::Op(o)) if !is_reserved_op(o))
         {
             self.skip_to_item_end();
             return true;
@@ -384,7 +406,7 @@ impl Parser {
         let start = self.i;
         if matches!(
             self.peek(),
-            Some(Tok::UpperId { .. } | Tok::LBracket | Tok::LParen)
+            Some(TokenKind::UpperId { .. } | TokenKind::LBracket | TokenKind::LParen)
         ) && self.try_infix_operator_decl()
         {
             decls.push(Decl::Unknown {
@@ -464,7 +486,7 @@ impl Parser {
                 let keyword = t.keyword().unwrap().to_string();
                 self.bump();
                 let name = match self.peek() {
-                    Some(Tok::UpperId { qualifier, name }) => {
+                    Some(TokenKind::UpperId { qualifier, name }) => {
                         let n = qualifier
                             .as_ref()
                             .map_or_else(|| name.clone(), |q| format!("{q}.{name}"));
@@ -481,7 +503,7 @@ impl Parser {
                     span: self.node_span(start),
                 });
             }
-            Some(Tok::LowerId { .. }) => match self.function_item() {
+            Some(TokenKind::LowerId { .. }) => match self.function_item() {
                 Some(d) => decls.push(d),
                 None => {
                     self.skip_to_item_end();
@@ -493,9 +515,9 @@ impl Parser {
                 }
             },
             // Operator definition or signature: `(<=) = curry Lte`.
-            Some(Tok::LParen)
-                if matches!(self.peek_at(1), Some(Tok::Op(_)))
-                    && self.peek_at(2) == Some(&Tok::RParen) =>
+            Some(TokenKind::LParen)
+                if matches!(self.peek_at(1), Some(TokenKind::Op(_)))
+                    && self.peek_at(2) == Some(&TokenKind::RParen) =>
             {
                 self.skip_to_item_end();
                 decls.push(Decl::Unknown {
@@ -505,7 +527,7 @@ impl Parser {
                 });
             }
             // Top-level pattern binding: `[a, b, c] = ...`, `(x, y) = ...`.
-            Some(Tok::LParen | Tok::LBracket) => {
+            Some(TokenKind::LParen | TokenKind::LBracket) => {
                 if self.binding().is_none() {
                     self.diag_cat(
                         DiagnosticCategory::SkippedDecl,
@@ -542,11 +564,11 @@ impl Parser {
         self.bump(); // import
         let mut qualified = self.eat_keyword("qualified");
         // Package-qualified import: `import qualified "pkg-name" Main as V1`.
-        if matches!(self.peek(), Some(Tok::StringLit(_))) {
+        if matches!(self.peek(), Some(TokenKind::StringLit(_))) {
             self.bump();
         }
         let module_name = match self.peek().cloned() {
-            Some(Tok::UpperId { qualifier, name }) => {
+            Some(TokenKind::UpperId { qualifier, name }) => {
                 self.bump();
                 match qualifier {
                     Some(q) => format!("{q}.{name}"),
@@ -564,7 +586,7 @@ impl Parser {
         }
         let mut alias = None;
         if self.eat_keyword("as") {
-            if let Some(Tok::UpperId { qualifier, name }) = self.peek().cloned() {
+            if let Some(TokenKind::UpperId { qualifier, name }) = self.peek().cloned() {
                 self.bump();
                 alias = Some(match qualifier {
                     Some(q) => format!("{q}.{name}"),
@@ -586,7 +608,7 @@ impl Parser {
 
     fn upper_name(&mut self) -> Option<String> {
         match self.peek().cloned() {
-            Some(Tok::UpperId { qualifier, name }) => {
+            Some(TokenKind::UpperId { qualifier, name }) => {
                 self.bump();
                 Some(match qualifier {
                     Some(q) => format!("{q}.{name}"),
@@ -631,14 +653,14 @@ impl Parser {
     /// the caller must discard the block's eventual closing `VRBrace`.
     fn field_block(&mut self) -> (Vec<FieldDecl>, bool) {
         let mut fields = Vec::new();
-        if !(self.eat(&Tok::VLBrace) || self.eat(&Tok::LBrace)) {
+        if !(self.eat(&TokenKind::VLBrace) || self.eat(&TokenKind::LBrace)) {
             return (fields, false);
         }
         loop {
-            while self.eat(&Tok::VSemi) || self.eat(&Tok::Semi) {}
+            while self.eat(&TokenKind::VSemi) || self.eat(&TokenKind::Semi) {}
             match self.peek() {
                 None => break,
-                Some(Tok::VRBrace | Tok::RBrace) => {
+                Some(TokenKind::VRBrace | TokenKind::RBrace) => {
                     self.bump();
                     break;
                 }
@@ -646,7 +668,7 @@ impl Parser {
                 // failed item parse — discard it or the loop cannot make
                 // progress (skip_to_item_end deliberately stops before
                 // unmatched closers).
-                Some(Tok::RParen | Tok::RBracket) => {
+                Some(TokenKind::RParen | TokenKind::RBracket) => {
                     self.bump();
                     continue;
                 }
@@ -658,13 +680,13 @@ impl Parser {
             // stop without consuming so the caller can parse the clause.
             {
                 let mut j = self.i;
-                while let Some(Tok::LowerId {
+                while let Some(TokenKind::LowerId {
                     qualifier: None, ..
-                }) = self.toks.get(j).map(|t| &t.tok)
+                }) = self.toks.get(j).map(|t| &t.kind)
                 {
                     j += 1;
-                    match self.toks.get(j).map(|t| &t.tok) {
-                        Some(Tok::Comma) => j += 1,
+                    match self.toks.get(j).map(|t| &t.kind) {
+                        Some(TokenKind::Comma) => j += 1,
                         _ => break,
                     }
                 }
@@ -672,7 +694,7 @@ impl Parser {
                     && self
                         .toks
                         .get(j)
-                        .map(|t| &t.tok)
+                        .map(|t| &t.kind)
                         .is_some_and(|t| t.is_op(":"));
                 if !is_field {
                     return (fields, true);
@@ -680,7 +702,7 @@ impl Parser {
             }
             // One or more comma-separated names, then `:`, then the type.
             let mut names: Vec<(String, Pos, Span)> = Vec::new();
-            while let Some(Tok::LowerId {
+            while let Some(TokenKind::LowerId {
                 qualifier: None,
                 name,
             }) = self.peek().cloned()
@@ -689,7 +711,7 @@ impl Parser {
                 let nspan = Span::new(self.toks[self.i].start, self.toks[self.i].end);
                 self.bump();
                 names.push((name, p, nspan));
-                if !self.eat(&Tok::Comma) {
+                if !self.eat(&TokenKind::Comma) {
                     break;
                 }
             }
@@ -728,14 +750,14 @@ impl Parser {
 
     fn template_body(&mut self) -> Vec<TemplateBodyDecl> {
         let mut body = Vec::new();
-        if !(self.eat(&Tok::VLBrace) || self.eat(&Tok::LBrace)) {
+        if !(self.eat(&TokenKind::VLBrace) || self.eat(&TokenKind::LBrace)) {
             return body;
         }
         loop {
-            while self.eat(&Tok::VSemi) || self.eat(&Tok::Semi) {}
+            while self.eat(&TokenKind::VSemi) || self.eat(&TokenKind::Semi) {}
             match self.peek() {
                 None => break,
-                Some(Tok::VRBrace | Tok::RBrace) => {
+                Some(TokenKind::VRBrace | TokenKind::RBrace) => {
                     self.bump();
                     break;
                 }
@@ -743,7 +765,7 @@ impl Parser {
                 // failed item parse — discard it or the loop cannot make
                 // progress (skip_to_item_end deliberately stops before
                 // unmatched closers).
-                Some(Tok::RParen | Tok::RBracket) => {
+                Some(TokenKind::RParen | TokenKind::RBracket) => {
                     self.bump();
                     continue;
                 }
@@ -803,10 +825,10 @@ impl Parser {
                     let mut depth = 0i32;
                     let mut colon = None;
                     for j in expr_start..self.i {
-                        match &self.toks[j].tok {
-                            Tok::LParen | Tok::LBracket => depth += 1,
-                            Tok::RParen | Tok::RBracket if depth > 0 => depth -= 1,
-                            Tok::Op(o) if o == ":" && depth == 0 => colon = Some(j),
+                        match &self.toks[j].kind {
+                            TokenKind::LParen | TokenKind::LBracket => depth += 1,
+                            TokenKind::RParen | TokenKind::RBracket if depth > 0 => depth -= 1,
+                            TokenKind::Op(o) if o == ":" && depth == 0 => colon = Some(j),
                             _ => {}
                         }
                     }
@@ -923,7 +945,7 @@ impl Parser {
             // do clauses sit at the block's column, so layout separates
             // them with virtual semicolons — consume those.
             if dangling {
-                while self.eat(&Tok::VSemi) {}
+                while self.eat(&TokenKind::VSemi) {}
             }
             if self.eat_keyword("observer") {
                 observers = self.expr_comma_list_no_do();
@@ -934,12 +956,14 @@ impl Parser {
             }
         }
         if dangling {
-            while self.eat(&Tok::VSemi) {}
+            while self.eat(&TokenKind::VSemi) {}
         }
-        let body = if self
-            .peek()
-            .is_some_and(|t| !matches!(t, Tok::VSemi | Tok::VRBrace | Tok::Semi | Tok::RBrace))
-        {
+        let body = if self.peek().is_some_and(|t| {
+            !matches!(
+                t,
+                TokenKind::VSemi | TokenKind::VRBrace | TokenKind::Semi | TokenKind::RBrace
+            )
+        }) {
             Some(self.expr())
         } else {
             None
@@ -948,7 +972,7 @@ impl Parser {
         if dangling {
             // Discard the abandoned with-block's closing brace so it does
             // not terminate the enclosing template/interface body.
-            self.eat(&Tok::VRBrace);
+            self.eat(&TokenKind::VRBrace);
             self.skip_to_item_end();
         }
         Some(ChoiceDecl {
@@ -970,9 +994,11 @@ impl Parser {
         let mut brackets = 0usize;
         while let Some(t) = self.peek() {
             match t {
-                Tok::VSemi | Tok::VRBrace | Tok::VLBrace | Tok::Semi => return,
-                Tok::LParen | Tok::LBracket => brackets += 1,
-                Tok::RParen | Tok::RBracket => {
+                TokenKind::VSemi | TokenKind::VRBrace | TokenKind::VLBrace | TokenKind::Semi => {
+                    return
+                }
+                TokenKind::LParen | TokenKind::LBracket => brackets += 1,
+                TokenKind::RParen | TokenKind::RBracket => {
                     if brackets == 0 {
                         return;
                     }
@@ -1007,7 +1033,7 @@ impl Parser {
         if self.eat_keyword("requires") {
             while let Some(r) = self.upper_name() {
                 requires.push(r);
-                if !self.eat(&Tok::Comma) {
+                if !self.eat(&TokenKind::Comma) {
                     break;
                 }
             }
@@ -1018,7 +1044,7 @@ impl Parser {
         let mut viewtype = None;
         let mut methods = Vec::new();
         let mut choices = Vec::new();
-        if !(self.eat(&Tok::VLBrace) || self.eat(&Tok::LBrace)) {
+        if !(self.eat(&TokenKind::VLBrace) || self.eat(&TokenKind::LBrace)) {
             return Some(InterfaceDecl {
                 name,
                 requires,
@@ -1030,10 +1056,10 @@ impl Parser {
             });
         }
         loop {
-            while self.eat(&Tok::VSemi) || self.eat(&Tok::Semi) {}
+            while self.eat(&TokenKind::VSemi) || self.eat(&TokenKind::Semi) {}
             match self.peek() {
                 None => break,
-                Some(Tok::VRBrace | Tok::RBrace) => {
+                Some(TokenKind::VRBrace | TokenKind::RBrace) => {
                     self.bump();
                     break;
                 }
@@ -1041,7 +1067,7 @@ impl Parser {
                 // failed item parse — discard it or the loop cannot make
                 // progress (skip_to_item_end deliberately stops before
                 // unmatched closers).
-                Some(Tok::RParen | Tok::RBracket) => {
+                Some(TokenKind::RParen | TokenKind::RBracket) => {
                     self.bump();
                     continue;
                 }
@@ -1064,7 +1090,7 @@ impl Parser {
                     // Method signature `name : Type`; anything else (default
                     // implementations, ensure, ...) is skipped.
                     let mpos = self.pos();
-                    if let Some(Tok::LowerId {
+                    if let Some(TokenKind::LowerId {
                         qualifier: None,
                         name: mname,
                     }) = self.peek().cloned()
@@ -1115,17 +1141,19 @@ impl Parser {
             String::new()
         };
         let mut methods = Vec::new();
-        if self.eat_keyword("where") && (self.eat(&Tok::VLBrace) || self.eat(&Tok::LBrace)) {
+        if self.eat_keyword("where")
+            && (self.eat(&TokenKind::VLBrace) || self.eat(&TokenKind::LBrace))
+        {
             loop {
-                while self.eat(&Tok::VSemi) || self.eat(&Tok::Semi) {}
+                while self.eat(&TokenKind::VSemi) || self.eat(&TokenKind::Semi) {}
                 match self.peek() {
                     None => break,
-                    Some(Tok::VRBrace | Tok::RBrace) => {
+                    Some(TokenKind::VRBrace | TokenKind::RBrace) => {
                         self.bump();
                         break;
                     }
                     // Stray closer: discard so the loop always progresses.
-                    Some(Tok::RParen | Tok::RBracket) => {
+                    Some(TokenKind::RParen | TokenKind::RBracket) => {
                         self.bump();
                         continue;
                     }
@@ -1156,7 +1184,7 @@ impl Parser {
         let pos = self.pos();
         let start_i = self.i;
         let name = match self.peek().cloned() {
-            Some(Tok::LowerId {
+            Some(TokenKind::LowerId {
                 qualifier: None,
                 name,
             }) => name,
@@ -1167,12 +1195,12 @@ impl Parser {
         let mut j = self.i + 1;
         let mut is_sig = false;
         loop {
-            match self.toks.get(j).map(|t| &t.tok) {
-                Some(Tok::Comma) => {
+            match self.toks.get(j).map(|t| &t.kind) {
+                Some(TokenKind::Comma) => {
                     j += 1;
                     if matches!(
-                        self.toks.get(j).map(|t| &t.tok),
-                        Some(Tok::LowerId {
+                        self.toks.get(j).map(|t| &t.kind),
+                        Some(TokenKind::LowerId {
                             qualifier: None,
                             ..
                         })
@@ -1182,7 +1210,7 @@ impl Parser {
                     }
                     break;
                 }
-                Some(Tok::Op(o)) if o == ":" => {
+                Some(TokenKind::Op(o)) if o == ":" => {
                     is_sig = true;
                     break;
                 }
@@ -1191,7 +1219,7 @@ impl Parser {
         }
         if is_sig {
             self.bump(); // name
-            while self.eat(&Tok::Comma) {
+            while self.eat(&TokenKind::Comma) {
                 self.bump(); // more names
             }
             self.eat_op(":");
@@ -1219,10 +1247,15 @@ impl Parser {
                 let mut brackets = 0usize;
                 while let Some(t) = self.peek() {
                     match t {
-                        Tok::Op(o) if o == "=" && brackets == 0 => break,
-                        Tok::VSemi | Tok::VRBrace | Tok::Semi | Tok::RBrace => break,
-                        Tok::LParen | Tok::LBracket => brackets += 1,
-                        Tok::RParen | Tok::RBracket => brackets = brackets.saturating_sub(1),
+                        TokenKind::Op(o) if o == "=" && brackets == 0 => break,
+                        TokenKind::VSemi
+                        | TokenKind::VRBrace
+                        | TokenKind::Semi
+                        | TokenKind::RBrace => break,
+                        TokenKind::LParen | TokenKind::LBracket => brackets += 1,
+                        TokenKind::RParen | TokenKind::RBracket => {
+                            brackets = brackets.saturating_sub(1)
+                        }
                         _ => {}
                     }
                     self.i += 1;
@@ -1231,12 +1264,15 @@ impl Parser {
             }
             // Infix operator definition: `f $ x = f x`, `as <&> f = ...` —
             // operators have no IR surface; skip the item silently.
-            if matches!(self.peek(), Some(Tok::Op(o)) if !is_reserved_op(o)) {
+            if matches!(self.peek(), Some(TokenKind::Op(o)) if !is_reserved_op(o)) {
                 self.skip_to_item_end();
                 return None;
             }
             match self.peek() {
-                None | Some(Tok::VSemi | Tok::VRBrace | Tok::Semi | Tok::RBrace) => {
+                None
+                | Some(
+                    TokenKind::VSemi | TokenKind::VRBrace | TokenKind::Semi | TokenKind::RBrace,
+                ) => {
                     self.diag(format!("could not parse equation for '{name}'"));
                     return None;
                 }
@@ -1288,7 +1324,7 @@ impl Parser {
                 if self.eat_op("<-") {
                     let _ = self.expr(); // pattern guard: keep the pattern side
                 }
-                if !self.eat(&Tok::Comma) {
+                if !self.eat(&TokenKind::Comma) {
                     break g;
                 }
             };
@@ -1311,14 +1347,14 @@ impl Parser {
     /// `{ binding ; binding ; ... }` for let/where blocks.
     fn binding_block(&mut self) -> Vec<Binding> {
         let mut bindings = Vec::new();
-        if !(self.eat(&Tok::VLBrace) || self.eat(&Tok::LBrace)) {
+        if !(self.eat(&TokenKind::VLBrace) || self.eat(&TokenKind::LBrace)) {
             return bindings;
         }
         loop {
-            while self.eat(&Tok::VSemi) || self.eat(&Tok::Semi) {}
+            while self.eat(&TokenKind::VSemi) || self.eat(&TokenKind::Semi) {}
             match self.peek() {
                 None => break,
-                Some(Tok::VRBrace | Tok::RBrace) => {
+                Some(TokenKind::VRBrace | TokenKind::RBrace) => {
                     self.bump();
                     break;
                 }
@@ -1326,7 +1362,7 @@ impl Parser {
                 // failed item parse — discard it or the loop cannot make
                 // progress (skip_to_item_end deliberately stops before
                 // unmatched closers).
-                Some(Tok::RParen | Tok::RBracket) => {
+                Some(TokenKind::RParen | TokenKind::RBracket) => {
                     self.bump();
                     continue;
                 }
@@ -1347,9 +1383,9 @@ impl Parser {
         let start_i = self.i;
         // Operator binding or signature: `(==) : Text -> Bool = ...` —
         // skip the whole item; operators aren't surfaced in the IR.
-        if self.at(&Tok::LParen)
-            && matches!(self.peek_at(1), Some(Tok::Op(_)))
-            && self.peek_at(2) == Some(&Tok::RParen)
+        if self.at(&TokenKind::LParen)
+            && matches!(self.peek_at(1), Some(TokenKind::Op(_)))
+            && self.peek_at(2) == Some(&TokenKind::RParen)
         {
             self.skip_to_item_end();
             return None;
@@ -1397,10 +1433,15 @@ impl Parser {
                 let mut brackets = 0usize;
                 while let Some(t) = self.peek() {
                     match t {
-                        Tok::Op(o) if o == "=" && brackets == 0 => break,
-                        Tok::VSemi | Tok::VRBrace | Tok::Semi | Tok::RBrace => break,
-                        Tok::LParen | Tok::LBracket => brackets += 1,
-                        Tok::RParen | Tok::RBracket => brackets = brackets.saturating_sub(1),
+                        TokenKind::Op(o) if o == "=" && brackets == 0 => break,
+                        TokenKind::VSemi
+                        | TokenKind::VRBrace
+                        | TokenKind::Semi
+                        | TokenKind::RBrace => break,
+                        TokenKind::LParen | TokenKind::LBracket => brackets += 1,
+                        TokenKind::RParen | TokenKind::RBracket => {
+                            brackets = brackets.saturating_sub(1)
+                        }
                         _ => {}
                     }
                     self.i += 1;
@@ -1409,12 +1450,15 @@ impl Parser {
             }
             // Infix operator binding with a pattern operand:
             // `None <?> s = ...` in a where/let block.
-            if matches!(self.peek(), Some(Tok::Op(o)) if !is_reserved_op(o)) {
+            if matches!(self.peek(), Some(TokenKind::Op(o)) if !is_reserved_op(o)) {
                 self.skip_to_item_end();
                 return None;
             }
             match self.peek() {
-                None | Some(Tok::VSemi | Tok::VRBrace | Tok::Semi | Tok::RBrace) => return None,
+                None
+                | Some(
+                    TokenKind::VSemi | TokenKind::VRBrace | TokenKind::Semi | TokenKind::RBrace,
+                ) => return None,
                 _ => {}
             }
             params.push(self.pattern_atom()?);
@@ -1424,7 +1468,7 @@ impl Parser {
     // ----- patterns ------------------------------------------------------
 
     fn pattern_atom(&mut self) -> Option<Pat> {
-        if self.depth >= MAX_DEPTH {
+        if self.depth >= MAX_RECURSION_DEPTH {
             return None;
         }
         self.depth += 1;
@@ -1442,7 +1486,7 @@ impl Parser {
             return self.pattern_atom();
         }
         match self.peek().cloned() {
-            Some(Tok::LowerId {
+            Some(TokenKind::LowerId {
                 qualifier: None,
                 name,
             }) => {
@@ -1469,18 +1513,18 @@ impl Parser {
                     span: self.node_span(start_i),
                 })
             }
-            Some(Tok::Op(o)) if o == "_" => {
+            Some(TokenKind::Op(o)) if o == "_" => {
                 self.bump();
                 Some(Pat::Wild {
                     pos,
                     span: self.node_span(start_i),
                 })
             }
-            Some(Tok::UpperId { qualifier, name }) => {
+            Some(TokenKind::UpperId { qualifier, name }) => {
                 self.bump();
                 // Record pattern `Foo {..}` / `Foo {x = y}` /
                 // `Foo with claim; tag`.
-                if self.at(&Tok::LBrace) {
+                if self.at(&TokenKind::LBrace) {
                     self.skip_balanced_braces();
                 } else if self.eat_keyword("with") {
                     let _ = self.record_fields();
@@ -1493,7 +1537,7 @@ impl Parser {
                     span: self.node_span(start_i),
                 })
             }
-            Some(Tok::IntLit(text)) => {
+            Some(TokenKind::IntLit(text)) => {
                 self.bump();
                 Some(Pat::Lit {
                     kind: LitKind::Int,
@@ -1502,7 +1546,7 @@ impl Parser {
                     span: self.node_span(start_i),
                 })
             }
-            Some(Tok::DecimalLit(text)) => {
+            Some(TokenKind::DecimalLit(text)) => {
                 self.bump();
                 Some(Pat::Lit {
                     kind: LitKind::Decimal,
@@ -1511,7 +1555,7 @@ impl Parser {
                     span: self.node_span(start_i),
                 })
             }
-            Some(Tok::StringLit(text)) => {
+            Some(TokenKind::StringLit(text)) => {
                 self.bump();
                 Some(Pat::Lit {
                     kind: LitKind::Text,
@@ -1520,7 +1564,7 @@ impl Parser {
                     span: self.node_span(start_i),
                 })
             }
-            Some(Tok::CharLit(text)) => {
+            Some(TokenKind::CharLit(text)) => {
                 self.bump();
                 Some(Pat::Lit {
                     kind: LitKind::Char,
@@ -1529,9 +1573,9 @@ impl Parser {
                     span: self.node_span(start_i),
                 })
             }
-            Some(Tok::LParen) => {
+            Some(TokenKind::LParen) => {
                 self.bump();
-                if self.eat(&Tok::RParen) {
+                if self.eat(&TokenKind::RParen) {
                     return Some(Pat::Con {
                         qualifier: None,
                         name: "()".to_string(),
@@ -1549,23 +1593,23 @@ impl Parser {
                     let mut depth = 0usize;
                     let mut j = self.i;
                     let mut arrow = None;
-                    while let Some(t) = self.toks.get(j).map(|t| &t.tok) {
+                    while let Some(t) = self.toks.get(j).map(|t| &t.kind) {
                         match t {
-                            Tok::LParen | Tok::LBracket => depth += 1,
-                            Tok::RParen | Tok::RBracket => {
+                            TokenKind::LParen | TokenKind::LBracket => depth += 1,
+                            TokenKind::RParen | TokenKind::RBracket => {
                                 if depth == 0 {
                                     break;
                                 }
                                 depth -= 1;
                             }
-                            Tok::Op(o) if o == ":" && depth == 0 => break,
-                            Tok::Op(o) if o == "->" && depth == 0 => {
+                            TokenKind::Op(o) if o == ":" && depth == 0 => break,
+                            TokenKind::Op(o) if o == "->" && depth == 0 => {
                                 arrow = Some(j);
                                 break;
                             }
-                            Tok::VSemi | Tok::VRBrace => break,
+                            TokenKind::VSemi | TokenKind::VRBrace => break,
                             // A lambda's arrow belongs to the lambda.
-                            Tok::Op(o) if o == "\\" => break,
+                            TokenKind::Op(o) if o == "\\" => break,
                             _ => {}
                         }
                         j += 1;
@@ -1573,7 +1617,7 @@ impl Parser {
                     if let Some(j) = arrow {
                         self.i = j + 1; // skip the view expression and `->`
                         let inner = self.pattern()?;
-                        self.eat(&Tok::RParen);
+                        self.eat(&TokenKind::RParen);
                         return Some(inner);
                     }
                 }
@@ -1583,41 +1627,43 @@ impl Parser {
                     let mut depth = 0usize;
                     while let Some(t) = self.peek() {
                         match t {
-                            Tok::LParen | Tok::LBracket => depth += 1,
-                            Tok::RParen if depth == 0 => break,
-                            Tok::RParen | Tok::RBracket => depth = depth.saturating_sub(1),
-                            Tok::VSemi | Tok::VRBrace => break,
+                            TokenKind::LParen | TokenKind::LBracket => depth += 1,
+                            TokenKind::RParen if depth == 0 => break,
+                            TokenKind::RParen | TokenKind::RBracket => {
+                                depth = depth.saturating_sub(1)
+                            }
+                            TokenKind::VSemi | TokenKind::VRBrace => break,
                             _ => {}
                         }
                         self.i += 1;
                     }
                 }
-                if self.at(&Tok::Comma) {
+                if self.at(&TokenKind::Comma) {
                     let mut items = vec![first];
-                    while self.eat(&Tok::Comma) {
+                    while self.eat(&TokenKind::Comma) {
                         items.push(self.pattern()?);
                     }
-                    self.eat(&Tok::RParen);
+                    self.eat(&TokenKind::RParen);
                     return Some(Pat::Tuple {
                         items,
                         pos,
                         span: self.node_span(start_i),
                     });
                 }
-                self.eat(&Tok::RParen);
+                self.eat(&TokenKind::RParen);
                 Some(first)
             }
-            Some(Tok::LBracket) => {
+            Some(TokenKind::LBracket) => {
                 self.bump();
                 let mut items = Vec::new();
-                if !self.eat(&Tok::RBracket) {
+                if !self.eat(&TokenKind::RBracket) {
                     loop {
                         items.push(self.pattern()?);
-                        if !self.eat(&Tok::Comma) {
+                        if !self.eat(&TokenKind::Comma) {
                             break;
                         }
                     }
-                    self.eat(&Tok::RBracket);
+                    self.eat(&TokenKind::RBracket);
                 }
                 Some(Pat::List {
                     items,
@@ -1631,7 +1677,7 @@ impl Parser {
 
     /// Full pattern: constructor applications and infix cons `x :: xs`.
     fn pattern(&mut self) -> Option<Pat> {
-        if self.depth >= MAX_DEPTH {
+        if self.depth >= MAX_RECURSION_DEPTH {
             return None;
         }
         self.depth += 1;
@@ -1644,9 +1690,9 @@ impl Parser {
         let pos = self.pos();
         let start_i = self.i;
         let first = match self.peek().cloned() {
-            Some(Tok::UpperId { qualifier, name }) => {
+            Some(TokenKind::UpperId { qualifier, name }) => {
                 self.bump();
-                if self.at(&Tok::LBrace) || self.at_keyword("with") {
+                if self.at(&TokenKind::LBrace) || self.at_keyword("with") {
                     if self.eat_keyword("with") {
                         let _ = self.record_fields();
                     } else {
@@ -1692,16 +1738,16 @@ impl Parser {
     fn try_pattern_atom(&mut self) -> Option<Pat> {
         match self.peek() {
             Some(
-                Tok::LowerId {
+                TokenKind::LowerId {
                     qualifier: None, ..
                 }
-                | Tok::UpperId { .. }
-                | Tok::IntLit(_)
-                | Tok::DecimalLit(_)
-                | Tok::StringLit(_)
-                | Tok::CharLit(_)
-                | Tok::LParen
-                | Tok::LBracket,
+                | TokenKind::UpperId { .. }
+                | TokenKind::IntLit(_)
+                | TokenKind::DecimalLit(_)
+                | TokenKind::StringLit(_)
+                | TokenKind::CharLit(_)
+                | TokenKind::LParen
+                | TokenKind::LBracket,
             ) => self.pattern_atom(),
             _ => None,
         }
@@ -1711,8 +1757,8 @@ impl Parser {
         let mut depth = 0usize;
         while let Some(t) = self.peek() {
             match t {
-                Tok::LBrace => depth += 1,
-                Tok::RBrace => {
+                TokenKind::LBrace => depth += 1,
+                TokenKind::RBrace => {
                     if depth == 0 {
                         return;
                     }
@@ -1741,7 +1787,7 @@ impl Parser {
     /// Comma-separated expressions (signatory/observer/controller lists).
     fn expr_comma_list(&mut self) -> Vec<Expr> {
         let mut out = vec![self.expr()];
-        while self.eat(&Tok::Comma) {
+        while self.eat(&TokenKind::Comma) {
             out.push(self.expr());
         }
         out
@@ -1749,7 +1795,7 @@ impl Parser {
 
     fn expr_comma_list_no_do(&mut self) -> Vec<Expr> {
         let mut out = vec![self.expr_no_do()];
-        while self.eat(&Tok::Comma) {
+        while self.eat(&TokenKind::Comma) {
             out.push(self.expr_no_do());
         }
         out
@@ -1758,7 +1804,7 @@ impl Parser {
     fn expr_prec(&mut self, min_prec: u8, allow_do: bool) -> Expr {
         let pos = self.pos();
         let start_i = self.i;
-        if self.depth >= MAX_DEPTH {
+        if self.depth >= MAX_RECURSION_DEPTH {
             // Hostile nesting: degrade to raw text instead of recursing, and
             // report it so the degraded region is not silently mistaken for
             // unsupported syntax. `skip_to_item_end` below consumes the rest of
@@ -1803,7 +1849,7 @@ impl Parser {
         };
         loop {
             let (op, prec, right_assoc) = match self.peek() {
-                Some(Tok::Op(o)) => {
+                Some(TokenKind::Op(o)) => {
                     let o = o.clone();
                     if is_reserved_op(&o) {
                         // `e : Type` annotation: consume the type, keep e.
@@ -1817,17 +1863,18 @@ impl Parser {
                     let (p, r) = fixity(&o);
                     (o, p, r)
                 }
-                Some(Tok::Backtick) => {
+                Some(TokenKind::Backtick) => {
                     // `e `div` e` — infix function application.
                     let name = match self.peek_at(1) {
                         Some(
-                            Tok::LowerId { qualifier, name } | Tok::UpperId { qualifier, name },
+                            TokenKind::LowerId { qualifier, name }
+                            | TokenKind::UpperId { qualifier, name },
                         ) => qualifier
                             .as_ref()
                             .map_or_else(|| name.clone(), |q| format!("{q}.{name}")),
                         _ => break,
                     };
-                    if self.peek_at(2) != Some(&Tok::Backtick) {
+                    if self.peek_at(2) != Some(&TokenKind::Backtick) {
                         break;
                     }
                     (format!("`{name}`"), 9, false)
@@ -1914,16 +1961,16 @@ impl Parser {
             if self.at_op("@") {
                 self.bump();
                 match self.peek() {
-                    Some(Tok::UpperId { .. } | Tok::LowerId { .. }) => {
+                    Some(TokenKind::UpperId { .. } | TokenKind::LowerId { .. }) => {
                         self.bump();
                     }
-                    Some(Tok::LParen) => self.skip_balanced_parens(),
-                    Some(Tok::LBracket) => {
+                    Some(TokenKind::LParen) => self.skip_balanced_parens(),
+                    Some(TokenKind::LBracket) => {
                         let mut depth = 0usize;
                         while let Some(t) = self.peek() {
                             match t {
-                                Tok::LBracket => depth += 1,
-                                Tok::RBracket => {
+                                TokenKind::LBracket => depth += 1,
+                                TokenKind::RBracket => {
                                     if depth == 0 {
                                         break;
                                     }
@@ -1962,24 +2009,27 @@ impl Parser {
     /// `{ f = e ; g ; .. }` after `with` (virtual block) or explicit braces.
     fn record_fields(&mut self) -> Vec<FieldAssign> {
         let mut fields = Vec::new();
-        let explicit = self.at(&Tok::LBrace);
-        if !(self.eat(&Tok::VLBrace) || self.eat(&Tok::LBrace)) {
+        let explicit = self.at(&TokenKind::LBrace);
+        if !(self.eat(&TokenKind::VLBrace) || self.eat(&TokenKind::LBrace)) {
             return fields;
         }
         loop {
-            while self.eat(&Tok::VSemi) || self.eat(&Tok::Semi) || self.eat(&Tok::Comma) {}
+            while self.eat(&TokenKind::VSemi)
+                || self.eat(&TokenKind::Semi)
+                || self.eat(&TokenKind::Comma)
+            {}
             match self.peek() {
                 None => break,
-                Some(Tok::VRBrace) if !explicit => {
+                Some(TokenKind::VRBrace) if !explicit => {
                     self.bump();
                     break;
                 }
-                Some(Tok::RBrace) => {
+                Some(TokenKind::RBrace) => {
                     self.bump();
                     break;
                 }
                 // Stray closer: discard so the loop always progresses.
-                Some(Tok::RParen | Tok::RBracket) => {
+                Some(TokenKind::RParen | TokenKind::RBracket) => {
                     self.bump();
                     continue;
                 }
@@ -1998,7 +2048,7 @@ impl Parser {
                 continue;
             }
             let name = match self.peek().cloned() {
-                Some(Tok::LowerId {
+                Some(TokenKind::LowerId {
                     qualifier: None,
                     name,
                 }) => {
@@ -2033,7 +2083,7 @@ impl Parser {
 
     fn try_atom(&mut self, allow_do: bool) -> Option<Expr> {
         match self.peek() {
-            Some(Tok::LowerId { .. }) => {
+            Some(TokenKind::LowerId { .. }) => {
                 let kw = self.peek().and_then(|t| t.keyword());
                 match kw {
                     // Block argument: `script do ...`, `submit p do ...`.
@@ -2048,16 +2098,16 @@ impl Parser {
                 }
             }
             Some(
-                Tok::UpperId { .. }
-                | Tok::IntLit(_)
-                | Tok::DecimalLit(_)
-                | Tok::StringLit(_)
-                | Tok::CharLit(_)
-                | Tok::LParen
-                | Tok::LBracket,
+                TokenKind::UpperId { .. }
+                | TokenKind::IntLit(_)
+                | TokenKind::DecimalLit(_)
+                | TokenKind::StringLit(_)
+                | TokenKind::CharLit(_)
+                | TokenKind::LParen
+                | TokenKind::LBracket,
             ) => self.atom(allow_do),
             // Bare trailing lambda argument: `forA xs \x -> ...`.
-            Some(Tok::Op(o)) if o == "\\" => self.atom(allow_do),
+            Some(TokenKind::Op(o)) if o == "\\" => self.atom(allow_do),
             _ => None,
         }
     }
@@ -2077,7 +2127,7 @@ impl Parser {
                 self.diag("expected projection field after '.'");
                 return base;
             };
-            let Tok::LowerId { qualifier, name } = field_tok.tok else {
+            let TokenKind::LowerId { qualifier, name } = field_tok.kind else {
                 self.diag("expected projection field after '.'");
                 return base;
             };
@@ -2109,7 +2159,7 @@ impl Parser {
             Some(t) => t,
             None => return false,
         };
-        if !matches!(&dot.tok, Tok::Op(o) if o == ".") {
+        if !matches!(&dot.kind, TokenKind::Op(o) if o == ".") {
             return false;
         }
         // Tight on the left: the dot abuts the base's last byte. The previous
@@ -2122,8 +2172,8 @@ impl Parser {
         // Tight on the right: an unqualified lowercase field abuts the dot.
         self.toks.get(self.i + 1).is_some_and(|t| {
             matches!(
-                &t.tok,
-                Tok::LowerId {
+                &t.kind,
+                TokenKind::LowerId {
                     qualifier: None,
                     ..
                 }
@@ -2135,7 +2185,7 @@ impl Parser {
         let pos = self.pos();
         let start_i = self.i;
         match self.peek().cloned() {
-            Some(Tok::LowerId { qualifier, name }) => {
+            Some(TokenKind::LowerId { qualifier, name }) => {
                 match name.as_str() {
                     "if" if qualifier.is_none() => return self.if_expr(),
                     "case" if qualifier.is_none() => return self.case_expr(),
@@ -2157,7 +2207,7 @@ impl Parser {
                     span: self.node_span(start_i),
                 })
             }
-            Some(Tok::UpperId { qualifier, name }) => {
+            Some(TokenKind::UpperId { qualifier, name }) => {
                 self.bump();
                 let base = Expr::Con {
                     qualifier,
@@ -2166,7 +2216,7 @@ impl Parser {
                     span: self.node_span(start_i),
                 };
                 // Explicit-brace record syntax: `Foo {x = 1}`.
-                if self.at(&Tok::LBrace) {
+                if self.at(&TokenKind::LBrace) {
                     let fields = self.record_fields();
                     return Some(Expr::Record {
                         base: Box::new(base),
@@ -2177,7 +2227,7 @@ impl Parser {
                 }
                 Some(base)
             }
-            Some(Tok::IntLit(text)) => {
+            Some(TokenKind::IntLit(text)) => {
                 self.bump();
                 Some(Expr::Lit {
                     kind: LitKind::Int,
@@ -2186,7 +2236,7 @@ impl Parser {
                     span: self.node_span(start_i),
                 })
             }
-            Some(Tok::DecimalLit(text)) => {
+            Some(TokenKind::DecimalLit(text)) => {
                 self.bump();
                 Some(Expr::Lit {
                     kind: LitKind::Decimal,
@@ -2195,7 +2245,7 @@ impl Parser {
                     span: self.node_span(start_i),
                 })
             }
-            Some(Tok::StringLit(text)) => {
+            Some(TokenKind::StringLit(text)) => {
                 self.bump();
                 Some(Expr::Lit {
                     kind: LitKind::Text,
@@ -2204,7 +2254,7 @@ impl Parser {
                     span: self.node_span(start_i),
                 })
             }
-            Some(Tok::CharLit(text)) => {
+            Some(TokenKind::CharLit(text)) => {
                 self.bump();
                 Some(Expr::Lit {
                     kind: LitKind::Char,
@@ -2213,9 +2263,9 @@ impl Parser {
                     span: self.node_span(start_i),
                 })
             }
-            Some(Tok::Op(o)) if o == "\\" => self.lambda_expr(),
-            Some(Tok::LParen) => self.paren_expr(),
-            Some(Tok::LBracket) => self.list_expr(),
+            Some(TokenKind::Op(o)) if o == "\\" => self.lambda_expr(),
+            Some(TokenKind::LParen) => self.paren_expr(),
+            Some(TokenKind::LBracket) => self.list_expr(),
             _ => None,
         }
     }
@@ -2225,7 +2275,7 @@ impl Parser {
         let start_i = self.i;
         self.bump(); // if
         let cond = self.expr();
-        self.eat(&Tok::VSemi); // DoAndIfThenElse style
+        self.eat(&TokenKind::VSemi); // DoAndIfThenElse style
         if !self.eat_keyword("then") {
             self.diag("expected 'then'");
             return Some(Expr::Error {
@@ -2235,7 +2285,7 @@ impl Parser {
             });
         }
         let then_branch = self.expr();
-        self.eat(&Tok::VSemi);
+        self.eat(&TokenKind::VSemi);
         if !self.eat_keyword("else") {
             self.diag("expected 'else'");
             return Some(Expr::Error {
@@ -2268,17 +2318,17 @@ impl Parser {
             });
         }
         let mut alts = Vec::new();
-        if self.eat(&Tok::VLBrace) || self.eat(&Tok::LBrace) {
+        if self.eat(&TokenKind::VLBrace) || self.eat(&TokenKind::LBrace) {
             loop {
-                while self.eat(&Tok::VSemi) || self.eat(&Tok::Semi) {}
+                while self.eat(&TokenKind::VSemi) || self.eat(&TokenKind::Semi) {}
                 match self.peek() {
                     None => break,
-                    Some(Tok::VRBrace | Tok::RBrace) => {
+                    Some(TokenKind::VRBrace | TokenKind::RBrace) => {
                         self.bump();
                         break;
                     }
                     // Stray closer: discard so the loop always progresses.
-                    Some(Tok::RParen | Tok::RBracket) => {
+                    Some(TokenKind::RParen | TokenKind::RBracket) => {
                         self.bump();
                         continue;
                     }
@@ -2318,7 +2368,7 @@ impl Parser {
                     if self.eat_op("<-") {
                         let _ = self.expr();
                     }
-                    if !self.eat(&Tok::Comma) {
+                    if !self.eat(&TokenKind::Comma) {
                         break;
                     }
                 }
@@ -2356,17 +2406,17 @@ impl Parser {
         let start_i = self.i;
         self.bump(); // do
         let mut stmts = Vec::new();
-        if self.eat(&Tok::VLBrace) || self.eat(&Tok::LBrace) {
+        if self.eat(&TokenKind::VLBrace) || self.eat(&TokenKind::LBrace) {
             loop {
-                while self.eat(&Tok::VSemi) || self.eat(&Tok::Semi) {}
+                while self.eat(&TokenKind::VSemi) || self.eat(&TokenKind::Semi) {}
                 match self.peek() {
                     None => break,
-                    Some(Tok::VRBrace | Tok::RBrace) => {
+                    Some(TokenKind::VRBrace | TokenKind::RBrace) => {
                         self.bump();
                         break;
                     }
                     // Stray closer: discard so the loop always progresses.
-                    Some(Tok::RParen | Tok::RBracket) => {
+                    Some(TokenKind::RParen | TokenKind::RBracket) => {
                         self.bump();
                         continue;
                     }
@@ -2470,19 +2520,19 @@ impl Parser {
         self.bump(); // try
         let body = self.expr();
         let mut handlers = Vec::new();
-        self.eat(&Tok::VSemi);
+        self.eat(&TokenKind::VSemi);
         if self.eat_keyword("catch") {
-            if self.eat(&Tok::VLBrace) || self.eat(&Tok::LBrace) {
+            if self.eat(&TokenKind::VLBrace) || self.eat(&TokenKind::LBrace) {
                 loop {
-                    while self.eat(&Tok::VSemi) || self.eat(&Tok::Semi) {}
+                    while self.eat(&TokenKind::VSemi) || self.eat(&TokenKind::Semi) {}
                     match self.peek() {
                         None => break,
-                        Some(Tok::VRBrace | Tok::RBrace) => {
+                        Some(TokenKind::VRBrace | TokenKind::RBrace) => {
                             self.bump();
                             break;
                         }
                         // Stray closer: discard so the loop always progresses.
-                        Some(Tok::RParen | Tok::RBracket) => {
+                        Some(TokenKind::RParen | TokenKind::RBracket) => {
                             self.bump();
                             continue;
                         }
@@ -2513,16 +2563,16 @@ impl Parser {
                      // `\case` — lambda-case: one implicit argument matched by the alts.
         if self.eat_keyword("case") {
             let mut alts = Vec::new();
-            if self.eat(&Tok::VLBrace) || self.eat(&Tok::LBrace) {
+            if self.eat(&TokenKind::VLBrace) || self.eat(&TokenKind::LBrace) {
                 loop {
-                    while self.eat(&Tok::VSemi) || self.eat(&Tok::Semi) {}
+                    while self.eat(&TokenKind::VSemi) || self.eat(&TokenKind::Semi) {}
                     match self.peek() {
                         None => break,
-                        Some(Tok::VRBrace | Tok::RBrace) => {
+                        Some(TokenKind::VRBrace | TokenKind::RBrace) => {
                             self.bump();
                             break;
                         }
-                        Some(Tok::RParen | Tok::RBracket) => {
+                        Some(TokenKind::RParen | TokenKind::RBracket) => {
                             self.bump();
                             continue;
                         }
@@ -2585,7 +2635,7 @@ impl Parser {
         let pos = self.pos();
         let start_i = self.i;
         self.bump(); // (
-        if self.eat(&Tok::RParen) {
+        if self.eat(&TokenKind::RParen) {
             return Some(Expr::Con {
                 qualifier: None,
                 name: "()".to_string(),
@@ -2594,10 +2644,10 @@ impl Parser {
             });
         }
         // Operator section / operator reference: `(+)`, `(+ 1)`.
-        if let Some(Tok::Op(o)) = self.peek().cloned() {
+        if let Some(TokenKind::Op(o)) = self.peek().cloned() {
             if !is_reserved_op(&o) && o != "\\" && o != "-" {
                 self.bump();
-                if self.eat(&Tok::RParen) {
+                if self.eat(&TokenKind::RParen) {
                     return Some(Expr::Section {
                         op: o,
                         operand: None,
@@ -2607,7 +2657,7 @@ impl Parser {
                     });
                 }
                 let operand = self.expr();
-                self.eat(&Tok::RParen);
+                self.eat(&TokenKind::RParen);
                 return Some(Expr::Section {
                     op: o,
                     operand: Some(Box::new(operand)),
@@ -2618,12 +2668,12 @@ impl Parser {
             }
         }
         let first = self.expr();
-        if self.at(&Tok::Comma) {
+        if self.at(&TokenKind::Comma) {
             let mut items = vec![first];
-            while self.eat(&Tok::Comma) {
+            while self.eat(&TokenKind::Comma) {
                 items.push(self.expr());
             }
-            self.eat(&Tok::RParen);
+            self.eat(&TokenKind::RParen);
             return Some(Expr::Tuple {
                 items,
                 pos,
@@ -2631,8 +2681,8 @@ impl Parser {
             });
         }
         // Left section: `(x +)`.
-        if let Some(Tok::Op(o)) = self.peek().cloned() {
-            if !is_reserved_op(&o) && self.peek_at(1) == Some(&Tok::RParen) {
+        if let Some(TokenKind::Op(o)) = self.peek().cloned() {
+            if !is_reserved_op(&o) && self.peek_at(1) == Some(&TokenKind::RParen) {
                 self.bump();
                 self.bump();
                 return Some(Expr::Section {
@@ -2644,7 +2694,7 @@ impl Parser {
                 });
             }
         }
-        self.eat(&Tok::RParen);
+        self.eat(&TokenKind::RParen);
         Some(first)
     }
 
@@ -2653,7 +2703,7 @@ impl Parser {
         let start_i = self.i;
         self.bump(); // [
         let mut items = Vec::new();
-        if self.eat(&Tok::RBracket) {
+        if self.eat(&TokenKind::RBracket) {
             return Some(Expr::List {
                 items,
                 pos,
@@ -2665,7 +2715,7 @@ impl Parser {
             // Range: `[a .. b]` / `[a ..]`.
             if self.at_op("..") {
                 self.bump();
-                let hi = if self.at(&Tok::RBracket) {
+                let hi = if self.at(&TokenKind::RBracket) {
                     Expr::Error {
                         raw: String::new(),
                         pos,
@@ -2674,7 +2724,7 @@ impl Parser {
                 } else {
                     self.expr()
                 };
-                self.eat(&Tok::RBracket);
+                self.eat(&TokenKind::RBracket);
                 return Some(Expr::BinOp {
                     op: "..".to_string(),
                     lhs: Box::new(e),
@@ -2689,20 +2739,20 @@ impl Parser {
                 let mut brackets = 1usize;
                 while let Some(t) = self.peek() {
                     match t {
-                        Tok::LBracket => brackets += 1,
-                        Tok::RBracket => {
+                        TokenKind::LBracket => brackets += 1,
+                        TokenKind::RBracket => {
                             brackets -= 1;
                             if brackets == 0 {
                                 break;
                             }
                         }
-                        Tok::VSemi | Tok::VRBrace => break,
+                        TokenKind::VSemi | TokenKind::VRBrace => break,
                         _ => {}
                     }
                     self.i += 1;
                 }
                 let raw = self.slice_text(start);
-                self.eat(&Tok::RBracket);
+                self.eat(&TokenKind::RBracket);
                 return Some(Expr::App {
                     func: Box::new(e),
                     args: vec![Expr::Error {
@@ -2715,11 +2765,11 @@ impl Parser {
                 });
             }
             items.push(e);
-            if !self.eat(&Tok::Comma) {
+            if !self.eat(&TokenKind::Comma) {
                 break;
             }
         }
-        self.eat(&Tok::RBracket);
+        self.eat(&TokenKind::RBracket);
         Some(Expr::List {
             items,
             pos,
@@ -2775,7 +2825,8 @@ fn merge_functions(decls: &mut Vec<Decl>) {
             Decl::Function(f) => {
                 if let Some(existing_index) = function_index_by_name.get(&f.name).copied() {
                     let Decl::Function(g) = &mut out[existing_index] else {
-                        unreachable!("function index must point at a function declaration");
+                        out.push(Decl::Function(f));
+                        continue;
                     };
                     if g.ty.is_none() {
                         g.ty = f.ty.clone();
@@ -2856,7 +2907,7 @@ impl<'a> TypeTokenParser<'a> {
     }
 
     fn eat_op(&mut self, op: &str) -> bool {
-        if self.peek().is_some_and(|t| t.tok.is_op(op)) {
+        if self.peek().is_some_and(|t| t.kind.is_op(op)) {
             self.cursor += 1;
             true
         } else {
@@ -2922,22 +2973,22 @@ impl<'a> TypeTokenParser<'a> {
     /// should keep going).
     fn is_at_type_atom_start(&self) -> bool {
         matches!(
-            self.peek().map(|t| &t.tok),
+            self.peek().map(|t| &t.kind),
             Some(
-                Tok::UpperId { .. }
-                    | Tok::LowerId { .. }
-                    | Tok::IntLit(_)
-                    | Tok::DecimalLit(_)
-                    | Tok::LBracket
-                    | Tok::LParen
+                TokenKind::UpperId { .. }
+                    | TokenKind::LowerId { .. }
+                    | TokenKind::IntLit(_)
+                    | TokenKind::DecimalLit(_)
+                    | TokenKind::LBracket
+                    | TokenKind::LParen
             )
         )
     }
 
     fn parse_atom(&mut self) -> Option<TypeAtom> {
         let tok = self.peek()?;
-        match &tok.tok {
-            Tok::UpperId { qualifier, name } => {
+        match &tok.kind {
+            TokenKind::UpperId { qualifier, name } => {
                 let con = Type::Con {
                     qualifier: qualifier.clone(),
                     name: name.clone(),
@@ -2946,44 +2997,44 @@ impl<'a> TypeTokenParser<'a> {
                 self.cursor += 1;
                 Some(TypeAtom::ParsedType(con))
             }
-            Tok::LowerId { name, .. } => {
+            TokenKind::LowerId { name, .. } => {
                 // Type variable (`a`, `n`). Qualified lowercase never appears in
                 // a real type position; treat the name as the variable.
                 let var = Type::Var(name.clone(), Span::new(tok.start, tok.end));
                 self.cursor += 1;
                 Some(TypeAtom::ParsedType(var))
             }
-            Tok::IntLit(_) | Tok::DecimalLit(_) => {
+            TokenKind::IntLit(_) | TokenKind::DecimalLit(_) => {
                 // Type-level nat literal (`Numeric 10`): consumed, but dropped.
                 self.cursor += 1;
                 Some(TypeAtom::DroppedLiteral(Span::new(tok.start, tok.end)))
             }
-            Tok::LBracket => {
+            TokenKind::LBracket => {
                 let start = tok.start;
                 self.cursor += 1;
                 let inner = self.parse_type()?;
-                self.eat_token(&Tok::RBracket).map(|end| {
+                self.eat_token(&TokenKind::RBracket).map(|end| {
                     TypeAtom::ParsedType(Type::List(Box::new(inner), Span::new(start, end.end)))
                 })
             }
-            Tok::LParen => {
+            TokenKind::LParen => {
                 let start = tok.start;
                 self.cursor += 1;
-                if let Some(end) = self.eat_token(&Tok::RParen) {
+                if let Some(end) = self.eat_token(&TokenKind::RParen) {
                     // ()
                     return Some(TypeAtom::ParsedType(Type::Unit(Span::new(start, end.end))));
                 }
                 let first = self.parse_type()?;
-                if self.peek().map(|t| &t.tok) == Some(&Tok::Comma) {
+                if self.peek().map(|t| &t.kind) == Some(&TokenKind::Comma) {
                     let mut items = vec![first];
-                    while self.eat_token(&Tok::Comma).is_some() {
+                    while self.eat_token(&TokenKind::Comma).is_some() {
                         items.push(self.parse_type()?);
                     }
-                    self.eat_token(&Tok::RParen).map(|end| {
+                    self.eat_token(&TokenKind::RParen).map(|end| {
                         TypeAtom::ParsedType(Type::Tuple(items, Span::new(start, end.end)))
                     })
                 } else {
-                    self.eat_token(&Tok::RParen).map(|end| {
+                    self.eat_token(&TokenKind::RParen).map(|end| {
                         // Grouping parens.
                         TypeAtom::ParsedType(first.with_span(Span::new(start, end.end)))
                     })
@@ -2993,8 +3044,8 @@ impl<'a> TypeTokenParser<'a> {
         }
     }
 
-    fn eat_token(&mut self, tok: &Tok) -> Option<&'a Token> {
-        if self.peek().is_some_and(|t| t.tok == *tok) {
+    fn eat_token(&mut self, tok: &TokenKind) -> Option<&'a Token> {
+        if self.peek().is_some_and(|t| t.kind == *tok) {
             let t = self.peek();
             self.cursor += 1;
             t
@@ -3008,28 +3059,28 @@ fn render_token_slice(tokens: &[Token]) -> String {
     let mut s = String::new();
     let mut prev_no_space_after = true;
     for t in tokens {
-        let (text, no_space_before, no_space_after): (String, bool, bool) = match &t.tok {
-            Tok::LowerId { qualifier, name } | Tok::UpperId { qualifier, name } => (
+        let (text, no_space_before, no_space_after): (String, bool, bool) = match &t.kind {
+            TokenKind::LowerId { qualifier, name } | TokenKind::UpperId { qualifier, name } => (
                 qualifier
                     .as_ref()
                     .map_or_else(|| name.clone(), |q| format!("{q}.{name}")),
                 false,
                 false,
             ),
-            Tok::Op(o) => (o.clone(), false, false),
-            Tok::IntLit(n) | Tok::DecimalLit(n) => (n.clone(), false, false),
-            Tok::StringLit(v) => (format!("{v:?}"), false, false),
-            Tok::CharLit(v) => (format!("'{v}'"), false, false),
-            Tok::LParen => ("(".to_string(), false, true),
-            Tok::RParen => (")".to_string(), true, false),
-            Tok::LBracket => ("[".to_string(), false, true),
-            Tok::RBracket => ("]".to_string(), true, false),
-            Tok::LBrace => ("{".to_string(), false, true),
-            Tok::RBrace => ("}".to_string(), true, false),
-            Tok::Comma => (",".to_string(), true, false),
-            Tok::Semi | Tok::VSemi => (";".to_string(), true, false),
-            Tok::Backtick => ("`".to_string(), false, false),
-            Tok::VLBrace | Tok::VRBrace => continue,
+            TokenKind::Op(o) => (o.clone(), false, false),
+            TokenKind::IntLit(n) | TokenKind::DecimalLit(n) => (n.clone(), false, false),
+            TokenKind::StringLit(v) => (format!("{v:?}"), false, false),
+            TokenKind::CharLit(v) => (format!("'{v}'"), false, false),
+            TokenKind::LParen => ("(".to_string(), false, true),
+            TokenKind::RParen => (")".to_string(), true, false),
+            TokenKind::LBracket => ("[".to_string(), false, true),
+            TokenKind::RBracket => ("]".to_string(), true, false),
+            TokenKind::LBrace => ("{".to_string(), false, true),
+            TokenKind::RBrace => ("}".to_string(), true, false),
+            TokenKind::Comma => (",".to_string(), true, false),
+            TokenKind::Semi | TokenKind::VSemi => (";".to_string(), true, false),
+            TokenKind::Backtick => ("`".to_string(), false, false),
+            TokenKind::VLBrace | TokenKind::VRBrace => continue,
         };
         if !s.is_empty() && !no_space_before && !prev_no_space_after {
             s.push(' ');
@@ -3049,7 +3100,7 @@ mod type_tests {
     /// has no layout-significant newlines, so no virtual tokens appear — this
     /// exercises the type grammar in isolation.
     fn ty(s: &str) -> Option<Type> {
-        let (toks, errs) = lex(s);
+        let (toks, errs) = lex(s).into_parts();
         assert!(errs.is_empty(), "lex errors for {s:?}: {errs:?}");
         parse_type_from_tokens(&toks)
     }
@@ -3224,7 +3275,7 @@ template T
       do
         pure None
 "#;
-        let (m, _) = parse_module(src);
+        let (m, _) = parse_module(src).into_parts();
         let t = match &m.decls[0] {
             Decl::Template(t) => t,
             other => panic!("expected template, got {other:?}"),
@@ -3267,7 +3318,7 @@ template T
 interface I where
   getAmount : Numeric 10
 "#;
-        let (m, _) = parse_module(src);
+        let (m, _) = parse_module(src).into_parts();
         let t = match &m.decls[0] {
             Decl::Template(t) => t,
             other => panic!("expected template, got {other:?}"),
@@ -3289,7 +3340,7 @@ interface I where
     #[test]
     fn malformed_guarded_equation_reports_missing_equals_and_continues() {
         let src = "module M where\nf x | x > 0\ng = 1\n";
-        let (module, diagnostics) = parse_module(src);
+        let (module, diagnostics) = parse_module(src).into_parts();
 
         assert!(
             diagnostics.iter().any(
@@ -3311,7 +3362,7 @@ interface I where
     #[test]
     fn malformed_brackets_do_not_underflow_recovery_scans() {
         let src = "module M where\ntemplate T\n  with\n    owner : Party\n  where\n    key owner ) : Party\n    maintainer owner\n\nf = (]\ng = 1\n";
-        let (module, _diagnostics) = parse_module(src);
+        let (module, _diagnostics) = parse_module(src).into_parts();
 
         assert_eq!(module.name, "M");
         assert!(

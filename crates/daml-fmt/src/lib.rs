@@ -30,7 +30,7 @@
 // shipping backend. See src/layout_ast.rs.
 mod layout_ast;
 
-use daml_parser::lexer::{Tok, TriviaKind};
+use daml_parser::lexer::{TokenKind, TriviaKind};
 use daml_syntax::SourceTokens;
 
 /// Lexer diagnostics for `src`.
@@ -45,7 +45,7 @@ pub fn lex_diagnostics(src: &str) -> Vec<String> {
     SourceTokens::lex(src)
         .lex_errors()
         .iter()
-        .map(|error| format!("{}:{}: {}", error.pos.line, error.pos.column, error.message))
+        .map(|error| format!("{}:{}: {}", error.pos.line, error.pos.column, error))
         .collect()
 }
 
@@ -104,14 +104,19 @@ fn rewrite(src: &str, colon: bool) -> String {
     let mut items: Vec<(usize, usize, i32, bool, bool, bool)> = source_tokens
         .tokens()
         .iter()
-        .filter(|t| !matches!(t.tok, Tok::VLBrace | Tok::VRBrace | Tok::VSemi))
+        .filter(|t| {
+            !matches!(
+                t.kind(),
+                TokenKind::VLBrace | TokenKind::VRBrace | TokenKind::VSemi
+            )
+        })
         .map(|t| {
             (
-                t.start,
-                t.end,
-                brace_delta(&t.tok),
-                is_lone_colon(&t.tok),
-                matches!(t.tok, Tok::RParen),
+                t.start(),
+                t.end(),
+                brace_delta(t.kind()),
+                is_lone_colon(t.kind()),
+                matches!(t.kind(), TokenKind::RParen),
                 true,
             )
         })
@@ -119,8 +124,8 @@ fn rewrite(src: &str, colon: bool) -> String {
             source_tokens
                 .trivia()
                 .iter()
-                .filter(|t| !matches!(t.kind, TriviaKind::BlankLines(_)))
-                .map(|t| (t.start, t.end, 0, false, false, false)),
+                .filter(|t| !matches!(t.kind(), TriviaKind::BlankLines(_)))
+                .map(|t| (t.start(), t.end(), 0, false, false, false)),
         )
         .collect();
     items.sort_by_key(|&(start, ..)| start);
@@ -172,14 +177,14 @@ fn rewrite(src: &str, colon: bool) -> String {
     out
 }
 
-fn is_lone_colon(t: &Tok) -> bool {
-    matches!(t, Tok::Op(op) if op == ":")
+fn is_lone_colon(t: &TokenKind) -> bool {
+    matches!(t, TokenKind::Op(op) if op == ":")
 }
 
-const fn brace_delta(t: &Tok) -> i32 {
+const fn brace_delta(t: &TokenKind) -> i32 {
     match t {
-        Tok::LBrace | Tok::LParen => 1,
-        Tok::RBrace | Tok::RParen => -1,
+        TokenKind::LBrace | TokenKind::LParen => 1,
+        TokenKind::RBrace | TokenKind::RParen => -1,
         _ => 0,
     }
 }

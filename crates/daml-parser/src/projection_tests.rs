@@ -14,7 +14,7 @@ use crate::lexer::lex_with_trivia;
 use crate::parse::parse_module;
 
 fn parse(src: &str) -> Module {
-    let (module, diagnostics) = parse_module(src);
+    let (module, diagnostics) = parse_module(src).into_parts();
     // Every fixture here is well-formed Daml; assert it so a typo in a fixture
     // fails with a clear cause instead of a baffling structural panic later.
     assert!(
@@ -166,7 +166,7 @@ fn newline_separated_dot_stays_composition() {
         other => panic!("expected composition BinOp across newline, got {other:?}"),
     }
     // And still byte-lossless.
-    let (_, trivia, _) = lex_with_trivia(src);
+    let (_, trivia, _) = lex_with_trivia(src).into_parts();
     assert_eq!(render_from_ast(src, &m, &trivia).as_deref(), Ok(src));
 }
 
@@ -272,7 +272,7 @@ fn projection_roundtrips_through_oracle() {
         "module M where\nf = (g x).note\n",
     ];
     for src in cases {
-        let (_, trivia, _) = lex_with_trivia(src);
+        let (_, trivia, _) = lex_with_trivia(src).into_parts();
         match render_from_ast(src, &parse(src), &trivia) {
             Ok(out) => assert_eq!(out, src, "roundtrip mismatch for {src:?}"),
             Err(e) => panic!("oracle failed for {src:?}: {e}"),

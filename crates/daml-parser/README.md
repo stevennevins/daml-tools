@@ -53,8 +53,9 @@ daml-parser = "0.3"
 ```rust
 use daml_parser::parse::parse_module;
 
-let (module, diagnostics) = parse_module("module M where\nfoo : Int\nfoo = 1\n");
-assert!(diagnostics.is_empty());
+let result = parse_module("module M where\nfoo : Int\nfoo = 1\n");
+assert!(result.diagnostics.is_empty());
+let module = result.module;
 ```
 
 ## Choosing a parser layer
@@ -81,7 +82,7 @@ combine the AST with tokens and trivia for source-preserving work.
 
 ## Reading parser output
 
-`parse_module` returns `(Module, Vec<ParseDiagnostic>)`. Diagnostics are not
+`parse_module` returns `ParseModuleResult { module, diagnostics }`. Diagnostics are not
 fatal; the parser records what it could understand and keeps going.
 
 ```rust
@@ -98,7 +99,9 @@ template Account
     signatory owner
 ";
 
-let (module, diagnostics) = parse_module(source);
+let result = parse_module(source);
+let module = result.module;
+let diagnostics = result.diagnostics;
 
 let has_lex_errors = diagnostics
     .iter()
@@ -167,7 +170,10 @@ the source:
 ```rust
 use daml_parser::lexer::{lex_with_trivia, render_lossless};
 
-let (tokens, trivia, errors) = lex_with_trivia(source);
+let lexed = lex_with_trivia(source);
+let tokens = lexed.tokens;
+let trivia = lexed.trivia;
+let errors = lexed.errors;
 assert!(errors.is_empty());
 assert_eq!(render_lossless(source, &tokens, &trivia).unwrap(), source);
 ```
@@ -180,8 +186,10 @@ use daml_parser::ast_span::render_from_ast;
 use daml_parser::lexer::lex_with_trivia;
 use daml_parser::parse::parse_module;
 
-let (_, trivia, _) = lex_with_trivia(source);
-let (module, _) = parse_module(source);
+let lexed = lex_with_trivia(source);
+let trivia = lexed.trivia;
+let parsed = parse_module(source);
+let module = parsed.module;
 assert_eq!(render_from_ast(source, &module, &trivia).unwrap(), source);
 ```
 
@@ -193,29 +201,29 @@ tokens:
 
 | Token | Meaning |
 |-------|---------|
-| `Tok::VLBrace` | start of an implicit layout block |
-| `Tok::VSemi` | separator between items in an implicit layout block |
-| `Tok::VRBrace` | end of an implicit layout block |
+| `TokenKind::VLBrace` | start of an implicit layout block |
+| `TokenKind::VSemi` | separator between items in an implicit layout block |
+| `TokenKind::VRBrace` | end of an implicit layout block |
 
 This is useful when a consumer wants parser-equivalent token boundaries without
 building the full AST.
 
 ```rust
 use daml_parser::layout::resolve_layout;
-use daml_parser::lexer::{lex, Tok};
+use daml_parser::lexer::{lex, TokenKind};
 
-let (tokens, errors) = lex(source);
-assert!(errors.is_empty());
+let lexed = lex(source);
+assert!(lexed.errors.is_empty());
 
-let laid_out = resolve_layout(tokens);
-assert!(laid_out.iter().any(|t| matches!(t.tok, Tok::VLBrace)));
+let laid_out = resolve_layout(lexed.tokens);
+assert!(laid_out.iter().any(|t| matches!(t.kind(), &TokenKind::VLBrace)));
 ```
 
 ## Public modules
 
 | Module     | What it gives you                                              |
 |------------|---------------------------------------------------------------|
-| `lexer`    | tokenizer, trivia, `Tok`/`Token`, `Pos`, lossless reconstruction |
+| `lexer`    | tokenizer, trivia, `TokenKind`/`Token`, `Pos`, lossless reconstruction |
 | `layout`   | offside-rule resolution into virtual `{ ; }` tokens           |
 | `parse`    | `parse_module` → typed AST + diagnostics                      |
 | `ast`      | the syntax tree types, byte `Span` on every node              |

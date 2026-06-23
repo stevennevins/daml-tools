@@ -45,6 +45,7 @@ impl Span {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum LitKind {
     Int,
     Decimal,
@@ -82,6 +83,7 @@ pub struct Binding {
 }
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum Pat {
     Var {
         name: String,
@@ -131,6 +133,7 @@ pub enum Pat {
 }
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum Expr {
     /// Lowercase variable reference, possibly qualified.
     Var {
@@ -242,6 +245,7 @@ pub enum Expr {
 }
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum DoStmt {
     /// `pat <- expr`
     Bind {
@@ -268,6 +272,7 @@ pub enum DoStmt {
 /// Every node carries a byte span so consumers can render exact source text from
 /// `(source, span)`.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum Type {
     /// Type constructor, possibly qualified: `Party`, `DA.Map.Map`.
     Con {
@@ -503,6 +508,7 @@ pub struct ImportDecl {
 }
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum Decl {
     Template(TemplateDecl),
     Interface(InterfaceDecl),
@@ -542,6 +548,7 @@ pub struct Module {
 /// safe, just unanalyzed) from a genuine malformation, a recursion-limit
 /// degradation, or a lexical error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum DiagnosticCategory {
     /// A whole declaration could not be parsed and was skipped to the next item.
     SkippedDecl,
@@ -862,6 +869,18 @@ impl Pat {
             Self::As { name, pat, .. } => format!("{}@{}", name, pat.render()),
             Self::Other { raw, .. } => raw.clone(),
         }
+    }
+}
+
+impl std::fmt::Display for Expr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.render())
+    }
+}
+
+impl std::fmt::Display for Pat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.render())
     }
 }
 
