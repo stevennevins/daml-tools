@@ -14,8 +14,14 @@
 //! adding/removing fields, changing enum variants, or altering shapes is
 //! SemVer-relevant. Use constructors in the same crate for creation and treat
 //! these as versioned contracts with downstream rules/detectors.
-//! Existing exported enums are `#[non_exhaustive]` when extensibility is part of
-//! their contract; callers should include a wildcard arm when matching.
+//! Matching contract for rule-facing IR:
+//! `TypeNode`, `LiteralKind`, `Expr`, `Consuming`, `Statement`, and
+//! `ImportStyle` are intentionally `#[non_exhaustive]`.
+//! Downstream code should include wildcard arms when matching any of these
+//! enums; adding variants is a compatible evolution for new Daml syntax and
+//! recovery paths. Existing struct fields are still public for inspection, but
+//! semver-sensitive additions should be considered when constructing IR nodes
+//! yourself.
 //!
 //! # Example
 //!

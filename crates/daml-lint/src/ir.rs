@@ -1,3 +1,11 @@
+//! Rule-facing IR for `daml-lint`.
+//!
+//! This module intentionally prefers forward-compatible matching for public enum
+//! nodes. The IR mirrors the parsed Daml AST at a lossy-compatibility boundary:
+//! `TypeNode`, `LiteralKind`, `Expr`, `Consuming`, `Statement`, and
+//! `ImportStyle` are all `#[non_exhaustive]` so downstream crates should add
+//! wildcard arms when matching instead of exhaustiveness assumptions.
+
 use daml_parser::ast::Type;
 use daml_syntax::{SourceFile, TextRange};
 use serde::Serialize;
@@ -42,6 +50,7 @@ impl SourceSpan {
     }
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub enum TypeNode {
     Con {
@@ -150,6 +159,7 @@ pub struct SrcPos {
     pub column: usize,
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub enum LiteralKind {
     Int,
@@ -160,6 +170,7 @@ pub enum LiteralKind {
 
 /// Expression AST exposed to rule scripts. Serialized as tagged unions:
 /// `{ "App": {...} }`, `{ "Lit": {...} }`, ... mirrored by daml-lint.d.ts.
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub enum Expr {
     /// Variable reference: `amount`, `Map.lookup` (qualifier "Map").
@@ -318,6 +329,7 @@ pub struct Choice {
     pub span: Span,
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Consuming {
@@ -337,6 +349,7 @@ impl Consuming {
 /// rule-facing parse tree.
 /// `Other.raw` is the deliberate raw-source form for statements with no
 /// structured encoding.
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub enum Statement {
     Let {
@@ -427,6 +440,7 @@ pub struct Import {
     pub span: Span,
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ImportStyle {
