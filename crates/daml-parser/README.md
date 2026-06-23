@@ -114,7 +114,11 @@ let templates: Vec<_> = module
     .collect();
 
 assert!(!has_lex_errors);
-assert_eq!(templates[0].0.as_str(), "Account");
+let (template_name, template_span) = templates
+    .first()
+    .expect("example source defines an Account template");
+
+assert_eq!(template_name.as_str(), "Account");
 ```
 
 Every AST node that represents source text carries a 1-based `Pos` and a byte
@@ -122,7 +126,7 @@ Every AST node that represents source text carries a 1-based `Pos` and a byte
 
 ```rust
 let snippet = source
-    .get(templates[0].1.start..templates[0].1.end)
+    .get(template_span.start..template_span.end)
     .expect("parser spans are UTF-8 boundaries");
 
 assert!(snippet.starts_with("template Account"));
