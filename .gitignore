@@ -7,3 +7,11 @@
 
 # npm (daml-fmt differential harness uses node, no deps installed)
 node_modules/
+
+# Smithers runtime state (workflow sources live under .smithers/ and are tracked)
+/smithers.db
+/smithers.db-shm
+/smithers.db-wal
+/smithers.sqlite
+/smithers.sqlite-shm
+/smithers.sqlite-wal
