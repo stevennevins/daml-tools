@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.15](https://github.com/stevennevins/daml-tools/compare/daml-fmt-v0.2.14...daml-fmt-v0.2.15) - 2026-06-23
+
+### Other
+
+- updated the following local packages: daml-syntax
+
 ## [0.2.14](https://github.com/stevennevins/daml-tools/compare/daml-fmt-v0.2.13...daml-fmt-v0.2.14) - 2026-06-23
 
 ### Other
