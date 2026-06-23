@@ -1,5 +1,5 @@
 use daml_parser::ast::Type;
-use daml_syntax::{LineIndex, SourceFile, TextRange};
+use daml_syntax::{SourceFile, TextRange};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -25,16 +25,11 @@ pub struct SourceSpan {
 }
 
 impl SourceSpan {
-    fn from_text_range(
-        file: &Path,
-        source: &str,
-        line_index: &LineIndex,
-        range: TextRange,
-    ) -> Self {
+    fn from_text_range(file: &Path, source_file: &SourceFile, range: TextRange) -> Self {
         let byte_start = usize::from(range.start());
         let byte_end = usize::from(range.end());
-        let line_col = line_index.char_line_col(source, range.start());
-        let (start, end) = line_index.utf16_range(range);
+        let line_col = source_file.line_index().char_line_col(range.start());
+        let (start, end) = source_file.line_index().utf16_range(range);
         Self {
             file: file.to_path_buf(),
             line: line_col.line,
@@ -90,8 +85,7 @@ impl TypeNode {
         let source_span = || {
             SourceSpan::from_text_range(
                 file,
-                source_file.source(),
-                source_file.line_index(),
+                source_file,
                 source_file.parser_span_to_text_range(t.span()),
             )
         };
@@ -474,4 +468,26 @@ pub struct DamlModule {
     pub templates: Vec<Template>,
     pub interfaces: Vec<Interface>,
     pub functions: Vec<Function>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn source_span_line_calculation_tracks_its_source_file() {
+        let source_a = SourceFile::parse("module A where\nabcde\n");
+        let source_b = SourceFile::parse("module A where\nx\ncde\n");
+        let range = TextRange::new(17.into(), 18.into());
+
+        let span_a = SourceSpan::from_text_range(Path::new("A.daml"), &source_a, range);
+        let span_b = SourceSpan::from_text_range(Path::new("B.daml"), &source_b, range);
+
+        assert_eq!(span_a.line, 2);
+        assert_eq!(span_b.line, 3);
+        assert_ne!(span_a.column, span_b.column);
+        assert_eq!(span_a.column, 3);
+        assert_eq!(span_b.column, 1);
+    }
 }
