@@ -140,7 +140,7 @@ README: [`crates/daml-fmt/README.md`](../../crates/daml-fmt/README.md)
 |------|------------|-------------|
 | `format_source(src: &str) -> String` | Public | Formats Daml source with the AST-driven formatter. |
 | `format_source_with_options(src: &str, options: FormatOptions) -> String` | Public | Formats Daml source with explicit formatter options. |
-| `FormatOptions` | Public | Controls formatter behavior. `organize_imports` defaults to `true`; disabling it preserves source import order. |
+| `FormatOptions` | Public | Controls formatter behavior. `import_order` defaults to `ImportOrder::Organize`; use `ImportOrder::Preserve` to keep declaration order. |
 | `lex_diagnostics(src: &str) -> Vec<String>` | Public | Returns lexer diagnostic strings for malformed source. |
 | `coverage(src: &str) -> FormatCoverage` | Public | Counts formatter structural edit candidates over modeled constructs. |
 
