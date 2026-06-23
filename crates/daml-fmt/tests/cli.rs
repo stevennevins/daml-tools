@@ -76,3 +76,59 @@ fn preserve_import_order_disables_import_organization() {
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stdout), input);
 }
+
+#[test]
+fn stdin_reports_parser_diagnostics_and_exits_two() {
+    let input = "module M where\nfoo = if x then 1\n";
+    let mut child = cmd()
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), input);
+    assert!(String::from_utf8_lossy(&output.stderr).contains("daml-fmt: <stdin>"));
+}
+
+#[test]
+fn check_reports_parser_diagnostics_and_exits_two() {
+    let path = temp_file(
+        "parser-diagnostic-check.daml",
+        "module M where\nfoo = if x then 1\n",
+    );
+    let output = cmd().arg("--check").arg(&path).output().unwrap();
+    let source = std::fs::read_to_string(&path).unwrap();
+    std::fs::remove_file(&path).ok();
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains(&format!("daml-fmt: {}:", path.display()))
+    );
+    assert_eq!(source, "module M where\nfoo = if x then 1\n");
+}
+
+#[test]
+fn write_reports_parser_diagnostics_and_does_not_modify_input() {
+    let path = temp_file(
+        "parser-diagnostic-write.daml",
+        "module M where\nfoo = if x then 1\n",
+    );
+    let output = cmd().arg("--write").arg(&path).output().unwrap();
+    let source = std::fs::read_to_string(&path).unwrap();
+    std::fs::remove_file(&path).ok();
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains(&format!("daml-fmt: {}:", path.display()))
+    );
+    assert_eq!(source, "module M where\nfoo = if x then 1\n");
+}

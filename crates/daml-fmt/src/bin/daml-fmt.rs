@@ -6,21 +6,21 @@
 //!   daml-fmt --preserve-import-order <file...>
 //!   daml-fmt                   read stdin, write formatted source to stdout
 //!
-//! Malformed input (unterminated string / block comment) is reported to stderr
-//! and exits 2 in every mode; `-w` never rewrites it. Output is unchanged
+//! Malformed input (lexical or parser diagnostic) is reported to stderr and exits
+//! 2 in every mode; `-w` never rewrites it. Output is unchanged
 //! (byte-faithful passthrough) — only the success signal changes.
 //!
 //! Backend is the AST-driven formatter (`format_source_with_options` ->
 //! `layout_ast`).
 
-use daml_fmt::{format_source_with_options, lex_diagnostics, FormatOptions};
+use daml_fmt::{format_source_with_options, source_diagnostics, FormatOptions, ImportOrder};
 use std::io::Read;
 use std::process::exit;
 
-/// Print any lexer diagnostics for `src` to stderr, prefixed with `label`.
-/// Returns true when the source is malformed (had diagnostics).
-fn report_lex_errors(label: &str, src: &str) -> bool {
-    let diags = lex_diagnostics(src);
+/// Print source diagnostics for `src` to stderr, prefixed with `label`.
+/// Returns `true` when diagnostics are present.
+fn report_diagnostics(label: &str, src: &str) -> bool {
+    let diags = source_diagnostics(src);
     for d in &diags {
         eprintln!("daml-fmt: {label}: {d}");
     }
@@ -51,7 +51,7 @@ fn main() {
         match a.as_str() {
             "-w" | "--write" => write = true,
             "--check" => check = true,
-            "--preserve-import-order" => options.organize_imports = false,
+            "--preserve-import-order" => options.import_order = ImportOrder::Preserve,
             "-h" | "--help" => usage(0),
             "-v" | "--version" => {
                 println!("{}", env!("CARGO_PKG_VERSION"));
@@ -79,9 +79,13 @@ fn main() {
             eprintln!("daml-fmt: failed to read stdin");
             exit(2);
         }
-        let malformed = report_lex_errors("<stdin>", &text);
+        let malformed = report_diagnostics("<stdin>", &text);
+        if malformed {
+            print!("{}", &text);
+            exit(2);
+        }
         print!("{}", format_source_with_options(&text, options));
-        exit(if malformed { 2 } else { 0 });
+        exit(0);
     }
 
     let mut failed = 0;
@@ -98,10 +102,10 @@ fn main() {
         // Malformed input (unterminated string / block comment) must not look
         // like a successful format: count it as failed (exit 2) in every mode,
         // and never rewrite it in -w. Output stays byte-faithful passthrough.
-        if report_lex_errors(file, &text) {
+        if report_diagnostics(file, &text) {
             failed += 1;
             if !check && !write {
-                print!("{}", format_source_with_options(&text, options));
+                print!("{}", &text);
             }
             continue;
         }

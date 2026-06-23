@@ -35,6 +35,7 @@
 //! Final whitespace + colon-spacing normalization remains token-gated
 //! (`crate::normalize_gaps`).
 
+use crate::ImportOrder;
 use daml_parser::ast::*;
 use daml_parser::lexer::TriviaKind;
 use daml_syntax::{SourceFile, SourceTokens};
@@ -62,7 +63,7 @@ pub fn format_ast(src: &str, options: crate::FormatOptions) -> String {
     // Step 2: layout-organizing rewrites that intentionally change layout
     // tokens while preserving the non-layout token stream. Import organization
     // is controlled separately because it reorders import declarations.
-    if options.organize_imports {
+    if options.import_order == ImportOrder::Organize {
         base = organize_imports(&base);
     }
     base = rewrite_layout_forms(&base);

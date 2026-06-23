@@ -1,4 +1,5 @@
 use crate::detector::{Finding, Severity};
+use daml_parser::ast::DiagnosticCategory;
 use serde::Serialize;
 use serde_json::json;
 use std::fmt::Write as _;
@@ -33,7 +34,7 @@ pub struct ParseError {
     pub end_column: Option<usize>,
     pub message: String,
     /// Recovery category tag (e.g. `skipped-declaration`, `unsupported-syntax`).
-    pub category: &'static str,
+    pub category: DiagnosticCategory,
 }
 
 pub fn format_findings(
@@ -108,7 +109,7 @@ fn format_sarif(findings: &[Finding], parse_errors: &[ParseError]) -> String {
             json!({
                 "level": "error",
                 "message": { "text": e.message },
-                "properties": { "category": e.category },
+                "properties": { "category": e.category.as_str() },
                 "locations": [{
                     "physicalLocation": {
                         "artifactLocation": { "uri": e.file },
@@ -161,7 +162,11 @@ fn format_markdown(findings: &[Finding], parse_errors: &[ParseError]) -> String 
             writeln!(
                 out,
                 "- `{}:{}:{}` [{}] {}",
-                e.file, e.line, e.column, e.category, e.message
+                e.file,
+                e.line,
+                e.column,
+                e.category.as_str(),
+                e.message
             )
             .expect("writing to a String cannot fail");
         }
@@ -293,7 +298,7 @@ fn format_json(findings: &[Finding], parse_errors: &[ParseError]) -> String {
                 column: e.column,
                 end_column: e.end_column,
                 message: e.message.clone(),
-                category: e.category,
+                category: e.category.as_str(),
             })
             .collect(),
         summary: Summary {
@@ -354,7 +359,7 @@ mod tests {
             column: 5,
             end_column: Some(11),
             message: "unterminated string literal".to_string(),
-            category: "lexical-error",
+            category: DiagnosticCategory::Lex,
         }
     }
 

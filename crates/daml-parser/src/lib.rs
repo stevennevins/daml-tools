@@ -10,9 +10,19 @@
 //!
 //! Start at [`parse::parse_module`]. For byte-faithful reconstruction from the
 //! parse tree, see [`ast_span::render_from_ast`] and [`lexer::render_lossless`].
-//! The AST modules are public for inspection by tools; parser-created trees are
-//! the supported construction path. This crate is pre-1.0, so breaking public
-//! API changes use 0.x minor bumps and patch releases should stay compatible.
+//!
+//! ## API posture
+//!
+//! This crate is pre-1.0. Its public AST/IR-like types are intentionally direct
+//! data shapes that tools consume directly; additions or shape changes are
+//! SemVer-relevant and should be treated as breaking contract changes.
+//! Prefer adding helpers only when they can be used without changing these
+//! shapes, and use `#[non_exhaustive]` enums/variants for forward-safe
+//! extension. New enums introduced here should be documented as `non_exhaustive`
+//! when future variants are expected (for example
+//! [`SectionSide`](crate::ast::SectionSide)).
+//!
+//! Parser-created trees are the supported construction path.
 //!
 //! # Example
 //!

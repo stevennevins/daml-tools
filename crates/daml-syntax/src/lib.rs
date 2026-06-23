@@ -5,7 +5,7 @@
 //! diagnostics, line/UTF-16 mapping, tokens, trivia, laid-out tokens, and
 //! conversion from parser byte spans to `text-size` ranges.
 
-use daml_parser::ast::{Module, Span as ParserSpan};
+use daml_parser::ast::{DiagnosticCategory, Module, Span as ParserSpan};
 use daml_parser::layout::resolve_layout;
 use daml_parser::lexer::{lex_with_trivia, LexError, Token, Trivia};
 use daml_parser::parse::parse_module;
@@ -26,7 +26,7 @@ pub struct Diagnostic {
     pub column: usize,
     pub end_column: Option<usize>,
     pub message: String,
-    pub category: &'static str,
+    pub category: DiagnosticCategory,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -201,7 +201,7 @@ impl SourceFile {
                     column: diagnostic.pos.column,
                     end_column,
                     message: diagnostic.message,
-                    category: diagnostic.category.as_str(),
+                    category: diagnostic.category,
                 }
             })
             .collect();
@@ -385,7 +385,7 @@ mod tests {
         assert!(file
             .diagnostics()
             .iter()
-            .any(|diagnostic| diagnostic.category == "lexical-error"));
+            .any(|diagnostic| diagnostic.category == DiagnosticCategory::Lex));
     }
 
     #[test]

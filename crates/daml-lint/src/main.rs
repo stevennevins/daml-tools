@@ -123,7 +123,7 @@ fn main() {
         for d in &diagnostics {
             eprintln!(
                 "daml-lint: parse [{}]: {}:{}:{}: {}",
-                d.category,
+                d.category.as_str(),
                 file.display(),
                 d.line,
                 d.column,
