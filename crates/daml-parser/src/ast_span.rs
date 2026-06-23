@@ -33,6 +33,11 @@ pub fn render_from_ast(source: &str, module: &Module, trivia: &[Trivia]) -> Resu
 fn check_nesting(module: &Module) -> Result<(), String> {
     let mut spans: Vec<Span> = Vec::new();
     collect_module(module, &mut spans);
+    for span in &spans {
+        if !span.is_valid() {
+            return Err(format!("invalid span [{}, {})", span.start, span.end));
+        }
+    }
     spans.retain(|s| !s.is_empty());
     // Outer-first: earlier start, then later end.
     spans.sort_by(|a, b| a.start.cmp(&b.start).then(b.end.cmp(&a.end)));
@@ -87,6 +92,7 @@ fn tile(source: &str, module: &Module, trivia: &[Trivia]) -> Result<String, Stri
     let mut out = String::with_capacity(source.len());
     let mut prev = 0usize;
     for (start, end) in items {
+        validate_interval(source, start, end)?;
         if start < prev {
             // Nested AST child spans and contained trivia are already covered
             // by their parent tile. A partial overlap that extends past `prev`
@@ -122,6 +128,26 @@ fn tile(source: &str, module: &Module, trivia: &[Trivia]) -> Result<String, Stri
         ));
     }
     Ok(out)
+}
+
+fn validate_interval(source: &str, start: usize, end: usize) -> Result<(), String> {
+    if start > end {
+        return Err(format!(
+            "span/trivia interval [{start}, {end}) has start after end"
+        ));
+    }
+    if end > source.len() {
+        return Err(format!(
+            "span/trivia interval [{start}, {end}) exceeds source length {}",
+            source.len()
+        ));
+    }
+    if !source.is_char_boundary(start) || !source.is_char_boundary(end) {
+        return Err(format!(
+            "span/trivia interval [{start}, {end}) does not align with UTF-8 boundaries"
+        ));
+    }
+    Ok(())
 }
 
 // ----- span collection ---------------------------------------------------

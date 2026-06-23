@@ -16,7 +16,7 @@
 //!
 //! # Example
 //!
-//! ```
+//! ```rust
 //! let (module, diagnostics) =
 //!     daml_parser::parse::parse_module("module M where\nfoo : Int\nfoo = 1\n");
 //!
@@ -24,12 +24,18 @@
 //! assert_eq!(module.name, "M");
 //! ```
 
+/// Lossless AST node types produced by the parser.
 pub mod ast;
 /// AST byte-span losslessness oracle (`render_from_ast`): reconstruct source
 /// from the parse tree to prove the tree lost nothing.
 pub mod ast_span;
+/// Indentation-sensitive layout resolver.
+///
+/// Inserts virtual braces and semicolons for the parser.
 pub mod layout;
+/// Lexer and token/trivia types for Daml source text.
 pub mod lexer;
+/// Recursive-descent parser entry points and diagnostics.
 pub mod parse;
 
 #[cfg(test)]

@@ -454,6 +454,7 @@ impl<'a> Lexer<'a> {
                     break;
                 }
                 Some('\\') => {
+                    let escape_pos = self.pos();
                     self.bump();
                     match self.peek() {
                         // String gap: backslash, whitespace, backslash.
@@ -470,7 +471,16 @@ impl<'a> Lexer<'a> {
                         }
                         Some(e) => {
                             self.bump();
-                            value.push(unescape(e));
+                            match unescape(e) {
+                                Some(c) => value.push(c),
+                                None => {
+                                    self.error(
+                                        format!("invalid escape sequence \\{e}"),
+                                        escape_pos,
+                                    );
+                                    value.push(e);
+                                }
+                            }
                         }
                         None => {
                             self.error("unterminated string literal", pos);
@@ -519,8 +529,18 @@ impl<'a> Lexer<'a> {
         while self.peek() != Some('\'') {
             let c = self.bump().unwrap();
             if c == '\\' {
+                let escape_pos = Pos {
+                    line: self.line,
+                    column: self.column.saturating_sub(1),
+                };
                 if let Some(e) = self.bump() {
-                    value.push(unescape(e));
+                    match unescape(e) {
+                        Some(c) => value.push(c),
+                        None => {
+                            self.error(format!("invalid escape sequence \\{e}"), escape_pos);
+                            value.push(e);
+                        }
+                    }
                 }
             } else {
                 value.push(c);
@@ -536,11 +556,17 @@ impl<'a> Lexer<'a> {
         if self.peek() == Some('0') && matches!(self.peek_at(1), Some('x' | 'X')) {
             text.push(self.bump().unwrap());
             text.push(self.bump().unwrap());
+            let mut has_hex_digit = false;
             while self
                 .peek()
                 .is_some_and(|c| c.is_ascii_hexdigit() || c == '_')
             {
-                text.push(self.bump().unwrap());
+                let c = self.bump().unwrap();
+                has_hex_digit |= c.is_ascii_hexdigit();
+                text.push(c);
+            }
+            if !has_hex_digit {
+                self.error("hex literal requires at least one digit", pos);
             }
             self.push(Tok::IntLit(text), pos, start);
             return;
@@ -557,18 +583,25 @@ impl<'a> Lexer<'a> {
                 text.push(self.bump().unwrap());
             }
         }
-        if matches!(self.peek(), Some('e' | 'E'))
-            && (self.peek_at(1).is_some_and(|c| c.is_ascii_digit())
-                || (matches!(self.peek_at(1), Some('+' | '-'))
-                    && self.peek_at(2).is_some_and(|c| c.is_ascii_digit())))
-        {
+        if matches!(self.peek(), Some('e' | 'E')) {
             decimal = true;
-            text.push(self.bump().unwrap());
-            if matches!(self.peek(), Some('+' | '-')) {
+            if self.peek_at(1).is_some_and(|c| c.is_ascii_digit())
+                || (matches!(self.peek_at(1), Some('+' | '-'))
+                    && self.peek_at(2).is_some_and(|c| c.is_ascii_digit()))
+            {
                 text.push(self.bump().unwrap());
-            }
-            while self.peek().is_some_and(|c| c.is_ascii_digit()) {
+                if matches!(self.peek(), Some('+' | '-')) {
+                    text.push(self.bump().unwrap());
+                }
+                while self.peek().is_some_and(|c| c.is_ascii_digit()) {
+                    text.push(self.bump().unwrap());
+                }
+            } else {
                 text.push(self.bump().unwrap());
+                if matches!(self.peek(), Some('+' | '-')) {
+                    text.push(self.bump().unwrap());
+                }
+                self.error("decimal exponent requires at least one digit", pos);
             }
         }
         if decimal {
@@ -621,10 +654,7 @@ impl<'a> Lexer<'a> {
         while self.peek().is_some_and(is_symbol_char) {
             // `{-` inside an operator run can't happen ({ isn't a symbol
             // char), but `--` comment detection needs the full run first.
-            // Symbol chars are all ASCII, so one char is one byte.
-            self.i += 1;
-            self.column += 1;
-            self.byte += 1;
+            self.bump();
         }
         let text: String = self.chars[start..self.i].iter().collect();
         // A run of 2+ dashes and nothing else is a line comment (Haskell
@@ -640,13 +670,27 @@ impl<'a> Lexer<'a> {
     }
 }
 
-const fn unescape(c: char) -> char {
+const fn unescape(c: char) -> Option<char> {
     match c {
-        'n' => '\n',
-        't' => '\t',
-        'r' => '\r',
-        '0' => '\0',
-        other => other,
+        'n' => Some('\n'),
+        't' => Some('\t'),
+        'r' => Some('\r'),
+        '0' => Some('\0'),
+        'a' => Some('\u{07}'),
+        'b' => Some('\u{08}'),
+        'f' => Some('\u{0c}'),
+        'v' => Some('\u{0b}'),
+        '"' => Some('"'),
+        '\'' => Some('\''),
+        '\\' => Some('\\'),
+        '&' => Some('&'),
+        // DAML follows Haskell-style text escapes, including numeric escapes
+        // (`\123`, `\o173`, `\x7B`) and named ASCII escapes (`\NUL`, `\SOH`,
+        // ...). This lexer preserves source spans rather than fully decoding
+        // multi-character escapes here, so accept the leading escape character
+        // and let the remaining source characters flow through unchanged.
+        '1'..='9' | 'o' | 'x' | 'A'..='Z' => Some(c),
+        _ => None,
     }
 }
 
@@ -680,6 +724,11 @@ mod tests {
         let (tokens, errors) = lex(src);
         assert!(errors.is_empty(), "lex errors: {errors:?}");
         tokens.into_iter().map(|t| t.tok).collect()
+    }
+
+    fn lex_error_messages(src: &str) -> Vec<String> {
+        let (_, errors) = lex(src);
+        errors.into_iter().map(|e| e.message).collect()
     }
 
     fn lower(name: &str) -> Tok {
@@ -756,6 +805,29 @@ mod tests {
     }
 
     #[test]
+    fn malformed_hex_literal_reports_error() {
+        assert_eq!(
+            lex_error_messages("0x 0x_"),
+            vec![
+                "hex literal requires at least one digit",
+                "hex literal requires at least one digit",
+            ]
+        );
+    }
+
+    #[test]
+    fn malformed_decimal_exponent_reports_error() {
+        assert_eq!(
+            lex_error_messages("1e 1e+ 1e-"),
+            vec![
+                "decimal exponent requires at least one digit",
+                "decimal exponent requires at least one digit",
+                "decimal exponent requires at least one digit",
+            ]
+        );
+    }
+
+    #[test]
     fn enum_from_to_is_not_decimal() {
         assert_eq!(
             toks("[1..5]"),
@@ -778,6 +850,14 @@ mod tests {
                 Tok::CharLit("a".into()),
                 Tok::CharLit("\n".into())
             ]
+        );
+    }
+
+    #[test]
+    fn invalid_escape_sequences_report_errors() {
+        assert_eq!(
+            lex_error_messages(r#""\q" '\q'"#),
+            vec!["invalid escape sequence \\q", "invalid escape sequence \\q"]
         );
     }
 

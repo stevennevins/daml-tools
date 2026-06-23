@@ -347,6 +347,9 @@ impl Parser {
             match t {
                 Tok::LParen => depth += 1,
                 Tok::RParen => {
+                    if depth == 0 {
+                        return;
+                    }
                     depth -= 1;
                     if depth == 0 {
                         self.i += 1;
@@ -803,7 +806,7 @@ impl Parser {
                     for j in expr_start..self.i {
                         match &self.toks[j].tok {
                             Tok::LParen | Tok::LBracket => depth += 1,
-                            Tok::RParen | Tok::RBracket => depth -= 1,
+                            Tok::RParen | Tok::RBracket if depth > 0 => depth -= 1,
                             Tok::Op(o) if o == ":" && depth == 0 => colon = Some(j),
                             _ => {}
                         }
@@ -1297,8 +1300,13 @@ impl Parser {
             let e = self.expr();
             guards.push((g, e));
         }
-        let first = guards.first()?.1.clone();
-        Some((first, guards))
+        if guards.is_empty() {
+            self.diag("expected '=' or guarded right-hand side in equation");
+            None
+        } else {
+            let first = guards[0].1.clone();
+            Some((first, guards))
+        }
     }
 
     /// `{ binding ; binding ; ... }` for let/where blocks.
@@ -1578,7 +1586,7 @@ impl Parser {
                         match t {
                             Tok::LParen | Tok::LBracket => depth += 1,
                             Tok::RParen if depth == 0 => break,
-                            Tok::RParen | Tok::RBracket => depth -= 1,
+                            Tok::RParen | Tok::RBracket => depth = depth.saturating_sub(1),
                             Tok::VSemi | Tok::VRBrace => break,
                             _ => {}
                         }
@@ -1706,6 +1714,9 @@ impl Parser {
             match t {
                 Tok::LBrace => depth += 1,
                 Tok::RBrace => {
+                    if depth == 0 {
+                        return;
+                    }
                     depth -= 1;
                     if depth == 0 {
                         self.i += 1;
@@ -1914,6 +1925,9 @@ impl Parser {
                             match t {
                                 Tok::LBracket => depth += 1,
                                 Tok::RBracket => {
+                                    if depth == 0 {
+                                        break;
+                                    }
                                     depth -= 1;
                                     if depth == 0 {
                                         self.i += 1;
@@ -3268,5 +3282,43 @@ interface I where
         };
         // `Numeric 10` — the nat literal is dropped, leaving the bare head Con.
         assert_eq!(iface.methods[0].ty, Some(con("Numeric")));
+    }
+
+    #[test]
+    fn malformed_guarded_equation_reports_missing_equals_and_continues() {
+        let src = "module M where\nf x | x > 0\ng = 1\n";
+        let (module, diagnostics) = parse_module(src);
+
+        assert!(
+            diagnostics.iter().any(
+                |diagnostic| diagnostic.message == "expected '=' after guard"
+                    && diagnostic.category == DiagnosticCategory::Malformed
+            ),
+            "expected guard diagnostic, got {diagnostics:?}"
+        );
+        assert!(
+            module
+                .decls
+                .iter()
+                .any(|decl| matches!(decl, Decl::Function(function) if function.name == "g")),
+            "parser should recover to the following declaration: {:?}",
+            module.decls
+        );
+    }
+
+    #[test]
+    fn malformed_brackets_do_not_underflow_recovery_scans() {
+        let src = "module M where\ntemplate T\n  with\n    owner : Party\n  where\n    key owner ) : Party\n    maintainer owner\n\nf = (]\ng = 1\n";
+        let (module, _diagnostics) = parse_module(src);
+
+        assert_eq!(module.name, "M");
+        assert!(
+            module
+                .decls
+                .iter()
+                .any(|decl| matches!(decl, Decl::Function(function) if function.name == "g")),
+            "parser should recover to the following declaration: {:?}",
+            module.decls
+        );
     }
 }

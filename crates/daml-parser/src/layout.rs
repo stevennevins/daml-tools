@@ -10,11 +10,16 @@ use crate::lexer::{Pos, Tok, Token};
 /// Keywords that open a layout block. DAML adds `with` (template fields,
 /// choice parameters, record construction) and `catch` (exception handler
 /// alternatives) to Haskell's set.
-fn is_layout_keyword(tok: &Tok) -> bool {
-    matches!(
-        tok.keyword(),
-        Some("where" | "do" | "of" | "let" | "with" | "catch")
-    )
+fn layout_keyword(tok: &Tok) -> Option<&'static str> {
+    match tok.keyword() {
+        Some("where") => Some("where"),
+        Some("do") => Some("do"),
+        Some("of") => Some("of"),
+        Some("let") => Some("let"),
+        Some("with") => Some("with"),
+        Some("catch") => Some("catch"),
+        _ => None,
+    }
 }
 
 #[derive(Debug)]
@@ -54,18 +59,6 @@ pub fn resolve_layout(tokens: impl AsRef<[Token]>) -> Vec<Token> {
     // Set after a layout keyword: the next token starts a block.
     let mut expecting_open: Option<&'static str> = None;
     let mut last_line = 0usize;
-
-    let opened_kw = |tok: &Tok| -> &'static str {
-        match tok.keyword() {
-            Some("where") => "where",
-            Some("do") => "do",
-            Some("of") => "of",
-            Some("let") => "let",
-            Some("with") => "with",
-            Some("catch") => "catch",
-            _ => "",
-        }
-    };
 
     // A file that doesn't start with `module` opens an implicit top context
     // at its first token's column (Haskell rule for missing module headers).
@@ -123,12 +116,13 @@ pub fn resolve_layout(tokens: impl AsRef<[Token]>) -> Vec<Token> {
         }
 
         // Offside check at the first token of each new line.
-        let mut offside_closed_let = false;
         if pos.line != last_line {
             while let Some(top) = stack.last() {
                 if top.col > 0 && col < top.col {
-                    if top.opened_by == "let" {
-                        offside_closed_let = true;
+                    if token.tok.is_keyword("in") && top.opened_by == "let" {
+                        close(&mut out, pos);
+                        stack.pop();
+                        break;
                     }
                     close(&mut out, pos);
                     stack.pop();
@@ -166,13 +160,14 @@ pub fn resolve_layout(tokens: impl AsRef<[Token]>) -> Vec<Token> {
             }
         }
 
-        // `in` closes the matching `let` block when still open (same-line
-        // `let x = 1 in x`). If the offside check above already closed the
-        // matching let, the top context belongs to something enclosing —
-        // leave it alone.
-        if token.tok.is_keyword("in") && !offside_closed_let {
+        // `in` closes the matching `let` block when still open. Offside may
+        // already have closed an inner `let` on this line; in that case the
+        // current top context still decides whether this `in` belongs to an
+        // enclosing `let`.
+        if token.tok.is_keyword("in") {
             if let Some(top) = stack.last() {
-                if top.col > 0 && top.opened_by == "let" {
+                if top.col > 0 && top.opened_by == "let" && (top.line == pos.line || col <= top.col)
+                {
                     close(&mut out, pos);
                     stack.pop();
                 }
@@ -215,8 +210,8 @@ pub fn resolve_layout(tokens: impl AsRef<[Token]>) -> Vec<Token> {
             .is_some_and(|t| matches!(&t.tok, Tok::Op(o) if o == "\\"));
         out.push(token.clone());
 
-        if is_layout_keyword(&token.tok) {
-            expecting_open = Some(opened_kw(&token.tok));
+        if let Some(keyword) = layout_keyword(&token.tok) {
+            expecting_open = Some(keyword);
         } else if token.tok.is_keyword("case") && was_backslash {
             // `\case` alternatives form a layout block like `of`.
             expecting_open = Some("of");
@@ -356,6 +351,15 @@ mod tests {
     }
 
     #[test]
+    fn in_closes_enclosing_let_after_inner_let_closes_offside() {
+        let src = "module M where\nf = let\n  let x = 1\n      y = 2\nin x\n";
+        assert_eq!(
+            layout_str(src),
+            "module M where { f = let { let { x = 1 ; y = 2 } } in x }"
+        );
+    }
+
+    #[test]
     fn file_without_module_header() {
         assert_eq!(layout_str("f = 1\ng = 2\n"), "{ f = 1 ; g = 2 }");
     }
@@ -374,7 +378,7 @@ mod tests {
             return;
         }
         let mut files = Vec::new();
-        collect_daml(&root, &mut files);
+        collect_daml(&root, &mut files).expect("collect corpus files");
         assert!(
             files.len() > 600,
             "corpus incomplete: {} files",
@@ -382,7 +386,8 @@ mod tests {
         );
         let mut lex_errors = 0usize;
         for f in &files {
-            let src = std::fs::read_to_string(f).unwrap();
+            let src = std::fs::read_to_string(f)
+                .unwrap_or_else(|e| panic!("failed to read corpus file {}: {e}", f.display()));
             let (tokens, errors) = lex(&src);
             lex_errors += errors.len();
             let laid = resolve_layout(tokens);
@@ -393,15 +398,20 @@ mod tests {
         assert_eq!(lex_errors, 0, "lex errors across corpus");
     }
 
-    fn collect_daml(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-        for entry in std::fs::read_dir(dir).unwrap().flatten() {
+    fn collect_daml(
+        dir: &std::path::Path,
+        out: &mut Vec<std::path::PathBuf>,
+    ) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
             let p = entry.path();
             if p.is_dir() {
-                collect_daml(&p, out);
+                collect_daml(&p, out)?;
             } else if p.extension().is_some_and(|e| e == "daml") {
                 out.push(p);
             }
         }
+        Ok(())
     }
 
     #[test]
