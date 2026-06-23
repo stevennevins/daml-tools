@@ -307,7 +307,7 @@ fn same_tokens(a: &str, b: &str) -> bool {
     let b = SourceTokens::lex(b);
     let la = a.laid_out_tokens();
     let lb = b.laid_out_tokens();
-    la.len() == lb.len() && la.iter().zip(lb).all(|(x, y)| x.tok == y.tok)
+    la.len() == lb.len() && la.iter().zip(lb).all(|(x, y)| x.kind() == y.kind())
 }
 
 fn has_source_location_expectation(src: &str) -> bool {
@@ -1136,8 +1136,8 @@ fn comment_spans(src: &str) -> Vec<(usize, usize)> {
     let mut v: Vec<(usize, usize)> = source_tokens
         .trivia()
         .iter()
-        .filter(|t| matches!(t.kind, TriviaKind::LineComment | TriviaKind::BlockComment))
-        .map(|t| (t.start, t.end))
+        .filter(|t| matches!(t.kind(), TriviaKind::LineComment | TriviaKind::BlockComment))
+        .map(|t| (t.start(), t.end()))
         .collect();
     v.sort_by_key(|&(s, _)| s);
     v
@@ -1330,6 +1330,7 @@ fn walk_expression(expr: &Expr, f: &mut impl FnMut(&Expr)) {
                     DoStmt::Let { bindings, .. } => {
                         bindings.iter().for_each(|b| walk_expression(&b.expr, f))
                     }
+                    _ => {}
                 }
             }
         }

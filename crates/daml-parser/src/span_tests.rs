@@ -8,19 +8,19 @@
 #![cfg(test)]
 
 use crate::ast::*;
-use crate::ast_span::render_from_ast;
+use crate::ast_span::{render_from_ast, AstSpanError};
 use crate::lexer::lex_with_trivia;
 use crate::parse::parse_module;
 use std::path::{Path, PathBuf};
 
 /// Run the oracle the way daml-fmt will: AST + the lexer's trivia.
-fn render(src: &str) -> Result<String, String> {
-    let (_, trivia, _) = lex_with_trivia(src);
+fn render(src: &str) -> Result<String, AstSpanError> {
+    let (_, trivia, _) = lex_with_trivia(src).into_parts();
     render_from_ast(src, &parse(src), &trivia)
 }
 
 fn parse(src: &str) -> Module {
-    let (module, diagnostics) = parse_module(src);
+    let (module, diagnostics) = parse_module(src).into_parts();
     assert!(
         diagnostics.is_empty(),
         "span test source must parse without diagnostics: {diagnostics:?}"
@@ -254,7 +254,13 @@ fn run_finance_corpus_oracle(root: &Path) -> std::io::Result<(usize, Vec<String>
     collect_daml_files(root, &mut files)?;
     let mut failures = Vec::new();
     for f in &files {
-        let src = std::fs::read_to_string(f)?;
+        let src = match std::fs::read_to_string(f) {
+            Ok(src) => src,
+            Err(e) => {
+                failures.push(format!("{}: failed to read corpus file: {e}", f.display()));
+                continue;
+            }
+        };
         if let Err(e) = render(&src) {
             failures.push(format!("{}: {}", f.display(), e));
         }
@@ -316,7 +322,7 @@ fn render_lossless_over_finance_corpus() {
     for f in &files {
         let src = std::fs::read_to_string(f)
             .unwrap_or_else(|e| panic!("failed to read corpus file {}: {e}", f.display()));
-        let (tokens, trivia, errors) = lex_with_trivia(&src);
+        let (tokens, trivia, errors) = lex_with_trivia(&src).into_parts();
         if !errors.is_empty() {
             continue; // lex errors drop bytes by design; losslessness is exempt
         }

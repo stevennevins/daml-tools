@@ -17,11 +17,11 @@
 //! # Example
 //!
 //! ```rust
-//! let (module, diagnostics) =
+//! let result =
 //!     daml_parser::parse::parse_module("module M where\nfoo : Int\nfoo = 1\n");
 //!
-//! assert!(diagnostics.is_empty());
-//! assert_eq!(module.name, "M");
+//! assert!(result.diagnostics.is_empty());
+//! assert_eq!(result.module.name, "M");
 //! ```
 
 /// Lossless AST node types produced by the parser.

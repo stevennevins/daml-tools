@@ -379,7 +379,10 @@ fn round_trip_corpus(root: &Path) -> (usize, usize) {
             lex_error_files += 1;
             continue;
         };
-        let (tokens, trivia, errors) = daml_parser::lexer::lex_with_trivia(&src);
+        let lexed = daml_parser::lexer::lex_with_trivia(&src);
+        let tokens = lexed.tokens;
+        let trivia = lexed.trivia;
+        let errors = lexed.errors;
         if !errors.is_empty() {
             // A lex error drops bytes by design (e.g. stray character);
             // losslessness is only promised for lexable files.

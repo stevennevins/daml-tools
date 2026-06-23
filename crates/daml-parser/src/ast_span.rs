@@ -13,6 +13,108 @@
 use crate::ast::*;
 use crate::lexer::{Trivia, TriviaKind};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AstSpanError {
+    InvalidSpan {
+        start: usize,
+        end: usize,
+    },
+    OverlappingSpans {
+        start: usize,
+        end: usize,
+        parent_start: usize,
+        parent_end: usize,
+    },
+    OverlappingTile {
+        start: usize,
+        end: usize,
+        previous_end: usize,
+    },
+    UncoveredBytes {
+        start: usize,
+        end: usize,
+        text: String,
+    },
+    UncoveredTail {
+        start: usize,
+        text: String,
+    },
+    ReconstructionMismatch {
+        reconstructed_len: usize,
+        source_len: usize,
+    },
+    IntervalStartAfterEnd {
+        start: usize,
+        end: usize,
+    },
+    IntervalExceedsSource {
+        start: usize,
+        end: usize,
+        source_len: usize,
+    },
+    IntervalNotUtf8Boundary {
+        start: usize,
+        end: usize,
+    },
+}
+
+impl std::fmt::Display for AstSpanError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidSpan { start, end } => write!(f, "invalid span [{start}, {end})"),
+            Self::OverlappingSpans {
+                start,
+                end,
+                parent_start,
+                parent_end,
+            } => write!(
+                f,
+                "span [{start}, {end}) overlaps [{parent_start}, {parent_end}) without nesting"
+            ),
+            Self::OverlappingTile {
+                start,
+                end,
+                previous_end,
+            } => write!(
+                f,
+                "span/trivia interval [{start}, {end}) overlaps previous tile ending at {previous_end}"
+            ),
+            Self::UncoveredBytes { start, end, text } => write!(
+                f,
+                "bytes {start}..{end} not covered by any node or trivia span: {text:?}"
+            ),
+            Self::UncoveredTail { start, text } => {
+                write!(f, "bytes {start}.. lost at EOF: {text:?}")
+            }
+            Self::ReconstructionMismatch {
+                reconstructed_len,
+                source_len,
+            } => write!(
+                f,
+                "reconstruction differs from source ({reconstructed_len} vs {source_len} bytes)"
+            ),
+            Self::IntervalStartAfterEnd { start, end } => {
+                write!(f, "span/trivia interval [{start}, {end}) has start after end")
+            }
+            Self::IntervalExceedsSource {
+                start,
+                end,
+                source_len,
+            } => write!(
+                f,
+                "span/trivia interval [{start}, {end}) exceeds source length {source_len}"
+            ),
+            Self::IntervalNotUtf8Boundary { start, end } => write!(
+                f,
+                "span/trivia interval [{start}, {end}) does not align with UTF-8 boundaries"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for AstSpanError {}
+
 /// Reconstruct `source` from the AST's byte spans plus the lexer's `trivia`.
 ///
 /// The AST-level mirror of `lexer::render_lossless`: it checks the spans nest
@@ -22,7 +124,11 @@ use crate::lexer::{Trivia, TriviaKind};
 /// no span covers (content the AST dropped).
 ///
 /// Obtain `trivia` from [`crate::lexer::lex_with_trivia`].
-pub fn render_from_ast(source: &str, module: &Module, trivia: &[Trivia]) -> Result<String, String> {
+pub fn render_from_ast(
+    source: &str,
+    module: &Module,
+    trivia: &[Trivia],
+) -> Result<String, AstSpanError> {
     check_nesting(module)?;
     tile(source, module, trivia)
 }
@@ -30,12 +136,15 @@ pub fn render_from_ast(source: &str, module: &Module, trivia: &[Trivia]) -> Resu
 /// V2 — every child span is contained in its parent, and sibling spans are
 /// ordered and disjoint. Validates the whole node set (module container
 /// included) as a laminar family via a containment stack.
-fn check_nesting(module: &Module) -> Result<(), String> {
+fn check_nesting(module: &Module) -> Result<(), AstSpanError> {
     let mut spans: Vec<Span> = Vec::new();
     collect_module(module, &mut spans);
     for span in &spans {
         if !span.is_valid() {
-            return Err(format!("invalid span [{}, {})", span.start, span.end));
+            return Err(AstSpanError::InvalidSpan {
+                start: span.start,
+                end: span.end,
+            });
         }
     }
     spans.retain(|s| !s.is_empty());
@@ -53,10 +162,12 @@ fn check_nesting(module: &Module) -> Result<(), String> {
         // one ended, or a child that spills past its parent).
         if let Some(parent) = stack.last() {
             if !parent.contains(&span) {
-                return Err(format!(
-                    "span [{}, {}) overlaps [{}, {}) without nesting",
-                    span.start, span.end, parent.start, parent.end
-                ));
+                return Err(AstSpanError::OverlappingSpans {
+                    start: span.start,
+                    end: span.end,
+                    parent_start: parent.start,
+                    parent_end: parent.end,
+                });
             }
         }
         stack.push(span);
@@ -69,7 +180,7 @@ fn check_nesting(module: &Module) -> Result<(), String> {
 /// trivially) but includes the `module … where` header. Any gap between spans
 /// must be whitespace-only; a non-whitespace gap is a real token no node claims,
 /// i.e. content the AST dropped.
-fn tile(source: &str, module: &Module, trivia: &[Trivia]) -> Result<String, String> {
+fn tile(source: &str, module: &Module, trivia: &[Trivia]) -> Result<String, AstSpanError> {
     let mut content: Vec<Span> = Vec::new();
     collect_module(module, &mut content);
     let container = module.span;
@@ -100,15 +211,19 @@ fn tile(source: &str, module: &Module, trivia: &[Trivia]) -> Result<String, Stri
             if end <= prev {
                 continue;
             }
-            return Err(format!(
-                "span/trivia interval [{start}, {end}) overlaps previous tile ending at {prev}"
-            ));
+            return Err(AstSpanError::OverlappingTile {
+                start,
+                end,
+                previous_end: prev,
+            });
         }
         let gap = &source[prev..start];
         if !gap.chars().all(char::is_whitespace) {
-            return Err(format!(
-                "bytes {prev}..{start} not covered by any node or trivia span: {gap:?}"
-            ));
+            return Err(AstSpanError::UncoveredBytes {
+                start: prev,
+                end: start,
+                text: gap.to_string(),
+            });
         }
         out.push_str(gap);
         out.push_str(&source[start..end]);
@@ -116,36 +231,35 @@ fn tile(source: &str, module: &Module, trivia: &[Trivia]) -> Result<String, Stri
     }
     let tail = &source[prev..];
     if !tail.chars().all(char::is_whitespace) {
-        return Err(format!("bytes {prev}.. lost at EOF: {tail:?}"));
+        return Err(AstSpanError::UncoveredTail {
+            start: prev,
+            text: tail.to_string(),
+        });
     }
     out.push_str(tail);
 
     if out != source {
-        return Err(format!(
-            "reconstruction differs from source ({} vs {} bytes)",
-            out.len(),
-            source.len()
-        ));
+        return Err(AstSpanError::ReconstructionMismatch {
+            reconstructed_len: out.len(),
+            source_len: source.len(),
+        });
     }
     Ok(out)
 }
 
-fn validate_interval(source: &str, start: usize, end: usize) -> Result<(), String> {
+const fn validate_interval(source: &str, start: usize, end: usize) -> Result<(), AstSpanError> {
     if start > end {
-        return Err(format!(
-            "span/trivia interval [{start}, {end}) has start after end"
-        ));
+        return Err(AstSpanError::IntervalStartAfterEnd { start, end });
     }
     if end > source.len() {
-        return Err(format!(
-            "span/trivia interval [{start}, {end}) exceeds source length {}",
-            source.len()
-        ));
+        return Err(AstSpanError::IntervalExceedsSource {
+            start,
+            end,
+            source_len: source.len(),
+        });
     }
     if !source.is_char_boundary(start) || !source.is_char_boundary(end) {
-        return Err(format!(
-            "span/trivia interval [{start}, {end}) does not align with UTF-8 boundaries"
-        ));
+        return Err(AstSpanError::IntervalNotUtf8Boundary { start, end });
     }
     Ok(())
 }
@@ -423,8 +537,64 @@ mod tests {
 
         let err = tile(source, &module, &trivia).unwrap_err();
         assert!(
-            err.contains("overlaps previous tile"),
+            err.to_string().contains("overlaps previous tile"),
             "overlap should fail loudly, got: {err}"
         );
+    }
+
+    #[test]
+    fn validate_interval_reports_malformed_bounds() {
+        assert_eq!(
+            validate_interval("abc", 2, 1),
+            Err(AstSpanError::IntervalStartAfterEnd { start: 2, end: 1 })
+        );
+        assert_eq!(
+            validate_interval("abc", 0, 4),
+            Err(AstSpanError::IntervalExceedsSource {
+                start: 0,
+                end: 4,
+                source_len: 3
+            })
+        );
+        assert_eq!(
+            validate_interval("é", 1, 2),
+            Err(AstSpanError::IntervalNotUtf8Boundary { start: 1, end: 2 })
+        );
+    }
+
+    #[test]
+    fn tile_reports_uncovered_non_whitespace_bytes() {
+        let source = "module M where\nmissing\n";
+        let module = Module {
+            name: "M".to_string(),
+            pos: Pos { line: 1, column: 1 },
+            span: Span::new(0, source.len()),
+            header: Span::new(0, "module M where".len()),
+            imports: Vec::new(),
+            decls: Vec::new(),
+        };
+
+        assert_eq!(
+            tile(source, &module, &[]),
+            Err(AstSpanError::UncoveredTail {
+                start: "module M where".len(),
+                text: "\nmissing\n".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn render_from_ast_roundtrips_header_only_module() {
+        let source = "module M where\n";
+        let module = Module {
+            name: "M".to_string(),
+            pos: Pos { line: 1, column: 1 },
+            span: Span::new(0, source.len()),
+            header: Span::new(0, "module M where".len()),
+            imports: Vec::new(),
+            decls: Vec::new(),
+        };
+
+        assert_eq!(render_from_ast(source, &module, &[]).as_deref(), Ok(source));
     }
 }

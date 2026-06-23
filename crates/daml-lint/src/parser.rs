@@ -126,6 +126,7 @@ fn lower_expr(e: &ast::Expr) -> Expr {
                 ast::LitKind::Decimal => "Decimal",
                 ast::LitKind::Text => "Text",
                 ast::LitKind::Char => "Char",
+                _ => "Unknown",
             }
             .to_string(),
             value: text.clone(),
@@ -217,6 +218,10 @@ fn lower_expr(e: &ast::Expr) -> Expr {
                 span,
             }
         }
+        _ => Expr::Unknown {
+            raw: e.render(),
+            span,
+        },
     }
 }
 
@@ -476,6 +481,7 @@ fn lower_do(stmts: &[DoStmt]) -> Vec<Statement> {
                     out.push(other_statement(expr, None));
                 }
             }
+            _ => {}
         }
     }
     out
@@ -659,6 +665,7 @@ fn repoint(expr: &ast::Expr, call_pos: ast::Pos) -> ast::Expr {
         | E::Try { pos, .. }
         | E::Section { pos, .. }
         | E::Error { pos, .. } => *pos = call_pos,
+        _ => {}
     }
     e
 }

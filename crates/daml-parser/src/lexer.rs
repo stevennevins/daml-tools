@@ -13,7 +13,7 @@ pub struct Pos {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Tok {
+pub enum TokenKind {
     /// Lowercase-initial identifier, possibly qualified: `foo`, `Map.lookup`.
     LowerId {
         qualifier: Option<String>,
@@ -49,20 +49,39 @@ pub enum Tok {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
-    pub tok: Tok,
-    pub pos: Pos,
+    pub(crate) kind: TokenKind,
+    pub(crate) pos: Pos,
     /// Byte offset of the token's first character in the source.
     /// Virtual layout tokens are zero-width (`start == end`).
-    pub start: usize,
+    pub(crate) start: usize,
     /// Byte offset one past the token's last character.
-    pub end: usize,
+    pub(crate) end: usize,
 }
 
 impl Token {
+    pub const fn kind(&self) -> &TokenKind {
+        &self.kind
+    }
+
+    pub const fn pos(&self) -> Pos {
+        self.pos
+    }
+
+    pub const fn start(&self) -> usize {
+        self.start
+    }
+
+    pub const fn end(&self) -> usize {
+        self.end
+    }
+
     /// Layout-inserted tokens carry no source bytes (they are zero-width);
     /// AST node-span computation skips them so spans tile the real source.
     pub const fn is_virtual(&self) -> bool {
-        matches!(self.tok, Tok::VLBrace | Tok::VRBrace | Tok::VSemi)
+        matches!(
+            self.kind,
+            TokenKind::VLBrace | TokenKind::VRBrace | TokenKind::VSemi
+        )
     }
 }
 
@@ -84,21 +103,144 @@ pub enum TriviaKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Trivia {
-    pub kind: TriviaKind,
+    pub(crate) kind: TriviaKind,
     /// Exact source slice (delimiters included; empty for `BlankLines`).
-    pub text: String,
-    pub pos: Pos,
-    pub start: usize,
-    pub end: usize,
+    pub(crate) text: String,
+    pub(crate) pos: Pos,
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+}
+
+impl Trivia {
+    pub const fn kind(&self) -> &TriviaKind {
+        &self.kind
+    }
+
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub const fn pos(&self) -> Pos {
+        self.pos
+    }
+
+    pub const fn start(&self) -> usize {
+        self.start
+    }
+
+    pub const fn end(&self) -> usize {
+        self.end
+    }
 }
 
 /// A lexical error. The scan must survive these: the caller reports the
 /// diagnostic and works with the tokens produced so far.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LexError {
-    pub message: String,
+    pub kind: LexErrorKind,
     pub pos: Pos,
 }
+
+impl std::fmt::Display for LexError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.kind.fmt(f)
+    }
+}
+
+impl std::error::Error for LexError {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum LexErrorKind {
+    UnexpectedCharacter(char),
+    UnterminatedBlockComment,
+    UnterminatedStringLiteral,
+    UnterminatedStringGap,
+    InvalidEscapeSequence(char),
+    StraySingleQuote,
+    CharacterLiteralWrongLength,
+    HexLiteralMissingDigits,
+    DecimalExponentMissingDigits,
+}
+
+impl std::fmt::Display for LexErrorKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnexpectedCharacter(c) => write!(f, "unexpected character '{c}'"),
+            Self::UnterminatedBlockComment => f.write_str("unterminated block comment"),
+            Self::UnterminatedStringLiteral => f.write_str("unterminated string literal"),
+            Self::UnterminatedStringGap => f.write_str("unterminated string gap"),
+            Self::InvalidEscapeSequence(c) => write!(f, "invalid escape sequence \\{c}"),
+            Self::StraySingleQuote => f.write_str("stray single quote"),
+            Self::CharacterLiteralWrongLength => {
+                f.write_str("character literal must contain exactly one character")
+            }
+            Self::HexLiteralMissingDigits => f.write_str("hex literal requires at least one digit"),
+            Self::DecimalExponentMissingDigits => {
+                f.write_str("decimal exponent requires at least one digit")
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LexOutput {
+    pub tokens: Vec<Token>,
+    pub errors: Vec<LexError>,
+}
+
+impl LexOutput {
+    pub fn into_parts(self) -> (Vec<Token>, Vec<LexError>) {
+        (self.tokens, self.errors)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LexWithTriviaOutput {
+    pub tokens: Vec<Token>,
+    pub trivia: Vec<Trivia>,
+    pub errors: Vec<LexError>,
+}
+
+impl LexWithTriviaOutput {
+    pub fn into_parts(self) -> (Vec<Token>, Vec<Trivia>, Vec<LexError>) {
+        (self.tokens, self.trivia, self.errors)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RenderLosslessError {
+    OverlappingSpans {
+        start: usize,
+    },
+    UncoveredBytes {
+        start: usize,
+        end: usize,
+        text: String,
+    },
+    UncoveredTail {
+        start: usize,
+        text: String,
+    },
+}
+
+impl std::fmt::Display for RenderLosslessError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::OverlappingSpans { start } => write!(f, "overlapping spans at byte {start}"),
+            Self::UncoveredBytes { start, end, text } => write!(
+                f,
+                "bytes {start}..{end} lost (not covered by any token/trivia): {text:?}"
+            ),
+            Self::UncoveredTail { start, text } => {
+                write!(f, "bytes {start}.. lost at EOF: {text:?}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for RenderLosslessError {}
 
 const fn is_symbol_char(c: char) -> bool {
     matches!(
@@ -147,12 +289,12 @@ struct Lexer<'a> {
     errors: Vec<LexError>,
 }
 
-pub fn lex(source: &str) -> (Vec<Token>, Vec<LexError>) {
-    let (tokens, _, errors) = lex_with_trivia(source);
-    (tokens, errors)
+pub fn lex(source: &str) -> LexOutput {
+    let LexWithTriviaOutput { tokens, errors, .. } = lex_with_trivia(source);
+    LexOutput { tokens, errors }
 }
 
-pub fn lex_with_trivia(source: &str) -> (Vec<Token>, Vec<Trivia>, Vec<LexError>) {
+pub fn lex_with_trivia(source: &str) -> LexWithTriviaOutput {
     let mut lexer = Lexer {
         chars: source.chars().collect(),
         src: source,
@@ -168,7 +310,11 @@ pub fn lex_with_trivia(source: &str) -> (Vec<Token>, Vec<Trivia>, Vec<LexError>)
     let mut trivia = lexer.trivia;
     add_blank_line_trivia(source, &lexer.tokens, &mut trivia);
     trivia.sort_by_key(|t| t.start);
-    (lexer.tokens, trivia, lexer.errors)
+    LexWithTriviaOutput {
+        tokens: lexer.tokens,
+        trivia,
+        errors: lexer.errors,
+    }
 }
 
 /// Reconstruct the source from token and trivia spans.
@@ -181,10 +327,15 @@ pub fn render_lossless(
     source: &str,
     tokens: &[Token],
     trivia: &[Trivia],
-) -> Result<String, String> {
+) -> Result<String, RenderLosslessError> {
     let mut items: Vec<(usize, usize)> = tokens
         .iter()
-        .filter(|t| !matches!(t.tok, Tok::VLBrace | Tok::VRBrace | Tok::VSemi))
+        .filter(|t| {
+            !matches!(
+                t.kind,
+                TokenKind::VLBrace | TokenKind::VRBrace | TokenKind::VSemi
+            )
+        })
         .map(|t| (t.start, t.end))
         .chain(
             trivia
@@ -198,13 +349,15 @@ pub fn render_lossless(
     let mut prev = 0usize;
     for (start, end) in items {
         if start < prev {
-            return Err(format!("overlapping spans at byte {start}"));
+            return Err(RenderLosslessError::OverlappingSpans { start });
         }
         let gap = &source[prev..start];
         if !gap.chars().all(char::is_whitespace) {
-            return Err(format!(
-                "bytes {prev}..{start} lost (not covered by any token/trivia): {gap:?}"
-            ));
+            return Err(RenderLosslessError::UncoveredBytes {
+                start: prev,
+                end: start,
+                text: gap.to_string(),
+            });
         }
         out.push_str(gap);
         out.push_str(&source[start..end]);
@@ -212,7 +365,10 @@ pub fn render_lossless(
     }
     let tail = &source[prev..];
     if !tail.chars().all(char::is_whitespace) {
-        return Err(format!("bytes {prev}.. lost at EOF: {tail:?}"));
+        return Err(RenderLosslessError::UncoveredTail {
+            start: prev,
+            text: tail.to_string(),
+        });
     }
     out.push_str(tail);
     Ok(out)
@@ -309,9 +465,9 @@ impl<'a> Lexer<'a> {
 
     /// `start` is the token's first byte; its end is wherever the cursor is
     /// now, so call this immediately after consuming the token.
-    fn push(&mut self, tok: Tok, pos: Pos, start: usize) {
+    fn push(&mut self, tok: TokenKind, pos: Pos, start: usize) {
         self.tokens.push(Token {
-            tok,
+            kind: tok,
             pos,
             start,
             end: self.byte,
@@ -328,11 +484,8 @@ impl<'a> Lexer<'a> {
         });
     }
 
-    fn error(&mut self, message: impl Into<String>, pos: Pos) {
-        self.errors.push(LexError {
-            message: message.into(),
-            pos,
-        });
+    fn error(&mut self, kind: LexErrorKind, pos: Pos) {
+        self.errors.push(LexError { kind, pos });
     }
 
     fn scan_tokens(&mut self) {
@@ -345,43 +498,43 @@ impl<'a> Lexer<'a> {
                 }
                 '(' => {
                     self.bump();
-                    self.push(Tok::LParen, pos, start);
+                    self.push(TokenKind::LParen, pos, start);
                 }
                 ')' => {
                     self.bump();
-                    self.push(Tok::RParen, pos, start);
+                    self.push(TokenKind::RParen, pos, start);
                 }
                 '[' => {
                     self.bump();
-                    self.push(Tok::LBracket, pos, start);
+                    self.push(TokenKind::LBracket, pos, start);
                 }
                 ']' => {
                     self.bump();
-                    self.push(Tok::RBracket, pos, start);
+                    self.push(TokenKind::RBracket, pos, start);
                 }
                 ',' => {
                     self.bump();
-                    self.push(Tok::Comma, pos, start);
+                    self.push(TokenKind::Comma, pos, start);
                 }
                 ';' => {
                     self.bump();
-                    self.push(Tok::Semi, pos, start);
+                    self.push(TokenKind::Semi, pos, start);
                 }
                 '`' => {
                     self.bump();
-                    self.push(Tok::Backtick, pos, start);
+                    self.push(TokenKind::Backtick, pos, start);
                 }
                 '{' => {
                     if self.peek_at(1) == Some('-') {
                         self.block_comment(pos);
                     } else {
                         self.bump();
-                        self.push(Tok::LBrace, pos, start);
+                        self.push(TokenKind::LBrace, pos, start);
                     }
                 }
                 '}' => {
                     self.bump();
-                    self.push(Tok::RBrace, pos, start);
+                    self.push(TokenKind::RBrace, pos, start);
                 }
                 // CPP preprocessor directive (#ifdef/#endif/#include...) at
                 // column 1 — daml-prim/stdlib sources use {-# LANGUAGE CPP #-};
@@ -401,7 +554,7 @@ impl<'a> Lexer<'a> {
                 c if is_symbol_char(c) => self.operator(pos),
                 _ => {
                     self.bump();
-                    self.error(format!("unexpected character '{c}'"), pos);
+                    self.error(LexErrorKind::UnexpectedCharacter(c), pos);
                 }
             }
         }
@@ -417,7 +570,7 @@ impl<'a> Lexer<'a> {
         while depth > 0 {
             match self.peek() {
                 None => {
-                    self.error("unterminated block comment", pos);
+                    self.error(LexErrorKind::UnterminatedBlockComment, pos);
                     self.push_trivia(TriviaKind::BlockComment, pos, start);
                     return;
                 }
@@ -446,7 +599,7 @@ impl<'a> Lexer<'a> {
         loop {
             match self.peek() {
                 None | Some('\n') => {
-                    self.error("unterminated string literal", pos);
+                    self.error(LexErrorKind::UnterminatedStringLiteral, pos);
                     break;
                 }
                 Some('"') => {
@@ -465,7 +618,7 @@ impl<'a> Lexer<'a> {
                             if self.peek() == Some('\\') {
                                 self.bump();
                             } else {
-                                self.error("unterminated string gap", pos);
+                                self.error(LexErrorKind::UnterminatedStringGap, pos);
                                 break;
                             }
                         }
@@ -474,16 +627,13 @@ impl<'a> Lexer<'a> {
                             match unescape(e) {
                                 Some(c) => value.push(c),
                                 None => {
-                                    self.error(
-                                        format!("invalid escape sequence \\{e}"),
-                                        escape_pos,
-                                    );
+                                    self.error(LexErrorKind::InvalidEscapeSequence(e), escape_pos);
                                     value.push(e);
                                 }
                             }
                         }
                         None => {
-                            self.error("unterminated string literal", pos);
+                            self.error(LexErrorKind::UnterminatedStringLiteral, pos);
                             break;
                         }
                     }
@@ -494,7 +644,7 @@ impl<'a> Lexer<'a> {
                 }
             }
         }
-        self.push(Tok::StringLit(value), pos, start);
+        self.push(TokenKind::StringLit(value), pos, start);
     }
 
     /// `'a'`, `'\n'`, `'\x41'`. A lone `'` that doesn't close within a few
@@ -521,7 +671,7 @@ impl<'a> Lexer<'a> {
         }
         if !ok {
             self.bump();
-            self.error("stray single quote", pos);
+            self.error(LexErrorKind::StraySingleQuote, pos);
             return;
         }
         self.bump(); // opening '
@@ -537,7 +687,7 @@ impl<'a> Lexer<'a> {
                     match unescape(e) {
                         Some(c) => value.push(c),
                         None => {
-                            self.error(format!("invalid escape sequence \\{e}"), escape_pos);
+                            self.error(LexErrorKind::InvalidEscapeSequence(e), escape_pos);
                             value.push(e);
                         }
                     }
@@ -548,9 +698,9 @@ impl<'a> Lexer<'a> {
         }
         self.bump(); // closing '
         if value.chars().count() != 1 {
-            self.error("character literal must contain exactly one character", pos);
+            self.error(LexErrorKind::CharacterLiteralWrongLength, pos);
         }
-        self.push(Tok::CharLit(value), pos, start);
+        self.push(TokenKind::CharLit(value), pos, start);
     }
 
     fn number(&mut self, pos: Pos) {
@@ -569,9 +719,9 @@ impl<'a> Lexer<'a> {
                 text.push(c);
             }
             if !has_hex_digit {
-                self.error("hex literal requires at least one digit", pos);
+                self.error(LexErrorKind::HexLiteralMissingDigits, pos);
             }
-            self.push(Tok::IntLit(text), pos, start);
+            self.push(TokenKind::IntLit(text), pos, start);
             return;
         }
         while self.peek().is_some_and(|c| c.is_ascii_digit() || c == '_') {
@@ -604,13 +754,13 @@ impl<'a> Lexer<'a> {
                 if matches!(self.peek(), Some('+' | '-')) {
                     text.push(self.bump().unwrap());
                 }
-                self.error("decimal exponent requires at least one digit", pos);
+                self.error(LexErrorKind::DecimalExponentMissingDigits, pos);
             }
         }
         if decimal {
-            self.push(Tok::DecimalLit(text), pos, start);
+            self.push(TokenKind::DecimalLit(text), pos, start);
         } else {
-            self.push(Tok::IntLit(text), pos, start);
+            self.push(TokenKind::IntLit(text), pos, start);
         }
     }
 
@@ -644,9 +794,9 @@ impl<'a> Lexer<'a> {
             Some(segments.join("."))
         };
         let tok = if name.chars().next().is_some_and(|c| c.is_uppercase()) {
-            Tok::UpperId { qualifier, name }
+            TokenKind::UpperId { qualifier, name }
         } else {
-            Tok::LowerId { qualifier, name }
+            TokenKind::LowerId { qualifier, name }
         };
         self.push(tok, pos, start);
     }
@@ -669,7 +819,7 @@ impl<'a> Lexer<'a> {
             self.push_trivia(TriviaKind::LineComment, pos, byte_start);
             return;
         }
-        self.push(Tok::Op(text), pos, byte_start);
+        self.push(TokenKind::Op(text), pos, byte_start);
     }
 }
 
@@ -697,7 +847,7 @@ const fn unescape(c: char) -> Option<char> {
     }
 }
 
-impl Tok {
+impl TokenKind {
     /// The identifier text if this is an unqualified lowercase identifier —
     /// how the parser checks for (contextual) keywords.
     pub const fn keyword(&self) -> Option<&str> {
@@ -723,26 +873,26 @@ impl Tok {
 mod tests {
     use super::*;
 
-    fn toks(src: &str) -> Vec<Tok> {
-        let (tokens, errors) = lex(src);
+    fn toks(src: &str) -> Vec<TokenKind> {
+        let (tokens, errors) = lex(src).into_parts();
         assert!(errors.is_empty(), "lex errors: {errors:?}");
-        tokens.into_iter().map(|t| t.tok).collect()
+        tokens.into_iter().map(|t| t.kind).collect()
     }
 
     fn lex_error_messages(src: &str) -> Vec<String> {
-        let (_, errors) = lex(src);
-        errors.into_iter().map(|e| e.message).collect()
+        let (_, errors) = lex(src).into_parts();
+        errors.into_iter().map(|e| e.to_string()).collect()
     }
 
-    fn lower(name: &str) -> Tok {
-        Tok::LowerId {
+    fn lower(name: &str) -> TokenKind {
+        TokenKind::LowerId {
             qualifier: None,
             name: name.to_string(),
         }
     }
 
-    fn upper(name: &str) -> Tok {
-        Tok::UpperId {
+    fn upper(name: &str) -> TokenKind {
+        TokenKind::UpperId {
             qualifier: None,
             name: name.to_string(),
         }
@@ -758,7 +908,7 @@ mod tests {
     fn arrow_like_operator_is_not_comment() {
         assert_eq!(
             toks("a --> b"),
-            vec![lower("a"), Tok::Op("-->".into()), lower("b")]
+            vec![lower("a"), TokenKind::Op("-->".into()), lower("b")]
         );
     }
 
@@ -771,7 +921,7 @@ mod tests {
     fn string_with_keyword_and_escapes() {
         assert_eq!(
             toks(r#""template \"Foo\" \n""#),
-            vec![Tok::StringLit("template \"Foo\" \n".into())]
+            vec![TokenKind::StringLit("template \"Foo\" \n".into())]
         );
     }
 
@@ -780,11 +930,11 @@ mod tests {
         assert_eq!(
             toks("DA.Set.fromList Map.Map foo"),
             vec![
-                Tok::LowerId {
+                TokenKind::LowerId {
                     qualifier: Some("DA.Set".into()),
                     name: "fromList".into()
                 },
-                Tok::UpperId {
+                TokenKind::UpperId {
                     qualifier: Some("Map".into()),
                     name: "Map".into()
                 },
@@ -798,11 +948,11 @@ mod tests {
         assert_eq!(
             toks("42 1.5 0x1F 2e3 1_000"),
             vec![
-                Tok::IntLit("42".into()),
-                Tok::DecimalLit("1.5".into()),
-                Tok::IntLit("0x1F".into()),
-                Tok::DecimalLit("2e3".into()),
-                Tok::IntLit("1_000".into()),
+                TokenKind::IntLit("42".into()),
+                TokenKind::DecimalLit("1.5".into()),
+                TokenKind::IntLit("0x1F".into()),
+                TokenKind::DecimalLit("2e3".into()),
+                TokenKind::IntLit("1_000".into()),
             ]
         );
     }
@@ -835,11 +985,11 @@ mod tests {
         assert_eq!(
             toks("[1..5]"),
             vec![
-                Tok::LBracket,
-                Tok::IntLit("1".into()),
-                Tok::Op("..".into()),
-                Tok::IntLit("5".into()),
-                Tok::RBracket,
+                TokenKind::LBracket,
+                TokenKind::IntLit("1".into()),
+                TokenKind::Op("..".into()),
+                TokenKind::IntLit("5".into()),
+                TokenKind::RBracket,
             ]
         );
     }
@@ -850,8 +1000,8 @@ mod tests {
             toks(r"foo' 'a' '\n'"),
             vec![
                 lower("foo'"),
-                Tok::CharLit("a".into()),
-                Tok::CharLit("\n".into())
+                TokenKind::CharLit("a".into()),
+                TokenKind::CharLit("\n".into())
             ]
         );
     }
@@ -866,17 +1016,14 @@ mod tests {
 
     #[test]
     fn multi_character_char_literal_reports_error() {
-        let (tokens, errors) = lex("'ab'");
+        let (tokens, errors) = lex("'ab'").into_parts();
         assert_eq!(
-            tokens.iter().map(|t| t.tok.clone()).collect::<Vec<_>>(),
-            vec![Tok::CharLit("ab".into())]
+            tokens.iter().map(|t| t.kind.clone()).collect::<Vec<_>>(),
+            vec![TokenKind::CharLit("ab".into())]
         );
         assert_eq!(
-            errors
-                .iter()
-                .map(|e| e.message.as_str())
-                .collect::<Vec<_>>(),
-            vec!["character literal must contain exactly one character"]
+            errors.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
+            vec!["character literal must contain exactly one character".to_string()]
         );
     }
 
@@ -886,55 +1033,55 @@ mod tests {
             toks("x <- f (y, z) `div` 2"),
             vec![
                 lower("x"),
-                Tok::Op("<-".into()),
+                TokenKind::Op("<-".into()),
                 lower("f"),
-                Tok::LParen,
+                TokenKind::LParen,
                 lower("y"),
-                Tok::Comma,
+                TokenKind::Comma,
                 lower("z"),
-                Tok::RParen,
-                Tok::Backtick,
+                TokenKind::RParen,
+                TokenKind::Backtick,
                 lower("div"),
-                Tok::Backtick,
-                Tok::IntLit("2".into()),
+                TokenKind::Backtick,
+                TokenKind::IntLit("2".into()),
             ]
         );
     }
 
     #[test]
     fn spans_are_one_based() {
-        let (tokens, _) = lex("ab\n  cd");
+        let (tokens, _) = lex("ab\n  cd").into_parts();
         assert_eq!(tokens[0].pos, Pos { line: 1, column: 1 });
         assert_eq!(tokens[1].pos, Pos { line: 2, column: 3 });
     }
 
     #[test]
     fn tab_advances_to_stop() {
-        let (tokens, _) = lex("\tx");
+        let (tokens, _) = lex("\tx").into_parts();
         assert_eq!(tokens[0].pos, Pos { line: 1, column: 9 });
     }
 
     #[test]
     fn unterminated_string_is_error_not_hang() {
-        let (_, errors) = lex("x = \"oops\ny");
+        let (_, errors) = lex("x = \"oops\ny").into_parts();
         assert_eq!(errors.len(), 1);
     }
 
     #[test]
     fn unterminated_block_comment_is_error_not_hang() {
-        let (_, errors) = lex("{- never closed");
+        let (_, errors) = lex("{- never closed").into_parts();
         assert_eq!(errors.len(), 1);
     }
 
     fn trivia_of(src: &str) -> Vec<Trivia> {
-        let (_, trivia, _) = lex_with_trivia(src);
+        let (_, trivia, _) = lex_with_trivia(src).into_parts();
         trivia
     }
 
     /// The lossless oracle on one source: spans must tile the file and the
     /// reconstruction must be byte-identical.
     fn assert_round_trip(src: &str) {
-        let (tokens, trivia, errors) = lex_with_trivia(src);
+        let (tokens, trivia, errors) = lex_with_trivia(src).into_parts();
         assert!(errors.is_empty(), "lex errors: {errors:?}");
         assert_eq!(
             render_lossless(src, &tokens, &trivia).as_deref(),
@@ -965,7 +1112,7 @@ mod tests {
 
     #[test]
     fn unterminated_block_comment_still_yields_trivia_to_eof() {
-        let (_, trivia, errors) = lex_with_trivia("x {- never closed");
+        let (_, trivia, errors) = lex_with_trivia("x {- never closed").into_parts();
         assert_eq!(errors.len(), 1);
         assert_eq!(trivia.len(), 1);
         assert_eq!(trivia[0].text, "{- never closed");
@@ -1033,7 +1180,7 @@ mod tests {
     #[test]
     fn render_lossless_detects_lost_bytes() {
         let src = "x = 1 -- comment\n";
-        let (tokens, mut trivia, _) = lex_with_trivia(src);
+        let (tokens, mut trivia, _) = lex_with_trivia(src).into_parts();
         trivia.clear(); // simulate a lexer that drops the comment
         assert!(render_lossless(src, &tokens, &trivia).is_err());
     }
@@ -1042,7 +1189,11 @@ mod tests {
     fn unicode_identifier() {
         assert_eq!(
             toks("ärger = 1"),
-            vec![lower("ärger"), Tok::Op("=".into()), Tok::IntLit("1".into())]
+            vec![
+                lower("ärger"),
+                TokenKind::Op("=".into()),
+                TokenKind::IntLit("1".into())
+            ]
         );
         let _ = upper("Ülf"); // helper used
     }

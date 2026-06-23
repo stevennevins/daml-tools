@@ -4,12 +4,12 @@
 #![cfg(test)]
 
 use crate::ast::{Decl, DiagnosticCategory};
-use crate::parse::parse_module;
+use crate::parse::{parse_module, MAX_RECURSION_DEPTH};
 
-const TEST_RECURSION_DEPTH: usize = 300;
+const TEST_RECURSION_DEPTH: usize = MAX_RECURSION_DEPTH as usize + 172;
 
 fn diags(src: &str) -> Vec<crate::ast::ParseDiagnostic> {
-    parse_module(src).1
+    parse_module(src).diagnostics
 }
 
 #[test]
@@ -22,7 +22,7 @@ fn skipped_declaration_does_not_abort_later_template() {
                template Good\n  \
                with\n    o : Party\n  \
                where\n    signatory o\n";
-    let (module, ds) = parse_module(src);
+    let (module, ds) = parse_module(src).into_parts();
     assert!(
         ds.iter()
             .any(|d| d.category == DiagnosticCategory::SkippedDecl),
@@ -67,7 +67,7 @@ fn malformed_expression_is_categorized_malformed() {
     // is still produced. `Malformed` is the most-emitted category and must have
     // a behavior test, not only an `as_str` string-mapping check.
     let src = "module M where\nf = if x then 1\n";
-    let (module, ds) = parse_module(src);
+    let (module, ds) = parse_module(src).into_parts();
     assert!(
         ds.iter()
             .any(|d| d.category == DiagnosticCategory::Malformed),
@@ -87,8 +87,8 @@ fn malformed_expression_is_categorized_malformed() {
 
 #[test]
 fn deep_nesting_emits_recursion_limit_and_does_not_panic() {
-    // Well past MAX_DEPTH (128). The parser must not overflow the stack; it
-    // degrades and reports the truncation.
+    // Well past the parser's recursion bound. The parser must not overflow the
+    // stack; it degrades and reports the truncation.
     let depth = TEST_RECURSION_DEPTH;
     let src = format!(
         "module M where\nf = {}1{}\n",

@@ -137,11 +137,11 @@ pub struct SourceTokens {
 impl SourceTokens {
     #[must_use]
     pub fn lex(source: &str) -> Self {
-        let (tokens, trivia, lex_errors) = lex_with_trivia(source);
+        let lexed = lex_with_trivia(source);
         Self {
-            tokens,
-            trivia,
-            lex_errors,
+            tokens: lexed.tokens,
+            trivia: lexed.trivia,
+            lex_errors: lexed.errors,
             laid_out_tokens: OnceLock::new(),
         }
     }
@@ -180,9 +180,10 @@ pub struct SourceFile {
 impl SourceFile {
     #[must_use]
     pub fn parse(source: &str) -> Self {
-        let (module, parse_diagnostics) = parse_module(source);
+        let parsed = parse_module(source);
         let line_index = LineIndex::new(source);
-        let diagnostics = parse_diagnostics
+        let diagnostics = parsed
+            .diagnostics
             .into_iter()
             .map(|diagnostic| {
                 let range = parser_span_to_text_range(source, diagnostic.span);
@@ -204,7 +205,7 @@ impl SourceFile {
 
         Self {
             source: source.to_string(),
-            module,
+            module: parsed.module,
             diagnostics,
             line_index,
             tokens: OnceLock::new(),
