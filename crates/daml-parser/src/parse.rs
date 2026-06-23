@@ -677,7 +677,6 @@ impl Parser {
                     return (fields, true);
                 }
             }
-            let before = self.i;
             // One or more comma-separated names, then `:`, then the type.
             let mut names: Vec<(String, Pos, Span)> = Vec::new();
             while let Some(Tok::LowerId {
@@ -696,7 +695,6 @@ impl Parser {
             if names.is_empty() || !self.eat_op(":") {
                 self.diag("expected 'name : Type' field");
                 self.skip_to_item_end();
-                let _ = before;
                 continue;
             }
             let ty_start = self.i;
@@ -2074,10 +2072,13 @@ impl Parser {
             let start = base.span().start;
             let pos = base.pos();
             self.bump(); // '.'
-            let field_tok = self.bump().expect("tight projection guarantees a field");
-            let (qualifier, name) = match field_tok.tok {
-                Tok::LowerId { qualifier, name } => (qualifier, name),
-                other => unreachable!("at_tight_projection guarantees LowerId, got {other:?}"),
+            let Some(field_tok) = self.bump() else {
+                self.diag("expected projection field after '.'");
+                return base;
+            };
+            let Tok::LowerId { qualifier, name } = field_tok.tok else {
+                self.diag("expected projection field after '.'");
+                return base;
             };
             let field = Expr::Var {
                 qualifier,

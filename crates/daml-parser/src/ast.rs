@@ -324,6 +324,10 @@ impl Type {
     }
 }
 
+/// Type equality intentionally ignores source spans.
+///
+/// Spans describe where equivalent type syntax appeared in a source file; they
+/// are not part of the structural type identity used by parser consumers.
 impl PartialEq for Type {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -350,6 +354,8 @@ impl PartialEq for Type {
         }
     }
 }
+
+impl Eq for Type {}
 
 #[derive(Debug, Clone)]
 pub struct FieldDecl {
