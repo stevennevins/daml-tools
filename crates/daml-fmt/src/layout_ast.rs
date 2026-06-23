@@ -1,10 +1,9 @@
 //! AST-driven canonical layout.
 //!
-//! This is OUR OWN pattern, NOT a port of the `LimeChain` heuristic: no `LimeChain`
-//! code is consulted; design is from the daml-parser AST.
-//! We do NOT aim to match `expected/`: the formatter makes its own consistent
-//! layout decisions and may diverge from the `LimeChain` baseline). This is the
-//! shipping backend behind `format_source`.
+//! This is an own-design canonical layout built from the daml-parser AST.
+//! We do NOT aim to match an external formatter baseline: the formatter makes
+//! its own consistent layout decisions. This is the shipping backend behind
+//! `format_source`.
 //!
 //! Main mechanism:
 //!   1. Walk the AST; every node carries a byte `Span`.
