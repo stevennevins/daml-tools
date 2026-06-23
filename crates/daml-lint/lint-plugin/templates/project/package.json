@@ -15,8 +15,8 @@
     }
   },
   "devDependencies": {
-    "@daml-tools/daml-lint": "^0.5.0",
-    "@daml-tools/lint-plugin": "^0.5.0",
+    "@daml-tools/daml-lint": "^0.5.1",
+    "@daml-tools/lint-plugin": "^0.5.1",
     "esbuild": "^0.28.1",
     "typescript": "^6.0.3"
   }
