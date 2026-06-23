@@ -185,6 +185,33 @@ fn lexical_error_is_categorized_lex() {
             .map(|d| (d.category, &d.message))
             .collect::<Vec<_>>()
     );
+    let lex = ds
+        .into_iter()
+        .find(|d| d.category == DiagnosticCategory::Lex)
+        .expect("unterminated-string lexical diagnostic");
+    assert!(
+        lex.span.end > lex.span.start,
+        "lex span should be non-zero: {:?}",
+        lex.span
+    );
+    assert_eq!(
+        &src[lex.span.start..lex.span.end],
+        "\"",
+        "unterminated string span must point at opening quote"
+    );
+
+    let src = "module M where\nf = \"bad \\q\"\n";
+    let ds = diags(src);
+    let lex = ds
+        .iter()
+        .find(|d| d.category == DiagnosticCategory::Lex)
+        .expect("invalid-escape lexical diagnostic");
+    assert!(
+        lex.span.end > lex.span.start,
+        "invalid-escape lex span should be non-zero: {:?}",
+        lex.span
+    );
+    assert_eq!(&src[lex.span.start..lex.span.end], "\\q");
 }
 
 #[test]

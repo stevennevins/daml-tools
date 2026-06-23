@@ -345,6 +345,23 @@ pub struct ParserSpanToTextRangeError {
     span_end: usize,
 }
 
+impl ParserSpanToTextRangeError {
+    #[must_use]
+    pub const fn source_len(&self) -> usize {
+        self.source_len
+    }
+
+    #[must_use]
+    pub const fn span_start(&self) -> usize {
+        self.span_start
+    }
+
+    #[must_use]
+    pub const fn span_end(&self) -> usize {
+        self.span_end
+    }
+}
+
 impl std::fmt::Display for ParserSpanToTextRangeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -360,13 +377,21 @@ impl std::error::Error for ParserSpanToTextRangeError {}
 /// Try to convert a parser span into a `text-size` byte range.
 ///
 /// This is the fallible API and should be used for spans sourced outside
-/// `SourceFile` where invalid offsets are possible.
+/// `SourceFile` where invalid offsets are possible; offsets must be valid
+/// UTF-8 character boundaries.
 #[must_use = "handle invalid span offsets before converting"]
 pub fn try_parser_span_to_text_range(
     source: &str,
     span: ParserSpan,
 ) -> Result<TextRange, ParserSpanToTextRangeError> {
     let source_len = source.len();
+    if !source.is_char_boundary(span.start) || !source.is_char_boundary(span.end) {
+        return Err(ParserSpanToTextRangeError {
+            source_len,
+            span_start: span.start,
+            span_end: span.end,
+        });
+    }
     if span.start > source_len || span.end > source_len || span.start > span.end {
         return Err(ParserSpanToTextRangeError {
             source_len,
@@ -531,6 +556,9 @@ mod tests {
                 source.len()
             )
         );
+        assert_eq!(err.source_len(), source.len());
+        assert_eq!(err.span_start(), 0);
+        assert_eq!(err.span_end(), source.len() + 1);
     }
 
     #[test]
@@ -541,6 +569,23 @@ mod tests {
             err.to_string(),
             "parser span [2, 1) is invalid for source length 3"
         );
+        assert_eq!(err.source_len(), source.len());
+        assert_eq!(err.span_start(), 2);
+        assert_eq!(err.span_end(), 1);
+    }
+
+    #[test]
+    fn try_parser_span_to_text_range_rejects_non_utf8_boundary_spans() {
+        let source = "a😀b";
+        let err = try_parser_span_to_text_range(source, ParserSpan::new(1, 2)).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "parser span [1, 2) is invalid for source length 6"
+        );
+        assert_eq!(err.source_len(), source.len());
+        assert_eq!(err.span_start(), 1);
+        assert_eq!(err.span_end(), 2);
     }
 
     #[test]
