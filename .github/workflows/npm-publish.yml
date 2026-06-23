@@ -20,19 +20,71 @@ permissions:
   contents: read
   id-token: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 env:
   # Pinned cargo-npm (CLI npm packaging). Keep in sync with
   # .github/workflows/ci.yml and CONTRIBUTING.md.
   CARGO_NPM_VERSION: "0.1.2"
 
 jobs:
+  npm-preflight:
+    name: npm publish preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: ${{ github.repository_owner == 'stevennevins' }}
+    outputs:
+      tool: ${{ steps.release.outputs.tool }}
+      version: ${{ steps.release.outputs.version }}
+      exists: ${{ steps.npm.outputs.exists }}
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - name: Resolve release package
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${RELEASE_TAG}" =~ ^(daml-lint|daml-fmt)-v(.+)$ ]]; then
+            tool="${BASH_REMATCH[1]}"
+            version="${BASH_REMATCH[2]}"
+            if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+              echo "::error::npm CLI publishing requires a semver release tag, got ${RELEASE_TAG}"
+              exit 1
+            fi
+            echo "tool=${tool}" >> "${GITHUB_OUTPUT}"
+            echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          else
+            echo "::error::npm CLI publishing requires a daml-lint-v* or daml-fmt-v* tag, got ${RELEASE_TAG}"
+            exit 1
+          fi
+      - name: Check npm registry state
+        id: npm
+        env:
+          TOOL: ${{ steps.release.outputs.tool }}
+          VERSION: ${{ steps.release.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="@daml-tools/${TOOL}"
+          if npm view "${name}@${VERSION}" version --prefer-online >/dev/null 2>&1; then
+            echo "exists=true" >> "${GITHUB_OUTPUT}"
+            echo "${name}@${VERSION} already exists; skipping native build matrix."
+          else
+            echo "exists=false" >> "${GITHUB_OUTPUT}"
+          fi
+
   # Build the released CLI's native binary on each platform's own runner. The
   # binaries become workflow artifacts the publish job assembles into npm
   # packages with cargo-npm.
   build-cli:
     name: build ${{ matrix.platform }} CLI binary
+    needs: npm-preflight
     runs-on: ${{ matrix.os }}
-    if: ${{ github.repository_owner == 'stevennevins' && (startsWith(github.event.inputs.tag || github.ref_name, 'daml-lint-v') || startsWith(github.event.inputs.tag || github.ref_name, 'daml-fmt-v')) }}
+    timeout-minutes: 20
+    if: ${{ github.repository_owner == 'stevennevins' && needs.npm-preflight.outputs.exists != 'true' }}
     env:
       RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
     strategy:
@@ -92,6 +144,7 @@ jobs:
           name: cli-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/${{ steps.release.outputs.tool }}${{ matrix.binary_suffix }}
           if-no-files-found: error
+          retention-days: 1
 
   # Assemble and publish the npm packages with cargo-npm: it reads
   # [package.metadata.npm] in the crate, builds one wrapper package plus one
@@ -101,8 +154,9 @@ jobs:
   publish-cli:
     name: publish npm packages
     runs-on: ubuntu-latest
-    needs: build-cli
-    if: ${{ github.repository_owner == 'stevennevins' && (startsWith(github.event.inputs.tag || github.ref_name, 'daml-lint-v') || startsWith(github.event.inputs.tag || github.ref_name, 'daml-fmt-v')) }}
+    needs: [npm-preflight, build-cli]
+    timeout-minutes: 30
+    if: ${{ always() && github.repository_owner == 'stevennevins' && needs.npm-preflight.result == 'success' && (needs.build-cli.result == 'success' || needs.build-cli.result == 'skipped') }}
     env:
       RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
@@ -135,8 +189,6 @@ jobs:
           package-manager-cache: false
       - name: Install npm 11
         run: npm install --global npm@^11.10.0
-      - name: Install cargo-npm
-        run: cargo install cargo-npm --version "${CARGO_NPM_VERSION}" --locked
       - name: Resolve npm package and registry state
         id: npm
         shell: bash
@@ -166,6 +218,18 @@ jobs:
             echo "${name}@${EXPECTED_VERSION} already exists; skipping publish."
           else
             echo "exists=false" >> "${GITHUB_OUTPUT}"
+          fi
+      - name: Cache cargo-npm
+        if: ${{ steps.npm.outputs.exists != 'true' }}
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-npm
+          key: cargo-npm-${{ env.CARGO_NPM_VERSION }}-${{ runner.os }}
+      - name: Install cargo-npm
+        if: ${{ steps.npm.outputs.exists != 'true' }}
+        run: |
+          if ! cargo install --list | grep -F "cargo-npm v${CARGO_NPM_VERSION}:" >/dev/null; then
+            cargo install cargo-npm --version "${CARGO_NPM_VERSION}" --locked
           fi
       - name: Download CLI binaries
         if: ${{ steps.npm.outputs.exists != 'true' }}

@@ -3,12 +3,19 @@ name: Release-plz
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - ".smithers/**"
+      - "AGENTS.md"
+      - "LICENSE"
   workflow_dispatch:
 
 jobs:
   release-plz-release:
     name: Release-plz release
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     if: ${{ github.repository_owner == 'stevennevins' }}
     permissions:
       contents: write
@@ -21,6 +28,7 @@ jobs:
           persist-credentials: false
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: Set up Node
         uses: actions/setup-node@v6
         with:
@@ -46,13 +54,14 @@ jobs:
     name: Release-plz PR
     needs: release-plz-release
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     if: ${{ github.repository_owner == 'stevennevins' }}
     permissions:
       contents: write
       pull-requests: write
     concurrency:
       group: release-plz-${{ github.ref }}
-      cancel-in-progress: false
+      cancel-in-progress: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -61,6 +70,7 @@ jobs:
           persist-credentials: false
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: Set up Node
         uses: actions/setup-node@v6
         with:

@@ -3,7 +3,23 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - ".smithers/**"
+      - "AGENTS.md"
+      - "LICENSE"
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - ".smithers/**"
+      - "AGENTS.md"
+      - "LICENSE"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -15,6 +31,7 @@ jobs:
   # fmt + clippy + the whole test suite + the formatter's 924-file differential.
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -52,6 +69,7 @@ jobs:
   # Build on the declared MSRV so a dependency bump that raises it fails loudly.
   msrv:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@1.87.0
@@ -75,6 +93,7 @@ jobs:
   npm-package:
     name: npm CLI packaging
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -110,6 +129,7 @@ jobs:
   # License + advisory policy (see deny.toml).
   cargo-deny:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
       - uses: EmbarkStudios/cargo-deny-action@v2
@@ -121,6 +141,7 @@ jobs:
   # producing an unstable-but-mergeable status.
   semver:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -128,15 +149,47 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: obi1kenobi/cargo-semver-checks-action@v2
-        continue-on-error: true
         with:
           package: ${{ matrix.package }}
 
   # Native CLI binaries per OS — the per-PR "it still builds a runnable CLI"
   # gate. Release assets are produced by release-artifacts.yml when a CLI tag is
   # published.
+  build-pr:
+    name: build (x86_64-unknown-linux-gnu)
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+      - name: build CLIs
+        run: cargo build --release --locked --target x86_64-unknown-linux-gnu --bin daml-lint --bin daml-fmt
+
+  build-required-pr:
+    name: build (${{ matrix.target }})
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-unknown-linux-gnu
+          - aarch64-apple-darwin
+          - x86_64-pc-windows-msvc
+    steps:
+      - name: Full native build runs after merge
+        run: |
+          echo "PRs build the Linux x64 CLI smoke target only to control CI cost."
+          echo "The full native ${{ matrix.target }} release build runs on main and release tags."
+
   build:
     name: build (${{ matrix.target }})
+    if: ${{ github.event_name != 'pull_request' }}
     strategy:
       fail-fast: false
       matrix:
@@ -146,6 +199,7 @@ jobs:
           - { os: macos-latest, target: aarch64-apple-darwin }
           - { os: windows-latest, target: x86_64-pc-windows-msvc }
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
