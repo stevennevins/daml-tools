@@ -7,7 +7,8 @@
 
 use crate::ir::*;
 use daml_parser::ast::{
-    self, Consuming, Decl, DiagnosticCategory, DoStmt, ImportStyle, TemplateBodyDecl,
+    self, Consuming as ParserConsuming, Decl, DiagnosticCategory, DoStmt,
+    ImportStyle as ParserImportStyle, TemplateBodyDecl,
 };
 use daml_syntax::SourceFile;
 use std::path::Path;
@@ -38,7 +39,11 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> (DamlModule, Ve
         .iter()
         .map(|i| Import {
             module_name: i.module_name.clone(),
-            qualified: i.style == ImportStyle::Qualified,
+            qualified: if i.style == ParserImportStyle::Qualified {
+                ImportStyle::Qualified
+            } else {
+                ImportStyle::Unqualified
+            },
             alias: i.alias.clone(),
             span: span_at(file, i.pos),
         })
@@ -122,13 +127,11 @@ fn lower_expr(e: &ast::Expr) -> Expr {
         },
         ast::Expr::Lit { kind, text, .. } => Expr::Lit {
             kind: match kind {
-                ast::LitKind::Int => "Int",
-                ast::LitKind::Decimal => "Decimal",
-                ast::LitKind::Text => "Text",
-                ast::LitKind::Char => "Char",
-                _ => "Unknown",
-            }
-            .to_string(),
+                ast::LitKind::Int => LiteralKind::Int,
+                ast::LitKind::Decimal => LiteralKind::Decimal,
+                ast::LitKind::Char => LiteralKind::Char,
+                _ => LiteralKind::Text,
+            },
             value: text.clone(),
             span,
         },
@@ -356,7 +359,11 @@ fn lower_choice(c: &ast::ChoiceDecl, file: &Path, source_file: &SourceFile) -> C
         // pre/postconsuming choices archive the contract just like the default
         // consuming form; only NonConsuming leaves it live. The boolean means
         // "archives the contract".
-        consuming: c.consuming != Consuming::NonConsuming,
+        consuming: if c.consuming == ParserConsuming::NonConsuming {
+            Consuming::NonConsuming
+        } else {
+            Consuming::Consuming
+        },
         controller_exprs: c.controllers.iter().map(lower_expr).collect(),
         observer_exprs: c.observers.iter().map(lower_expr).collect(),
         parameters,
@@ -1122,7 +1129,7 @@ template Foo
 "#;
         let module = parse_daml(source, Path::new("Foo.daml"));
         assert_eq!(module.templates[0].choices.len(), 1);
-        assert!(!module.templates[0].choices[0].consuming);
+        assert!(!module.templates[0].choices[0].consuming.is_consuming());
     }
 
     // Regression (audit F2): preconsuming and postconsuming choices DO archive
@@ -1166,10 +1173,22 @@ template Foo
                 .find(|c| c.name == n)
                 .unwrap_or_else(|| panic!("choice {n} not found"))
         };
-        assert!(by("Drain").consuming, "preconsuming archives -> consuming");
-        assert!(by("Close").consuming, "postconsuming archives -> consuming");
-        assert!(by("Normal").consuming, "default choice is consuming");
-        assert!(!by("Peek").consuming, "nonconsuming is not consuming");
+        assert!(
+            by("Drain").consuming.is_consuming(),
+            "preconsuming archives -> consuming"
+        );
+        assert!(
+            by("Close").consuming.is_consuming(),
+            "postconsuming archives -> consuming"
+        );
+        assert!(
+            by("Normal").consuming.is_consuming(),
+            "default choice is consuming"
+        );
+        assert!(
+            !by("Peek").consuming.is_consuming(),
+            "nonconsuming is not consuming"
+        );
     }
 
     #[test]

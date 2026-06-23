@@ -114,9 +114,10 @@ pub fn parse_severity(s: &str) -> Option<Severity> {
 // Scanning is single-threaded; detectors hold per-rule QuickJS state.
 /// Static analysis rule over a lowered Daml module.
 ///
-/// Implement [`Detector::try_detect`] for rules that can fail. The infallible
-/// [`Detector::detect`] method is retained for built-in detectors and older
-/// library callers.
+/// Implement [`Detector::try_detect`] for all rules; it is the required API and
+/// communicates runtime/script failures to callers. Implementations that cannot
+/// fail can use the default [`Detector::detect`] convenience adapter or provide
+/// a fallible implementation that returns `Ok`.
 pub trait Detector {
     /// Stable detector name used in reports and duplicate-rule checks.
     fn name(&self) -> &str;
@@ -125,11 +126,16 @@ pub trait Detector {
     /// One-line detector description.
     fn description(&self) -> &str;
     /// Run an infallible detector over `module`.
-    fn detect(&self, module: &DamlModule) -> Vec<Finding>;
-    /// Run a detector that may fail without terminating the caller.
-    fn try_detect(&self, module: &DamlModule) -> Result<Vec<Finding>, DetectError> {
-        Ok(self.detect(module))
+    ///
+    /// Implementations may continue to implement this directly; for most rules
+    /// this adapter provides a panic-first convenience layer over
+    /// [`Detector::try_detect`].
+    fn detect(&self, module: &DamlModule) -> Vec<Finding> {
+        self.try_detect(module)
+            .unwrap_or_else(|e| panic!("detector '{}' failed: {}", self.name(), e))
     }
+    /// Run a detector that may fail without terminating the caller.
+    fn try_detect(&self, module: &DamlModule) -> Result<Vec<Finding>, DetectError>;
 }
 
 /// Detector wrapper that can rename a rule and/or override finding severity.
@@ -181,10 +187,6 @@ impl Detector for ConfiguredDetector {
 
     fn description(&self) -> &str {
         self.inner.description()
-    }
-
-    fn detect(&self, module: &DamlModule) -> Vec<Finding> {
-        self.apply_overrides(self.inner.detect(module))
     }
 
     fn try_detect(&self, module: &DamlModule) -> Result<Vec<Finding>, DetectError> {

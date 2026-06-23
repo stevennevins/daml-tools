@@ -13,6 +13,7 @@ pub struct Pos {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TokenKind {
     /// Lowercase-initial identifier, possibly qualified: `foo`, `Map.lookup`.
     LowerId {
@@ -90,6 +91,7 @@ impl Token {
 /// Carries exact byte spans so a printer can re-attach comments to nearby AST
 /// nodes (which already have positions) and reproduce the original bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TriviaKind {
     /// `-- ...` to end of line (newline not included).
     LineComment,

@@ -76,7 +76,7 @@ pub enum ImportStyle {
     Unqualified,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldAssign {
     pub name: String,
     /// None for record puns (`Foo with owner` meaning `owner = owner`)
@@ -86,7 +86,7 @@ pub struct FieldAssign {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Alt {
     pub pat: Pat,
     pub body: Expr,
@@ -94,7 +94,7 @@ pub struct Alt {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Binding {
     /// Left-hand side: a variable with parameters, or a destructuring pattern.
     pub pat: Pat,
@@ -105,7 +105,7 @@ pub struct Binding {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Pat {
     Var {
@@ -155,7 +155,7 @@ pub enum Pat {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Expr {
     /// Lowercase variable reference, possibly qualified.
@@ -267,7 +267,7 @@ pub enum Expr {
     Error { raw: String, pos: Pos, span: Span },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DoStmt {
     /// `pat <- expr`
@@ -323,39 +323,10 @@ pub enum Type {
     Constrained(Box<Self>, Span),
 }
 
-impl Type {
-    pub const fn span(&self) -> Span {
-        match self {
-            Self::Con { span, .. }
-            | Self::App(_, _, span)
-            | Self::List(_, span)
-            | Self::Tuple(_, span)
-            | Self::Fun(_, _, span)
-            | Self::Var(_, span)
-            | Self::Unit(span)
-            | Self::Constrained(_, span) => *span,
-        }
-    }
-
-    pub(crate) const fn with_span(mut self, span: Span) -> Self {
-        match &mut self {
-            Self::Con { span: s, .. }
-            | Self::App(_, _, s)
-            | Self::List(_, s)
-            | Self::Tuple(_, s)
-            | Self::Fun(_, _, s)
-            | Self::Var(_, s)
-            | Self::Unit(s)
-            | Self::Constrained(_, s) => *s = span,
-        }
-        self
-    }
-}
-
 /// Type equality intentionally ignores source spans.
 ///
 /// Spans describe where equivalent type syntax appeared in a source file; they
-/// are not part of the structural type identity used by parser consumers.
+/// are not part of structural type identity used by parser consumers.
 impl PartialEq for Type {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -385,7 +356,36 @@ impl PartialEq for Type {
 
 impl Eq for Type {}
 
-#[derive(Debug, Clone)]
+impl Type {
+    pub const fn span(&self) -> Span {
+        match self {
+            Self::Con { span, .. }
+            | Self::App(_, _, span)
+            | Self::List(_, span)
+            | Self::Tuple(_, span)
+            | Self::Fun(_, _, span)
+            | Self::Var(_, span)
+            | Self::Unit(span)
+            | Self::Constrained(_, span) => *span,
+        }
+    }
+
+    pub(crate) const fn with_span(mut self, span: Span) -> Self {
+        match &mut self {
+            Self::Con { span: s, .. }
+            | Self::App(_, _, s)
+            | Self::List(_, s)
+            | Self::Tuple(_, s)
+            | Self::Fun(_, _, s)
+            | Self::Var(_, s)
+            | Self::Unit(s)
+            | Self::Constrained(_, s) => *s = span,
+        }
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldDecl {
     pub name: String,
     /// Structured field type parsed from the token stream. `None` when the type
@@ -403,7 +403,7 @@ pub enum Consuming {
     PostConsuming,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChoiceDecl {
     pub name: String,
     pub consuming: Consuming,
@@ -420,7 +420,7 @@ pub struct ChoiceDecl {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TemplateBodyDecl {
     Signatory {
         parties: Vec<Expr>,
@@ -459,7 +459,7 @@ pub enum TemplateBodyDecl {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InterfaceInstanceDecl {
     /// Interface being implemented (`Disclosure.I`).
     pub interface_name: String,
@@ -472,7 +472,7 @@ pub struct InterfaceInstanceDecl {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TemplateDecl {
     pub name: String,
     pub fields: Vec<FieldDecl>,
@@ -481,7 +481,7 @@ pub struct TemplateDecl {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InterfaceDecl {
     pub name: String,
     /// Interfaces this interface requires (`requires Lockable.I, ...`).
@@ -494,7 +494,7 @@ pub struct InterfaceDecl {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Equation {
     pub params: Vec<Pat>,
     pub body: Expr,
@@ -507,7 +507,7 @@ pub struct Equation {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionDecl {
     pub name: String,
     pub ty: Option<Type>,
@@ -521,7 +521,7 @@ pub struct FunctionDecl {
     pub sig_span: Option<Span>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImportDecl {
     pub module_name: String,
     pub style: ImportStyle,
@@ -530,7 +530,7 @@ pub struct ImportDecl {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Decl {
     Template(TemplateDecl),
@@ -551,7 +551,7 @@ pub enum Decl {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Module {
     pub name: String,
     pub pos: Pos,
@@ -602,7 +602,7 @@ impl DiagnosticCategory {
 }
 
 /// Parse diagnostic — never fatal; the scan continues.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseDiagnostic {
     pub message: String,
     pub pos: Pos,

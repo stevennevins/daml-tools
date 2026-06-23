@@ -120,7 +120,7 @@ fn settlement_instruction_template() {
     let qualified_aliased = m
         .imports
         .iter()
-        .filter(|i| i.qualified && i.alias.is_some())
+        .filter(|i| i.qualified.is_qualified() && i.alias.is_some())
         .count();
     assert_eq!(qualified_aliased, 9);
 
@@ -170,7 +170,7 @@ fn interface_settlement_instruction() {
     let choices: Vec<(&str, bool)> = i
         .choices
         .iter()
-        .map(|c| (c.name.as_str(), c.consuming))
+        .map(|c| (c.name.as_str(), c.consuming.is_consuming()))
         .collect();
     assert_eq!(
         choices,
@@ -225,7 +225,7 @@ fn interface_account_reference_template() {
     assert_eq!(r.fields.len(), 3);
     assert_eq!(con_name(r.key_type.as_ref()), Some("AccountKey"));
     let by_name = |n: &str| r.choices.iter().find(|c| c.name == n).unwrap();
-    assert!(!by_name("GetCid").consuming);
+    assert!(!by_name("GetCid").consuming.is_consuming());
     assert_eq!(
         expr_texts(&by_name("GetCid").controller_exprs),
         vec!["viewer"]
