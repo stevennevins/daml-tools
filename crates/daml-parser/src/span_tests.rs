@@ -16,11 +16,16 @@ use std::path::{Path, PathBuf};
 /// Run the oracle the way daml-fmt will: AST + the lexer's trivia.
 fn render(src: &str) -> Result<String, String> {
     let (_, trivia, _) = lex_with_trivia(src);
-    render_from_ast(src, &parse_module(src).0, &trivia)
+    render_from_ast(src, &parse(src), &trivia)
 }
 
 fn parse(src: &str) -> Module {
-    parse_module(src).0
+    let (module, diagnostics) = parse_module(src);
+    assert!(
+        diagnostics.is_empty(),
+        "span test source must parse without diagnostics: {diagnostics:?}"
+    );
+    module
 }
 
 /// Substring of `src` covered by `span`.
