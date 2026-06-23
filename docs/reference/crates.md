@@ -95,6 +95,10 @@ embedded as generated JavaScript; no TypeScript toolchain is required at
 runtime. With `default-features = false`, the crate provides parser lowering
 and the rule-facing IR without pulling in clap or QuickJS.
 
+Rule-facing IR fields for domain enums are strings (for example, choice
+`consuming` and import `qualified`) to make custom-rule contracts explicit and
+stable.
+
 ### Public modules
 
 | Module | Description |

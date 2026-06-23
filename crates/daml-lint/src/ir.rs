@@ -99,8 +99,8 @@ impl TypeNode {
             Type::Con {
                 qualifier, name, ..
             } => Self::Con {
-                qualifier: qualifier.clone(),
-                name: name.clone(),
+                qualifier: qualifier.to_owned().map(String::from),
+                name: name.to_string(),
                 span: source_span(),
             },
             Type::App(head, args, _) => Self::App {
@@ -128,7 +128,7 @@ impl TypeNode {
                 span: source_span(),
             },
             Type::Var(name, _) => Self::Var {
-                name: name.clone(),
+                name: name.to_string(),
                 span: source_span(),
             },
             Type::Unit(_) => Self::Unit {
@@ -324,7 +324,8 @@ pub struct Choice {
     pub span: Span,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Consuming {
     Consuming,
     NonConsuming,
@@ -333,12 +334,6 @@ pub enum Consuming {
 impl Consuming {
     pub const fn is_consuming(&self) -> bool {
         matches!(self, Self::Consuming)
-    }
-}
-
-impl serde::Serialize for Consuming {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.is_consuming().serialize(serializer)
     }
 }
 
@@ -438,7 +433,8 @@ pub struct Import {
     pub span: Span,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum ImportStyle {
     Qualified,
     Unqualified,
@@ -447,12 +443,6 @@ pub enum ImportStyle {
 impl ImportStyle {
     pub const fn is_qualified(&self) -> bool {
         matches!(self, Self::Qualified)
-    }
-}
-
-impl serde::Serialize for ImportStyle {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.is_qualified().serialize(serializer)
     }
 }
 

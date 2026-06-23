@@ -3,7 +3,155 @@ use daml_lint::detectors;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
+use std::error::Error;
 use std::path::{Path, PathBuf};
+
+#[derive(Debug)]
+pub enum ConfigError {
+    MissingCurrentDir {
+        source: std::io::Error,
+    },
+    ReadConfig {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    ParseConfig {
+        path: PathBuf,
+        source: serde_json::Error,
+    },
+    PluginResolveFailed {
+        plugin: String,
+        tried: Vec<PathBuf>,
+    },
+    PluginManifestMissingSection {
+        plugin: String,
+        path: PathBuf,
+    },
+    PluginManifestRead {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    PluginManifestParse {
+        path: PathBuf,
+        source: serde_json::Error,
+    },
+    UnknownRuleId {
+        rule_id: String,
+    },
+    MissingPluginRule {
+        plugin: String,
+        rule: String,
+        package_json: PathBuf,
+    },
+    RuleNameMismatch {
+        plugin: String,
+        rule: String,
+        script: PathBuf,
+        name: String,
+    },
+    RuleLoadFailed {
+        plugin: String,
+        rule: String,
+        path: PathBuf,
+        source: Box<crate::detectors::script::ScriptLoadError>,
+    },
+    RuleSettingMissingSeverity {
+        value: String,
+    },
+    RuleSettingInvalidSeverity {
+        value: String,
+    },
+    RuleSettingInvalidType {
+        kind: String,
+    },
+}
+
+impl std::fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingCurrentDir { source } => {
+                write!(f, "could not resolve current directory: {source}")
+            }
+            Self::ReadConfig { path, source } => {
+                write!(f, "could not read config {}: {source}", path.display())
+            }
+            Self::ParseConfig { path, source } => {
+                write!(f, "invalid config {}: {source}", path.display())
+            }
+            Self::PluginResolveFailed { plugin, tried } => {
+                let tried = tried
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "could not resolve plugin '{plugin}'. Tried: {tried}")
+            }
+            Self::PluginManifestMissingSection { plugin, path } => write!(
+                f,
+                "plugin '{plugin}' package {} is missing damlLint.rules",
+                path.display()
+            ),
+            Self::PluginManifestRead { path, source } => {
+                write!(f, "could not read {}: {source}", path.display())
+            }
+            Self::PluginManifestParse { path, source } => {
+                write!(f, "invalid {}: {source}", path.display())
+            }
+            Self::UnknownRuleId { rule_id } => {
+                write!(f, "configures unknown rule '{rule_id}'")
+            }
+            Self::MissingPluginRule {
+                plugin,
+                rule,
+                package_json,
+            } => write!(
+                f,
+                "plugin '{plugin}' does not declare rule '{rule}' in {}",
+                package_json.display()
+            ),
+            Self::RuleNameMismatch {
+                plugin,
+                rule,
+                script,
+                name,
+            } => write!(
+                f,
+                "plugin '{plugin}' declares rule '{rule}' but {} defines NAME '{name}'",
+                script.display()
+            ),
+            Self::RuleLoadFailed {
+                plugin,
+                rule,
+                path,
+                source,
+            } => write!(
+                f,
+                "plugin '{plugin}' rule '{rule}' failed to load from {}: {source}",
+                path.display()
+            ),
+            Self::RuleSettingMissingSeverity { value } => {
+                write!(
+                    f,
+                    "rule setting array must include a severity or 'off': {value}"
+                )
+            }
+            Self::RuleSettingInvalidSeverity { value } => {
+                write!(
+                    f,
+                    "rule setting must be a severity, 'off', or an array containing one: {value}",
+                )
+            }
+            Self::RuleSettingInvalidType { kind } => {
+                write!(
+                    f,
+                    "rule setting must be a severity, 'off', or an array (got {kind})"
+                )
+            }
+        }
+    }
+}
+
+impl Error for ConfigError {}
 
 #[derive(Debug)]
 pub struct LintConfig {
@@ -14,15 +162,20 @@ pub struct LintConfig {
 }
 
 impl LintConfig {
-    pub fn load(explicit_path: Option<&Path>) -> Result<Self, String> {
+    pub fn load(explicit_path: Option<&Path>) -> Result<Self, ConfigError> {
         let Some(path) = find_config_path(explicit_path)? else {
             return Self::default_for_cwd();
         };
 
-        let source = std::fs::read_to_string(&path)
-            .map_err(|e| format!("could not read config {}: {e}", path.display()))?;
-        let raw: RawConfig = serde_json::from_str(&source)
-            .map_err(|e| format!("invalid config {}: {e}", path.display()))?;
+        let source = std::fs::read_to_string(&path).map_err(|source| ConfigError::ReadConfig {
+            path: path.clone(),
+            source,
+        })?;
+        let raw: RawConfig =
+            serde_json::from_str(&source).map_err(|source| ConfigError::ParseConfig {
+                path: path.clone(),
+                source,
+            })?;
         let base_dir = path
             .parent()
             .unwrap_or_else(|| Path::new("."))
@@ -41,7 +194,7 @@ impl LintConfig {
         })
     }
 
-    pub fn load_plugin_detectors(&self) -> Result<Vec<Box<dyn Detector>>, String> {
+    pub fn load_plugin_detectors(&self) -> Result<Vec<Box<dyn Detector>>, ConfigError> {
         let mut detectors: Vec<Box<dyn Detector>> = Vec::new();
         for plugin in &self.plugins {
             let package_dir = self.resolve_plugin_package(plugin)?;
@@ -50,24 +203,28 @@ impl LintConfig {
 
             for (rule_name, rule_id, setting) in self.enabled_rules_for_namespace(&namespace) {
                 let Some(rule_path) = manifest.rules.get(rule_name) else {
-                    return Err(format!(
-                        "plugin '{}' does not declare rule '{}' in {}",
-                        plugin,
-                        rule_name,
-                        package_dir.join("package.json").display()
-                    ));
+                    return Err(ConfigError::MissingPluginRule {
+                        plugin: plugin.to_string(),
+                        rule: rule_name.to_string(),
+                        package_json: package_dir.join("package.json"),
+                    });
                 };
                 let script_path = package_dir.join(rule_path);
                 let detector =
-                    detectors::script::load_script_with_options(&script_path, &setting.options)?;
+                    detectors::script::load_script_with_options(&script_path, &setting.options)
+                        .map_err(|source| ConfigError::RuleLoadFailed {
+                            plugin: plugin.to_string(),
+                            rule: rule_name.to_string(),
+                            path: script_path.clone(),
+                            source: Box::new(source),
+                        })?;
                 if detector.name() != rule_name {
-                    return Err(format!(
-                        "plugin '{}' declares rule '{}' but {} defines NAME '{}'",
-                        plugin,
-                        rule_name,
-                        script_path.display(),
-                        detector.name()
-                    ));
+                    return Err(ConfigError::RuleNameMismatch {
+                        plugin: plugin.to_string(),
+                        rule: rule_name.to_string(),
+                        script: script_path,
+                        name: detector.name().to_string(),
+                    });
                 }
                 detectors.push(Box::new(ConfiguredDetector::new(
                     detector,
@@ -99,21 +256,26 @@ impl LintConfig {
             .collect()
     }
 
-    pub fn validate_rule_settings(&self, detectors: &[Box<dyn Detector>]) -> Result<(), String> {
+    pub fn validate_rule_settings(
+        &self,
+        detectors: &[Box<dyn Detector>],
+    ) -> Result<(), ConfigError> {
         let detector_names: BTreeSet<&str> =
             detectors.iter().map(|detector| detector.name()).collect();
         for (rule_id, setting) in &self.rules {
             if setting.enabled && !detector_names.contains(rule_id.as_str()) {
-                return Err(format!("configures unknown rule '{rule_id}'"));
+                return Err(ConfigError::UnknownRuleId {
+                    rule_id: rule_id.clone(),
+                });
             }
         }
         Ok(())
     }
 
-    fn default_for_cwd() -> Result<Self, String> {
+    fn default_for_cwd() -> Result<Self, ConfigError> {
         Ok(Self {
             base_dir: std::env::current_dir()
-                .map_err(|e| format!("could not resolve current directory: {e}"))?,
+                .map_err(|source| ConfigError::MissingCurrentDir { source })?,
             plugin_paths: Vec::new(),
             plugins: Vec::new(),
             rules: BTreeMap::new(),
@@ -135,7 +297,7 @@ impl LintConfig {
         })
     }
 
-    fn resolve_plugin_package(&self, plugin: &str) -> Result<PathBuf, String> {
+    fn resolve_plugin_package(&self, plugin: &str) -> Result<PathBuf, ConfigError> {
         let candidates = package_candidates(plugin);
         let mut tried = Vec::new();
 
@@ -148,14 +310,10 @@ impl LintConfig {
             }
         }
 
-        let tried = tried
-            .iter()
-            .map(|path| path.display().to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        Err(format!(
-            "could not resolve plugin '{plugin}'. Tried: {tried}"
-        ))
+        Err(ConfigError::PluginResolveFailed {
+            plugin: plugin.to_string(),
+            tried,
+        })
     }
 
     fn package_dirs(&self, package_name: &str) -> Vec<PathBuf> {
@@ -188,7 +346,7 @@ struct RuleSetting {
 }
 
 impl RuleSetting {
-    fn from_value(value: Value) -> Result<Self, String> {
+    fn from_value(value: Value) -> Result<Self, ConfigError> {
         match value {
             Value::Array(items) => Self::from_array(&items),
             level => {
@@ -197,9 +355,11 @@ impl RuleSetting {
         }
     }
 
-    fn from_array(items: &[Value]) -> Result<Self, String> {
+    fn from_array(items: &[Value]) -> Result<Self, ConfigError> {
         let Some((level_value, option_values)) = items.split_first() else {
-            return Err("rule setting array must include a severity or 'off'".to_string());
+            return Err(ConfigError::RuleSettingMissingSeverity {
+                value: "[]".to_string(),
+            });
         };
         let level = Self::from_level_value(level_value)?;
         let options = match option_values {
@@ -225,16 +385,20 @@ impl RuleSetting {
         }
     }
 
-    fn from_level_value(value: &Value) -> Result<RuleLevel, String> {
+    fn from_level_value(value: &Value) -> Result<RuleLevel, ConfigError> {
         match value {
             Value::String(level) => parse_level_string(level),
             Value::Number(level) => match level.as_u64() {
                 Some(0) => Ok(RuleLevel::Off),
                 Some(1) => Ok(RuleLevel::Severity(Severity::Medium)),
                 Some(2) => Ok(RuleLevel::Severity(Severity::High)),
-                _ => Err("numeric rule severity must be 0, 1, or 2".to_string()),
+                _ => Err(ConfigError::RuleSettingInvalidSeverity {
+                    value: value.to_string(),
+                }),
             },
-            _ => Err("rule setting must be a severity, 'off', or an array".to_string()),
+            _ => Err(ConfigError::RuleSettingInvalidType {
+                kind: serde_json::to_string(value).unwrap_or_else(|_| "value".to_string()),
+            }),
         }
     }
 }
@@ -266,13 +430,13 @@ struct PluginManifest {
     rules: BTreeMap<String, PathBuf>,
 }
 
-fn find_config_path(explicit_path: Option<&Path>) -> Result<Option<PathBuf>, String> {
+fn find_config_path(explicit_path: Option<&Path>) -> Result<Option<PathBuf>, ConfigError> {
     if let Some(path) = explicit_path {
         return Ok(Some(path.to_path_buf()));
     }
 
     let path = std::env::current_dir()
-        .map_err(|e| format!("could not resolve current directory: {e}"))?
+        .map_err(|source| ConfigError::MissingCurrentDir { source })?
         .join(".daml-lint.json");
     Ok(path.is_file().then_some(path))
 }
@@ -285,18 +449,25 @@ fn resolve_config_path(base_dir: &Path, path: PathBuf) -> PathBuf {
     }
 }
 
-fn read_plugin_manifest(plugin: &str, package_dir: &Path) -> Result<PluginManifest, String> {
+fn read_plugin_manifest(plugin: &str, package_dir: &Path) -> Result<PluginManifest, ConfigError> {
     let package_json_path = package_dir.join("package.json");
-    let source = std::fs::read_to_string(&package_json_path)
-        .map_err(|e| format!("could not read {}: {e}", package_json_path.display()))?;
-    let package_json: PackageJson = serde_json::from_str(&source)
-        .map_err(|e| format!("invalid {}: {e}", package_json_path.display()))?;
-    package_json.daml_lint.ok_or_else(|| {
-        format!(
-            "plugin '{plugin}' package {} is missing damlLint.rules",
-            package_json_path.display()
-        )
-    })
+    let source = std::fs::read_to_string(&package_json_path).map_err(|source| {
+        ConfigError::PluginManifestRead {
+            path: package_json_path.clone(),
+            source,
+        }
+    })?;
+    let package_json: PackageJson =
+        serde_json::from_str(&source).map_err(|source| ConfigError::PluginManifestParse {
+            path: package_json_path.clone(),
+            source,
+        })?;
+    package_json
+        .daml_lint
+        .ok_or_else(|| ConfigError::PluginManifestMissingSection {
+            plugin: plugin.to_string(),
+            path: package_json_path,
+        })
 }
 
 fn package_candidates(plugin: &str) -> Vec<String> {
@@ -328,7 +499,7 @@ fn strip_plugin_prefix(package: &str) -> &str {
     package.strip_prefix("daml-lint-plugin-").unwrap_or(package)
 }
 
-fn parse_level_string(level: &str) -> Result<RuleLevel, String> {
+fn parse_level_string(level: &str) -> Result<RuleLevel, ConfigError> {
     match level.to_lowercase().as_str() {
         "off" => Ok(RuleLevel::Off),
         "warn" | "warning" | "medium" => Ok(RuleLevel::Severity(Severity::Medium)),
@@ -336,9 +507,9 @@ fn parse_level_string(level: &str) -> Result<RuleLevel, String> {
         "critical" => Ok(RuleLevel::Severity(Severity::Critical)),
         "low" => Ok(RuleLevel::Severity(Severity::Low)),
         "info" => Ok(RuleLevel::Severity(Severity::Info)),
-        _ => Err(format!(
-            "unknown rule severity '{level}'. Use off, critical, high, medium, low, info, warn, or error."
-        )),
+        _ => Err(ConfigError::RuleSettingInvalidSeverity {
+            value: level.to_string(),
+        }),
     }
 }
 

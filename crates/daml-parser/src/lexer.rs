@@ -5,6 +5,225 @@
 //! here, so no later stage can ever mistake `-- exercise the option` for a
 //! ledger action.
 
+/// A small domain type for identifier-like text.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Identifier(String);
+
+impl Identifier {
+    pub const fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl std::fmt::Display for Identifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl From<String> for Identifier {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for Identifier {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+
+impl From<Identifier> for String {
+    fn from(value: Identifier) -> Self {
+        value.0
+    }
+}
+
+impl std::ops::Deref for Identifier {
+    type Target = str;
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl std::borrow::Borrow<str> for Identifier {
+    fn borrow(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl PartialEq<&str> for Identifier {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl PartialEq<Identifier> for &str {
+    fn eq(&self, other: &Identifier) -> bool {
+        *self == other.as_str()
+    }
+}
+
+impl PartialEq<String> for Identifier {
+    fn eq(&self, other: &String) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl PartialEq<Identifier> for String {
+    fn eq(&self, other: &Identifier) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+/// A small domain type for symbolic operator text.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Operator(String);
+
+impl Operator {
+    pub const fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl std::fmt::Display for Operator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl From<String> for Operator {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for Operator {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+
+impl From<Operator> for String {
+    fn from(value: Operator) -> Self {
+        value.0
+    }
+}
+
+impl std::ops::Deref for Operator {
+    type Target = str;
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl std::borrow::Borrow<str> for Operator {
+    fn borrow(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl PartialEq<&str> for Operator {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl PartialEq<Operator> for &str {
+    fn eq(&self, other: &Operator) -> bool {
+        *self == other.as_str()
+    }
+}
+
+impl PartialEq<String> for Operator {
+    fn eq(&self, other: &String) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl PartialEq<Operator> for String {
+    fn eq(&self, other: &Operator) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+/// A small domain type for module-style qualified names (`DA.Map`, `Daml.Foo`).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct ModuleName(String);
+
+impl ModuleName {
+    pub const fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl std::fmt::Display for ModuleName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl From<String> for ModuleName {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for ModuleName {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+
+impl From<Identifier> for ModuleName {
+    fn from(value: Identifier) -> Self {
+        Self(value.0)
+    }
+}
+
+impl From<ModuleName> for String {
+    fn from(value: ModuleName) -> Self {
+        value.0
+    }
+}
+
+impl std::ops::Deref for ModuleName {
+    type Target = str;
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl std::borrow::Borrow<str> for ModuleName {
+    fn borrow(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl PartialEq<&str> for ModuleName {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl PartialEq<ModuleName> for &str {
+    fn eq(&self, other: &ModuleName) -> bool {
+        *self == other.as_str()
+    }
+}
+
+impl PartialEq<String> for ModuleName {
+    fn eq(&self, other: &String) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl PartialEq<ModuleName> for String {
+    fn eq(&self, other: &ModuleName) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
 /// 1-based source position of a token's first character.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Pos {
@@ -17,16 +236,16 @@ pub struct Pos {
 pub enum TokenKind {
     /// Lowercase-initial identifier, possibly qualified: `foo`, `Map.lookup`.
     LowerId {
-        qualifier: Option<String>,
-        name: String,
+        qualifier: Option<ModuleName>,
+        name: Identifier,
     },
     /// Uppercase-initial identifier, possibly qualified: `Foo`, `DA.Set.Set`.
     UpperId {
-        qualifier: Option<String>,
-        name: String,
+        qualifier: Option<ModuleName>,
+        name: Identifier,
     },
     /// Symbolic operator: `+`, `<-`, `->`, `=`, `=>`, `::`, `.`, `\`, ...
-    Op(String),
+    Op(Operator),
     IntLit(String),
     DecimalLit(String),
     StringLit(String),
@@ -793,12 +1012,18 @@ impl<'a> Lexer<'a> {
         let qualifier = if segments.is_empty() {
             None
         } else {
-            Some(segments.join("."))
+            Some(segments.join(".").into())
         };
         let tok = if name.chars().next().is_some_and(|c| c.is_uppercase()) {
-            TokenKind::UpperId { qualifier, name }
+            TokenKind::UpperId {
+                qualifier,
+                name: name.into(),
+            }
         } else {
-            TokenKind::LowerId { qualifier, name }
+            TokenKind::LowerId {
+                qualifier,
+                name: name.into(),
+            }
         };
         self.push(tok, pos, start);
     }
@@ -821,7 +1046,7 @@ impl<'a> Lexer<'a> {
             self.push_trivia(TriviaKind::LineComment, pos, byte_start);
             return;
         }
-        self.push(TokenKind::Op(text), pos, byte_start);
+        self.push(TokenKind::Op(text.into()), pos, byte_start);
     }
 }
 
@@ -867,7 +1092,7 @@ impl TokenKind {
     }
 
     pub fn is_op(&self, op: &str) -> bool {
-        matches!(self, Self::Op(o) if o == op)
+        matches!(self, Self::Op(o) if o.as_str() == op)
     }
 }
 
@@ -889,14 +1114,14 @@ mod tests {
     fn lower(name: &str) -> TokenKind {
         TokenKind::LowerId {
             qualifier: None,
-            name: name.to_string(),
+            name: name.into(),
         }
     }
 
     fn upper(name: &str) -> TokenKind {
         TokenKind::UpperId {
             qualifier: None,
-            name: name.to_string(),
+            name: name.into(),
         }
     }
 

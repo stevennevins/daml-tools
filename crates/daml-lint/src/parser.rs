@@ -38,13 +38,13 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> (DamlModule, Ve
         .imports
         .iter()
         .map(|i| Import {
-            module_name: i.module_name.clone(),
+            module_name: i.module_name.to_string(),
             qualified: if i.style == ParserImportStyle::Qualified {
                 ImportStyle::Qualified
             } else {
                 ImportStyle::Unqualified
             },
-            alias: i.alias.clone(),
+            alias: i.alias.clone().map(|alias| alias.to_string()),
             span: span_at(file, i.pos),
         })
         .collect();
@@ -68,8 +68,8 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> (DamlModule, Ve
     }
 
     let ir = DamlModule {
-        ir_version: 3,
-        name: module.name.clone(),
+        ir_version: 4,
+        name: module.name.to_string(),
         file: file.to_path_buf(),
         source: source.to_string(),
         imports,
@@ -114,15 +114,15 @@ fn lower_expr(e: &ast::Expr) -> Expr {
         ast::Expr::Var {
             qualifier, name, ..
         } => Expr::Var {
-            name: name.clone(),
-            qualifier: qualifier.clone(),
+            name: name.to_string(),
+            qualifier: qualifier.to_owned().map(String::from),
             span,
         },
         ast::Expr::Con {
             qualifier, name, ..
         } => Expr::Con {
-            name: name.clone(),
-            qualifier: qualifier.clone(),
+            name: name.to_string(),
+            qualifier: qualifier.to_owned().map(String::from),
             span,
         },
         ast::Expr::Lit { kind, text, .. } => Expr::Lit {
@@ -141,7 +141,7 @@ fn lower_expr(e: &ast::Expr) -> Expr {
             span,
         },
         ast::Expr::BinOp { op, lhs, rhs, .. } => Expr::BinOp {
-            op: op.clone(),
+            op: op.to_string(),
             lhs: Box::new(lower_expr(lhs)),
             rhs: Box::new(lower_expr(rhs)),
             span,
@@ -199,7 +199,7 @@ fn lower_expr(e: &ast::Expr) -> Expr {
             fields: fields
                 .iter()
                 .map(|f| RecordField {
-                    name: f.name.clone(),
+                    name: f.name.to_string(),
                     value: f.value.as_ref().map(lower_expr),
                 })
                 .collect(),
@@ -244,7 +244,7 @@ fn lower_template(t: &ast::TemplateDecl, file: &Path, source_file: &SourceFile) 
         .fields
         .iter()
         .map(|f| Field {
-            name: f.name.clone(),
+            name: f.name.to_string(),
             type_: f
                 .ty
                 .as_ref()
@@ -288,7 +288,7 @@ fn lower_template(t: &ast::TemplateDecl, file: &Path, source_file: &SourceFile) 
             TemplateBodyDecl::Choice(c) => choices.push(lower_choice(c, file, source_file)),
             TemplateBodyDecl::InterfaceInstance(ii) => {
                 interface_instances.push(InterfaceInstance {
-                    interface_name: ii.interface_name.clone(),
+                    interface_name: ii.interface_name.to_string(),
                     methods: ii.methods.iter().map(binding_name).collect(),
                     span: span_at(file, ii.pos),
                 });
@@ -298,7 +298,7 @@ fn lower_template(t: &ast::TemplateDecl, file: &Path, source_file: &SourceFile) 
     }
 
     Template {
-        name: t.name.clone(),
+        name: t.name.to_string(),
         fields,
         signatory_exprs,
         observer_exprs,
@@ -314,14 +314,14 @@ fn lower_template(t: &ast::TemplateDecl, file: &Path, source_file: &SourceFile) 
 
 fn lower_interface(i: &ast::InterfaceDecl, file: &Path, source_file: &SourceFile) -> Interface {
     Interface {
-        name: i.name.clone(),
-        requires: i.requires.clone(),
-        viewtype: i.viewtype.clone(),
+        name: i.name.to_string(),
+        requires: i.requires.iter().map(ToString::to_string).collect(),
+        viewtype: i.viewtype.to_owned().map(String::from),
         methods: i
             .methods
             .iter()
             .map(|m| InterfaceMethod {
-                name: m.name.clone(),
+                name: m.name.to_string(),
                 type_: m
                     .ty
                     .as_ref()
@@ -343,7 +343,7 @@ fn lower_choice(c: &ast::ChoiceDecl, file: &Path, source_file: &SourceFile) -> C
         .params
         .iter()
         .map(|f| Field {
-            name: f.name.clone(),
+            name: f.name.to_string(),
             type_: f
                 .ty
                 .as_ref()
@@ -355,10 +355,9 @@ fn lower_choice(c: &ast::ChoiceDecl, file: &Path, source_file: &SourceFile) -> C
     let body = c.body.as_ref().map_or_else(Vec::new, statements_of_expr);
 
     Choice {
-        name: c.name.clone(),
+        name: c.name.to_string(),
         // pre/postconsuming choices archive the contract just like the default
-        // consuming form; only NonConsuming leaves it live. The boolean means
-        // "archives the contract".
+        // consuming form; only NonConsuming leaves it live.
         consuming: if c.consuming == ParserConsuming::NonConsuming {
             Consuming::NonConsuming
         } else {
@@ -396,7 +395,7 @@ fn lower_function(f: &ast::FunctionDecl, file: &Path, source_file: &SourceFile) 
     }
 
     Function {
-        name: f.name.clone(),
+        name: f.name.to_string(),
         type_signature: f
             .ty
             .as_ref()
@@ -513,7 +512,7 @@ fn formal_param_names(b: &ast::Binding) -> Option<Vec<String>> {
     b.params
         .iter()
         .map(|p| match p {
-            ast::Pat::Var { name, .. } => Some(name.clone()),
+            ast::Pat::Var { name, .. } => Some(name.to_string()),
             _ => None,
         })
         .collect()
@@ -542,7 +541,7 @@ fn expand_helper_call(
     else {
         return false;
     };
-    let Some(helper) = helpers.get(name) else {
+    let Some(helper) = helpers.get(name.as_str()) else {
         return false;
     };
     if helper.params.len() != args.len() {
@@ -782,7 +781,7 @@ fn collect_actions_inner(
             span,
         } => {
             // `create $ Foo with ...` — `$` is application.
-            if op == "$" {
+            if op.as_str() == "$" {
                 let as_app = ast::Expr::App {
                     func: lhs.clone(),
                     args: vec![(**rhs).clone()],
@@ -1003,8 +1002,8 @@ fn template_name_of(arg: Option<&ast::Expr>) -> String {
             qualifier, name, ..
         }) => qualifier
             .as_ref()
-            .map_or_else(|| name.clone(), |q| format!("{q}.{name}")),
-        Some(ast::Expr::Var { name, .. }) if name == "this" => "this".to_string(),
+            .map_or_else(|| name.to_string(), |q| format!("{q}.{name}")),
+        Some(ast::Expr::Var { name, .. }) if name.as_str() == "this" => "this".to_string(),
         _ => String::new(),
     }
 }
@@ -1016,7 +1015,7 @@ fn choice_name_of(arg: Option<&ast::Expr>) -> String {
             qualifier, name, ..
         }) => qualifier
             .as_ref()
-            .map_or_else(|| name.clone(), |q| format!("{q}.{name}")),
+            .map_or_else(|| name.to_string(), |q| format!("{q}.{name}")),
         Some(ast::Expr::App { func, .. }) => choice_name_of(Some(func)),
         _ => String::new(),
     }

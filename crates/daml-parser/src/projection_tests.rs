@@ -51,7 +51,7 @@ fn body_of(src: &str, name: &str) -> Expr {
 /// A projection is `BinOp(".", lhs, rhs)`; return (lhs, rhs).
 fn as_proj(e: &Expr) -> (&Expr, &Expr) {
     match e {
-        Expr::BinOp { op, lhs, rhs, .. } if op == "." => (lhs, rhs),
+        Expr::BinOp { op, lhs, rhs, .. } if op.as_str() == "." => (lhs, rhs),
         other => panic!("expected projection BinOp, got {other:?}"),
     }
 }
@@ -69,8 +69,8 @@ fn projection_binds_tighter_than_application() {
             // The single argument is the projection `this.note`.
             assert_eq!(text(src, args[0].span()), "this.note");
             let (lhs, rhs) = as_proj(&args[0]);
-            assert!(matches!(lhs, Expr::Var { name, .. } if name == "this"));
-            assert!(matches!(rhs, Expr::Var { name, .. } if name == "note"));
+            assert!(matches!(lhs, Expr::Var { name, .. } if name.as_str() == "this"));
+            assert!(matches!(rhs, Expr::Var { name, .. } if name.as_str() == "note"));
         }
         other => panic!("expected application, got {other:?}"),
     }
@@ -82,8 +82,8 @@ fn bare_projection_is_a_projection() {
     let body = body_of(src, "f");
     assert_eq!(text(src, body.span()), "this.note");
     let (lhs, rhs) = as_proj(&body);
-    assert!(matches!(lhs, Expr::Var { name, .. } if name == "this"));
-    assert!(matches!(rhs, Expr::Var { name, .. } if name == "note"));
+    assert!(matches!(lhs, Expr::Var { name, .. } if name.as_str() == "this"));
+    assert!(matches!(rhs, Expr::Var { name, .. } if name.as_str() == "note"));
 }
 
 #[test]
@@ -93,11 +93,11 @@ fn chained_projection_left_nests() {
     let body = body_of(src, "f");
     assert_eq!(text(src, body.span()), "a.b.c");
     let (lhs, rhs) = as_proj(&body);
-    assert!(matches!(rhs, Expr::Var { name, .. } if name == "c"));
+    assert!(matches!(rhs, Expr::Var { name, .. } if name.as_str() == "c"));
     assert_eq!(text(src, lhs.span()), "a.b");
     let (a, b) = as_proj(lhs);
-    assert!(matches!(a, Expr::Var { name, .. } if name == "a"));
-    assert!(matches!(b, Expr::Var { name, .. } if name == "b"));
+    assert!(matches!(a, Expr::Var { name, .. } if name.as_str() == "a"));
+    assert!(matches!(b, Expr::Var { name, .. } if name.as_str() == "b"));
 }
 
 #[test]
@@ -113,12 +113,12 @@ fn qualified_name_is_not_a_projection() {
                     qualifier, name, ..
                 } => {
                     assert_eq!(qualifier.as_deref(), Some("Map"));
-                    assert_eq!(name, "lookup");
+                    assert_eq!(name.as_str(), "lookup");
                 }
                 other => panic!("expected qualified Var head, got {other:?}"),
             }
             assert_eq!(args.len(), 1);
-            assert!(matches!(&args[0], Expr::Var { name, .. } if name == "k"));
+            assert!(matches!(&args[0], Expr::Var { name, .. } if name.as_str() == "k"));
         }
         other => panic!("expected application, got {other:?}"),
     }
@@ -131,13 +131,19 @@ fn spaced_dot_stays_composition_not_projection() {
     let src = "module M where\nf = compose g h\ncompose g h = g . h\n";
     let body = body_of(src, "compose");
     match &body {
-        Expr::BinOp { op, lhs, rhs, .. } if op == "." => {
+        Expr::BinOp { op, lhs, rhs, .. } if op.as_str() == "." => {
             // Tight projection would have made the dot abut its neighbours; a
             // spaced dot keeps `g` and `h` as the operands. Pin each operand's
             // byte-extent to exactly the bare name: that is the evidence the dot
             // did NOT fold a neighbour into a projection argument.
-            assert!(matches!(lhs.as_ref(), Expr::Var { name, .. } if name == "g"));
-            assert!(matches!(rhs.as_ref(), Expr::Var { name, .. } if name == "h"));
+            assert!(matches!(
+                lhs.as_ref(),
+                Expr::Var { name, .. } if name.as_str() == "g"
+            ));
+            assert!(matches!(
+                rhs.as_ref(),
+                Expr::Var { name, .. } if name.as_str() == "h"
+            ));
             assert_eq!(text(src, lhs.span()), "g");
             assert_eq!(text(src, rhs.span()), "h");
         }
@@ -155,9 +161,15 @@ fn newline_separated_dot_stays_composition() {
     let m = parse(src);
     let body = body_of(src, "compose");
     match &body {
-        Expr::BinOp { op, lhs, rhs, .. } if op == "." => {
-            assert!(matches!(lhs.as_ref(), Expr::Var { name, .. } if name == "g"));
-            assert!(matches!(rhs.as_ref(), Expr::Var { name, .. } if name == "h"));
+        Expr::BinOp { op, lhs, rhs, .. } if op.as_str() == "." => {
+            assert!(matches!(
+                lhs.as_ref(),
+                Expr::Var { name, .. } if name.as_str() == "g"
+            ));
+            assert!(matches!(
+                rhs.as_ref(),
+                Expr::Var { name, .. } if name.as_str() == "h"
+            ));
             // The operands stay the bare names across the line break — the
             // dedented `.` was not mistaken for a tight projection.
             assert_eq!(text(src, lhs.span()), "g");
@@ -185,14 +197,14 @@ fn projection_inside_assertion_guard() {
     };
     assert_eq!(text(src, lhs.span()), "x.amount");
     let (base, field) = as_proj(lhs);
-    assert!(matches!(base, Expr::Var { name, .. } if name == "x"));
-    assert!(matches!(field, Expr::Var { name, .. } if name == "amount"));
+    assert!(matches!(base, Expr::Var { name, .. } if name.as_str() == "x"));
+    assert!(matches!(field, Expr::Var { name, .. } if name.as_str() == "amount"));
 }
 
 /// First `BinOp` with operator `op` found anywhere in `e` (pre-order).
 fn find_binop<'a>(e: &'a Expr, op: &str) -> Option<&'a Expr> {
     if let Expr::BinOp { op: o, .. } = e {
-        if o == op {
+        if o.as_str() == op {
             return Some(e);
         }
     }

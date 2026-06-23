@@ -58,7 +58,7 @@ function creates(stmts) {
   return found;
 }
 function on_choice(choice, template) {
-  if (!choice.consuming && creates(choice.body)) {
+  if (choice.consuming === "non-consuming" && creates(choice.body)) {
     report(
       choice,
       `Nonconsuming choice '${choice.name}' on template '${template.name}' creates contracts \u2014 repeated exercise fans out unbounded copies`
