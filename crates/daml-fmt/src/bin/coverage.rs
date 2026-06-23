@@ -54,13 +54,17 @@ fn main() {
         let Ok(src) = std::fs::read_to_string(o) else {
             continue;
         };
-        let (r, t) = coverage(&src);
-        candidates += r;
-        modeled += t;
-        if r > 0 {
+        let coverage = coverage(&src);
+        candidates += coverage.formatted;
+        modeled += coverage.total;
+        if coverage.formatted > 0 {
             files_with_candidates += 1;
             if list {
-                println!("CANDIDATE {} ({} structural edit(s))", o.display(), r);
+                println!(
+                    "CANDIDATE {} ({} structural edit(s))",
+                    o.display(),
+                    coverage.formatted
+                );
             }
         }
     }

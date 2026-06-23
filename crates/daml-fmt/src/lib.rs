@@ -133,8 +133,14 @@ pub fn format_source_with_options(src: &str, options: FormatOptions) -> String {
     layout_ast::format_ast(src, options)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FormatCoverage {
+    pub formatted: usize,
+    pub total: usize,
+}
+
 /// Count AST formatter structural edit candidates over modeled constructs.
-pub fn coverage(src: &str) -> (usize, usize) {
+pub fn coverage(src: &str) -> FormatCoverage {
     layout_ast::coverage(src)
 }
 

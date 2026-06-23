@@ -258,10 +258,10 @@ fn gated_continuation_pass(src: &str) -> String {
 /// every current AST layout family: do, if, case, let-in, constructor `with`,
 /// and template/interface bodies. This is not a normalized coverage ratio: one
 /// construct can produce multiple edits.
-pub fn coverage(src: &str) -> (usize, usize) {
+pub fn coverage(src: &str) -> crate::FormatCoverage {
     let source_file = SourceFile::parse(src);
     let module = source_file.module();
-    let candidates = do_block_edits(src, module).len()
+    let formatted = do_block_edits(src, module).len()
         + module_edits(src, module).len()
         + choice_edits(src, module).len()
         + type_def_edits(src, module).len()
@@ -274,7 +274,10 @@ pub fn coverage(src: &str) -> (usize, usize) {
         + letin_edits(src, module).len()
         + con_with_edits(src, module).len()
         + template_edits(src, module).len();
-    (candidates, modeled_construct_count(module))
+    crate::FormatCoverage {
+        formatted,
+        total: modeled_construct_count(module),
+    }
 }
 
 fn modeled_construct_count(module: &Module) -> usize {

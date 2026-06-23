@@ -4,6 +4,22 @@
 //! This crate owns the source-facing facts tools need around that parser:
 //! diagnostics, line/UTF-16 mapping, tokens, trivia, laid-out tokens, and
 //! conversion from parser byte spans to `text-size` ranges.
+//!
+//! ```rust
+//! use daml_syntax::{parser_span_to_text_range, SourceFile};
+//!
+//! let source = "module M where\nfoo : Int\nfoo = 1\n";
+//! let file = SourceFile::parse(source);
+//!
+//! assert_eq!(file.module().name, "M");
+//! assert!(file.diagnostics().is_empty());
+//! assert!(!file.tokens().is_empty());
+//! assert!(!file.laid_out_tokens().is_empty());
+//!
+//! let header_range = parser_span_to_text_range(source, file.module().header);
+//! assert_eq!(usize::from(header_range.start()), 0);
+//! assert_eq!(header_range, file.parser_span_to_text_range(file.module().header));
+//! ```
 
 use daml_parser::ast::{DiagnosticCategory, Module, Span as ParserSpan};
 use daml_parser::layout::resolve_layout;
@@ -189,7 +205,8 @@ impl SourceFile {
             .diagnostics
             .into_iter()
             .map(|diagnostic| {
-                let range = parser_span_to_text_range(source, diagnostic.span);
+                let range = try_parser_span_to_text_range(source, diagnostic.span)
+                    .expect("parser span in diagnostic must map to source bytes");
                 let start = range.start();
                 let end_column = source
                     .get(usize::from(range.start())..usize::from(range.end()))
@@ -252,7 +269,15 @@ impl SourceFile {
 
     #[must_use]
     pub fn parser_span_to_text_range(&self, span: ParserSpan) -> TextRange {
-        parser_span_to_text_range(&self.source, span)
+        self.try_parser_span_to_text_range(span)
+            .expect("parser span must map to a valid UTF-8 range in source")
+    }
+
+    pub fn try_parser_span_to_text_range(
+        &self,
+        span: ParserSpan,
+    ) -> Result<TextRange, ParserSpanToTextRangeError> {
+        try_parser_span_to_text_range(&self.source, span)
     }
 
     fn source_tokens(&self) -> &SourceTokens {
@@ -262,12 +287,53 @@ impl SourceFile {
 
 #[must_use]
 pub fn parser_span_to_text_range(source: &str, span: ParserSpan) -> TextRange {
-    let start = span.start.min(source.len());
-    let end = span.end.min(source.len()).max(start);
-    TextRange::new(
-        TextSize::try_from(start).unwrap(),
-        TextSize::try_from(end).unwrap(),
-    )
+    try_parser_span_to_text_range(source, span)
+        .expect("parser span must map to a valid UTF-8 range")
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParserSpanToTextRangeError {
+    source_len: usize,
+    span_start: usize,
+    span_end: usize,
+}
+
+impl std::fmt::Display for ParserSpanToTextRangeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "parser span [{}, {}) is invalid for source length {}",
+            self.span_start, self.span_end, self.source_len
+        )
+    }
+}
+
+impl std::error::Error for ParserSpanToTextRangeError {}
+
+pub fn try_parser_span_to_text_range(
+    source: &str,
+    span: ParserSpan,
+) -> Result<TextRange, ParserSpanToTextRangeError> {
+    let source_len = source.len();
+    if span.start > source_len || span.end > source_len || span.start > span.end {
+        return Err(ParserSpanToTextRangeError {
+            source_len,
+            span_start: span.start,
+            span_end: span.end,
+        });
+    }
+    Ok(TextRange::new(
+        TextSize::try_from(span.start).map_err(|_| ParserSpanToTextRangeError {
+            source_len,
+            span_start: span.start,
+            span_end: span.end,
+        })?,
+        TextSize::try_from(span.end).map_err(|_| ParserSpanToTextRangeError {
+            source_len,
+            span_start: span.start,
+            span_end: span.end,
+        })?,
+    ))
 }
 
 #[cfg(test)]
@@ -391,11 +457,45 @@ mod tests {
     #[test]
     fn converts_parser_spans_to_text_ranges() {
         let file = SourceFile::parse("module M where\nfoo = 1\n");
-        let range = file.parser_span_to_text_range(ParserSpan::new(0, 99));
+        let source_len = file.source().len();
+        let range = file.parser_span_to_text_range(ParserSpan::new(0, source_len));
 
         assert_eq!(
             range,
-            TextRange::new(0.into(), file.source().len().try_into().unwrap())
+            TextRange::new(0.into(), source_len.try_into().unwrap())
         );
+    }
+
+    #[test]
+    fn try_parser_span_to_text_range_rejects_out_of_bounds_spans() {
+        let source = "module M where\nfoo = 1\n";
+        let err = try_parser_span_to_text_range(source, ParserSpan::new(0, source.len() + 1))
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "parser span [0, {}) is invalid for source length {}",
+                source.len() + 1,
+                source.len()
+            )
+        );
+    }
+
+    #[test]
+    fn try_parser_span_to_text_range_reports_inverted_spans() {
+        let source = "abc";
+        let err = try_parser_span_to_text_range(source, ParserSpan::new(2, 1)).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "parser span [2, 1) is invalid for source length 3"
+        );
+    }
+
+    #[test]
+    fn try_parser_span_to_text_range_succeeds_for_valid_span() {
+        let source = "module M where\nfoo = 1\n";
+        let range = try_parser_span_to_text_range(source, ParserSpan::new(0, 5))
+            .expect("span should be valid");
+        assert_eq!(range, TextRange::new(0.into(), 5.into()));
     }
 }

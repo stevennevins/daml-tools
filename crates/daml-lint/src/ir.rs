@@ -156,6 +156,14 @@ pub struct SrcPos {
     pub column: usize,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub enum LiteralKind {
+    Int,
+    Decimal,
+    Text,
+    Char,
+}
+
 /// Expression AST exposed to rule scripts. Serialized as tagged unions:
 /// `{ "App": {...} }`, `{ "Lit": {...} }`, ... mirrored by daml-lint.d.ts.
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -174,7 +182,7 @@ pub enum Expr {
     },
     /// Literal; kind is "Int" | "Decimal" | "Text" | "Char".
     Lit {
-        kind: String,
+        kind: LiteralKind,
         value: String,
         span: SrcPos,
     },
@@ -306,7 +314,7 @@ pub struct EnsureClause {
 #[derive(Debug, Clone, Serialize)]
 pub struct Choice {
     pub name: String,
-    pub consuming: bool,
+    pub consuming: Consuming,
     pub controller_exprs: Vec<Expr>,
     /// Choice observers, if declared.
     pub observer_exprs: Vec<Expr>,
@@ -314,6 +322,24 @@ pub struct Choice {
     pub return_type: Option<TypeNode>,
     pub body: Vec<Statement>,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Consuming {
+    Consuming,
+    NonConsuming,
+}
+
+impl Consuming {
+    pub const fn is_consuming(&self) -> bool {
+        matches!(self, Self::Consuming)
+    }
+}
+
+impl serde::Serialize for Consuming {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.is_consuming().serialize(serializer)
+    }
 }
 
 /// Do-statement classification.
@@ -407,9 +433,27 @@ pub struct Function {
 #[derive(Debug, Clone, Serialize)]
 pub struct Import {
     pub module_name: String,
-    pub qualified: bool,
+    pub qualified: ImportStyle,
     pub alias: Option<String>,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImportStyle {
+    Qualified,
+    Unqualified,
+}
+
+impl ImportStyle {
+    pub const fn is_qualified(&self) -> bool {
+        matches!(self, Self::Qualified)
+    }
+}
+
+impl serde::Serialize for ImportStyle {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.is_qualified().serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -142,7 +142,7 @@ README: [`crates/daml-fmt/README.md`](../../crates/daml-fmt/README.md)
 | `format_source_with_options(src: &str, options: FormatOptions) -> String` | Public | Formats Daml source with explicit formatter options. |
 | `FormatOptions` | Public | Controls formatter behavior. `organize_imports` defaults to `true`; disabling it preserves source import order. |
 | `lex_diagnostics(src: &str) -> Vec<String>` | Public | Returns lexer diagnostic strings for malformed source. |
-| `coverage(src: &str) -> (usize, usize)` | Public | Counts formatter structural edit candidates over modeled constructs. |
+| `coverage(src: &str) -> FormatCoverage` | Public | Counts formatter structural edit candidates over modeled constructs. |
 
 The formatter backend is implemented in the private `layout_ast` module.
 

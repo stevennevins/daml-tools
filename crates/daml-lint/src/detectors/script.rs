@@ -346,14 +346,9 @@ impl Detector for ScriptDetector {
         &self.description
     }
 
-    fn detect(&self, module: &DamlModule) -> Vec<Finding> {
-        self.try_detect(module)
-            .unwrap_or_else(|e| panic!("rules script {}: {}", self.path, e))
-    }
-
     fn try_detect(&self, module: &DamlModule) -> Result<Vec<Finding>, DetectError> {
         self.collect_script_findings(module)
-            .map_err(|e| DetectError::new(self.name(), e))
+            .map_err(|e| DetectError::new(self.name(), format!("{}: {e}", self.path)))
     }
 }
 
