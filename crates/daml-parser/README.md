@@ -21,12 +21,12 @@ lexer  →  layout  →  parse
 ## Documentation
 
 The workspace documentation is organized under
-[`../../docs`](../../docs/README.md):
+[`docs`](https://github.com/stevennevins/daml-tools/blob/main/docs/README.md):
 
-- [Crate reference](../../docs/reference/crates.md) for workspace package facts
-- [Workspace architecture](../../docs/explanation/workspace-architecture.md) for
+- [Crate reference](https://github.com/stevennevins/daml-tools/blob/main/docs/reference/crates.md) for workspace package facts
+- [Workspace architecture](https://github.com/stevennevins/daml-tools/blob/main/docs/explanation/workspace-architecture.md) for
   how `daml-parser`, `daml-lint`, and `daml-fmt` relate
-- [CLI reference](../../docs/reference/cli.md) for the tools built on top of
+- [CLI reference](https://github.com/stevennevins/daml-tools/blob/main/docs/reference/cli.md) for the tools built on top of
   this parser
 
 ## Lossless by design
@@ -47,7 +47,7 @@ parser, one lossless tree, many consumers.
 
 ```toml
 [dependencies]
-daml-parser = "0.2"
+daml-parser = "0.3"
 ```
 
 ```rust

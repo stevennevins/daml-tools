@@ -240,19 +240,17 @@ fn separated_signature_does_not_straddle_sibling() {
 }
 
 /// Run the oracle over an entire corpus directory; returns (files, failures).
-fn run_corpus(root: &Path) -> (usize, Vec<String>) {
+fn run_corpus(root: &Path) -> std::io::Result<(usize, Vec<String>)> {
     let mut files = Vec::new();
-    collect(root, &mut files);
+    collect(root, &mut files)?;
     let mut failures = Vec::new();
     for f in &files {
-        let Ok(src) = std::fs::read_to_string(f) else {
-            continue;
-        };
+        let src = std::fs::read_to_string(f)?;
         if let Err(e) = render(&src) {
             failures.push(format!("{}: {}", f.display(), e));
         }
     }
-    (files.len(), failures)
+    Ok((files.len(), failures))
 }
 
 /// Run the `render_from_ast` losslessness/nesting oracle over the vendored
@@ -266,7 +264,7 @@ fn span_oracle_over_finance_corpus() {
         eprintln!("corpus absent (published crate?), skipping");
         return;
     }
-    let (n, failures) = run_corpus(&root);
+    let (n, failures) = run_corpus(&root).expect("run span oracle over finance corpus");
     assert!(n > 600, "finance corpus incomplete: {n} files");
     if !failures.is_empty() {
         let shown: Vec<_> = failures.iter().take(20).cloned().collect();
@@ -298,7 +296,7 @@ fn render_lossless_over_finance_corpus() {
         return;
     }
     let mut files = Vec::new();
-    collect(&root, &mut files);
+    collect(&root, &mut files).expect("collect finance corpus files");
     assert!(
         files.len() > 600,
         "corpus incomplete: {} files",
@@ -306,9 +304,8 @@ fn render_lossless_over_finance_corpus() {
     );
     let mut checked = 0usize;
     for f in &files {
-        let Ok(src) = std::fs::read_to_string(f) else {
-            continue;
-        };
+        let src = std::fs::read_to_string(f)
+            .unwrap_or_else(|e| panic!("failed to read corpus file {}: {e}", f.display()));
         let (tokens, trivia, errors) = lex_with_trivia(&src);
         if !errors.is_empty() {
             continue; // lex errors drop bytes by design; losslessness is exempt
@@ -321,16 +318,15 @@ fn render_lossless_over_finance_corpus() {
     assert!(checked > 600, "too few files round-tripped: {checked}");
 }
 
-fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
+fn collect(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
         let p = entry.path();
         if p.is_dir() {
-            collect(&p, out);
+            collect(&p, out)?;
         } else if p.extension().is_some_and(|e| e == "daml") {
             out.push(p);
         }
     }
+    Ok(())
 }

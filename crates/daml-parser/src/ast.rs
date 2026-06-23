@@ -28,13 +28,19 @@ impl Span {
         Self { start, end }
     }
 
+    /// True when the span is well-formed (`start <= end`).
+    pub const fn is_valid(&self) -> bool {
+        self.start <= self.end
+    }
+
+    /// True for a zero-width but still valid span.
     pub const fn is_empty(&self) -> bool {
-        self.start >= self.end
+        self.start == self.end
     }
 
     /// `self` fully contains `other`.
     pub const fn contains(&self, other: &Self) -> bool {
-        self.start <= other.start && other.end <= self.end
+        self.is_valid() && other.is_valid() && self.start <= other.start && other.end <= self.end
     }
 }
 
@@ -850,5 +856,93 @@ impl Pat {
             Self::As { name, pat, .. } => format!("{}@{}", name, pat.render()),
             Self::Other { raw, .. } => raw.clone(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pos() -> Pos {
+        Pos { line: 1, column: 1 }
+    }
+
+    fn span(start: usize, end: usize) -> Span {
+        Span::new(start, end)
+    }
+
+    #[test]
+    fn span_distinguishes_empty_from_invalid() {
+        assert!(span(3, 3).is_valid());
+        assert!(span(3, 3).is_empty());
+
+        assert!(!span(4, 3).is_valid());
+        assert!(!span(4, 3).is_empty());
+    }
+
+    #[test]
+    fn contains_rejects_invalid_spans() {
+        let parent = span(1, 10);
+
+        assert!(parent.contains(&span(3, 7)));
+        assert!(!parent.contains(&span(7, 3)));
+        assert!(!span(10, 1).contains(&span(3, 7)));
+    }
+
+    #[test]
+    fn expr_render_keeps_normalized_application_and_projection_shape() {
+        let projection = Expr::BinOp {
+            op: ".".to_string(),
+            lhs: Box::new(Expr::Var {
+                qualifier: None,
+                name: "this".to_string(),
+                pos: pos(),
+                span: span(0, 4),
+            }),
+            rhs: Box::new(Expr::Var {
+                qualifier: None,
+                name: "note".to_string(),
+                pos: pos(),
+                span: span(5, 9),
+            }),
+            pos: pos(),
+            span: span(0, 9),
+        };
+
+        let expr = Expr::App {
+            func: Box::new(Expr::Var {
+                qualifier: None,
+                name: "length".to_string(),
+                pos: pos(),
+                span: span(0, 6),
+            }),
+            args: vec![projection],
+            pos: pos(),
+            span: span(0, 16),
+        };
+
+        assert_eq!(expr.render(), "length (this.note)");
+    }
+
+    #[test]
+    fn pat_render_preserves_collection_shape() {
+        let pat = Pat::Tuple {
+            items: vec![
+                Pat::Var {
+                    name: "owner".to_string(),
+                    pos: pos(),
+                    span: span(1, 6),
+                },
+                Pat::List {
+                    items: Vec::new(),
+                    pos: pos(),
+                    span: span(8, 10),
+                },
+            ],
+            pos: pos(),
+            span: span(0, 11),
+        };
+
+        assert_eq!(pat.render(), "(owner, [])");
     }
 }

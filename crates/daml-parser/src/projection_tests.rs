@@ -28,18 +28,24 @@ fn text(src: &str, span: Span) -> &str {
     &src[span.start..span.end]
 }
 
-/// Body expression of `f = <expr>` in a tiny module.
-fn body_of(src: &str) -> Expr {
+/// Body expression of `name = <expr>` in a tiny module.
+fn body_of(src: &str, name: &str) -> Expr {
     let m = parse(src);
-    let f = m
+    let function = m
         .decls
         .iter()
         .find_map(|d| match d {
-            Decl::Function(f) if f.name == "f" => Some(f),
+            Decl::Function(function) if function.name == name => Some(function),
             _ => None,
         })
-        .expect("function f");
-    f.equations[0].body.clone()
+        .unwrap_or_else(|| panic!("function {name}"));
+    assert_eq!(
+        function.equations.len(),
+        1,
+        "expected one equation for {name}, got {:?}",
+        function.equations
+    );
+    function.equations[0].body.clone()
 }
 
 /// A projection is `BinOp(".", lhs, rhs)`; return (lhs, rhs).
@@ -55,7 +61,7 @@ fn projection_binds_tighter_than_application() {
     // The whole point of Phase 3: `length this.note` must be
     // `length (this.note)`, so the projection is the *argument*, not the call.
     let src = "module M where\nf = length this.note\n";
-    let body = body_of(src);
+    let body = body_of(src, "f");
     match &body {
         Expr::App { func, args, .. } => {
             assert_eq!(text(src, func.span()), "length");
@@ -73,7 +79,7 @@ fn projection_binds_tighter_than_application() {
 #[test]
 fn bare_projection_is_a_projection() {
     let src = "module M where\nf = this.note\n";
-    let body = body_of(src);
+    let body = body_of(src, "f");
     assert_eq!(text(src, body.span()), "this.note");
     let (lhs, rhs) = as_proj(&body);
     assert!(matches!(lhs, Expr::Var { name, .. } if name == "this"));
@@ -84,7 +90,7 @@ fn bare_projection_is_a_projection() {
 fn chained_projection_left_nests() {
     // `a.b.c` is `(a.b).c`.
     let src = "module M where\nf = a.b.c\n";
-    let body = body_of(src);
+    let body = body_of(src, "f");
     assert_eq!(text(src, body.span()), "a.b.c");
     let (lhs, rhs) = as_proj(&body);
     assert!(matches!(rhs, Expr::Var { name, .. } if name == "c"));
@@ -99,7 +105,7 @@ fn qualified_name_is_not_a_projection() {
     // `Map.lookup k` — `Map.lookup` is a single qualified token, so the head is
     // a qualified Var, never a projection BinOp.
     let src = "module M where\nf = Map.lookup k\n";
-    let body = body_of(src);
+    let body = body_of(src, "f");
     match &body {
         Expr::App { func, args, .. } => {
             match func.as_ref() {
@@ -123,17 +129,8 @@ fn spaced_dot_stays_composition_not_projection() {
     // `f . g` with spaces is composition: a BinOp whose sides are the two
     // *bare* names, NOT a projection folded into an application argument.
     let src = "module M where\nf = compose g h\ncompose g h = g . h\n";
-    let m = parse(src);
-    let compose = m
-        .decls
-        .iter()
-        .find_map(|d| match d {
-            Decl::Function(f) if f.name == "compose" => Some(f),
-            _ => None,
-        })
-        .expect("compose");
-    let body = &compose.equations[0].body;
-    match body {
+    let body = body_of(src, "compose");
+    match &body {
         Expr::BinOp { op, lhs, rhs, .. } if op == "." => {
             // Tight projection would have made the dot abut its neighbours; a
             // spaced dot keeps `g` and `h` as the operands. Pin each operand's
@@ -156,16 +153,8 @@ fn newline_separated_dot_stays_composition() {
     // dedented `.` (e.g. a multi-line composition pipeline) for a projection.
     let src = "module M where\ncompose g h = g\n  . h\n";
     let m = parse(src);
-    let compose = m
-        .decls
-        .iter()
-        .find_map(|d| match d {
-            Decl::Function(f) if f.name == "compose" => Some(f),
-            _ => None,
-        })
-        .expect("compose");
-    let body = &compose.equations[0].body;
-    match body {
+    let body = body_of(src, "compose");
+    match &body {
         Expr::BinOp { op, lhs, rhs, .. } if op == "." => {
             assert!(matches!(lhs.as_ref(), Expr::Var { name, .. } if name == "g"));
             assert!(matches!(rhs.as_ref(), Expr::Var { name, .. } if name == "h"));
@@ -186,7 +175,7 @@ fn projection_inside_assertion_guard() {
     // Projection must work where detectors look: inside a guard/comparison.
     // `x.amount > 0.0` — the left side of `>` is the projection.
     let src = "module M where\nf x = assertMsg \"pos\" (x.amount > 0.0)\n";
-    let body = body_of(src);
+    let body = body_of(src, "f");
     // body is `assertMsg "pos" (x.amount > 0.0)` — dig to the parenthesised
     // comparison and assert its lhs is the projection.
     let cmp = find_binop(&body, ">").expect("comparison > present");
@@ -207,31 +196,62 @@ fn find_binop<'a>(e: &'a Expr, op: &str) -> Option<&'a Expr> {
             return Some(e);
         }
     }
-    for child in children(e) {
-        if let Some(found) = find_binop(child, op) {
-            return Some(found);
-        }
-    }
-    None
-}
-
-fn children(e: &Expr) -> Vec<&Expr> {
     match e {
         Expr::App { func, args, .. } => {
-            let mut v = vec![func.as_ref()];
-            v.extend(args.iter());
-            v
+            find_binop(func, op).or_else(|| args.iter().find_map(|arg| find_binop(arg, op)))
         }
-        Expr::BinOp { lhs, rhs, .. } => vec![lhs.as_ref(), rhs.as_ref()],
-        Expr::Neg { expr, .. } => vec![expr.as_ref()],
-        _ => Vec::new(),
+        Expr::BinOp { lhs, rhs, .. } => find_binop(lhs, op).or_else(|| find_binop(rhs, op)),
+        Expr::Neg { expr, .. } => find_binop(expr, op),
+        Expr::Lambda { body, .. } => find_binop(body, op),
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } => find_binop(cond, op)
+            .or_else(|| find_binop(then_branch, op))
+            .or_else(|| find_binop(else_branch, op)),
+        Expr::Case {
+            scrutinee, alts, ..
+        } => find_binop(scrutinee, op)
+            .or_else(|| alts.iter().find_map(|alt| find_binop(&alt.body, op))),
+        Expr::Do { stmts, .. } => stmts.iter().find_map(|stmt| match stmt {
+            DoStmt::Bind { expr, .. } | DoStmt::Expr { expr, .. } => find_binop(expr, op),
+            DoStmt::Let { bindings, .. } => bindings
+                .iter()
+                .find_map(|binding| find_binop_in_binding(binding, op)),
+        }),
+        Expr::LetIn { bindings, body, .. } => bindings
+            .iter()
+            .find_map(|binding| find_binop_in_binding(binding, op))
+            .or_else(|| find_binop(body, op)),
+        Expr::Record { base, fields, .. } => find_binop(base, op).or_else(|| {
+            fields
+                .iter()
+                .filter_map(|field| field.value.as_ref())
+                .find_map(|value| find_binop(value, op))
+        }),
+        Expr::Tuple { items, .. } | Expr::List { items, .. } => {
+            items.iter().find_map(|item| find_binop(item, op))
+        }
+        Expr::Try { body, handlers, .. } => find_binop(body, op).or_else(|| {
+            handlers
+                .iter()
+                .find_map(|handler| find_binop(&handler.body, op))
+        }),
+        Expr::Section { operand, .. } => operand.as_deref().and_then(|expr| find_binop(expr, op)),
+        Expr::Var { .. } | Expr::Con { .. } | Expr::Lit { .. } | Expr::Error { .. } => None,
     }
+}
+
+fn find_binop_in_binding<'a>(binding: &'a Binding, op: &str) -> Option<&'a Expr> {
+    find_binop(&binding.expr, op)
 }
 
 #[test]
 fn projection_span_is_tight() {
     let src = "module M where\nf = length this.note\n";
-    let body = body_of(src);
+    let body = body_of(src, "f");
     let arg = match &body {
         Expr::App { args, .. } => args[0].clone(),
         other => panic!("expected app, got {other:?}"),
