@@ -32,7 +32,6 @@ etc.) are left byte-for-byte unchanged. Those comments are exact source
 location expectations, so even desugar-safe spacing edits can make the fixture
 wrong.
 
-`corpus/SCOREBOARD.md` is the tracked board; update it on any re-measure.
 
 ## How it works (architecture)
 
@@ -74,8 +73,8 @@ normalization (`normalize_gaps` in `src/lib.rs`).
   verified to desugar clean. The formatting test cases.
 - `expected/` — snapshot of the formatter's output over `original/`; the
   regression baseline. Regenerate with `tools/gen-expected.sh`.
-- `corpus/` — `SCOREBOARD.md` + manifests. `desugar-ok.txt` is the 924-file
-  test manifest; `excluded-error-annotated.txt` / `desugar-fail.txt` are the
+- `corpus/` — manifests. `desugar-ok.txt` is the 924-file test
+  manifest; `excluded-error-annotated.txt` / `desugar-fail.txt` are the
   corpus-construction filters.
 - `tools/verify-rust.sh` — idempotence plus default desugar subset; `--desugar`
   runs the full-corpus oracle sweep.
@@ -110,7 +109,7 @@ module name):
     daml --no-legacy-assistant-warning damlc desugar <file> -o - >/dev/null
 
 After a deliberate formatter change: `tools/gen-expected.sh`, review the diff,
-re-run the sweeps, update `SCOREBOARD.md` + the corpus manifests, commit.
+re-run the sweeps, update the corpus manifests if needed, commit.
 
 ## Invariant rules (do not break)
 
@@ -189,5 +188,4 @@ what the offside rule requires). Model the offside structure, slice content
 from spans, prove every step on the desugar oracle, and never trust a green
 idempotence number without `--desugar`.
 
-Provenance (toolchain, prior heuristic baseline, the retired LimeChain port and
-the reverted with-reindent experiments) lives in `git log`, not here.
+Provenance for retired formatter experiments lives in `git log`, not here.

@@ -15,7 +15,7 @@ everything else through verbatim. Pure reindentation remains gated on the
 laid-out token stream; layout-organizing rules are checked by the compiler
 desugar oracle.
 
-Results over the 924-file corpus (`corpus/SCOREBOARD.md` is the board):
+Results over the 924-file corpus:
 
 | tier | result |
 |---|---|
@@ -157,7 +157,7 @@ tools/gen-expected.sh
   verified to desugar clean. The formatting test cases.
 - `expected/` — the formatter's output over the corpus, the regression
   baseline (regenerate with `tools/gen-expected.sh`).
-- `corpus/` — manifests and `SCOREBOARD.md` (the target board).
+- `corpus/` — corpus manifests.
 - `tools/` — `verify-rust.sh` (desugar subset + idempotence by default; full
   desugar with `--desugar`), `gen-expected.sh`.
 - `test/diff.js` — the differential harness (`npm test`).
