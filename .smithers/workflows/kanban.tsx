@@ -165,7 +165,7 @@ export default smithers((ctx) => {
                       const { spawnSync } = await import("node:child_process");
                       const branch = "ticket/" + ticket.slug;
                       const wt = resolve(process.cwd(), ".worktrees", ticket.slug);
-                      const git = (args, cwd = wt) =>
+                      const git = (args: string[], cwd = wt) =>
                         spawnSync("git", args, { cwd, encoding: "utf8" });
                       // Safety net: the implement agent is asked to commit, but if it
                       // left converged work uncommitted, capture it here so the merge
