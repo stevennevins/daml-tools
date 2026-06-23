@@ -229,7 +229,7 @@ jobs:
         if: ${{ steps.npm.outputs.exists != 'true' }}
         run: |
           if ! cargo install --list | grep -F "cargo-npm v${CARGO_NPM_VERSION}:" >/dev/null; then
-            cargo install cargo-npm --version "${CARGO_NPM_VERSION}" --locked
+            cargo install cargo-npm --version "${CARGO_NPM_VERSION}" --locked --force
           fi
       - name: Download CLI binaries
         if: ${{ steps.npm.outputs.exists != 'true' }}
