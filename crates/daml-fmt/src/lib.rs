@@ -163,15 +163,42 @@ pub fn coverage(src: &str) -> FormatCoverage {
 /// same-line spaces before a lone `:` token. Shared with the AST backend
 /// (`layout_ast`) so both paths apply the same proven, token-gated spacing.
 pub(crate) fn normalize_gaps(src: &str, colon: bool) -> String {
-    rewrite(src, colon)
+    let mode = if colon {
+        ColonSpacingMode::Canonical
+    } else {
+        ColonSpacingMode::Preserve
+    };
+    rewrite(src, mode)
 }
 
-fn rewrite(src: &str, colon: bool) -> String {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ColonSpacingMode {
+    Canonical,
+    Preserve,
+}
+
+impl ColonSpacingMode {
+    const fn do_canonicalize_colons(&self) -> bool {
+        matches!(self, Self::Canonical)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct GapTokenSpan {
+    start: usize,
+    end: usize,
+    brace_depth_delta: i32,
+    is_lone_colon: bool,
+    is_rparen: bool,
+    is_token: bool,
+}
+
+fn rewrite(src: &str, colon: ColonSpacingMode) -> String {
     let source_tokens = SourceTokens::lex(src);
 
     // Items that carry bytes, in source order. For each: brace-depth delta
     // (+1/-1 for `{`/`}`/parens), is-lone-colon, is-rparen, is-token (vs trivia).
-    let mut items: Vec<(usize, usize, i32, bool, bool, bool)> = source_tokens
+    let mut items: Vec<GapTokenSpan> = source_tokens
         .tokens()
         .iter()
         .filter(|t| {
@@ -180,25 +207,30 @@ fn rewrite(src: &str, colon: bool) -> String {
                 TokenKind::VLBrace | TokenKind::VRBrace | TokenKind::VSemi
             )
         })
-        .map(|t| {
-            (
-                t.start(),
-                t.end(),
-                brace_delta(t.kind()),
-                is_lone_colon(t.kind()),
-                matches!(t.kind(), TokenKind::RParen),
-                true,
-            )
+        .map(|t| GapTokenSpan {
+            start: t.start(),
+            end: t.end(),
+            brace_depth_delta: brace_delta(t.kind()),
+            is_lone_colon: is_lone_colon(t.kind()),
+            is_rparen: matches!(t.kind(), TokenKind::RParen),
+            is_token: true,
         })
         .chain(
             source_tokens
                 .trivia()
                 .iter()
                 .filter(|t| !matches!(t.kind(), TriviaKind::BlankLines(_)))
-                .map(|t| (t.start(), t.end(), 0, false, false, false)),
+                .map(|t| GapTokenSpan {
+                    start: t.start(),
+                    end: t.end(),
+                    brace_depth_delta: 0,
+                    is_lone_colon: false,
+                    is_rparen: false,
+                    is_token: false,
+                }),
         )
         .collect();
-    items.sort_by_key(|&(start, ..)| start);
+    items.sort_by_key(|item| item.start);
 
     let mut out = String::with_capacity(src.len());
     let mut prev = 0usize;
@@ -208,7 +240,15 @@ fn rewrite(src: &str, colon: bool) -> String {
     // canonicalized (same gate as the before-colon collapse). Lets us collapse
     // a duplicate space *after* that colon (`x:  T` -> `x: T`) symmetrically.
     let mut prev_was_canon_colon = false;
-    for (start, end, delta, is_colon, is_rparen, is_token) in items {
+    for item in items {
+        let GapTokenSpan {
+            start,
+            end,
+            brace_depth_delta: delta,
+            is_lone_colon: is_colon,
+            is_rparen,
+            is_token,
+        } = item;
         if start < prev {
             return src.to_string(); // overlap — bail
         }
@@ -220,7 +260,8 @@ fn rewrite(src: &str, colon: bool) -> String {
         // and not after `)`: `with`-block / field colons canonicalize to `x: T`,
         // but `{ field : Type }`, `(n : Nat)` and function-return `(args) : Ret`
         // keep the space (expected/ convention).
-        let this_is_canon_colon = colon && is_colon && brace_depth == 0 && !prev_was_rparen;
+        let this_is_canon_colon =
+            colon.do_canonicalize_colons() && is_colon && brace_depth == 0 && !prev_was_rparen;
         if this_is_canon_colon && !gap.is_empty() && !gap.contains('\n') {
             // drop same-line space(s) before the colon
         } else if prev_was_canon_colon && !gap.is_empty() && !gap.contains('\n') {
