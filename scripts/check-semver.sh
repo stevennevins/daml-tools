@@ -7,7 +7,7 @@ if ! command -v cargo-semver-checks >/dev/null; then
 fi
 
 failed=()
-for package in daml-parser daml-lint daml-fmt; do
+for package in daml-parser daml-syntax daml-lint daml-fmt; do
   if ! cargo semver-checks check-release --package "${package}"; then
     failed+=("${package}")
   fi

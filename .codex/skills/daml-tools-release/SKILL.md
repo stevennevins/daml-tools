@@ -50,6 +50,23 @@ version-pinned `optionalDependencies`. Locally, run only host-compatible
 generated binaries. CI proves all supported targets: Linux x64, Linux ARM64,
 macOS ARM64, and Windows x64.
 
+For release-plz or public Rust API changes, validate the whole publishable
+dependency closure before pushing:
+
+1. Identify every changed crate and every workspace crate that publicly exposes
+   it through dependencies, re-exports, public types, generated npm metadata, or
+   release configuration.
+2. Bump every affected crate version in the same release chain. Do not bump only
+   the leaf crate if crates.io package verification will resolve an older
+   published dependency.
+3. Check that `release-plz.toml`, CI semver matrices, local semver scripts,
+   `Cargo.toml`, `Cargo.lock`, generated npm package files, and starter
+   templates name the same intended versions.
+4. Run `cargo package` for each affected crate when practical. If a package
+   cannot verify until another unpublished crate in the same release chain is on
+   crates.io, record that explicitly and rely on release-plz ordering plus the
+   release configuration check.
+
 ## Normal Release
 
 Make the smallest semver-relevant change needed to trigger release-plz. Use a
@@ -84,6 +101,22 @@ Merge the release PR after CI is green. The resulting `daml-lint-v*` and
 - `npm-publish.yml`: `daml-lint-v*` also publishes `@daml-tools/lint-plugin`.
 - `release-artifacts.yml`: uploads CLI archives and checksums to the GitHub
   release.
+
+Use these reusable gates for PR-to-release automation instead of treating the
+process as one long wait:
+
+1. Publish PR: commit the focused diff, let hooks run, push, open a draft PR,
+   and record the PR URL and head SHA.
+2. Wait for PR checks: poll until all required checks report pass/fail. If a
+   check fails, inspect logs before changing code; do not guess from the check
+   name.
+3. Mark ready: mark the PR ready only after required checks pass.
+4. Merge: merge through GitHub and record the target branch SHA. Do not depend
+   on the local `main` checkout being available in this worktree.
+5. Watch release-plz on `main`: inspect any failed release-plz run logs. If it
+   opens or updates a release PR, monitor that PR's checks separately.
+6. Merge release PR: merge only after release PR CI is green, then watch the tag
+   workflows and verify registries/releases.
 
 ## Prerelease
 

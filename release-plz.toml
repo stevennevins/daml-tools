@@ -27,6 +27,13 @@ name = "daml-parser"
 semver_check = true
 
 [[package]]
+name = "daml-syntax"
+# Shared public source/diagnostic surface. It sits between the parser and tools,
+# so release-plz must publish it in dependency order before downstream crates
+# that depend on a new syntax/parser pair.
+semver_check = true
+
+[[package]]
 name = "daml-lint"
 # Publishes both a CLI and a library surface for detector/IR integrations; check
 # that public API so release-plz can pick the right version bump.
