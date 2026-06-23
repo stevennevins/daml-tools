@@ -24,21 +24,25 @@ pub struct Span {
 }
 
 impl Span {
+    #[must_use]
     pub const fn new(start: usize, end: usize) -> Self {
         Self { start, end }
     }
 
     /// True when the span is well-formed (`start <= end`).
+    #[must_use]
     pub const fn is_valid(&self) -> bool {
         self.start <= self.end
     }
 
     /// True for a zero-width but still valid span.
+    #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.start == self.end
     }
 
     /// `self` fully contains `other`.
+    #[must_use]
     pub const fn contains(&self, other: &Self) -> bool {
         self.is_valid() && other.is_valid() && self.start <= other.start && other.end <= self.end
     }
@@ -357,6 +361,7 @@ impl PartialEq for Type {
 impl Eq for Type {}
 
 impl Type {
+    #[must_use]
     pub const fn span(&self) -> Span {
         match self {
             Self::Con { span, .. }
@@ -590,6 +595,7 @@ pub enum DiagnosticCategory {
 
 impl DiagnosticCategory {
     /// Stable kebab-case tag for machine-readable output (JSON/SARIF) and logs.
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::SkippedDecl => "skipped-declaration",
@@ -614,6 +620,7 @@ pub struct ParseDiagnostic {
 }
 
 impl Expr {
+    #[must_use]
     pub const fn pos(&self) -> Pos {
         match self {
             Self::Var { pos, .. }
@@ -637,6 +644,7 @@ impl Expr {
     }
 
     /// Byte span covering the whole expression.
+    #[must_use]
     pub const fn span(&self) -> Span {
         match self {
             Self::Var { span, .. }
@@ -668,6 +676,7 @@ impl Expr {
     /// human-readable echo of an expression; for source-exact reconstruction use
     /// the node's [`span`](Self::span) into the original text (that is how
     /// `daml-fmt` and [`crate::ast_span::render_from_ast`] stay lossless).
+    #[must_use]
     pub fn render(&self) -> String {
         match self {
             Self::Var {
@@ -787,6 +796,7 @@ impl Expr {
 
     /// The head of an application spine: for `Foo.exercise cid X`, the
     /// `Foo.exercise` Var. For non-apps, the expression itself.
+    #[must_use]
     pub fn application_head(&self) -> &Self {
         match self {
             Self::App { func, .. } => func.application_head(),
@@ -797,6 +807,7 @@ impl Expr {
     /// Application arguments, empty for non-apps. The `App` spine is flattened
     /// (see the [`App`](Self::App) variant), so for `f a b c` this returns all
     /// three arguments `[a, b, c]`, not a single curried layer.
+    #[must_use]
     pub fn application_args(&self) -> &[Self] {
         match self {
             Self::App { args, .. } => args,
@@ -826,6 +837,7 @@ fn render_binding(b: &Binding) -> String {
 }
 
 impl Pat {
+    #[must_use]
     pub const fn pos(&self) -> Pos {
         match self {
             Self::Var { pos, .. }
@@ -840,6 +852,7 @@ impl Pat {
     }
 
     /// Byte span covering the whole pattern.
+    #[must_use]
     pub const fn span(&self) -> Span {
         match self {
             Self::Var { span, .. }
@@ -856,6 +869,7 @@ impl Pat {
     /// Render back to compact, source-*like* text. Lossy and normalizing in the
     /// same way as [`Expr::render`]; use the node's [`span`](Self::span) for
     /// byte-faithful text.
+    #[must_use]
     pub fn render(&self) -> String {
         match self {
             Self::Var { name, .. } => name.to_string(),

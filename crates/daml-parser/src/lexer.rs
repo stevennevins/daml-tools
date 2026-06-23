@@ -10,6 +10,7 @@
 pub struct Identifier(String);
 
 impl Identifier {
+    #[must_use]
     pub const fn as_str(&self) -> &str {
         self.0.as_str()
     }
@@ -87,6 +88,7 @@ impl PartialEq<Identifier> for String {
 pub struct Operator(String);
 
 impl Operator {
+    #[must_use]
     pub const fn as_str(&self) -> &str {
         self.0.as_str()
     }
@@ -164,6 +166,7 @@ impl PartialEq<Operator> for String {
 pub struct ModuleName(String);
 
 impl ModuleName {
+    #[must_use]
     pub const fn as_str(&self) -> &str {
         self.0.as_str()
     }
@@ -297,24 +300,29 @@ pub struct Token {
 }
 
 impl Token {
+    #[must_use]
     pub const fn kind(&self) -> &TokenKind {
         &self.kind
     }
 
+    #[must_use]
     pub const fn pos(&self) -> Pos {
         self.pos
     }
 
+    #[must_use]
     pub const fn start(&self) -> usize {
         self.start
     }
 
+    #[must_use]
     pub const fn end(&self) -> usize {
         self.end
     }
 
     /// Layout-inserted tokens carry no source bytes (they are zero-width);
     /// AST node-span computation skips them so spans tile the real source.
+    #[must_use]
     pub const fn is_virtual(&self) -> bool {
         matches!(
             self.kind,
@@ -351,22 +359,27 @@ pub struct Trivia {
 }
 
 impl Trivia {
+    #[must_use]
     pub const fn kind(&self) -> &TriviaKind {
         &self.kind
     }
 
+    #[must_use]
     pub fn text(&self) -> &str {
         &self.text
     }
 
+    #[must_use]
     pub const fn pos(&self) -> Pos {
         self.pos
     }
 
+    #[must_use]
     pub const fn start(&self) -> usize {
         self.start
     }
 
+    #[must_use]
     pub const fn end(&self) -> usize {
         self.end
     }
@@ -429,6 +442,7 @@ pub struct LexOutput {
 }
 
 impl LexOutput {
+    #[must_use]
     pub fn into_parts(self) -> (Vec<Token>, Vec<LexError>) {
         (self.tokens, self.errors)
     }
@@ -442,6 +456,7 @@ pub struct LexWithTriviaOutput {
 }
 
 impl LexWithTriviaOutput {
+    #[must_use]
     pub fn into_parts(self) -> (Vec<Token>, Vec<Trivia>, Vec<LexError>) {
         (self.tokens, self.trivia, self.errors)
     }
@@ -528,11 +543,17 @@ struct Lexer<'a> {
     errors: Vec<LexError>,
 }
 
+/// Lex `source` into tokens and lexical errors only.
+///
+/// Use [`lex_with_trivia`] when callers also need comments and trivia.
+#[must_use]
 pub fn lex(source: &str) -> LexOutput {
     let LexWithTriviaOutput { tokens, errors, .. } = lex_with_trivia(source);
     LexOutput { tokens, errors }
 }
 
+/// Lex `source` into tokens, trivia, and lexical errors.
+#[must_use]
 pub fn lex_with_trivia(source: &str) -> LexWithTriviaOutput {
     let mut lexer = Lexer {
         chars: source.chars().collect(),
@@ -562,6 +583,7 @@ pub fn lex_with_trivia(source: &str) -> LexWithTriviaOutput {
 /// exactly one token or comment span — in which case the result is
 /// byte-identical to `source`. This is the lossless-trivia oracle for the
 /// formatter.
+#[must_use = "handle render errors instead of discarding"]
 pub fn render_lossless(
     source: &str,
     tokens: &[Token],
@@ -1095,6 +1117,7 @@ const fn unescape(c: char) -> Option<char> {
 impl TokenKind {
     /// The identifier text if this is an unqualified lowercase identifier —
     /// how the parser checks for (contextual) keywords.
+    #[must_use]
     pub const fn keyword(&self) -> Option<&str> {
         match self {
             Self::LowerId {
@@ -1105,10 +1128,12 @@ impl TokenKind {
         }
     }
 
+    #[must_use]
     pub fn is_keyword(&self, kw: &str) -> bool {
         self.keyword() == Some(kw)
     }
 
+    #[must_use]
     pub fn is_op(&self, op: &str) -> bool {
         matches!(self, Self::Op(o) if o.as_str() == op)
     }

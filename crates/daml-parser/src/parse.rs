@@ -30,10 +30,12 @@ impl DoExpressionMode {
 }
 
 impl ParseModuleResult {
+    #[must_use]
     pub const fn has_errors(&self) -> bool {
         !self.diagnostics.is_empty()
     }
 
+    #[must_use]
     pub fn into_parts(self) -> (Module, Vec<ParseDiagnostic>) {
         (self.module, self.diagnostics)
     }
@@ -53,6 +55,7 @@ impl ParseModuleResult {
 /// assert_eq!(result.module.name, "M");
 /// assert!(result.diagnostics.is_empty());
 /// ```
+#[must_use]
 pub fn parse_module(source: &str) -> ParseModuleResult {
     let lexed = lex(source);
     let tokens = lexed.tokens;

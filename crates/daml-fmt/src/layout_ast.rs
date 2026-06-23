@@ -52,6 +52,7 @@ const MAX_STRUCTURAL_PASSES: usize = 6;
 
 /// Format with AST-driven structural reindents, layout-organizing rewrites, and
 /// final token-gated gap normalization.
+#[must_use]
 pub fn format_ast(src: &str, options: crate::FormatOptions) -> String {
     if has_source_location_expectation(src) || has_trailing_with_comment(src) {
         return src.to_string();
@@ -258,6 +259,7 @@ fn gated_continuation_pass(src: &str) -> String {
 /// every current AST layout family: do, if, case, let-in, constructor `with`,
 /// and template/interface bodies. This is not a normalized coverage ratio: one
 /// construct can produce multiple edits.
+#[must_use]
 pub fn coverage(src: &str) -> crate::FormatCoverage {
     let source_file = SourceFile::parse(src);
     let module = source_file.module();

@@ -41,6 +41,7 @@ use daml_syntax::{SourceFile, SourceTokens};
 /// this to surface a non-zero exit + diagnostic so a formatter "success" is not
 /// mistaken for parse success. All 924 corpus files lex clean, so this never
 /// flags them.
+#[must_use]
 pub fn lex_diagnostics(src: &str) -> Vec<String> {
     SourceTokens::lex(src)
         .lex_errors()
@@ -58,6 +59,7 @@ pub fn lex_diagnostics(src: &str) -> Vec<String> {
 /// still reported.
 ///
 /// Returns one `line:col: [category] message` string per error.
+#[must_use]
 pub fn source_diagnostics(src: &str) -> Vec<String> {
     if has_cpp_conditionals(src) {
         return lex_diagnostics(src);
@@ -139,11 +141,13 @@ impl FormatOptions {
 /// own-design canonical layout that reindents modeled AST constructs, applies
 /// layout-organizing rules, token-gated whitespace/blank-line/colon-spacing
 /// normalization, and passes unmodeled constructs through verbatim.
+#[must_use]
 pub fn format_source(src: &str) -> String {
     format_source_with_options(src, FormatOptions::default())
 }
 
 /// Format Daml source with explicit formatter options.
+#[must_use]
 pub fn format_source_with_options(src: &str, options: FormatOptions) -> String {
     layout_ast::format_ast(src, options)
 }
@@ -155,6 +159,7 @@ pub struct FormatCoverage {
 }
 
 /// Count AST formatter structural edit candidates over modeled constructs.
+#[must_use]
 pub fn coverage(src: &str) -> FormatCoverage {
     layout_ast::coverage(src)
 }

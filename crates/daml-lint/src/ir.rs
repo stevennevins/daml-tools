@@ -338,6 +338,7 @@ pub enum Consuming {
 }
 
 impl Consuming {
+    #[must_use]
     pub const fn is_consuming(&self) -> bool {
         matches!(self, Self::Consuming)
     }
@@ -449,6 +450,7 @@ pub enum ImportStyle {
 }
 
 impl ImportStyle {
+    #[must_use]
     pub const fn is_qualified(&self) -> bool {
         matches!(self, Self::Qualified)
     }

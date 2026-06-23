@@ -162,6 +162,14 @@ pub struct LintConfig {
 }
 
 impl LintConfig {
+    /// Read and validate `.daml-lint.json`, returning defaults when missing.
+    ///
+    /// Returns:
+    /// - `Ok` with an explicit config loaded from `explicit_path`, or
+    ///   defaults when that file is absent.
+    /// - `Err` when the config path is unreadable, JSON is invalid, or plugin
+    ///   metadata cannot be parsed.
+    #[must_use = "propagate config read/parse failures"]
     pub fn load(explicit_path: Option<&Path>) -> Result<Self, ConfigError> {
         let Some(path) = find_config_path(explicit_path)? else {
             return Self::default_for_cwd();
@@ -194,6 +202,11 @@ impl LintConfig {
         })
     }
 
+    /// Load configured plugins into detector objects.
+    ///
+    /// Returns `Err` if plugin resolution fails, manifest loading fails, or any
+    /// enabled plugin script cannot be loaded.
+    #[must_use = "load plugin detectors and handle failures before linting"]
     pub fn load_plugin_detectors(&self) -> Result<Vec<Box<dyn Detector>>, ConfigError> {
         let mut detectors: Vec<Box<dyn Detector>> = Vec::new();
         for plugin in &self.plugins {
@@ -236,6 +249,9 @@ impl LintConfig {
         Ok(detectors)
     }
 
+    /// Apply configuration-level severity/enablement overrides to detectors in
+    /// declaration order.
+    #[must_use]
     pub fn apply_rule_settings(&self, detectors: Vec<Box<dyn Detector>>) -> Vec<Box<dyn Detector>> {
         detectors
             .into_iter()
@@ -256,6 +272,11 @@ impl LintConfig {
             .collect()
     }
 
+    /// Validate every enabled rule-id in config against the concrete detector set.
+    ///
+    /// Returns `Err` when the config references a rule-id that does not exist in
+    /// `detectors`.
+    #[must_use = "handle configuration validation errors before scanning"]
     pub fn validate_rule_settings(
         &self,
         detectors: &[Box<dyn Detector>],
