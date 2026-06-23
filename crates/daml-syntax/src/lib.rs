@@ -267,12 +267,28 @@ impl SourceFile {
         self.source_tokens().laid_out_tokens()
     }
 
+    /// Convert a parser span from this source into a `text-size` byte range.
+    ///
+    /// This is the convenience API for spans that originate from this source file
+    /// and are expected to be valid.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `span` does not map to valid UTF-8 source bytes in this
+    /// source.
     #[must_use]
     pub fn parser_span_to_text_range(&self, span: ParserSpan) -> TextRange {
         self.try_parser_span_to_text_range(span)
             .expect("parser span must map to a valid UTF-8 range in source")
     }
 
+    /// Try to convert a parser span from this source into a `text-size` byte
+    /// range.
+    ///
+    /// This fallible API is the preferred choice for spans from external or
+    /// untrusted sources where offsets may be invalid. Use
+    /// [`SourceFile::parser_span_to_text_range`] for spans that originate from
+    /// this source and are expected to map to valid UTF-8 bytes.
     pub fn try_parser_span_to_text_range(
         &self,
         span: ParserSpan,
@@ -285,6 +301,15 @@ impl SourceFile {
     }
 }
 
+/// Convert a parser span into a `text-size` byte range for an arbitrary source
+/// string.
+///
+/// This is a convenience wrapper around [`try_parser_span_to_text_range`] for
+/// spans that are expected to be valid.
+///
+/// # Panics
+///
+/// Panics when `span` does not map to valid UTF-8 source bytes in `source`.
 #[must_use]
 pub fn parser_span_to_text_range(source: &str, span: ParserSpan) -> TextRange {
     try_parser_span_to_text_range(source, span)
@@ -310,6 +335,10 @@ impl std::fmt::Display for ParserSpanToTextRangeError {
 
 impl std::error::Error for ParserSpanToTextRangeError {}
 
+/// Try to convert a parser span into a `text-size` byte range.
+///
+/// This is the fallible API and should be used for spans sourced outside
+/// `SourceFile` where invalid offsets are possible.
 pub fn try_parser_span_to_text_range(
     source: &str,
     span: ParserSpan,

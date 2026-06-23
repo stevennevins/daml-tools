@@ -5,7 +5,7 @@
 //! consume this tree directly: daml-fmt re-prints layout from the spans, and
 //! daml-lint lowers it onto its own rule-facing IR.
 
-pub use crate::lexer::Pos;
+pub use crate::lexer::{Identifier, ModuleName, Operator, Pos};
 
 /// Byte span of an AST node.
 ///
@@ -78,7 +78,7 @@ pub enum ImportStyle {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldAssign {
-    pub name: String,
+    pub name: Identifier,
     /// None for record puns (`Foo with owner` meaning `owner = owner`)
     /// and `..` wildcards.
     pub value: Option<Expr>,
@@ -109,7 +109,7 @@ pub struct Binding {
 #[non_exhaustive]
 pub enum Pat {
     Var {
-        name: String,
+        name: Identifier,
         pos: Pos,
         span: Span,
     },
@@ -118,8 +118,8 @@ pub enum Pat {
         span: Span,
     },
     Con {
-        qualifier: Option<String>,
-        name: String,
+        qualifier: Option<ModuleName>,
+        name: Identifier,
         args: Vec<Self>,
         pos: Pos,
         span: Span,
@@ -142,7 +142,7 @@ pub enum Pat {
     },
     /// `name@pat`
     As {
-        name: String,
+        name: Identifier,
         pat: Box<Self>,
         pos: Pos,
         span: Span,
@@ -160,15 +160,15 @@ pub enum Pat {
 pub enum Expr {
     /// Lowercase variable reference, possibly qualified.
     Var {
-        qualifier: Option<String>,
-        name: String,
+        qualifier: Option<ModuleName>,
+        name: Identifier,
         pos: Pos,
         span: Span,
     },
     /// Constructor / data-constructor reference, possibly qualified.
     Con {
-        qualifier: Option<String>,
-        name: String,
+        qualifier: Option<ModuleName>,
+        name: Identifier,
         pos: Pos,
         span: Span,
     },
@@ -187,7 +187,7 @@ pub enum Expr {
     },
     /// Binary operator application with source-level operator text.
     BinOp {
-        op: String,
+        op: Operator,
         lhs: Box<Self>,
         rhs: Box<Self>,
         pos: Pos,
@@ -256,7 +256,7 @@ pub enum Expr {
     },
     /// Right operator section like `(+ 1)` / left section `(1 +)`.
     Section {
-        op: String,
+        op: Operator,
         operand: Option<Box<Self>>,
         side: SectionSide,
         pos: Pos,
@@ -299,8 +299,8 @@ pub enum DoStmt {
 pub enum Type {
     /// Type constructor, possibly qualified: `Party`, `DA.Map.Map`.
     Con {
-        qualifier: Option<String>,
-        name: String,
+        qualifier: Option<ModuleName>,
+        name: Identifier,
         span: Span,
     },
     /// Type application, head applied to one or more args: `ContractId Foo`,
@@ -315,7 +315,7 @@ pub enum Type {
     /// Function type `a -> b` (right-associative).
     Fun(Box<Self>, Box<Self>, Span),
     /// Lowercase type variable: `a`, `n`.
-    Var(String, Span),
+    Var(Identifier, Span),
     /// The unit type `()`.
     Unit(Span),
     /// A constrained type `C a => T`: the context is not modeled, the body `T`
@@ -387,7 +387,7 @@ impl Type {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldDecl {
-    pub name: String,
+    pub name: Identifier,
     /// Structured field type parsed from the token stream. `None` when the type
     /// could not be parsed cleanly (analysis treats it as unknown).
     pub ty: Option<Type>,
@@ -405,7 +405,7 @@ pub enum Consuming {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChoiceDecl {
-    pub name: String,
+    pub name: Identifier,
     pub consuming: Consuming,
     /// Structured return type. `None` if it could not be parsed cleanly or the
     /// choice declared no return type.
@@ -462,10 +462,10 @@ pub enum TemplateBodyDecl {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InterfaceInstanceDecl {
     /// Interface being implemented (`Disclosure.I`).
-    pub interface_name: String,
+    pub interface_name: ModuleName,
     /// Template it is for (from `for Foo`); the enclosing template when
     /// declared inside one.
-    pub for_template: String,
+    pub for_template: ModuleName,
     /// Method implementations: name → bound expression.
     pub methods: Vec<Binding>,
     pub pos: Pos,
@@ -474,7 +474,7 @@ pub struct InterfaceInstanceDecl {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TemplateDecl {
-    pub name: String,
+    pub name: Identifier,
     pub fields: Vec<FieldDecl>,
     pub body: Vec<TemplateBodyDecl>,
     pub pos: Pos,
@@ -483,10 +483,10 @@ pub struct TemplateDecl {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InterfaceDecl {
-    pub name: String,
+    pub name: Identifier,
     /// Interfaces this interface requires (`requires Lockable.I, ...`).
-    pub requires: Vec<String>,
-    pub viewtype: Option<String>,
+    pub requires: Vec<ModuleName>,
+    pub viewtype: Option<ModuleName>,
     /// Method signatures: name and type text.
     pub methods: Vec<FieldDecl>,
     pub choices: Vec<ChoiceDecl>,
@@ -509,7 +509,7 @@ pub struct Equation {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionDecl {
-    pub name: String,
+    pub name: Identifier,
     pub ty: Option<Type>,
     pub equations: Vec<Equation>,
     pub pos: Pos,
@@ -523,9 +523,9 @@ pub struct FunctionDecl {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImportDecl {
-    pub module_name: String,
+    pub module_name: ModuleName,
     pub style: ImportStyle,
-    pub alias: Option<String>,
+    pub alias: Option<ModuleName>,
     pub pos: Pos,
     pub span: Span,
 }
@@ -539,7 +539,7 @@ pub enum Decl {
     /// data/type/class/instance/exception — recorded with name + span.
     TypeDef {
         keyword: String,
-        name: String,
+        name: Identifier,
         pos: Pos,
         span: Span,
     },
@@ -553,7 +553,7 @@ pub enum Decl {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Module {
-    pub name: String,
+    pub name: ModuleName,
     pub pos: Pos,
     /// Whole-module extent: `[0, source.len())`. Container for all decls.
     pub span: Span,
@@ -677,7 +677,7 @@ impl Expr {
                 qualifier, name, ..
             } => qualifier
                 .as_ref()
-                .map_or_else(|| name.clone(), |q| format!("{q}.{name}")),
+                .map_or_else(|| name.to_string(), |q| format!("{q}.{name}")),
             Self::Lit { kind, text, .. } => match kind {
                 LitKind::Text => format!("{text:?}"),
                 LitKind::Char => format!("'{text}'"),
@@ -692,7 +692,7 @@ impl Expr {
                 s
             }
             Self::BinOp { op, lhs, rhs, .. } => {
-                if op == "." {
+                if *op == "." {
                     // Record projection / composition: `account.custodian`.
                     format!("{}.{}", lhs.render_atomic(), rhs.render_atomic())
                 } else {
@@ -737,7 +737,7 @@ impl Expr {
                     .iter()
                     .map(|f| {
                         f.value.as_ref().map_or_else(
-                            || f.name.clone(),
+                            || f.name.to_string(),
                             |v| format!("{} = {}", f.name, v.render()),
                         )
                     })
@@ -858,7 +858,7 @@ impl Pat {
     /// byte-faithful text.
     pub fn render(&self) -> String {
         match self {
-            Self::Var { name, .. } => name.clone(),
+            Self::Var { name, .. } => name.to_string(),
             Self::Wild { .. } => "_".to_string(),
             Self::Con {
                 qualifier,
@@ -868,7 +868,7 @@ impl Pat {
             } => {
                 let head = qualifier
                     .as_ref()
-                    .map_or_else(|| name.clone(), |q| format!("{q}.{name}"));
+                    .map_or_else(|| name.to_string(), |q| format!("{q}.{name}"));
                 if args.is_empty() {
                     head
                 } else {
@@ -940,16 +940,16 @@ mod tests {
     #[test]
     fn expr_render_keeps_normalized_application_and_projection_shape() {
         let projection = Expr::BinOp {
-            op: ".".to_string(),
+            op: ".".into(),
             lhs: Box::new(Expr::Var {
                 qualifier: None,
-                name: "this".to_string(),
+                name: "this".into(),
                 pos: pos(),
                 span: span(0, 4),
             }),
             rhs: Box::new(Expr::Var {
                 qualifier: None,
-                name: "note".to_string(),
+                name: "note".into(),
                 pos: pos(),
                 span: span(5, 9),
             }),
@@ -960,7 +960,7 @@ mod tests {
         let expr = Expr::App {
             func: Box::new(Expr::Var {
                 qualifier: None,
-                name: "length".to_string(),
+                name: "length".into(),
                 pos: pos(),
                 span: span(0, 6),
             }),
@@ -975,10 +975,10 @@ mod tests {
     #[test]
     fn section_render_depends_on_section_side() {
         let expr_left = Expr::Section {
-            op: "+".to_string(),
+            op: "+".into(),
             operand: Some(Box::new(Expr::Var {
                 qualifier: None,
-                name: "x".to_string(),
+                name: "x".into(),
                 pos: pos(),
                 span: span(0, 1),
             })),
@@ -987,7 +987,7 @@ mod tests {
             span: span(0, 4),
         };
         let expr_right = Expr::Section {
-            op: "+".to_string(),
+            op: "+".into(),
             operand: Some(Box::new(Expr::Lit {
                 kind: LitKind::Int,
                 text: "1".to_string(),
@@ -1008,7 +1008,7 @@ mod tests {
         let pat = Pat::Tuple {
             items: vec![
                 Pat::Var {
-                    name: "owner".to_string(),
+                    name: "owner".into(),
                     pos: pos(),
                     span: span(1, 6),
                 },

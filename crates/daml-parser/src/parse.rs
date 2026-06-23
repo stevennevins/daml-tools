@@ -291,14 +291,14 @@ impl Parser {
         let pos = self.pos();
         let header_start = self.i;
         let mut header = crate::ast::Span::new(0, 0);
-        let mut name = "Unknown".to_string();
+        let mut name = ModuleName::from("Unknown");
 
         if self.eat_keyword("module") {
             if let Some(TokenKind::UpperId { qualifier, name: n }) = self.peek().cloned() {
                 self.bump();
                 name = match qualifier {
-                    Some(q) => format!("{q}.{n}"),
-                    None => n,
+                    Some(q) => format!("{q}.{n}").into(),
+                    None => n.into(),
                 };
             }
             // Optional export list.
@@ -489,7 +489,7 @@ impl Parser {
                     Some(TokenKind::UpperId { qualifier, name }) => {
                         let n = qualifier
                             .as_ref()
-                            .map_or_else(|| name.clone(), |q| format!("{q}.{name}"));
+                            .map_or_else(|| name.to_string(), |q| format!("{q}.{name}"));
                         self.bump();
                         n
                     }
@@ -498,7 +498,7 @@ impl Parser {
                 self.skip_to_item_end();
                 decls.push(Decl::TypeDef {
                     keyword,
-                    name,
+                    name: name.into(),
                     pos,
                     span: self.node_span(start),
                 });
@@ -575,8 +575,8 @@ impl Parser {
             Some(TokenKind::UpperId { qualifier, name }) => {
                 self.bump();
                 match qualifier {
-                    Some(q) => format!("{q}.{name}"),
-                    None => name,
+                    Some(q) => format!("{q}.{name}").into(),
+                    None => name.into(),
                 }
             }
             _ => {
@@ -593,8 +593,8 @@ impl Parser {
             if let Some(TokenKind::UpperId { qualifier, name }) = self.peek().cloned() {
                 self.bump();
                 alias = Some(match qualifier {
-                    Some(q) => format!("{q}.{name}"),
-                    None => name,
+                    Some(q) => format!("{q}.{name}").into(),
+                    None => name.into(),
                 });
             }
         }
@@ -610,13 +610,13 @@ impl Parser {
 
     // ----- templates ---------------------------------------------------
 
-    fn upper_name(&mut self) -> Option<String> {
+    fn upper_name(&mut self) -> Option<ModuleName> {
         match self.peek().cloned() {
             Some(TokenKind::UpperId { qualifier, name }) => {
                 self.bump();
                 Some(match qualifier {
-                    Some(q) => format!("{q}.{name}"),
-                    None => name,
+                    Some(q) => format!("{q}.{name}").into(),
+                    None => name.into(),
                 })
             }
             _ => None,
@@ -630,7 +630,7 @@ impl Parser {
         if self.at_keyword("instance") {
             return None; // legacy `template instance` — not a template
         }
-        let name = self.upper_name()?;
+        let name = self.upper_name()?.to_string().into();
 
         let mut fields = Vec::new();
         if self.eat_keyword("with") {
@@ -705,7 +705,7 @@ impl Parser {
                 }
             }
             // One or more comma-separated names, then `:`, then the type.
-            let mut names: Vec<(String, Pos, Span)> = Vec::new();
+            let mut names: Vec<(Identifier, Pos, Span)> = Vec::new();
             while let Some(TokenKind::LowerId {
                 qualifier: None,
                 name,
@@ -740,7 +740,7 @@ impl Parser {
                     nspan
                 };
                 fields.push(FieldDecl {
-                    name,
+                    name: name.to_string().into(),
                     ty: ty.clone(),
                     pos: p,
                     span,
@@ -832,7 +832,7 @@ impl Parser {
                         match &self.toks[j].kind {
                             TokenKind::LParen | TokenKind::LBracket => depth += 1,
                             TokenKind::RParen | TokenKind::RBracket if depth > 0 => depth -= 1,
-                            TokenKind::Op(o) if o == ":" && depth == 0 => colon = Some(j),
+                            TokenKind::Op(o) if o.as_str() == ":" && depth == 0 => colon = Some(j),
                             _ => {}
                         }
                     }
@@ -929,7 +929,7 @@ impl Parser {
         if !self.eat_keyword("choice") {
             return None;
         }
-        let name = self.upper_name()?;
+        let name = self.upper_name()?.to_string().into();
         let return_ty = if self.eat_op(":") {
             let ty_start = self.i;
             self.skip_type_tokens();
@@ -1032,7 +1032,7 @@ impl Parser {
             // Top-level retroactive interface instance: skip gracefully.
             return None;
         }
-        let name = self.upper_name()?;
+        let name = self.upper_name()?.to_string().into();
         let mut requires = Vec::new();
         if self.eat_keyword("requires") {
             while let Some(r) = self.upper_name() {
@@ -1142,7 +1142,7 @@ impl Parser {
         let for_template = if self.eat_keyword("for") {
             self.upper_name().unwrap_or_default()
         } else {
-            String::new()
+            ModuleName::default()
         };
         let mut methods = Vec::new();
         if self.eat_keyword("where")
@@ -1214,7 +1214,7 @@ impl Parser {
                     }
                     break;
                 }
-                Some(TokenKind::Op(o)) if o == ":" => {
+                Some(TokenKind::Op(o)) if o.as_str() == ":" => {
                     is_sig = true;
                     break;
                 }
@@ -1251,7 +1251,7 @@ impl Parser {
                 let mut brackets = 0usize;
                 while let Some(t) = self.peek() {
                     match t {
-                        TokenKind::Op(o) if o == "=" && brackets == 0 => break,
+                        TokenKind::Op(o) if o.as_str() == "=" && brackets == 0 => break,
                         TokenKind::VSemi
                         | TokenKind::VRBrace
                         | TokenKind::Semi
@@ -1437,7 +1437,7 @@ impl Parser {
                 let mut brackets = 0usize;
                 while let Some(t) = self.peek() {
                     match t {
-                        TokenKind::Op(o) if o == "=" && brackets == 0 => break,
+                        TokenKind::Op(o) if o.as_str() == "=" && brackets == 0 => break,
                         TokenKind::VSemi
                         | TokenKind::VRBrace
                         | TokenKind::Semi
@@ -1517,7 +1517,7 @@ impl Parser {
                     span: self.node_span(start_i),
                 })
             }
-            Some(TokenKind::Op(o)) if o == "_" => {
+            Some(TokenKind::Op(o)) if o.as_str() == "_" => {
                 self.bump();
                 Some(Pat::Wild {
                     pos,
@@ -1582,7 +1582,7 @@ impl Parser {
                 if self.eat(&TokenKind::RParen) {
                     return Some(Pat::Con {
                         qualifier: None,
-                        name: "()".to_string(),
+                        name: "()".into(),
                         args: Vec::new(),
                         pos,
                         span: self.node_span(start_i),
@@ -1606,14 +1606,14 @@ impl Parser {
                                 }
                                 depth -= 1;
                             }
-                            TokenKind::Op(o) if o == ":" && depth == 0 => break,
-                            TokenKind::Op(o) if o == "->" && depth == 0 => {
+                            TokenKind::Op(o) if o.as_str() == ":" && depth == 0 => break,
+                            TokenKind::Op(o) if o.as_str() == "->" && depth == 0 => {
                                 arrow = Some(j);
                                 break;
                             }
                             TokenKind::VSemi | TokenKind::VRBrace => break,
                             // A lambda's arrow belongs to the lambda.
-                            TokenKind::Op(o) if o == "\\" => break,
+                            TokenKind::Op(o) if o.as_str() == "\\" => break,
                             _ => {}
                         }
                         j += 1;
@@ -1730,7 +1730,7 @@ impl Parser {
             let rest = self.pattern()?;
             return Some(Pat::Con {
                 qualifier: None,
-                name: "::".to_string(),
+                name: "::".into(),
                 args: vec![first, rest],
                 pos,
                 span: self.node_span(start_i),
@@ -1875,13 +1875,13 @@ impl Parser {
                             | TokenKind::UpperId { qualifier, name },
                         ) => qualifier
                             .as_ref()
-                            .map_or_else(|| name.clone(), |q| format!("{q}.{name}")),
+                            .map_or_else(|| name.to_string(), |q| format!("{q}.{name}")),
                         _ => break,
                     };
                     if self.peek_at(2) != Some(&TokenKind::Backtick) {
                         break;
                     }
-                    (format!("`{name}`"), 9, false)
+                    (format!("`{name}`").into(), 9, false)
                 }
                 _ => break,
             };
@@ -2044,7 +2044,7 @@ impl Parser {
             if self.at_op("..") {
                 self.bump();
                 fields.push(FieldAssign {
-                    name: "..".to_string(),
+                    name: "..".into(),
                     value: None,
                     pos,
                     span: self.node_span(start_i),
@@ -2111,7 +2111,7 @@ impl Parser {
                 | TokenKind::LBracket,
             ) => self.atom(allow_do),
             // Bare trailing lambda argument: `forA xs \x -> ...`.
-            Some(TokenKind::Op(o)) if o == "\\" => self.atom(allow_do),
+            Some(TokenKind::Op(o)) if o.as_str() == "\\" => self.atom(allow_do),
             _ => None,
         }
     }
@@ -2142,7 +2142,7 @@ impl Parser {
                 span: Span::new(field_tok.start, field_tok.end),
             };
             base = Expr::BinOp {
-                op: ".".to_string(),
+                op: ".".into(),
                 lhs: Box::new(base),
                 rhs: Box::new(field),
                 pos,
@@ -2163,7 +2163,7 @@ impl Parser {
             Some(t) => t,
             None => return false,
         };
-        if !matches!(&dot.kind, TokenKind::Op(o) if o == ".") {
+        if !matches!(&dot.kind, TokenKind::Op(o) if o.as_str() == ".") {
             return false;
         }
         // Tight on the left: the dot abuts the base's last byte. The previous
@@ -2267,7 +2267,7 @@ impl Parser {
                     span: self.node_span(start_i),
                 })
             }
-            Some(TokenKind::Op(o)) if o == "\\" => self.lambda_expr(),
+            Some(TokenKind::Op(o)) if o.as_str() == "\\" => self.lambda_expr(),
             Some(TokenKind::LParen) => self.paren_expr(),
             Some(TokenKind::LBracket) => self.list_expr(),
             _ => None,
@@ -2590,14 +2590,14 @@ impl Parser {
             }
             return Some(Expr::Lambda {
                 params: vec![Pat::Var {
-                    name: "_".to_string(),
+                    name: "_".into(),
                     pos,
                     span: Span::new(self.byte_at(start_i), self.byte_at(start_i)),
                 }],
                 body: Box::new(Expr::Case {
                     scrutinee: Box::new(Expr::Var {
                         qualifier: None,
-                        name: "_".to_string(),
+                        name: "_".into(),
                         pos,
                         span: Span::new(self.byte_at(start_i), self.byte_at(start_i)),
                     }),
@@ -2642,7 +2642,7 @@ impl Parser {
         if self.eat(&TokenKind::RParen) {
             return Some(Expr::Con {
                 qualifier: None,
-                name: "()".to_string(),
+                name: "()".into(),
                 pos,
                 span: self.node_span(start_i),
             });
@@ -2730,7 +2730,7 @@ impl Parser {
                 };
                 self.eat(&TokenKind::RBracket);
                 return Some(Expr::BinOp {
-                    op: "..".to_string(),
+                    op: "..".into(),
                     lhs: Box::new(e),
                     rhs: Box::new(hi),
                     pos,
@@ -2823,7 +2823,7 @@ fn equations_extent(eqs: &[Equation]) -> Option<Span> {
 
 fn merge_functions(decls: &mut Vec<Decl>) {
     let mut out: Vec<Decl> = Vec::with_capacity(decls.len());
-    let mut function_index_by_name: HashMap<String, usize> = HashMap::new();
+    let mut function_index_by_name: HashMap<Identifier, usize> = HashMap::new();
     for decl in decls.drain(..) {
         match decl {
             Decl::Function(f) => {
@@ -3067,11 +3067,11 @@ fn render_token_slice(tokens: &[Token]) -> String {
             TokenKind::LowerId { qualifier, name } | TokenKind::UpperId { qualifier, name } => (
                 qualifier
                     .as_ref()
-                    .map_or_else(|| name.clone(), |q| format!("{q}.{name}")),
+                    .map_or_else(|| name.to_string(), |q| format!("{q}.{name}")),
                 false,
                 false,
             ),
-            TokenKind::Op(o) => (o.clone(), false, false),
+            TokenKind::Op(o) => (o.to_string(), false, false),
             TokenKind::IntLit(n) | TokenKind::DecimalLit(n) => (n.clone(), false, false),
             TokenKind::StringLit(v) => (format!("{v:?}"), false, false),
             TokenKind::CharLit(v) => (format!("'{v}'"), false, false),
@@ -3112,15 +3112,15 @@ mod type_tests {
     fn con(name: &str) -> Type {
         Type::Con {
             qualifier: None,
-            name: name.to_string(),
+            name: name.into(),
             span: Span::default(),
         }
     }
 
     fn qualified_con(qualifier: &str, name: &str) -> Type {
         Type::Con {
-            qualifier: Some(qualifier.to_string()),
-            name: name.to_string(),
+            qualifier: Some(qualifier.into()),
+            name: name.into(),
             span: Span::default(),
         }
     }
@@ -3142,7 +3142,7 @@ mod type_tests {
     }
 
     fn var(name: &str) -> Type {
-        Type::Var(name.to_string(), Span::default())
+        Type::Var(name.into(), Span::default())
     }
 
     fn unit() -> Type {
@@ -3375,6 +3375,21 @@ interface I where
                 .iter()
                 .any(|decl| matches!(decl, Decl::Function(function) if function.name == "g")),
             "parser should recover to the following declaration: {:?}",
+            module.decls
+        );
+    }
+
+    #[test]
+    fn headerless_file_keeps_legacy_unknown_name_fallback() {
+        let (module, _diagnostics) = parse_module("f = 1\n").into_parts();
+
+        assert_eq!(module.name, "Unknown");
+        assert!(
+            module
+                .decls
+                .iter()
+                .any(|decl| matches!(decl, Decl::Function(function) if function.name == "f")),
+            "expected function declaration to be parsed: {:?}",
             module.decls
         );
     }

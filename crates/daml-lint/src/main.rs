@@ -1,5 +1,5 @@
 use clap::Parser;
-use daml_lint::detector::{self, parse_severity};
+use daml_lint::detector::{self, Severity};
 use daml_lint::reporter::{self, OutputFormat};
 use daml_lint::{detectors, parser};
 use std::path::PathBuf;
@@ -17,16 +17,16 @@ struct Cli {
     paths: Vec<PathBuf>,
 
     /// Output format: sarif, markdown, json
-    #[arg(short, long, default_value = "markdown")]
-    format: String,
+    #[arg(short, long, default_value = "markdown", value_parser = parse_output_format)]
+    format: OutputFormat,
 
     /// Output file (default: stdout)
     #[arg(short, long)]
     output: Option<PathBuf>,
 
     /// Minimum severity to cause non-zero exit: critical, high, medium, low, info
-    #[arg(long, default_value = "high")]
-    fail_on: String,
+    #[arg(long, default_value = "high", value_parser = parse_fail_on)]
+    fail_on: Severity,
 
     /// JSON config file with plugins and rule settings (default: .daml-lint.json)
     #[cfg(feature = "custom-rules")]
@@ -42,22 +42,6 @@ struct Cli {
 
 fn main() {
     let cli = Cli::parse();
-
-    let format = cli.format.parse::<OutputFormat>().unwrap_or_else(|_| {
-        eprintln!(
-            "Unknown format '{}'. Use sarif, markdown, or json.",
-            cli.format
-        );
-        std::process::exit(2);
-    });
-
-    let fail_on = parse_severity(&cli.fail_on).unwrap_or_else(|| {
-        eprintln!(
-            "Unknown severity '{}'. Use critical, high, medium, low, or info.",
-            cli.fail_on
-        );
-        std::process::exit(2);
-    });
 
     // Load detectors first so rule-file errors surface before scanning
     #[cfg(feature = "custom-rules")]
@@ -159,7 +143,7 @@ fn main() {
     });
 
     // Format output
-    let output = reporter::format_findings(&all_findings, &parse_errors, format);
+    let output = reporter::format_findings(&all_findings, &parse_errors, cli.format);
 
     if let Some(output_path) = &cli.output {
         std::fs::write(output_path, &output).unwrap_or_else(|e| {
@@ -180,11 +164,23 @@ fn main() {
     // a findings-over-threshold scan (1), and usage/IO errors (2). This is
     // independent of --fail-on, which only governs findings severity.
     let code = if parse_errors.is_empty() {
-        reporter::exit_code(&all_findings, fail_on)
+        reporter::exit_code(&all_findings, cli.fail_on)
     } else {
         3
     };
     std::process::exit(code);
+}
+
+fn parse_output_format(value: &str) -> Result<OutputFormat, String> {
+    value
+        .parse::<OutputFormat>()
+        .map_err(|_| format!("Unknown format '{value}'. Use sarif, markdown, or json."))
+}
+
+fn parse_fail_on(value: &str) -> Result<Severity, String> {
+    value.parse::<Severity>().map_err(|_| {
+        format!("Unknown severity '{value}'. Use critical, high, medium, low, or info.")
+    })
 }
 
 fn discover_daml_files(paths: &[PathBuf]) -> Vec<PathBuf> {

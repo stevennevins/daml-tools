@@ -118,7 +118,7 @@ severity, `CONFIG` is an array of those values.
 ## Node shapes
 
 The rule-facing IR is versioned by `DamlModule.ir_version`. Current rules see
-`ir_version: 3`.
+`ir_version: 4`.
 
 Important node families:
 
@@ -126,13 +126,14 @@ Important node families:
 |------|---------|
 | `DamlModule` | File-level imports, templates, interfaces, functions, and source text. |
 | `Template` | Fields, signatories, observers, ensure clause, key, choices, interface instances. |
-| `Choice` | Controllers, observers, parameters, return type, body statements. |
+| `Choice` | Controllers, observers, parameters, return type, body statements, and `consuming` (`"consuming"` or `"non-consuming"`). |
 | `Statement` | Tagged union for `Let`, `Assert`, `Fetch`, `Archive`, `Create`, `Exercise`, `TryCatch`, `Branch`, and `Other`. |
+| `Import` | Module imports and `qualified` style (`"qualified"` or `"unqualified"`). |
 | `Expr` | Tagged union for variables, constructors, literals, applications, binary operations, conditionals, records, tuples, lists, and unknown expressions. |
 | `TypeNode` | Structured Daml type tree with source spans. |
 
 Removed v1/v2 raw fields such as `body_raw`, `raw_text`, `controllers`,
-`signatories`, and string type fields are not part of the v3 contract.
+`signatories`, and string type fields are not part of the v4 contract.
 
 ## Runtime limits
 

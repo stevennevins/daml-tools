@@ -2,9 +2,110 @@ use crate::detector::{parse_severity, DetectError, Detector, Finding, Severity};
 use crate::ir::DamlModule;
 use rquickjs::{CatchResultExt, Context, Ctx, Function, Object, Runtime, Value};
 use std::cell::RefCell;
+use std::error::Error;
 #[cfg(feature = "custom-rules")]
 use std::path::Path;
 use std::rc::Rc;
+
+#[derive(Debug)]
+pub enum ScriptLoadError {
+    RuntimeInit {
+        source: rquickjs::Error,
+    },
+    IoRead {
+        path: String,
+        source: std::io::Error,
+    },
+    MissingName {
+        label: String,
+    },
+    MissingSeverity {
+        label: String,
+    },
+    UnknownSeverity {
+        name: String,
+        source: String,
+    },
+    MissingVisitor {
+        rule: String,
+        visitors: &'static str,
+    },
+    RuleNameMismatch {
+        name: String,
+    },
+    RegisterConfig {
+        path: String,
+        source: String,
+    },
+    RegisterReport {
+        path: String,
+        source: String,
+    },
+    Invoke {
+        rule: String,
+        visitor: String,
+        source: String,
+    },
+    ParseNode {
+        rule: String,
+        source: String,
+    },
+    EvalError {
+        path: String,
+        source: String,
+    },
+}
+
+impl std::fmt::Display for ScriptLoadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::RuntimeInit { source } => write!(f, "could not create JS runtime: {source}"),
+            Self::IoRead { path, source } => {
+                write!(f, "could not read rules script {path}: {source}")
+            }
+            Self::MissingName { label } => {
+                write!(f, "rules script {label}: missing `const NAME = \"...\"`")
+            }
+            Self::MissingSeverity { label } => write!(
+                f,
+                "rules script {label}: missing `const SEVERITY = \"...\"`"
+            ),
+            Self::UnknownSeverity { name, source } => {
+                write!(f, "rule '{name}': {source}")
+            }
+            Self::MissingVisitor { rule, visitors } => {
+                write!(
+                    f,
+                    "rule '{rule}': script defines none of the visitor functions ({visitors})"
+                )
+            }
+            Self::RuleNameMismatch { name } => {
+                write!(f, "{name}")
+            }
+            Self::RegisterConfig { path, source } => {
+                write!(f, "{path}: could not parse rule CONFIG: {source}")
+            }
+            Self::RegisterReport { path, source } => {
+                write!(f, "{path}: could not install report() helper: {source}")
+            }
+            Self::Invoke {
+                rule,
+                visitor,
+                source,
+            } => {
+                write!(f, "rule '{rule}': {visitor} failed: {source}")
+            }
+            Self::ParseNode { rule, source } => {
+                write!(f, "rule '{rule}': {source}")
+            }
+            Self::EvalError { path, source } => {
+                write!(f, "invalid rules script {path}: {source}")
+            }
+        }
+    }
+}
+
+impl Error for ScriptLoadError {}
 
 /// AST-based custom detector: a JavaScript rule loaded via `--rules`.
 ///
@@ -58,8 +159,8 @@ pub struct ScriptDetector {
     interrupt_count: Rc<std::cell::Cell<u64>>,
 }
 
-fn new_runtime() -> Result<(Runtime, Rc<std::cell::Cell<u64>>), String> {
-    let rt = Runtime::new().map_err(|e| e.to_string())?;
+fn new_runtime() -> Result<(Runtime, Rc<std::cell::Cell<u64>>), ScriptLoadError> {
+    let rt = Runtime::new().map_err(|source| ScriptLoadError::RuntimeInit { source })?;
     let count = Rc::new(std::cell::Cell::new(0u64));
     let handler_count = count.clone();
     rt.set_interrupt_handler(Some(Box::new(move || {
@@ -81,22 +182,33 @@ fn invoke<'js, A: rquickjs::function::IntoArgs<'js>>(
     ctx: &Ctx<'js>,
     rule: &str,
     f: &Function<'js>,
-    visitor: &str,
+    visitor: &'static str,
     args: A,
-) -> Result<(), String> {
+) -> Result<(), ScriptLoadError> {
     f.call::<_, ()>(args)
         .catch(ctx)
-        .map_err(|e| format!("rule '{rule}': {visitor} failed: {e}"))
+        .map_err(move |e| ScriptLoadError::Invoke {
+            rule: rule.to_string(),
+            visitor: visitor.to_string(),
+            source: e.to_string(),
+        })
 }
 
-fn parse_node<'js>(ctx: &Ctx<'js>, rule: &str, json: String) -> Result<Value<'js>, String> {
+fn parse_node<'js>(
+    ctx: &Ctx<'js>,
+    rule: &str,
+    json: String,
+) -> Result<Value<'js>, ScriptLoadError> {
     ctx.json_parse(json)
         .catch(ctx)
-        .map_err(|e| format!("rule '{rule}': {e}"))
+        .map_err(|e| ScriptLoadError::ParseNode {
+            rule: rule.to_string(),
+            source: e.to_string(),
+        })
 }
 
 #[cfg(feature = "custom-rules")]
-pub fn load_script(path: &Path) -> Result<Box<dyn Detector>, String> {
+pub fn load_script(path: &Path) -> Result<Box<dyn Detector>, ScriptLoadError> {
     let options = empty_options();
     load_script_with_options(path, &options)
 }
@@ -105,13 +217,18 @@ pub fn load_script(path: &Path) -> Result<Box<dyn Detector>, String> {
 pub fn load_script_with_options(
     path: &Path,
     options: &serde_json::Value,
-) -> Result<Box<dyn Detector>, String> {
-    let source = std::fs::read_to_string(path)
-        .map_err(|e| format!("could not read rules script {}: {e}", path.display()))?;
+) -> Result<Box<dyn Detector>, ScriptLoadError> {
+    let source = std::fs::read_to_string(path).map_err(|e| ScriptLoadError::IoRead {
+        path: path.display().to_string(),
+        source: e,
+    })?;
     load_script_source_with_options(&path.display().to_string(), &source, options)
 }
 
-pub(crate) fn load_script_source(label: &str, source: &str) -> Result<Box<dyn Detector>, String> {
+pub(crate) fn load_script_source(
+    label: &str,
+    source: &str,
+) -> Result<Box<dyn Detector>, ScriptLoadError> {
     let options = empty_options();
     load_script_source_with_options(label, source, &options)
 }
@@ -120,26 +237,34 @@ pub(crate) fn load_script_source_with_options(
     label: &str,
     source: &str,
     options: &serde_json::Value,
-) -> Result<Box<dyn Detector>, String> {
+) -> Result<Box<dyn Detector>, ScriptLoadError> {
     let (rt, interrupt_count) = new_runtime()?;
-    let context = Context::full(&rt).map_err(|e| e.to_string())?;
+    let context = Context::full(&rt).map_err(|e| ScriptLoadError::RuntimeInit { source: e })?;
     let loaded = context.with(|ctx| {
         // report() must exist at load time so top-level code referencing it parses.
         register_report(&ctx, Rc::new(RefCell::new(Vec::new())))?;
         register_config(&ctx, options)?;
         ctx.eval::<(), _>(source.as_bytes())
             .catch(&ctx)
-            .map_err(|e| format!("invalid rules script {label}: {e}"))?;
+            .map_err(|e| ScriptLoadError::EvalError {
+                path: label.to_string(),
+                source: e.to_string(),
+            })?;
 
-        let name = read_const(&ctx, "NAME")
-            .ok_or_else(|| format!("rules script {label}: missing `const NAME = \"...\"`"))?;
-        let severity_str = read_const(&ctx, "SEVERITY")
-            .ok_or_else(|| format!("rules script {label}: missing `const SEVERITY = \"...\"`"))?;
-        let severity = parse_severity(&severity_str).ok_or_else(|| {
-            format!(
-                "rule '{name}': unknown severity '{severity_str}'. Use critical, high, medium, low, or info."
-            )
+        let name = read_const(&ctx, "NAME").ok_or_else(|| ScriptLoadError::MissingName {
+            label: label.to_string(),
         })?;
+        let severity_str =
+            read_const(&ctx, "SEVERITY").ok_or_else(|| ScriptLoadError::MissingSeverity {
+                label: label.to_string(),
+            })?;
+        let severity =
+            parse_severity(&severity_str).ok_or_else(|| ScriptLoadError::UnknownSeverity {
+                name: name.to_string(),
+                source: format!(
+                    "unknown severity '{severity_str}'. Use critical, high, medium, low, or info."
+                ),
+            })?;
         let description = read_const(&ctx, "DESCRIPTION").unwrap_or_default();
 
         let globals = ctx.globals();
@@ -147,11 +272,11 @@ pub(crate) fn load_script_source_with_options(
             .iter()
             .any(|v| globals.get::<_, Function<'_>>(*v).is_ok());
         if !has_visitor {
-            return Err(format!(
-                "rule '{}': script defines none of the visitor functions ({})",
-                name,
-                VISITORS.join(", ")
-            ));
+            return Err(ScriptLoadError::MissingVisitor {
+                rule: name,
+                visitors:
+                    "on_template, on_choice, on_field, on_function, on_import, on_interface, check",
+            });
         }
 
         Ok((name, severity, description))
@@ -195,20 +320,33 @@ fn positive_i64_to_usize(value: i64) -> usize {
     usize::try_from(value.max(1)).unwrap_or(usize::MAX)
 }
 
-fn register_config(ctx: &Ctx<'_>, options: &serde_json::Value) -> Result<(), String> {
-    let config_json = serde_json::to_string(options).map_err(|e| e.to_string())?;
-    let config = ctx
-        .json_parse(config_json)
-        .catch(ctx)
-        .map_err(|e| format!("could not parse rule CONFIG: {e}"))?;
+fn register_config(ctx: &Ctx<'_>, options: &serde_json::Value) -> Result<(), ScriptLoadError> {
+    let config_json =
+        serde_json::to_string(options).map_err(|e| ScriptLoadError::RegisterConfig {
+            path: "rule config".to_string(),
+            source: e.to_string(),
+        })?;
+    let config =
+        ctx.json_parse(config_json)
+            .catch(ctx)
+            .map_err(|e| ScriptLoadError::RegisterConfig {
+                path: "rule config".to_string(),
+                source: e.to_string(),
+            })?;
     ctx.globals()
         .set("__daml_lint_config", config)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| ScriptLoadError::RegisterConfig {
+            path: "rule config".to_string(),
+            source: e.to_string(),
+        })?;
     ctx.eval::<(), _>(br#"globalThis.CONFIG = globalThis.__daml_lint_config;"#)
-        .map_err(|e| e.to_string())
+        .map_err(|e| ScriptLoadError::RegisterConfig {
+            path: "rule config".to_string(),
+            source: e.to_string(),
+        })
 }
 
-fn register_report(ctx: &Ctx<'_>, sink: Reported) -> Result<(), String> {
+fn register_report(ctx: &Ctx<'_>, sink: Reported) -> Result<(), ScriptLoadError> {
     let report_impl = Function::new(
         ctx.clone(),
         move |arg: Value<'_>, message: String, evidence: Option<String>| {
@@ -216,10 +354,16 @@ fn register_report(ctx: &Ctx<'_>, sink: Reported) -> Result<(), String> {
             sink.borrow_mut().push((line, column, message, evidence));
         },
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| ScriptLoadError::RegisterReport {
+        path: "report".to_string(),
+        source: e.to_string(),
+    })?;
     ctx.globals()
         .set("__daml_lint_report", report_impl)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| ScriptLoadError::RegisterReport {
+            path: "report".to_string(),
+            source: e.to_string(),
+        })?;
     ctx.eval::<(), _>(
         br#"
 globalThis.report = function(arg, message, evidence) {
@@ -230,7 +374,10 @@ globalThis.report = function(arg, message, evidence) {
 };
 "#,
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| ScriptLoadError::RegisterReport {
+        path: "report".to_string(),
+        source: e.to_string(),
+    })
 }
 
 /// First argument of `report()`: a node object (location from its span) or a
@@ -250,11 +397,14 @@ fn location_of(arg: &Value<'_>) -> (usize, usize) {
 }
 
 impl ScriptDetector {
-    fn collect_script_findings(&self, module: &DamlModule) -> Result<Vec<Finding>, String> {
+    fn collect_script_findings(
+        &self,
+        module: &DamlModule,
+    ) -> Result<Vec<Finding>, ScriptLoadError> {
         let reported: Reported = Rc::new(RefCell::new(Vec::new()));
 
         self.interrupt_count.set(0);
-        self.context.with(|ctx| -> Result<(), String> {
+        self.context.with(|ctx| -> Result<(), ScriptLoadError> {
             // Fresh sink per module; replaces the previous report binding.
             register_report(&ctx, reported.clone())?;
 
@@ -358,7 +508,10 @@ mod tests {
     use crate::parser::parse_daml;
     use std::path::Path;
 
-    fn load_script_from_str(label: &str, script: &str) -> Result<Box<dyn Detector>, String> {
+    fn load_script_from_str(
+        label: &str,
+        script: &str,
+    ) -> Result<Box<dyn Detector>, ScriptLoadError> {
         load_script_source(label, script)
     }
 
@@ -429,7 +582,7 @@ function on_template(template) {
             "/examples/daml-lint.d.ts"
         ))
         .expect("read daml-lint.d.ts");
-        assert!(dts.contains("ir_version: 3"));
+        assert!(dts.contains("ir_version: 4"));
         for forbidden in [
             "body_raw",
             "raw_text",
@@ -483,7 +636,7 @@ function field(template, name) {
 }
 
 function check(m) {
-  if (m.ir_version !== 3) report(1, `expected ir_version 3, got ${m.ir_version}`);
+  if (m.ir_version !== 4) report(1, `expected ir_version 4, got ${m.ir_version}`);
   const t = m.templates[0];
   checkNoOldFields("template", t, ["signatories", "observers"]);
   if (typeof t.key_type === "string") report(1, "template key_type is still a string");
@@ -578,7 +731,7 @@ function exprText(e) {
 }
 
 function on_choice(choice, template) {
-    if (!choice.consuming) {
+    if (choice.consuming === "non-consuming") {
         return;
     }
     const signatories = template.signatory_exprs.map(exprText);
@@ -675,7 +828,7 @@ function on_template(t) {}
 "#,
         );
         match result {
-            Err(e) => assert!(e.contains("banana")),
+            Err(e) => assert!(e.to_string().contains("banana")),
             Ok(_) => panic!("bad severity should be rejected"),
         }
     }
@@ -709,6 +862,7 @@ function on_template(t) {}
         let script = raw_detector("boom", r#"function on_template(t) { t.does.not.exist; }"#);
         let module = parse_daml(TEMPLATE_NO_ENSURE, Path::new("Test.daml"));
         let err = script.collect_script_findings(&module).unwrap_err();
+        let err = err.to_string();
         assert!(err.contains("boom"));
         assert!(err.contains("on_template"));
     }
@@ -923,7 +1077,7 @@ function check(m) {
     }
     for (const c of t.choices) {
       if (c.parameters.length > 0) seen.add("ChoiceParams");
-      if (!c.consuming) seen.add("Nonconsuming");
+      if (c.consuming === "non-consuming") seen.add("Nonconsuming");
       if (c.controller_exprs.length > 0) seen.add("ControllerExpr");
       if (c.observer_exprs.length > 0) seen.add("ChoiceObserver");
       stmtKinds(c.body, seen);
@@ -936,7 +1090,7 @@ function check(m) {
     if (i.choices.length > 0) seen.add("InterfaceChoice");
   }
   for (const i of m.imports) {
-    if (i.qualified && i.alias !== null) seen.add("QualifiedAlias");
+    if (i.qualified === "qualified" && i.alias !== null) seen.add("QualifiedAlias");
   }
   for (const fn of m.functions) {
     seen.add("Function");

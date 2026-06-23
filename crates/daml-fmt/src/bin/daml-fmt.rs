@@ -15,6 +15,7 @@
 
 use daml_fmt::{format_source_with_options, source_diagnostics, FormatOptions, ImportOrder};
 use std::io::Read;
+use std::path::PathBuf;
 use std::process::exit;
 
 /// Print source diagnostics for `src` to stderr, prefixed with `label`.
@@ -42,15 +43,36 @@ fn usage(code: i32) -> ! {
     exit(code);
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    Print,
+    Write,
+    Check,
+}
+
 fn main() {
-    let mut write = false;
-    let mut check = false;
+    let mut mode = Mode::Print;
     let mut options = FormatOptions::default();
-    let mut files: Vec<String> = Vec::new();
+    let mut files: Vec<PathBuf> = Vec::new();
+    let mut mode_conflict = false;
     for a in std::env::args().skip(1) {
         match a.as_str() {
-            "-w" | "--write" => write = true,
-            "--check" => check = true,
+            "-w" | "--write" => {
+                if mode == Mode::Check {
+                    mode_conflict = true;
+                    mode = Mode::Print;
+                } else {
+                    mode = Mode::Write;
+                }
+            }
+            "--check" => {
+                if mode == Mode::Write {
+                    mode_conflict = true;
+                    mode = Mode::Print;
+                } else {
+                    mode = Mode::Check;
+                }
+            }
             "--preserve-import-order" => options.import_order = ImportOrder::Preserve,
             "-h" | "--help" => usage(0),
             "-v" | "--version" => {
@@ -61,16 +83,16 @@ fn main() {
                 eprintln!("daml-fmt: unknown option '{s}'");
                 usage(2);
             }
-            _ => files.push(a),
+            s => files.push(s.into()),
         }
     }
-    if write && check {
+    if mode_conflict {
         eprintln!("daml-fmt: --write and --check are mutually exclusive");
         exit(2);
     }
 
     if files.is_empty() {
-        if write || check {
+        if mode != Mode::Print {
             eprintln!("daml-fmt: --write/--check need file arguments");
             exit(2);
         }
@@ -94,7 +116,7 @@ fn main() {
         let text = match std::fs::read_to_string(file) {
             Ok(t) => t,
             Err(e) => {
-                eprintln!("daml-fmt: {file}: {e}");
+                eprintln!("daml-fmt: {}: {e}", file.display());
                 failed += 1;
                 continue;
             }
@@ -102,23 +124,23 @@ fn main() {
         // Malformed input (unterminated string / block comment) must not look
         // like a successful format: count it as failed (exit 2) in every mode,
         // and never rewrite it in -w. Output stays byte-faithful passthrough.
-        if report_diagnostics(file, &text) {
+        if report_diagnostics(&file.display().to_string(), &text) {
             failed += 1;
-            if !check && !write {
+            if mode == Mode::Print {
                 print!("{}", &text);
             }
             continue;
         }
         let out = format_source_with_options(&text, options);
-        if check {
+        if mode == Mode::Check {
             if out != text {
-                println!("{file}");
+                println!("{}", file.display());
                 unformatted += 1;
             }
-        } else if write {
+        } else if mode == Mode::Write {
             if out != text {
                 if let Err(e) = std::fs::write(file, &out) {
-                    eprintln!("daml-fmt: {file}: {e}");
+                    eprintln!("daml-fmt: {}: {e}", file.display());
                     failed += 1;
                 }
             }

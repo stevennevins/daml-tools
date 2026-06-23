@@ -222,7 +222,7 @@ pub fn resolve_layout(tokens: impl AsRef<[Token]>) -> Vec<Token> {
 
         let was_backslash = out
             .last()
-            .is_some_and(|t| matches!(&t.kind, TokenKind::Op(o) if o == "\\"));
+            .is_some_and(|t| matches!(&t.kind, TokenKind::Op(o) if *o == "\\"));
         out.push(token.clone());
 
         if let Some(keyword) = layout_keyword(&token.kind) {
@@ -278,9 +278,9 @@ mod tests {
                 TokenKind::LowerId { qualifier, name } | TokenKind::UpperId { qualifier, name } => {
                     qualifier
                         .as_ref()
-                        .map_or_else(|| name.clone(), |q| format!("{q}.{name}"))
+                        .map_or_else(|| name.to_string(), |q| format!("{q}.{name}"))
                 }
-                TokenKind::Op(o) => o.clone(),
+                TokenKind::Op(o) => o.to_string(),
                 TokenKind::IntLit(n) | TokenKind::DecimalLit(n) => n.clone(),
                 TokenKind::StringLit(s) => format!("{s:?}"),
                 TokenKind::CharLit(c) => format!("'{c}'"),

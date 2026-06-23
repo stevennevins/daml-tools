@@ -207,6 +207,10 @@ rule's `SEVERITY` applies to all its findings. Node shapes are declared in
 [src/ir.rs](src/ir.rs); statement nodes in `body` are objects keyed by kind,
 e.g. `"Create" in stmt`.
 
+Choice consumption and import forms are surfaced as string enums (`choice.consuming`
+is `"consuming" | "non-consuming"`; `import.qualified` is `"qualified" | "unqualified"`)
+to avoid boolean ambiguity.
+
 Statements carry a typed expression AST: `stmt.Let.value`,
 `stmt.Assert.condition_expr`, `stmt.Exercise.cid`/`.argument`, and
 `stmt.Other.expr` are `Expr` nodes — tagged unions like

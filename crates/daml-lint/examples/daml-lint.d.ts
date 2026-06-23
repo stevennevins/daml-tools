@@ -4,7 +4,7 @@
 // Bundle the rule to JavaScript before passing it to daml-lint --rules.
 // Node shapes mirror src/ir.rs.
 //
-// v3: nodes carry structured expression and type ASTs. Compatibility-only raw
+// v4: nodes carry structured expression and type ASTs. Compatibility-only raw
 // fields and rendered party-name lists from v1/v2 have been removed.
 
 /** Span of a declaration-level node (template, choice, field, ...). */
@@ -32,6 +32,12 @@ export interface SrcPos {
   line: number;
   column: number;
 }
+
+/** Choice consumption mode in the contract IR. */
+export type ChoiceConsumption = "consuming" | "non-consuming";
+
+/** Import style in the contract IR. */
+export type ImportStyle = "qualified" | "unqualified";
 
 /** Structured DAML type AST. Source spans support diagnostics and exact
  *  `module.source` slicing. Unknown/unparseable types are represented as null
@@ -180,7 +186,7 @@ export interface BranchArm {
 
 export interface Choice {
   name: string;
-  consuming: boolean;
+  consuming: ChoiceConsumption;
   controller_exprs: Expr[];
   /** Choice observers, if declared. */
   observer_exprs: Expr[];
@@ -240,13 +246,13 @@ export interface DamlFunction {
 
 export interface Import {
   module_name: string;
-  qualified: boolean;
+  qualified: ImportStyle;
   alias: string | null;
   span: Span;
 }
 
 export interface DamlModule {
-  ir_version: 3;
+  ir_version: 4;
   name: string;
   file: string;
   imports: Import[];

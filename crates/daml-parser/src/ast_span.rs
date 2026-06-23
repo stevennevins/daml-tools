@@ -520,7 +520,7 @@ mod tests {
     fn tile_reports_overlapping_intervals() {
         let source = "module M where\n-- comment\n";
         let module = Module {
-            name: "M".to_string(),
+            name: "M".into(),
             pos: Pos { line: 1, column: 1 },
             span: Span::new(0, source.len()),
             header: Span::new(0, "module M where".len()),
@@ -566,7 +566,7 @@ mod tests {
     fn tile_reports_uncovered_non_whitespace_bytes() {
         let source = "module M where\nmissing\n";
         let module = Module {
-            name: "M".to_string(),
+            name: "M".into(),
             pos: Pos { line: 1, column: 1 },
             span: Span::new(0, source.len()),
             header: Span::new(0, "module M where".len()),
@@ -587,7 +587,7 @@ mod tests {
     fn render_from_ast_roundtrips_header_only_module() {
         let source = "module M where\n";
         let module = Module {
-            name: "M".to_string(),
+            name: "M".into(),
             pos: Pos { line: 1, column: 1 },
             span: Span::new(0, source.len()),
             header: Span::new(0, "module M where".len()),

@@ -21,7 +21,7 @@ function creates(stmts: Statement[]): boolean {
 }
 
 function on_choice(choice: Choice, template: Template): void {
-  if (!choice.consuming && creates(choice.body)) {
+  if (choice.consuming === "non-consuming" && creates(choice.body)) {
     report(
       choice,
       `Nonconsuming choice '${choice.name}' on template '${template.name}' creates contracts — repeated exercise fans out unbounded copies`

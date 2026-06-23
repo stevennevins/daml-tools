@@ -10,7 +10,7 @@ const SEVERITY = "medium";
 const DESCRIPTION = "Consuming choices should have at least one signatory controller";
 
 function on_choice(choice: Choice, template: Template): void {
-  if (!choice.consuming) {
+  if (choice.consuming === "non-consuming") {
     return;
   }
   const signatories = partyExprs(template.signatory_exprs).map(renderText);

@@ -233,7 +233,7 @@ fn rewrite(src: &str, colon: bool) -> String {
 }
 
 fn is_lone_colon(t: &TokenKind) -> bool {
-    matches!(t, TokenKind::Op(op) if op == ":")
+    matches!(t, TokenKind::Op(op) if op.as_str() == ":")
 }
 
 const fn brace_delta(t: &TokenKind) -> i32 {
