@@ -6,6 +6,8 @@
 use crate::ast::{Decl, DiagnosticCategory};
 use crate::parse::parse_module;
 
+const TEST_RECURSION_DEPTH: usize = 300;
+
 fn diags(src: &str) -> Vec<crate::ast::ParseDiagnostic> {
     parse_module(src).1
 }
@@ -39,7 +41,7 @@ fn skipped_declaration_does_not_abort_later_template() {
 }
 
 #[test]
-fn legacy_controller_can_is_unsupported_syntax() {
+fn legacy_controller_can_syntax_is_unsupported() {
     let src = "module M where\n\
                template T\n  \
                with\n    o : Party\n  \
@@ -87,7 +89,7 @@ fn malformed_expression_is_categorized_malformed() {
 fn deep_nesting_emits_recursion_limit_and_does_not_panic() {
     // Well past MAX_DEPTH (128). The parser must not overflow the stack; it
     // degrades and reports the truncation.
-    let depth = 300;
+    let depth = TEST_RECURSION_DEPTH;
     let src = format!(
         "module M where\nf = {}1{}\n",
         "(".repeat(depth),
@@ -107,16 +109,28 @@ fn each_deep_declaration_reports_its_own_recursion_limit() {
     // Two independently over-deep declarations must EACH report a truncation —
     // a later declaration's degraded region must not be silently dropped just
     // because an earlier one already tripped the limit.
-    let nest = "(".repeat(300);
-    let unnest = ")".repeat(300);
+    let nest = "(".repeat(TEST_RECURSION_DEPTH);
+    let unnest = ")".repeat(TEST_RECURSION_DEPTH);
     let src = format!("module M where\ng = {nest}1{unnest}\nh = {nest}2{unnest}\n");
-    let count = diags(&src)
+    let diagnostics = diags(&src);
+    let recursion_limit_spans = diagnostics
         .iter()
         .filter(|d| d.category == DiagnosticCategory::RecursionLimit)
-        .count();
+        .map(|d| d.span)
+        .collect::<Vec<_>>();
+    let g_start = src.find("g = ").expect("g declaration start");
+    let h_start = src.find("h = ").expect("h declaration start");
     assert!(
-        count >= 2,
-        "each over-deep declaration must report its own recursion-limit; got {count}"
+        recursion_limit_spans
+            .iter()
+            .any(|span| span.start >= g_start && span.start < h_start),
+        "g declaration must report its own recursion-limit, got {recursion_limit_spans:?}"
+    );
+    assert!(
+        recursion_limit_spans
+            .iter()
+            .any(|span| span.start >= h_start),
+        "h declaration must report its own recursion-limit, got {recursion_limit_spans:?}"
     );
 }
 

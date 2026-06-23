@@ -547,6 +547,9 @@ impl<'a> Lexer<'a> {
             }
         }
         self.bump(); // closing '
+        if value.chars().count() != 1 {
+            self.error("character literal must contain exactly one character", pos);
+        }
         self.push(Tok::CharLit(value), pos, start);
     }
 
@@ -858,6 +861,22 @@ mod tests {
         assert_eq!(
             lex_error_messages(r#""\q" '\q'"#),
             vec!["invalid escape sequence \\q", "invalid escape sequence \\q"]
+        );
+    }
+
+    #[test]
+    fn multi_character_char_literal_reports_error() {
+        let (tokens, errors) = lex("'ab'");
+        assert_eq!(
+            tokens.iter().map(|t| t.tok.clone()).collect::<Vec<_>>(),
+            vec![Tok::CharLit("ab".into())]
+        );
+        assert_eq!(
+            errors
+                .iter()
+                .map(|e| e.message.as_str())
+                .collect::<Vec<_>>(),
+            vec!["character literal must contain exactly one character"]
         );
     }
 

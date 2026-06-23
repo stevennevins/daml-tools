@@ -23,6 +23,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Breaking:** Document the parser public API and strengthen audit-flagged tests ([#60](https://github.com/stevennevins/daml-tools/pull/60))
 
+## [0.2.4](https://github.com/stevennevins/daml-tools/compare/daml-parser-v0.2.3...daml-parser-v0.2.4) - 2026-06-22
+
+### Changed
+
+- Tighten workspace Clippy lint coverage ([#59](https://github.com/stevennevins/daml-tools/pull/59))
+
+## [0.2.3](https://github.com/stevennevins/daml-tools/compare/daml-parser-v0.2.2...daml-parser-v0.2.3) - 2026-06-18
+
+### Changed
+
+- Release daml-parser 0.2.3.
+
 ## [0.2.2](https://github.com/stevennevins/daml-tools/compare/daml-parser-v0.2.1...daml-parser-v0.2.2) - 2026-06-19
 
 ### Changed

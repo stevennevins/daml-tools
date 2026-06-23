@@ -7,6 +7,7 @@
 use crate::ast::*;
 use crate::layout::resolve_layout;
 use crate::lexer::{lex, Pos, Tok, Token};
+use std::collections::HashMap;
 
 /// Parse Daml `source` into a [`Module`] plus any [`ParseDiagnostic`]s, in
 /// source order.
@@ -2768,38 +2769,38 @@ fn equations_extent(eqs: &[Equation]) -> Option<Span> {
 
 fn merge_functions(decls: &mut Vec<Decl>) {
     let mut out: Vec<Decl> = Vec::with_capacity(decls.len());
+    let mut function_index_by_name: HashMap<String, usize> = HashMap::new();
     for decl in decls.drain(..) {
         match decl {
             Decl::Function(f) => {
-                let existing = out.iter_mut().find_map(|d| match d {
-                    Decl::Function(g) if g.name == f.name => Some(g),
-                    _ => None,
-                });
-                match existing {
-                    Some(g) => {
-                        if g.ty.is_none() {
-                            g.ty = f.ty.clone();
-                        }
-                        if g.sig_span.is_none() {
-                            g.sig_span = f.sig_span;
-                        }
-                        // The function's reported position is its first
-                        // equation, not its type signature.
-                        if g.equations.is_empty() && !f.equations.is_empty() {
-                            g.pos = f.pos;
-                        }
-                        g.equations.extend(f.equations);
-                        // A function's span is the extent of its equations,
-                        // which are contiguous in well-formed source. A type
-                        // signature can sit apart (with unrelated decls in
-                        // between), so it is tracked in `sig_span` and never
-                        // folded into `span` — doing so could straddle a
-                        // sibling decl and break the nesting invariant.
-                        g.span = equations_extent(&g.equations)
-                            .or(g.sig_span)
-                            .unwrap_or(g.span);
+                if let Some(existing_index) = function_index_by_name.get(&f.name).copied() {
+                    let Decl::Function(g) = &mut out[existing_index] else {
+                        unreachable!("function index must point at a function declaration");
+                    };
+                    if g.ty.is_none() {
+                        g.ty = f.ty.clone();
                     }
-                    None => out.push(Decl::Function(f)),
+                    if g.sig_span.is_none() {
+                        g.sig_span = f.sig_span;
+                    }
+                    // The function's reported position is its first equation,
+                    // not its type signature.
+                    if g.equations.is_empty() && !f.equations.is_empty() {
+                        g.pos = f.pos;
+                    }
+                    g.equations.extend(f.equations);
+                    // A function's span is the extent of its equations, which
+                    // are contiguous in well-formed source. A type signature
+                    // can sit apart (with unrelated decls in between), so it is
+                    // tracked in `sig_span` and never folded into `span` —
+                    // doing so could straddle a sibling decl and break the
+                    // nesting invariant.
+                    g.span = equations_extent(&g.equations)
+                        .or(g.sig_span)
+                        .unwrap_or(g.span);
+                } else {
+                    function_index_by_name.insert(f.name.clone(), out.len());
+                    out.push(Decl::Function(f));
                 }
             }
             other => out.push(other),
