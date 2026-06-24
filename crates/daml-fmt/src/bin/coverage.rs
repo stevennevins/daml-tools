@@ -48,11 +48,21 @@ fn main() {
     for root in &roots {
         collect(root, &mut originals);
     }
+    if originals.is_empty() {
+        eprintln!("coverage: no .daml files found under supplied path(s)");
+        exit(1);
+    }
 
-    let (mut candidates, mut modeled, mut files_with_candidates) = (0usize, 0usize, 0usize);
+    let (mut candidates, mut modeled, mut files_with_candidates, mut read_errors) =
+        (0usize, 0usize, 0usize, 0usize);
     for o in &originals {
-        let Ok(src) = std::fs::read_to_string(o) else {
-            continue;
+        let src = match std::fs::read_to_string(o) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("READ-ERR {}: {}", o.display(), e);
+                read_errors += 1;
+                continue;
+            }
         };
         let coverage = coverage(&src);
         candidates += coverage.edit_candidates();
@@ -75,4 +85,7 @@ fn main() {
         originals.len(),
         files_with_candidates
     );
+    if read_errors > 0 {
+        exit(1);
+    }
 }

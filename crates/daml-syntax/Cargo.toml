@@ -17,5 +17,7 @@ categories = ["parser-implementations", "development-tools"]
 workspace = true
 
 [dependencies]
+# Public dependency: parser AST, lexer, and layout types appear in this crate's API.
 daml-parser.workspace = true
+# Public dependency: TextRange and TextSize are re-exported from this crate.
 text-size.workspace = true

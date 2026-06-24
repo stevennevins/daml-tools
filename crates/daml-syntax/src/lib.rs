@@ -5,6 +5,22 @@
 //! diagnostics, line/UTF-16 mapping, tokens, trivia, laid-out tokens, and
 //! conversion from parser byte spans to `text-size` ranges.
 //!
+//! # Public dependencies
+//!
+//! This crate intentionally exposes types from `daml-parser` and the
+//! `text-size` crate in its public API. Downstream `SemVer` expectations include
+//! compatible major versions of those dependencies when their types appear in
+//! function signatures or re-exports:
+//!
+//! - [`daml_parser::ast`], [`daml_parser::lexer`], and related parser types
+//!   used by [`SourceFile`] and span conversion helpers.
+//! - [`TextRange`] and [`TextSize`], re-exported from `text-size` for source
+//!   ranges and offsets.
+//!
+//! Coordinate newtypes such as [`LineNumber`], [`ByteColumn`], and
+//! [`CharColumn`] are 1-based and reject zero via [`LineNumber::try_new`] and
+//! siblings; 0-based offsets use [`ByteOffset`] and [`Utf16Offset`].
+//!
 //! ```rust
 //! use daml_syntax::{parser_span_to_text_range, SourceFile};
 //!
@@ -51,37 +67,47 @@ pub struct Diagnostic {
 }
 
 impl Diagnostic {
+    /// Byte range of the diagnostic in source text.
     #[must_use]
     pub const fn range(&self) -> TextRange {
         self.range
     }
 
+    /// 1-based line number of the diagnostic start.
     #[must_use]
     pub const fn line(&self) -> LineNumber {
         self.line
     }
 
+    /// 1-based character column of the diagnostic start.
     #[must_use]
     pub const fn column(&self) -> CharColumn {
         self.column
     }
 
+    /// 1-based character column of the diagnostic end when the span is single-line.
     #[must_use]
     pub const fn end_column(&self) -> Option<CharColumn> {
         self.end_column
     }
 
+    /// Human-readable diagnostic message.
     #[must_use]
     pub fn message(&self) -> &str {
         &self.message
     }
 
+    /// Parser diagnostic category from `daml-parser`.
     #[must_use]
     pub const fn category(&self) -> DiagnosticCategory {
         self.category
     }
 }
 
+/// Precomputed line, character, and UTF-16 offset tables for a source string.
+///
+/// Offsets passed to lookup methods are clamped to the source length. Returned
+/// line and column coordinates are always valid 1-based values.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LineIndex {
     source_len: usize,
@@ -91,6 +117,7 @@ pub struct LineIndex {
 }
 
 impl LineIndex {
+    /// Builds line and column lookup tables for `source`.
     #[must_use]
     pub fn new(source: &str) -> Self {
         let mut line_start_bytes = vec![0];
@@ -152,6 +179,7 @@ impl LineIndex {
         }
     }
 
+    /// Maps a byte offset to a 1-based line and byte column, clamping past EOF.
     #[must_use]
     pub fn line_col(&self, offset: TextSize) -> ByteLineCol {
         let byte = usize::from(offset).min(self.source_len);
@@ -165,6 +193,9 @@ impl LineIndex {
         }
     }
 
+    /// Maps a byte offset to a 1-based line and Unicode scalar column.
+    ///
+    /// Non-UTF-8-boundary offsets snap to the previous character boundary.
     #[must_use]
     pub fn char_line_col(&self, offset: TextSize) -> CharLineCol {
         let byte = usize::from(offset).min(self.source_len);
@@ -181,6 +212,10 @@ impl LineIndex {
         }
     }
 
+    /// Returns the UTF-16 code-unit offset from the start of `line` to `byte_col`.
+    ///
+    /// Both coordinates must be valid 1-based values; zero cannot be represented
+    /// by [`LineNumber`] or [`ByteColumn`].
     #[must_use]
     pub fn utf16_col(&self, line: LineNumber, byte_col: ByteColumn) -> Utf16Offset {
         let line_start = self
@@ -194,6 +229,7 @@ impl LineIndex {
         Utf16Offset::new(self.utf16_offset_by_byte[byte] - self.utf16_offset_by_byte[line_start])
     }
 
+    /// Maps a byte range to UTF-16 start/end offsets, clamping to source bounds.
     #[must_use]
     pub fn utf16_range(&self, range: TextRange) -> (Utf16Offset, Utf16Offset) {
         let start = usize::from(range.start()).min(self.source_len);
@@ -205,6 +241,9 @@ impl LineIndex {
     }
 }
 
+/// Lexer output for a source string without running the full module parser.
+///
+/// Use [`SourceFile`] when you also need the AST and parse diagnostics.
 #[derive(Debug)]
 pub struct SourceTokens {
     tokens: Vec<Token>,
@@ -214,6 +253,7 @@ pub struct SourceTokens {
 }
 
 impl SourceTokens {
+    /// Lexes `source` and records trivia and lexer errors.
     #[must_use]
     pub fn lex(source: &str) -> Self {
         let lexed = lex_with_trivia(source);
@@ -225,28 +265,33 @@ impl SourceTokens {
         }
     }
 
+    /// Raw lexer tokens in source order.
     #[must_use]
     pub fn tokens(&self) -> &[Token] {
         &self.tokens
     }
 
+    /// Whitespace and comment trivia between tokens.
     #[must_use]
     pub fn trivia(&self) -> &[Trivia] {
         &self.trivia
     }
 
+    /// Lexer diagnostics for malformed input.
     #[must_use]
     pub fn lex_errors(&self) -> &[LexError] {
         &self.lex_errors
     }
 
+    /// Tokens after layout resolution (virtual braces and semicolons inserted).
     #[must_use]
     pub fn laid_out_tokens(&self) -> &[Token] {
         self.laid_out_tokens
-            .get_or_init(|| resolve_layout(self.tokens.as_slice()))
+            .get_or_init(|| resolve_layout(self.tokens.clone()))
     }
 }
 
+/// Parsed Daml module with diagnostics, line index, and lazy token access.
 #[derive(Debug)]
 pub struct SourceFile {
     source: String,
@@ -257,6 +302,10 @@ pub struct SourceFile {
 }
 
 impl SourceFile {
+    /// Parses `source` into a module AST and source-facing presentation data.
+    ///
+    /// Malformed input still returns a partial module and surfaces diagnostics;
+    /// this function does not fail with `Result`.
     #[must_use]
     pub fn parse(source: &str) -> Self {
         let parsed = parse_module(source);
@@ -293,36 +342,43 @@ impl SourceFile {
         }
     }
 
+    /// Original source text this file was parsed from.
     #[must_use]
     pub fn source(&self) -> &str {
         &self.source
     }
 
+    /// Parsed module AST from `daml-parser`.
     #[must_use]
     pub const fn module(&self) -> &Module {
         &self.module
     }
 
+    /// Parse and lexer diagnostics anchored in source text.
     #[must_use]
     pub fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
     }
 
+    /// Line, column, and UTF-16 lookup tables for this source.
     #[must_use]
     pub const fn line_index(&self) -> &LineIndex {
         &self.line_index
     }
 
+    /// Raw lexer tokens for this source (lazy lex on first access).
     #[must_use]
     pub fn tokens(&self) -> &[Token] {
         self.source_tokens().tokens()
     }
 
+    /// Whitespace and comment trivia for this source.
     #[must_use]
     pub fn trivia(&self) -> &[Trivia] {
         self.source_tokens().trivia()
     }
 
+    /// Layout-resolved tokens for this source.
     #[must_use]
     pub fn laid_out_tokens(&self) -> &[Token] {
         self.source_tokens().laid_out_tokens()
@@ -378,39 +434,61 @@ pub fn parser_span_to_text_range(source: &str, span: ParserSpan) -> TextRange {
         .expect("parser span must map to a valid UTF-8 range")
 }
 
+/// Failure kind when converting a parser span to a [`TextRange`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ParserSpanToTextRangeErrorKind {
+    /// Span endpoint exceeds the source length.
     OutOfBounds,
+    /// Span start is greater than end.
     InvertedSpan,
+    /// Span endpoint is not on a UTF-8 character boundary.
     NonUtf8Boundary,
+    /// Span endpoint cannot fit in [`TextSize`].
     TextSizeOverflow,
 }
 
+/// Error returned when a parser span cannot be converted to a [`TextRange`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParserSpanToTextRangeError {
     source_len: usize,
-    span_start: usize,
-    span_end: usize,
+    span_start: ByteOffset,
+    span_end: ByteOffset,
     kind: ParserSpanToTextRangeErrorKind,
 }
 
 impl ParserSpanToTextRangeError {
+    /// Length of the source string the span was checked against.
     #[must_use]
     pub const fn source_len(&self) -> usize {
         self.source_len
     }
 
+    /// Inclusive start byte offset from the parser span.
     #[must_use]
-    pub const fn span_start(&self) -> usize {
+    pub const fn span_start(&self) -> ByteOffset {
         self.span_start
     }
 
+    /// Exclusive end byte offset from the parser span.
     #[must_use]
-    pub const fn span_end(&self) -> usize {
+    pub const fn span_end(&self) -> ByteOffset {
         self.span_end
     }
 
+    /// Inclusive start byte offset as a raw `usize`.
+    #[must_use]
+    pub fn span_start_usize(&self) -> usize {
+        self.span_start.get()
+    }
+
+    /// Exclusive end byte offset as a raw `usize`.
+    #[must_use]
+    pub fn span_end_usize(&self) -> usize {
+        self.span_end.get()
+    }
+
+    /// Specific reason the conversion failed.
     #[must_use]
     pub const fn kind(&self) -> ParserSpanToTextRangeErrorKind {
         self.kind
@@ -423,12 +501,15 @@ impl std::fmt::Display for ParserSpanToTextRangeError {
             ParserSpanToTextRangeErrorKind::TextSizeOverflow => write!(
                 f,
                 "parser span [{}, {}) cannot be represented as a text-size value",
-                self.span_start, self.span_end
+                self.span_start.get(),
+                self.span_end.get()
             ),
             _ => write!(
                 f,
                 "parser span [{}, {}) is invalid for source length {}",
-                self.span_start, self.span_end, self.source_len
+                self.span_start.get(),
+                self.span_end.get(),
+                self.source_len
             ),
         }
     }
@@ -450,41 +531,61 @@ pub fn try_parser_span_to_text_range(
     if span.start > source_len || span.end > source_len {
         return Err(ParserSpanToTextRangeError {
             source_len,
-            span_start: span.start,
-            span_end: span.end,
+            span_start: ByteOffset::new(span.start),
+            span_end: ByteOffset::new(span.end),
             kind: ParserSpanToTextRangeErrorKind::OutOfBounds,
         });
     }
     if span.start > span.end {
         return Err(ParserSpanToTextRangeError {
             source_len,
-            span_start: span.start,
-            span_end: span.end,
+            span_start: ByteOffset::new(span.start),
+            span_end: ByteOffset::new(span.end),
             kind: ParserSpanToTextRangeErrorKind::InvertedSpan,
         });
     }
     if !source.is_char_boundary(span.start) || !source.is_char_boundary(span.end) {
         return Err(ParserSpanToTextRangeError {
             source_len,
-            span_start: span.start,
-            span_end: span.end,
+            span_start: ByteOffset::new(span.start),
+            span_end: ByteOffset::new(span.end),
             kind: ParserSpanToTextRangeErrorKind::NonUtf8Boundary,
         });
     }
     Ok(TextRange::new(
         TextSize::try_from(span.start).map_err(|_| ParserSpanToTextRangeError {
             source_len,
-            span_start: span.start,
-            span_end: span.end,
+            span_start: ByteOffset::new(span.start),
+            span_end: ByteOffset::new(span.end),
             kind: ParserSpanToTextRangeErrorKind::TextSizeOverflow,
         })?,
         TextSize::try_from(span.end).map_err(|_| ParserSpanToTextRangeError {
             source_len,
-            span_start: span.start,
-            span_end: span.end,
+            span_start: ByteOffset::new(span.start),
+            span_end: ByteOffset::new(span.end),
             kind: ParserSpanToTextRangeErrorKind::TextSizeOverflow,
         })?,
     ))
+}
+
+// README examples are compile-tested by `cargo test -p daml-syntax --doc`.
+#[doc(hidden)]
+mod readme_examples {
+    //! ```rust
+    //! use daml_syntax::{LineNumber, SourceFile, SourceTokens};
+    //!
+    //! let source = "module M where\nfoo : Int\nfoo = 1\n";
+    //! let file = SourceFile::parse(source);
+    //!
+    //! assert!(file.diagnostics().is_empty());
+    //! assert_eq!(file.module().name, "M");
+    //! assert_eq!(file.line_index().line_col(0.into()).line, LineNumber::new(1));
+    //!
+    //! let tokens = SourceTokens::lex(source);
+    //!
+    //! assert!(tokens.lex_errors().is_empty());
+    //! assert!(!tokens.laid_out_tokens().is_empty());
+    //! ```
 }
 
 #[cfg(test)]
@@ -690,8 +791,10 @@ mod tests {
             )
         );
         assert_eq!(err.source_len(), source.len());
-        assert_eq!(err.span_start(), 0);
-        assert_eq!(err.span_end(), source.len() + 1);
+        assert_eq!(err.span_start(), ByteOffset::new(0));
+        assert_eq!(err.span_end(), ByteOffset::new(source.len() + 1));
+        assert_eq!(err.span_start_usize(), 0);
+        assert_eq!(err.span_end_usize(), source.len() + 1);
     }
 
     #[test]
@@ -704,8 +807,8 @@ mod tests {
             "parser span [2, 1) is invalid for source length 3"
         );
         assert_eq!(err.source_len(), source.len());
-        assert_eq!(err.span_start(), 2);
-        assert_eq!(err.span_end(), 1);
+        assert_eq!(err.span_start(), ByteOffset::new(2));
+        assert_eq!(err.span_end(), ByteOffset::new(1));
     }
 
     #[test]
@@ -719,8 +822,8 @@ mod tests {
             "parser span [1, 2) is invalid for source length 6"
         );
         assert_eq!(err.source_len(), source.len());
-        assert_eq!(err.span_start(), 1);
-        assert_eq!(err.span_end(), 2);
+        assert_eq!(err.span_start(), ByteOffset::new(1));
+        assert_eq!(err.span_end(), ByteOffset::new(2));
     }
 
     #[test]
@@ -736,6 +839,12 @@ mod tests {
         assert!(diagnostic.range().start() <= diagnostic.range().end());
         assert!(diagnostic.line().get() >= 1);
         assert!(diagnostic.column().get() >= 1);
+    }
+
+    #[test]
+    fn utf16_col_requires_non_zero_line_and_column() {
+        assert!(LineNumber::try_new(0).is_none());
+        assert!(ByteColumn::try_new(0).is_none());
     }
 
     #[test]

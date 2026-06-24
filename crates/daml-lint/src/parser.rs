@@ -23,6 +23,7 @@ pub(crate) fn parse_daml(source: &str, file: &Path) -> DamlModule {
 /// `end_column` is present when the offending span sits on a single line (most
 /// tokens); `category` is the parser's recovery classification.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct ParseDiagnostic {
     pub line: usize,
     pub column: usize,
@@ -77,6 +78,7 @@ impl ParseDiagnosticCategory {
 }
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct ParseResult {
     pub module: DamlModule,
     pub diagnostics: Vec<ParseDiagnostic>,

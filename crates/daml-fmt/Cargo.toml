@@ -79,3 +79,8 @@ required-features = ["dev-tools"]
 name = "coverage"
 path = "src/bin/coverage.rs"
 required-features = ["dev-tools"]
+
+[[test]]
+name = "coverage"
+path = "tests/coverage.rs"
+required-features = ["dev-tools"]

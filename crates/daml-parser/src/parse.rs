@@ -1345,9 +1345,15 @@ impl Parser {
         }
         let interface_name = self.upper_name()?;
         let for_template = if self.eat_keyword("for") {
-            self.upper_name().unwrap_or_default()
+            self.upper_name().map_or_else(
+                || {
+                    self.diag("interface instance missing template name after 'for'");
+                    None
+                },
+                Some,
+            )
         } else {
-            ModuleName::default()
+            None
         };
         let mut methods = Vec::new();
         if self.eat_keyword("where")
@@ -3751,6 +3757,110 @@ interface I where
         };
         // `Numeric 10` — the nat literal is dropped, leaving the bare head Con.
         assert_eq!(iface.methods[0].ty, Some(con("Numeric")));
+    }
+
+    #[test]
+    fn interface_instance_with_for_sets_explicit_template() {
+        let src = r#"module M where
+template Account
+  with
+    owner : Party
+  where
+    signatory owner
+    interface instance Disclosure.I for Account where
+      disclose = owner
+"#;
+        let (module, diagnostics) = parse_module(src).into_parts();
+        assert!(
+            diagnostics.is_empty(),
+            "expected no diagnostics, got {diagnostics:?}"
+        );
+        let template = match &module.decls[0] {
+            Decl::Template(t) => t,
+            other => panic!("expected template, got {other:?}"),
+        };
+        let instance = template
+            .body
+            .iter()
+            .find_map(|decl| match decl {
+                TemplateBodyDecl::InterfaceInstance(ii) => Some(ii),
+                _ => None,
+            })
+            .expect("template body should contain an interface instance");
+        assert_eq!(instance.interface_name.as_str(), "Disclosure.I");
+        assert_eq!(
+            instance.for_template.as_ref().map(ModuleName::as_str),
+            Some("Account")
+        );
+    }
+
+    #[test]
+    fn interface_instance_without_for_leaves_template_absent() {
+        let src = r#"module M where
+template Account
+  with
+    owner : Party
+  where
+    signatory owner
+    interface instance Disclosure.I where
+      disclose = owner
+"#;
+        let (module, diagnostics) = parse_module(src).into_parts();
+        assert!(
+            diagnostics.is_empty(),
+            "omitted 'for' is valid inside a template, got {diagnostics:?}"
+        );
+        let template = match &module.decls[0] {
+            Decl::Template(t) => t,
+            other => panic!("expected template, got {other:?}"),
+        };
+        let instance = template
+            .body
+            .iter()
+            .find_map(|decl| match decl {
+                TemplateBodyDecl::InterfaceInstance(ii) => Some(ii),
+                _ => None,
+            })
+            .expect("template body should contain an interface instance");
+        assert_eq!(instance.interface_name.as_str(), "Disclosure.I");
+        assert!(
+            instance.for_template.is_none(),
+            "omitted 'for' must be None, not an empty ModuleName sentinel"
+        );
+    }
+
+    #[test]
+    fn interface_instance_missing_template_after_for_is_malformed() {
+        let src = r#"module M where
+template Account
+  with
+    owner : Party
+  where
+    signatory owner
+    interface instance Disclosure.I for where
+      disclose = owner
+"#;
+        let (module, diagnostics) = parse_module(src).into_parts();
+        assert!(
+            diagnostics.iter().any(|d| {
+                d.category == DiagnosticCategory::Malformed
+                    && d.message == "interface instance missing template name after 'for'"
+            }),
+            "expected malformed diagnostic for missing template after 'for', got {diagnostics:?}"
+        );
+        let template = match &module.decls[0] {
+            Decl::Template(t) => t,
+            other => panic!("expected template, got {other:?}"),
+        };
+        let instance = template
+            .body
+            .iter()
+            .find_map(|decl| match decl {
+                TemplateBodyDecl::InterfaceInstance(ii) => Some(ii),
+                _ => None,
+            })
+            .expect("parser should still recover an interface instance node");
+        assert!(instance.for_template.is_none());
     }
 
     #[test]

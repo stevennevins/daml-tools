@@ -55,8 +55,9 @@ The workspace documentation is organized under
 
 ## Build & install
 
-daml-fmt depends only on the [`daml-parser`](https://crates.io/crates/daml-parser) crate (the shared
-lexer + offside layout + parser), never on `daml-lint`. Both live in the
+daml-fmt depends only on the [`daml-parser`](https://crates.io/crates/daml-parser) and
+[`daml-syntax`](https://crates.io/crates/daml-syntax) crates (the shared lexer, layout,
+and source-map pipeline), never on `daml-lint`. Both live in the
 [daml-tools](https://github.com/stevennevins/daml-tools) workspace, so a normal
 workspace checkout has everything it needs.
 
@@ -93,10 +94,15 @@ Exit codes: 0 ok, 1 `--check` found unformatted files, 2 error.
 ## Library API
 
 `daml-fmt` is also a Rust library. The primary entry points are
-`format_source` (defaults) and `format_source_with_options`.
+`format_source` (defaults) and `format_source_with_options`. Use
+`try_format_source` / `try_format_source_with_options` when callers need a typed
+[`FormatError`] instead of a byte-faithful passthrough on malformed input.
+`source_diagnostics` and `lex_diagnostics` return typed [`FormatDiagnostic`] values.
 
 ```rust
-use daml_fmt::{FormatOptions, ImportOrder, format_source, format_source_with_options};
+use daml_fmt::{
+    format_source, format_source_with_options, try_format_source, FormatOptions, ImportOrder,
+};
 
 let formatted = format_source("module M where\nfoo : Int\nfoo = 1\n");
 
@@ -104,6 +110,9 @@ let preserved = format_source_with_options(
     "module M where\nimport DA.List\nimport DA.Optional\n\nx = []\n",
     FormatOptions::new().with_import_order(ImportOrder::Preserve),
 );
+
+let checked = try_format_source("module M where\nfoo: Int\nfoo = 1\n").expect("valid source");
+assert_eq!(checked, formatted);
 ```
 
 `ImportOrder` is `#[non_exhaustive]` for forward-compatible `match` arms.

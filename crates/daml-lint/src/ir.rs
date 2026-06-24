@@ -12,6 +12,7 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Span {
     pub file: PathBuf,
     pub line: usize,
@@ -19,6 +20,7 @@ pub struct Span {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct SourceSpan {
     pub file: PathBuf,
     pub line: usize,
@@ -169,6 +171,7 @@ impl TypeNode {
 /// enclosing module fixes the file; repeating the path on every node would
 /// bloat the JSON handed to rule scripts.
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct SrcPos {
     pub line: usize,
     pub column: usize,
@@ -274,6 +277,7 @@ pub enum Expr {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
+#[non_exhaustive]
 pub struct CaseAlt {
     /// Pattern rendered to source text (`Some x`, `[]`, `_`).
     pub pattern: String,
@@ -281,12 +285,14 @@ pub struct CaseAlt {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
+#[non_exhaustive]
 pub struct LetBinding {
     pub name: String,
     pub value: Expr,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
+#[non_exhaustive]
 pub struct RecordField {
     pub name: String,
     /// None for punned fields (`Foo with owner`) and `..` spreads.
@@ -294,6 +300,7 @@ pub struct RecordField {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
+#[non_exhaustive]
 pub struct Field {
     pub name: String,
     pub type_: Option<TypeNode>,
@@ -301,6 +308,7 @@ pub struct Field {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
 pub struct Template {
     pub name: String,
     pub fields: Vec<Field>,
@@ -318,6 +326,7 @@ pub struct Template {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
 pub struct InterfaceInstance {
     pub interface_name: String,
     /// Implemented method names, in declaration order.
@@ -326,12 +335,14 @@ pub struct InterfaceInstance {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
 pub struct EnsureClause {
     pub expr: Expr,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
 pub struct Choice {
     pub name: String,
     pub consuming: Consuming,
@@ -434,12 +445,14 @@ pub enum Statement {
 /// One arm of a `Statement::Branch`. `pattern` is the rendered case alt pattern
 /// (`x :: _`, `[a]`, `_`); None for the then/else arms of an `if`.
 #[derive(Debug, Clone, Serialize, PartialEq)]
+#[non_exhaustive]
 pub struct BranchArm {
     pub pattern: Option<String>,
     pub body: Vec<Statement>,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
 pub struct Function {
     pub name: String,
     /// Declared type signature, if present.
@@ -449,6 +462,7 @@ pub struct Function {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
 pub struct Import {
     pub module_name: String,
     pub qualified: ImportStyle,
@@ -472,6 +486,7 @@ impl ImportStyle {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
 pub struct InterfaceMethod {
     pub name: String,
     pub type_: Option<TypeNode>,
@@ -479,6 +494,7 @@ pub struct InterfaceMethod {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
 pub struct Interface {
     pub name: String,
     /// Interfaces this interface requires.
@@ -490,6 +506,7 @@ pub struct Interface {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
 pub struct DamlModule {
     pub ir_version: u32,
     pub name: String,

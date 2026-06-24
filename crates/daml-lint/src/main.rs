@@ -124,14 +124,14 @@ fn main() {
                 d.column,
                 d.message
             );
-            parse_errors.push(reporter::ParseError {
-                file: file.display().to_string(),
-                line: d.line,
-                column: d.column,
-                end_column: d.end_column,
-                message: d.message.clone(),
-                category: d.category,
-            });
+            parse_errors.push(reporter::ParseError::new(
+                file.display().to_string(),
+                d.line,
+                d.column,
+                d.end_column,
+                d.message.clone(),
+                d.category,
+            ));
         }
 
         for det in &detectors {
@@ -194,19 +194,19 @@ fn main() {
 }
 
 fn input_error_to_parse_error(error: &InputDiscoveryError) -> reporter::ParseError {
-    reporter::ParseError {
-        file: match error {
+    reporter::ParseError::new(
+        match error {
             InputDiscoveryError::NotFound(path)
             | InputDiscoveryError::NotADirectory(path)
             | InputDiscoveryError::ReadDir { path, .. }
             | InputDiscoveryError::ReadFailure { path, .. } => path.display().to_string(),
         },
-        line: 1,
-        column: 1,
-        end_column: None,
-        message: error.to_string(),
-        category: parser::ParseDiagnosticCategory::UnsupportedSyntax,
-    }
+        1,
+        1,
+        None,
+        error.to_string(),
+        parser::ParseDiagnosticCategory::UnsupportedSyntax,
+    )
 }
 
 fn parse_output_format(value: &str) -> Result<OutputFormat, String> {
@@ -216,9 +216,7 @@ fn parse_output_format(value: &str) -> Result<OutputFormat, String> {
 }
 
 fn parse_fail_on(value: &str) -> Result<Severity, String> {
-    value.parse::<Severity>().map_err(|_| {
-        format!("Unknown severity '{value}'. Use critical, high, medium, low, or info.")
-    })
+    value.parse::<Severity>().map_err(|e| e.to_string())
 }
 
 #[derive(Debug)]

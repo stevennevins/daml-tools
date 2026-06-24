@@ -4,9 +4,20 @@
 workspace. It owns source presentation around `daml-parser`: diagnostics, line
 mapping, UTF-16 offsets, token/trivia access, and parser span conversion.
 
+## Public dependencies
+
+`daml-parser` and `text-size` are intentional public dependencies: parser AST,
+lexer, and layout types plus `TextRange`/`TextSize` appear in this crate's public
+API. SemVer for `daml-syntax` includes compatible major versions of those crates
+when upgrading.
+
+## Quick start
+
 ```rust
+use daml_syntax::{LineNumber, SourceFile};
+
 let source = "module M where\nfoo : Int\nfoo = 1\n";
-let file = daml_syntax::SourceFile::parse(source);
+let file = SourceFile::parse(source);
 
 assert!(file.diagnostics().is_empty());
 assert_eq!(file.module().name, "M");
@@ -17,8 +28,13 @@ For callers that only need lexer, trivia, or laid-out token facts, use the
 lighter tokenized surface:
 
 ```rust
-let tokens = daml_syntax::SourceTokens::lex(source);
+use daml_syntax::SourceTokens;
+
+let source = "module M where\nfoo : Int\nfoo = 1\n";
+let tokens = SourceTokens::lex(source);
 
 assert!(tokens.lex_errors().is_empty());
 assert!(!tokens.laid_out_tokens().is_empty());
 ```
+
+README examples are also compile-tested via `cargo test -p daml-syntax --doc`.

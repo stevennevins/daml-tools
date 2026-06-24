@@ -51,6 +51,7 @@ impl std::str::FromStr for OutputFormat {
 /// A parse/lex diagnostic surfaced to the caller alongside findings. A file
 /// with parse errors is NOT clean, even when no findings were produced.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ParseError {
     pub file: String,
     pub line: usize,
@@ -60,6 +61,28 @@ pub struct ParseError {
     pub message: String,
     /// Recovery category tag (e.g. `skipped-declaration`, `unsupported-syntax`).
     pub category: ParseDiagnosticCategory,
+}
+
+impl ParseError {
+    /// Construct a parse error without relying on struct literal syntax.
+    #[must_use]
+    pub fn new(
+        file: impl Into<String>,
+        line: usize,
+        column: usize,
+        end_column: Option<usize>,
+        message: impl Into<String>,
+        category: ParseDiagnosticCategory,
+    ) -> Self {
+        Self {
+            file: file.into(),
+            line,
+            column,
+            end_column,
+            message: message.into(),
+            category,
+        }
+    }
 }
 
 /// Format lint `findings` and parse errors into a stable output text format.
@@ -155,7 +178,7 @@ fn format_sarif(findings: &[Finding], parse_errors: &[ParseError]) -> String {
                 "driver": {
                     "name": "daml-lint",
                     "version": env!("CARGO_PKG_VERSION"),
-                    "informationUri": "https://github.com/example/daml-lint",
+                    "informationUri": env!("CARGO_PKG_REPOSITORY"),
                     "rules": rules,
                 }
             },
@@ -386,14 +409,14 @@ mod tests {
     use crate::detector::FindingLocation;
 
     fn parse_err() -> ParseError {
-        ParseError {
-            file: "Bad.daml".to_string(),
-            line: 3,
-            column: 5,
-            end_column: Some(11),
-            message: "unterminated string literal".to_string(),
-            category: ParseDiagnosticCategory::LexicalError,
-        }
+        ParseError::new(
+            "Bad.daml",
+            3,
+            5,
+            Some(11),
+            "unterminated string literal",
+            ParseDiagnosticCategory::LexicalError,
+        )
     }
 
     fn finding(location: usize, severity: Severity) -> Finding {
@@ -490,6 +513,16 @@ mod tests {
         );
         // Parse errors are notifications, not findings.
         assert_eq!(sarif["runs"][0]["results"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn sarif_driver_information_uri_matches_crate_repository_not_placeholder() {
+        let sarif: serde_json::Value = serde_json::from_str(&format_sarif(&[], &[])).unwrap();
+        let uri = sarif["runs"][0]["tool"]["driver"]["informationUri"]
+            .as_str()
+            .unwrap();
+        assert_eq!(uri, env!("CARGO_PKG_REPOSITORY"));
+        assert!(!uri.contains("example/daml-lint"));
     }
 
     #[test]
