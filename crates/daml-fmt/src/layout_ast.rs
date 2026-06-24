@@ -64,7 +64,7 @@ pub fn format_ast(src: &str, options: crate::FormatOptions) -> String {
     // Step 2: layout-organizing rewrites that intentionally change layout
     // tokens while preserving the non-layout token stream. Import organization
     // is controlled separately because it reorders import declarations.
-    if options.import_order == ImportOrder::Organize {
+    if options.import_order() == ImportOrder::Organize {
         base = organize_imports(&base);
     }
     base = rewrite_layout_forms(&base);
@@ -277,8 +277,8 @@ pub fn coverage(src: &str) -> crate::FormatCoverage {
         + con_with_edits(src, module).len()
         + template_edits(src, module).len();
     crate::FormatCoverage {
-        formatted,
-        total: modeled_construct_count(module),
+        edit_candidates: formatted,
+        modeled_constructs: modeled_construct_count(module),
     }
 }
 
@@ -966,6 +966,13 @@ fn has_trailing_with_comment(src: &str) -> bool {
     })
 }
 
+#[derive(Clone, Copy)]
+struct BorrowedImport<'a> {
+    group: u8,
+    module_name: &'a str,
+    text: &'a str,
+}
+
 fn organize_imports(src: &str) -> String {
     let source_file = SourceFile::parse(src);
     let module = source_file.module();
@@ -993,38 +1000,40 @@ fn organize_imports(src: &str) -> String {
         return src.to_string();
     }
 
-    let mut imports: Vec<_> = module
+    let mut imports: Vec<BorrowedImport<'_>> = module
         .imports
         .iter()
-        .map(|imp| {
-            (
-                import_group(&imp.module_name),
-                imp.module_name.clone(),
-                src[imp.span.start..imp.span.end].trim().to_string(),
-            )
+        .map(|imp| BorrowedImport {
+            group: import_group(&imp.module_name),
+            module_name: &imp.module_name,
+            text: src[imp.span.start..imp.span.end].trim(),
         })
         .collect();
-    imports.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+    imports.sort_by(|a, b| {
+        a.group
+            .cmp(&b.group)
+            .then_with(|| a.module_name.cmp(b.module_name))
+            .then_with(|| a.text.cmp(b.text))
+    });
 
-    let original: Vec<_> = module
+    let order_unchanged = module
         .imports
         .iter()
-        .map(|imp| src[imp.span.start..imp.span.end].trim().to_string())
-        .collect();
-    let sorted: Vec<_> = imports.iter().map(|(_, _, text)| text.clone()).collect();
-    if original == sorted {
+        .zip(&imports)
+        .all(|(imp, sorted)| sorted.text == src[imp.span.start..imp.span.end].trim());
+    if order_unchanged {
         return src.to_string();
     }
 
     let mut text = String::new();
     let mut prev_group = None;
-    for (group, _, import) in imports {
-        if prev_group.is_some_and(|g| g != group) {
+    for entry in imports {
+        if prev_group.is_some_and(|g| g != entry.group) {
             text.push('\n');
         }
-        text.push_str(&import);
+        text.push_str(entry.text);
         text.push('\n');
-        prev_group = Some(group);
+        prev_group = Some(entry.group);
     }
 
     let mut out = String::with_capacity(src.len());
@@ -1881,6 +1890,7 @@ const fn body_decl_span(d: &TemplateBodyDecl) -> Span {
         | TemplateBodyDecl::Other { span, .. } => *span,
         TemplateBodyDecl::Choice(c) => c.span,
         TemplateBodyDecl::InterfaceInstance(i) => i.span,
+        _ => Span::new(0, 0),
     }
 }
 
@@ -3178,5 +3188,20 @@ mod tests {
         assert!(out.ends_with("\r\n"), "got: {out:?}");
         assert!(!out.ends_with("\n\n"));
         assert_eq!(format_ast(&out), out); // idempotent
+    }
+
+    #[test]
+    fn organize_imports_leaves_sorted_block_byte_identical() {
+        // Already-canonical import order must round-trip without rewriting the
+        // import block, even when extra blank lines sit between groups.
+        let src = "module M where\n\nimport Daml.Script\n\nimport DA.List\nimport DA.Optional\n\nx = []\n";
+        assert_eq!(organize_imports(src), src);
+    }
+
+    #[test]
+    fn organize_imports_groups_and_sorts_changed_blocks() {
+        let src = "module M where\n\nimport My.App\nimport DA.Optional\nimport Daml.Script\nimport DA.List\n\nx = []\n";
+        let want = "module M where\n\nimport Daml.Script\n\nimport DA.List\nimport DA.Optional\n\nimport My.App\n\nx = []\n";
+        assert_eq!(organize_imports(src), want);
     }
 }

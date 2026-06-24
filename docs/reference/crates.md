@@ -47,10 +47,10 @@ stay aligned.
 
 | Crate | Version | Kind | Package description |
 |-------|---------|------|---------------------|
-| [`daml-parser`](../../crates/daml-parser) | `0.6.2` | library | Lossless lexer, layout resolver, and parser for the Daml smart-contract language. |
-| [`daml-syntax`](../../crates/daml-syntax) | `0.5.0` | library | Shared parsed-source surface for Daml tools. |
+| [`daml-parser`](../../crates/daml-parser) | `0.7.0` | library | Lossless lexer, layout resolver, and parser for the Daml smart-contract language. |
+| [`daml-syntax`](../../crates/daml-syntax) | `0.6.0` | library | Shared parsed-source surface for Daml tools. |
 | [`daml-lint`](../../crates/daml-lint) | `0.7.0` | library and CLI | Static analysis scanner for Daml smart contracts. |
-| [`daml-fmt`](../../crates/daml-fmt) | `0.4.2` | library and CLI | Canonical code formatter for the Daml smart-contract language, built on shared syntax. |
+| [`daml-fmt`](../../crates/daml-fmt) | `0.5.0` | library and CLI | Canonical code formatter for the Daml smart-contract language, built on shared syntax. |
 
 ### Per-crate docs.rs URLs
 
@@ -103,7 +103,7 @@ README: [`crates/daml-syntax/README.md`](../../crates/daml-syntax/README.md)
 | `SourceFile` | Parsed source plus diagnostics, line index, tokens, trivia, laid-out tokens, and parser-span conversion. |
 | `SourceTokens` | Tokenized source for callers that need tokens, trivia, lex errors, or laid-out tokens without a full parse. |
 | `LineIndex` | Byte, line/column, and UTF-16 offset mapping over one source string. |
-| `Diagnostic` | Parser diagnostic with source range, line/column, message, and category. |
+| `Diagnostic` | Parser diagnostic with source range, line/column, message, and category. Read through accessors; constructed by `SourceFile::parse`. |
 | `ByteLineCol`, `CharLineCol` | 1-based line/column pairs that distinguish byte columns from Unicode scalar columns. |
 | `TextRange`, `TextSize` | Re-exported `text-size` range and offset types used by public range APIs. |
 
@@ -125,12 +125,13 @@ features.
 |---------|---------|---------|
 | `cli` | Yes | The clap-based `daml-lint` binary dependency. |
 | `js-runtime` | Yes | QuickJS-backed rule runtime for shipped built-ins. |
-| `custom-rules` | Yes | User-provided JavaScript AST rule loading through `--rules` and configured plugin packages when `js-runtime` is enabled. |
+| `custom-rules` | Yes | User-provided JavaScript AST rule loading through `--rules` and configured plugin packages; implies `js-runtime`. |
 | `default` | Yes | `cli`, `js-runtime`, and `custom-rules`. |
 
-The `daml-lint` binary requires both `cli` and `js-runtime`. The
-`custom-rules` feature enables the external rule loading surface; it does not
-enable QuickJS by itself. Shipped built-ins are authored in TypeScript and
+The `daml-lint` binary requires both `cli` and `js-runtime`. The `cli` feature
+implies `js-runtime`. The `custom-rules` feature implies `js-runtime` and
+enables the external rule loading surface beyond shipped built-ins. Shipped
+built-ins are authored in TypeScript and
 embedded as generated JavaScript; no TypeScript toolchain is required at
 runtime. With `default-features = false`, the crate provides parser lowering
 and the rule-facing IR without pulling in clap or QuickJS.
@@ -184,17 +185,17 @@ README: [`crates/daml-fmt/README.md`](../../crates/daml-fmt/README.md)
 |------|------------|-------------|
 | `format_source(src: &str) -> String` | Public | Formats Daml source with the AST-driven formatter. |
 | `format_source_with_options(src: &str, options: FormatOptions) -> String` | Public | Formats Daml source with explicit formatter options. |
-| `FormatOptions` | Public | Formatter switches. Prefer `Default`/`new()`/`with_*` for forward-compatible construction; struct literals remain supported while the option set is tiny. |
+| `FormatOptions` | Public | Formatter switches. Prefer `Default`/`new()`/`with_*` for forward-compatible construction. |
 | `ImportOrder` | Public | Import ordering strategy (`Organize` default, `Preserve` via CLI `--preserve-import-order`). `#[non_exhaustive]`. |
 | `lex_diagnostics(src: &str) -> Vec<String>` | Public | Returns lexer diagnostic strings for malformed source. |
+| `FormatCoverage` | Public | Structural edit-candidate and modeled-construct counts from `coverage`. Read through `edit_candidates()` and `modeled_constructs()`. |
 | `coverage(src: &str) -> FormatCoverage` | Public | Counts formatter structural edit candidates over modeled constructs. |
 
 The formatter backend is implemented in the private `layout_ast` module.
 
 `ImportOrder` is `#[non_exhaustive]` so new strategies can be added without
-breaking downstream `match` arms. `FormatOptions` stays an exhaustive struct:
-public fields plus `Default`/`new()` and `with_*` helpers are the supported
-construction path when new defaulted fields appear.
+breaking downstream `match` arms. `FormatOptions` keeps fields private and adds
+new switches through `Default`/`new()` plus `with_*` helpers.
 
 ### Binaries
 

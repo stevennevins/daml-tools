@@ -41,7 +41,10 @@ export type ImportStyle = "qualified" | "unqualified";
 
 /** Structured DAML type AST. Source spans support diagnostics and exact
  *  `module.source` slicing. Unknown/unparseable types are represented as null
- *  at the field that carries the type. */
+ *  at the field that carries the type.
+ *
+ *  - Lit: type-level literals such as `HasField "cid"` field names; kind and
+ *    value mirror expression literals. */
 export type TypeNode =
   | { Con: { qualifier: string | null; name: string; span: SourceSpan } }
   | { App: { head: TypeNode; args: TypeNode[]; span: SourceSpan } }
@@ -50,7 +53,8 @@ export type TypeNode =
   | { Fun: { param: TypeNode; result: TypeNode; span: SourceSpan } }
   | { Var: { name: string; span: SourceSpan } }
   | { Unit: { span: SourceSpan } }
-  | { Constrained: { body: TypeNode; span: SourceSpan } };
+  | { Constrained: { body: TypeNode; span: SourceSpan } }
+  | { Lit: { kind: "Int" | "Decimal" | "Text" | "Char"; value: string; span: SourceSpan } };
 
 /** Expression AST. Tagged unions: use the key as discriminant, e.g.
  *  `if ("BinOp" in e && e.BinOp.op === "/") { ... }`.

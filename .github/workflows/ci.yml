@@ -125,6 +125,19 @@ jobs:
             "${bin}" --version
           done
 
+  # Prove published crate tarballs compile against crates.io dependency versions.
+  # daml-parser always verifies; downstream crates verify once the workspace
+  # parser version is on crates.io (see scripts/check-package.sh).
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: package verification
+        run: bash scripts/check-package.sh
+
   # License + advisory policy (see deny.toml).
   cargo-deny:
     runs-on: ubuntu-latest

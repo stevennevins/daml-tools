@@ -8,8 +8,10 @@
 //! bytes exactly. The linter ignores trivia and reads meaning; the formatter
 //! keeps trivia and re-prints layout. One tree, two readers.
 //!
-//! Start at [`parse::parse_module`]. For byte-faithful reconstruction from the
-//! parse tree, see [`ast_span::render_from_ast`] and [`lexer::render_lossless`].
+//! Start at [`parse::parse_module`] for tolerant parsing, or
+//! [`parse::parse_module_strict`] when any diagnostic should fail the caller.
+//! For byte-faithful reconstruction from the parse tree, see
+//! [`ast_span::render_from_ast`] and [`lexer::render_lossless`].
 //!
 //! ## API posture
 //!

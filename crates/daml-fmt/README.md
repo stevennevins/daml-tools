@@ -41,15 +41,16 @@ imports; use `--preserve-import-order` when package identity stability matters.
 
 ## Documentation
 
-The workspace docs split task guides, reference, and design background:
+The workspace documentation is organized under
+[`docs`](https://github.com/stevennevins/daml-tools/blob/main/docs/README.md):
 
-- [Format Daml source](../../docs/how-to/format-daml.md) for CLI usage patterns
-- [Verify a formatter change](../../docs/how-to/verify-formatter-change.md) for
+- [Format Daml source](https://github.com/stevennevins/daml-tools/blob/main/docs/how-to/format-daml.md) for CLI usage patterns
+- [Verify a formatter change](https://github.com/stevennevins/daml-tools/blob/main/docs/how-to/verify-formatter-change.md) for
   corpus, baseline, and audit commands
-- [CLI reference](../../docs/reference/cli.md) for options and exit codes
-- [Crate reference](../../docs/reference/crates.md) for features, binaries, and
+- [CLI reference](https://github.com/stevennevins/daml-tools/blob/main/docs/reference/cli.md) for options and exit codes
+- [Crate reference](https://github.com/stevennevins/daml-tools/blob/main/docs/reference/crates.md) for features, binaries, and
   public API
-- [Formatter verification model](../../docs/explanation/formatter-verification.md)
+- [Formatter verification model](https://github.com/stevennevins/daml-tools/blob/main/docs/explanation/formatter-verification.md)
   for the token/desugar/idempotence safety story
 
 ## Build & install
@@ -106,12 +107,10 @@ let preserved = format_source_with_options(
 ```
 
 `ImportOrder` is `#[non_exhaustive]` for forward-compatible `match` arms.
-`FormatOptions` stays an exhaustive struct with public fields: with one option
-today, `Default`/`new()` plus `with_*` helpers are simpler than
-`#[non_exhaustive]` (which would break struct literals) or a dedicated builder.
-New formatter switches will add defaulted fields and matching `with_*` methods.
+`FormatOptions` uses private fields: construct options with `Default`/`new()` and
+`with_*` helpers so new switches can ship with defaults without breaking callers.
 
-See [crate reference](../../docs/reference/crates.md) for the full public API.
+See [crate reference](https://github.com/stevennevins/daml-tools/blob/main/docs/reference/crates.md) for the full public API.
 
 ## Workspace-Only Tests
 
@@ -144,7 +143,7 @@ Review-oriented full-corpus audit packets:
 npm run audit                       # writes target/daml-fmt-audit
 ```
 
-See `docs/audit-workflow.md` for the 25-sample subagent review workflow.
+See [audit workflow](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-fmt/docs/audit-workflow.md) for the 25-sample subagent review workflow.
 
 The structural candidate metric (edit candidates over modeled constructs):
 

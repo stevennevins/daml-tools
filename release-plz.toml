@@ -4,6 +4,11 @@
 # from its own conventional-commit history (the parser stays boring and stable;
 # the two CLIs bump faster). release-plz publishes in dependency order, so
 # daml-parser reaches crates.io before daml-lint and daml-fmt.
+#
+# Before merging a release PR that raises workspace dependency lower bounds,
+# run `scripts/check-package.sh`. Downstream `cargo package --verify` only
+# succeeds once the raised parser version is on crates.io; CI uses the same
+# script and skips downstream verification until then.
 
 [workspace]
 # Maintain a CHANGELOG.md per crate from conventional commits.
