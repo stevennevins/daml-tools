@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- *(daml-lint)* `parse_daml_with_diagnostics` returns named `ParseResult` with stable `ParseDiagnosticCategory` tags instead of a tuple and parser-internal categories.
+- *(daml-lint)* `.daml-lint.json` rule settings accept only canonical severities (`off`, `critical`, `high`, `medium`, `low`, `info`); legacy `warn`/`error` aliases and numeric shortcuts are rejected.
+- *(daml-lint)* severity thresholds and report ordering use explicit `Severity::rank` / `meets_or_exceeds` semantics.
+
 ## [0.6.2](https://github.com/stevennevins/daml-tools/compare/daml-lint-v0.6.1...daml-lint-v0.6.2) - 2026-06-24
 
 ### Fixed

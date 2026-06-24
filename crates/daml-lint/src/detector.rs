@@ -459,6 +459,14 @@ mod tests {
     }
 
     #[test]
+    fn severity_ord_follows_enum_order_not_risk_rank() {
+        // `Ord` follows declaration order (Critical is the smallest variant).
+        // Callers sorting or gating by risk must use `rank()` / `meets_or_exceeds`.
+        assert!(Severity::Critical < Severity::Info);
+        assert!(Severity::High < Severity::Low);
+    }
+
+    #[test]
     fn severity_rank_is_explicitly_risk_ordered() {
         assert!(Severity::Critical.rank() > Severity::High.rank());
         assert!(Severity::High.rank() > Severity::Medium.rank());

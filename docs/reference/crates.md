@@ -107,7 +107,7 @@ stable.
 | `detectors` | Built-in detector registration through `create_builtin_detectors` when `js-runtime` is enabled. |
 | `detectors::script` | JavaScript rule runtime support when `js-runtime` is enabled; file loading is available with `custom-rules`. |
 | `ir` | Rule-facing Daml intermediate representation. |
-| `parser` | Lowering from `daml-syntax` parsed source to the linter IR, including parse diagnostics. |
+| `parser` | Lowering from `daml-syntax` parsed source to the linter IR. Key types: `parse_daml_with_diagnostics`, `ParseResult` (`module`, `diagnostics`), `ParseDiagnostic`, and stable `ParseDiagnosticCategory` tags (`lexical-error`, `malformed`, `unsupported-syntax`, …). |
 | `reporter` | Markdown, JSON, and SARIF report formatting plus exit-code support. |
 
 ### Built-in detectors
