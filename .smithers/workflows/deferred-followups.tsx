@@ -343,7 +343,7 @@ export default smithers((ctx) => (
       <Task
         id="deferred-followups:scope"
         output={outputs.scope}
-        agent={agents.smartTool}
+        agent={agents.smart}
         timeoutMs={1_800_000}
         heartbeatTimeoutMs={600_000}
       >
@@ -374,7 +374,7 @@ export default smithers((ctx) => (
       <Task
         id="deferred-followups:validate"
         output={outputs.validation}
-        agent={agents.smartTool}
+        agent={agents.smart}
         needs={allFollowUpNeeds()}
         deps={allFollowUpDeps()}
         timeoutMs={3_600_000}
