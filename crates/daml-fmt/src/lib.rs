@@ -50,11 +50,8 @@
 //!
 //! This crate is pre-1.0. [`ImportOrder`] is `#[non_exhaustive]` so downstream
 //! `match` arms stay forward-compatible when new import strategies appear.
-//! [`FormatOptions`] stays an exhaustive struct: with one behavior switch today,
-//! public fields plus [`Default`]/[`FormatOptions::new`] and `with_*` helpers are
-//! simpler than `#[non_exhaustive]` (which would break struct literals per Cargo
-//! `SemVer`) or a dedicated builder type. New options will add fields with defaults
-//! and matching `with_*` methods.
+//! [`FormatOptions`] uses private fields and `with_*` helpers so new switches can
+//! ship with defaults without breaking downstream struct literals.
 
 // AST-driven layout (own-design canonical layout). This is the shipping
 // backend. See src/layout_ast.rs.
@@ -101,10 +98,10 @@ pub fn source_diagnostics(src: &str) -> Vec<String> {
         .map(|diagnostic| {
             format!(
                 "{}:{}: [{}] {}",
-                diagnostic.line.get(),
-                diagnostic.column.get(),
-                diagnostic.category.as_str(),
-                diagnostic.message
+                diagnostic.line().get(),
+                diagnostic.column().get(),
+                diagnostic.category().as_str(),
+                diagnostic.message()
             )
         })
         .collect()
@@ -131,8 +128,7 @@ pub enum ImportOrder {
 ///
 /// Prefer [`Default`], [`FormatOptions::new`], or the `with_*` helpers when
 /// constructing options so new fields can ship with defaults without breaking
-/// call sites. Struct literals and field updates remain supported while the
-/// option set stays small and exhaustive.
+/// call sites.
 ///
 /// # Examples
 ///
@@ -140,26 +136,14 @@ pub enum ImportOrder {
 /// use daml_fmt::{FormatOptions, ImportOrder};
 ///
 /// let from_default = FormatOptions::default();
-/// let from_builder = FormatOptions::new().with_import_order(ImportOrder::Preserve);
-/// let from_literal = FormatOptions {
-///     import_order: ImportOrder::Preserve,
-/// };
+/// let preserved = FormatOptions::new().with_import_order(ImportOrder::Preserve);
 ///
-/// assert_eq!(from_builder, from_literal);
-/// assert_ne!(from_default, from_builder);
+/// assert_eq!(preserved.import_order(), ImportOrder::Preserve);
+/// assert_ne!(from_default.import_order(), preserved.import_order());
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FormatOptions {
-    /// How formatter handles import declarations:
-    ///
-    /// * `Organize` groups/sorts imports into canonical formatter order.
-    /// * `Preserve` keeps original declaration order.
-    ///
-    /// Reordering imports can change package identity even when the source-level
-    /// declarations denote the same imports; use `--preserve-import-order` in the
-    /// CLI when package identity stability matters more than import
-    /// organization.
-    pub import_order: ImportOrder,
+    import_order: ImportOrder,
 }
 
 impl Default for FormatOptions {
@@ -176,6 +160,19 @@ impl FormatOptions {
         Self {
             import_order: ImportOrder::Organize,
         }
+    }
+
+    /// How the formatter handles import declarations.
+    ///
+    /// * [`ImportOrder::Organize`] groups/sorts imports into canonical formatter order.
+    /// * [`ImportOrder::Preserve`] keeps original declaration order.
+    ///
+    /// Reordering imports can change package identity even when the source-level
+    /// declarations denote the same imports; use `--preserve-import-order` in the
+    /// CLI when package identity stability matters more than import organization.
+    #[must_use]
+    pub const fn import_order(self) -> ImportOrder {
+        self.import_order
     }
 
     #[must_use]
@@ -202,10 +199,29 @@ pub fn format_source_with_options(src: &str, options: FormatOptions) -> String {
     layout_ast::format_ast(src, options)
 }
 
+/// Structural formatter coverage over modeled constructs.
+///
+/// This is not a normalized ratio: one construct can produce multiple edit
+/// candidates, and on an already-canonical corpus most modeled constructs are
+/// no-ops.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FormatCoverage {
-    pub formatted: usize,
-    pub total: usize,
+    edit_candidates: usize,
+    modeled_constructs: usize,
+}
+
+impl FormatCoverage {
+    /// Count of structural edit candidates the formatter would apply.
+    #[must_use]
+    pub const fn edit_candidates(self) -> usize {
+        self.edit_candidates
+    }
+
+    /// Count of modeled constructs walked by the coverage metric.
+    #[must_use]
+    pub const fn modeled_constructs(self) -> usize {
+        self.modeled_constructs
+    }
 }
 
 /// Count AST formatter structural edit candidates over modeled constructs.
@@ -437,13 +453,25 @@ mod tests {
     fn format_options_can_be_created_and_built() {
         let options = FormatOptions::new().with_import_order(ImportOrder::Preserve);
 
-        assert_eq!(options.import_order, ImportOrder::Preserve);
-        assert_eq!(
-            options,
-            FormatOptions {
-                import_order: ImportOrder::Preserve,
-            }
+        assert_eq!(options.import_order(), ImportOrder::Preserve);
+    }
+
+    #[test]
+    fn format_coverage_counts_modeled_constructs_independently_of_edit_candidates() {
+        let canonical = "module M where\nmain = do\n  pass\n";
+        let canonical_coverage = coverage(canonical);
+        assert!(
+            canonical_coverage.modeled_constructs() >= 1,
+            "do expressions are counted as modeled constructs"
         );
+
+        let messy = "module M where\nmain = do\n    pass\n";
+        let messy_coverage = coverage(messy);
+        assert!(
+            messy_coverage.edit_candidates() > 0,
+            "over-indented do body should surface structural edit candidates"
+        );
+        assert!(messy_coverage.modeled_constructs() >= 1);
     }
 
     #[test]
@@ -566,11 +594,9 @@ mod tests {
             }
             // Lex errors drop bytes by design; losslessness is only promised for
             // files that lex clean (all 924 do).
-            if source_file
-                .diagnostics()
-                .iter()
-                .all(|diagnostic| diagnostic.category != daml_parser::ast::DiagnosticCategory::Lex)
-            {
+            if source_file.diagnostics().iter().all(|diagnostic| {
+                diagnostic.category() != daml_parser::ast::DiagnosticCategory::Lex
+            }) {
                 if let Err(e) = daml_parser::lexer::render_lossless(
                     &src,
                     source_file.tokens(),

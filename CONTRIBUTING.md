@@ -59,7 +59,14 @@ cargo test --workspace --all-features --locked
 for package in daml-parser daml-lint daml-fmt; do
   cargo semver-checks check-release --package "$package"
 done
+bash scripts/check-package.sh
 ```
+
+`scripts/check-package.sh` runs `cargo package --verify` for every published
+crate. `daml-parser` always verifies because it has no internal registry
+dependencies. Downstream crates verify only after the workspace `daml-parser`
+version is on crates.io, so a raised parser lower bound is published before
+`daml-lint` or `daml-fmt` package verification can pass.
 
 The formatter `npm test` command runs `node test/diff.js`, the same 924-file
 differential test used by the pre-push hook.
@@ -69,8 +76,15 @@ differential test used by the pre-push hook.
 When changing shipped lint rules or rule generation, check the generated rules:
 
 ```sh
-(cd crates/daml-lint && npm ci && npm run check:rules)
+bash scripts/check-lint-rules.sh
 ```
+
+`scripts/check-lint-rules.sh` runs `npm run check:rules` from `crates/daml-lint`.
+The npm gate ends with `git diff --exit-code` over generated rule artifacts, so the
+wrapper temporarily stages those paths before the diff and restores the index on
+exit. That proves TypeScript custom-rule contracts and regenerated outputs are in
+sync during review even when `examples/daml-lint.d.ts` and
+`lint-plugin/dist/index.d.ts` are intentionally uncommitted.
 
 When changing `daml-lint` feature flags or optional runtime code, run the
 feature split tested by CI:

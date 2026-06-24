@@ -143,11 +143,11 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> ParseResult {
         .diagnostics()
         .iter()
         .map(|d| ParseDiagnostic {
-            line: d.line.get(),
-            column: d.column.get(),
-            end_column: d.end_column.map(Coordinate::get),
-            message: d.message.clone(),
-            category: ParseDiagnosticCategory::from_parser_category(d.category),
+            line: d.line().get(),
+            column: d.column().get(),
+            end_column: d.end_column().map(Coordinate::get),
+            message: d.message().to_owned(),
+            category: ParseDiagnosticCategory::from_parser_category(d.category()),
         })
         .collect();
     ParseResult {
@@ -358,7 +358,7 @@ fn lower_template(t: &ast::TemplateDecl, file: &Path, source_file: &SourceFile) 
                     span: span_at(file, ii.pos),
                 });
             }
-            TemplateBodyDecl::Other { .. } => {}
+            _ => {}
         }
     }
 

@@ -436,6 +436,7 @@ pub struct FieldDecl {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Consuming {
     Consuming,
     NonConsuming,
@@ -461,6 +462,7 @@ pub struct ChoiceDecl {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TemplateBodyDecl {
     Signatory {
         parties: Vec<Expr>,
@@ -642,7 +644,12 @@ impl DiagnosticCategory {
     }
 }
 
-/// Parse diagnostic — never fatal; the scan continues.
+/// Parse diagnostic — never fatal under tolerant parsing.
+///
+/// Under [`crate::parse::parse_module`] the scan continues. Strict callers that
+/// use [`crate::parse::parse_module_strict`] or
+/// [`crate::parse::ParseModuleResult::into_result`] treat any diagnostic as
+/// [`crate::parse::ParseModuleError`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseDiagnostic {
     pub message: String,

@@ -73,7 +73,9 @@ fn main() {
                     mode = Mode::Check;
                 }
             }
-            "--preserve-import-order" => options.import_order = ImportOrder::Preserve,
+            "--preserve-import-order" => {
+                options = options.with_import_order(ImportOrder::Preserve);
+            }
             "-h" | "--help" => usage(0),
             "-v" | "--version" => {
                 println!("{}", env!("CARGO_PKG_VERSION"));

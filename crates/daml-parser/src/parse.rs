@@ -17,6 +17,51 @@ pub struct ParseModuleResult {
     pub diagnostics: Vec<ParseDiagnostic>,
 }
 
+/// Recoverable parse failure for strict callers.
+///
+/// Produced when [`parse_module_strict`] or [`ParseModuleResult::into_result`]
+/// reject a tolerant [`parse_module`] result because diagnostics were recorded.
+/// The partial module tree is retained for inspection but is not considered a
+/// successful parse.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseModuleError {
+    diagnostics: Vec<ParseDiagnostic>,
+    module: Box<Module>,
+}
+
+impl ParseModuleError {
+    #[must_use]
+    pub fn diagnostics(&self) -> &[ParseDiagnostic] {
+        &self.diagnostics
+    }
+
+    #[must_use]
+    pub fn module(&self) -> &Module {
+        &self.module
+    }
+
+    #[must_use]
+    pub fn into_parts(self) -> (Vec<ParseDiagnostic>, Module) {
+        (self.diagnostics, *self.module)
+    }
+}
+
+impl std::fmt::Display for ParseModuleError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "parse failed with {} diagnostic(s)",
+            self.diagnostics.len()
+        )?;
+        if let Some(first) = self.diagnostics.first() {
+            write!(f, ": {}", first.message)?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for ParseModuleError {}
+
 #[derive(Clone, Copy, Debug)]
 enum DoExpressionMode {
     Allow,
@@ -38,6 +83,22 @@ impl ParseModuleResult {
     #[must_use]
     pub fn into_parts(self) -> (Module, Vec<ParseDiagnostic>) {
         (self.module, self.diagnostics)
+    }
+
+    /// Convert a tolerant parse result into a strict [`Result`].
+    ///
+    /// Returns [`Ok`] only when [`Self::diagnostics`] is empty. Any diagnostic —
+    /// lexical, malformed, skipped declaration, unsupported syntax, or
+    /// recursion-limit degradation — becomes [`Err`].
+    pub fn into_result(self) -> Result<Module, ParseModuleError> {
+        if self.diagnostics.is_empty() {
+            Ok(self.module)
+        } else {
+            Err(ParseModuleError {
+                diagnostics: self.diagnostics,
+                module: Box::new(self.module),
+            })
+        }
     }
 }
 
@@ -85,6 +146,27 @@ pub fn parse_module(source: &str) -> ParseModuleResult {
         module,
         diagnostics: p.diags,
     }
+}
+
+/// Parse Daml `source` into a [`Module`], treating any diagnostic as failure.
+///
+/// This is a thin wrapper over [`parse_module`] followed by
+/// [`ParseModuleResult::into_result`]. Use it for build/CI paths that must not
+/// proceed on recoverable parse problems. For editors, formatters, and other
+/// tools that need partial structure plus diagnostics, keep using
+/// [`parse_module`].
+///
+/// ```
+/// use daml_parser::parse::parse_module_strict;
+///
+/// let module = parse_module_strict("module M where\nfoo : Int\nfoo = 1\n").unwrap();
+/// assert_eq!(module.name, "M");
+///
+/// let err = parse_module_strict("module M where\n%%% junk\n").unwrap_err();
+/// assert!(!err.diagnostics().is_empty());
+/// ```
+pub fn parse_module_strict(source: &str) -> Result<Module, ParseModuleError> {
+    parse_module(source).into_result()
 }
 
 struct Parser {
@@ -3834,5 +3916,54 @@ f = case do 1 of
             .first()
             .unwrap_or_else(|| panic!("missing equation for function {name}"));
         &first_equation.body
+    }
+}
+
+#[cfg(test)]
+mod strict_parse_tests {
+    use super::*;
+    use crate::ast::DiagnosticCategory;
+
+    #[test]
+    fn strict_parse_accepts_clean_module() {
+        let src = "module M where\nfoo : Int\nfoo = 1\n";
+        let module = parse_module_strict(src).expect("clean source must parse strictly");
+        assert_eq!(module.name, "M");
+    }
+
+    #[test]
+    fn strict_parse_rejects_malformed_source_while_tolerant_parse_keeps_diagnostics() {
+        let src = "module M where\nf x | x > 0\ng = 1\n";
+        let tolerant = parse_module(src);
+        assert!(
+            tolerant
+                .diagnostics
+                .iter()
+                .any(|d| d.category == DiagnosticCategory::Malformed),
+            "tolerant parse must record malformed guard without aborting"
+        );
+
+        let err = parse_module_strict(src).expect_err("malformed guard must fail strict parse");
+        assert_eq!(err.diagnostics(), &tolerant.diagnostics);
+        assert!(
+            err.module()
+                .decls
+                .iter()
+                .any(|decl| matches!(decl, Decl::Function(f) if f.name == "g")),
+            "strict error should still carry the partial module tolerant parsing produced"
+        );
+    }
+
+    #[test]
+    fn into_result_matches_parse_module_strict() {
+        let src = "module M where\n%%% junk\n";
+        let tolerant = parse_module(src);
+        assert!(!tolerant.diagnostics.is_empty());
+
+        let strict = parse_module_strict(src).expect_err("junk decl must fail strict parse");
+        let converted = tolerant
+            .into_result()
+            .expect_err("same diagnostics via into_result");
+        assert_eq!(strict.diagnostics(), converted.diagnostics());
     }
 }

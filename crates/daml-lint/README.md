@@ -81,7 +81,7 @@ The default features build the published CLI and custom-rule engine:
 
 ```toml
 [dependencies]
-daml-lint = "0.2"
+daml-lint = "0.7"
 ```
 
 Library consumers that only need parser lowering and the rule-facing IR can
@@ -89,16 +89,16 @@ avoid the CLI parser and QuickJS runtime:
 
 ```toml
 [dependencies]
-daml-lint = { version = "0.2", default-features = false }
+daml-lint = { version = "0.7", default-features = false }
 ```
 
 The `js-runtime` feature enables the QuickJS-backed runtime used by shipped
-built-ins. The `custom-rules` feature enables loading user-provided rule files
-through `--rules` when the runtime is also enabled. Shipped built-ins are
-authored in TypeScript and embedded as generated JavaScript; no TypeScript
+built-ins. The `custom-rules` feature implies `js-runtime` and enables loading
+user-provided rule files through `--rules` and configured plugin packages.
+Shipped built-ins are authored in TypeScript and embedded as generated JavaScript; no TypeScript
 toolchain is required at runtime. The shipped detectors are registered through
 `create_builtin_detectors()` rather than exposed as individual Rust detector
-modules. The `cli` feature exists for the `daml-lint` binary.
+modules. The `cli` feature enables the `daml-lint` binary and implies `js-runtime`.
 
 ## Usage
 
@@ -216,8 +216,9 @@ Statements carry a typed expression AST: `stmt.Let.value`,
 `stmt.Other.expr` are `Expr` nodes — tagged unions like
 `{ BinOp: { op: "/", lhs, rhs, span } }` with a 1-based `span` on every
 node (see the `Expr` type in the .d.ts). Type-bearing fields carry `TypeNode`
-trees such as `{ Con: { name: "Party", qualifier: null, span } }` and
-`{ App: { head, args, span } }`; type spans include `line`/`column`,
+trees such as `{ Con: { name: "Party", qualifier: null, span } }`,
+`{ App: { head, args, span } }`, and `{ Lit: { kind: "Text", value: "cid", span } }`
+for type-level literals (for example `HasField "cid"`); type spans include `line`/`column`,
 JavaScript string offsets (`start`/`end`, suitable for
 `m.source.slice(start, end)`), and parser byte offsets
 (`byte_start`/`byte_end`). Compatibility-only raw-text fields and rendered
@@ -315,7 +316,7 @@ provenance and licensing.
 ## Public API Stability
 
 `daml-lint` is pre-1.0. The CLI exit codes and documented feature flags are the
-stable user contract for 0.2.x. The rule-facing IR is intentionally public for
+stable user contract for 0.7.x. The rule-facing IR is intentionally public for
 custom rules and library users, but it may gain structure in 0.x minor releases;
 custom rules should check `ir_version` and match typed nodes rather than raw
 source substrings. Detector result types such as `Finding`, `Severity`, and

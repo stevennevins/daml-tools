@@ -598,6 +598,10 @@ function on_template(template) {
         ))
         .expect("read daml-lint.d.ts");
         assert!(dts.contains("ir_version: 4"));
+        assert!(
+            dts.contains("| { Lit: { kind:"),
+            "daml-lint.d.ts must expose TypeNode.Lit for type-level literals"
+        );
         for forbidden in [
             "body_raw",
             "raw_text",
@@ -948,6 +952,7 @@ template Probe
     parent : ContractId Probe
     scores : TextMap Int
     extra : Custom
+    hasOwner : HasField "owner" Party Party
   where
     signatory owner
     ensure amount > 0.0
@@ -1072,6 +1077,26 @@ function typeKind(t) {
   return "Scalar:" + tag;
 }
 
+function typeKinds(t, seen) {
+  if (t === null) return;
+  const tag = Object.keys(t)[0];
+  seen.add("Type:" + tag);
+  const p = t[tag];
+  if (tag === "App") {
+    typeKinds(p.head, seen);
+    for (const arg of p.args) typeKinds(arg, seen);
+  } else if (tag === "List") {
+    typeKinds(p.inner, seen);
+  } else if (tag === "Tuple") {
+    for (const item of p.items) typeKinds(item, seen);
+  } else if (tag === "Fun") {
+    typeKinds(p.param, seen);
+    typeKinds(p.result, seen);
+  } else if (tag === "Constrained") {
+    typeKinds(p.body, seen);
+  }
+}
+
 function check(m) {
   const seen = new Set();
   for (const t of m.templates) {
@@ -1089,6 +1114,7 @@ function check(m) {
     }
     for (const f of t.fields) {
       seen.add(typeKind(f.type_));
+      typeKinds(f.type_, seen);
     }
     for (const c of t.choices) {
       if (c.parameters.length > 0) seen.add("ChoiceParams");
@@ -1160,6 +1186,7 @@ function check(m) {
             "InterfaceMethod",
             "InterfaceChoice",
             "TypeSignature",
+            "Type:Lit",
             "Expr:Var",
             "Expr:Con",
             "Expr:Lit",

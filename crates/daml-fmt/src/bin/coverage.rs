@@ -55,15 +55,15 @@ fn main() {
             continue;
         };
         let coverage = coverage(&src);
-        candidates += coverage.formatted;
-        modeled += coverage.total;
-        if coverage.formatted > 0 {
+        candidates += coverage.edit_candidates();
+        modeled += coverage.modeled_constructs();
+        if coverage.edit_candidates() > 0 {
             files_with_candidates += 1;
             if list {
                 println!(
                     "CANDIDATE {} ({} structural edit(s))",
                     o.display(),
-                    coverage.formatted
+                    coverage.edit_candidates()
                 );
             }
         }

@@ -47,7 +47,7 @@ parser, one lossless tree, many consumers.
 
 ```toml
 [dependencies]
-daml-parser = "0.3"
+daml-parser = "0.6"
 ```
 
 ```rust
@@ -56,6 +56,30 @@ use daml_parser::parse::parse_module;
 let result = parse_module("module M where\nfoo : Int\nfoo = 1\n");
 assert!(result.diagnostics.is_empty());
 let module = result.module;
+```
+
+## Choosing tolerant versus strict parsing
+
+Use **`parse::parse_module`** when you need partial structure plus diagnostics —
+formatters, editors, linters, and other tools that must keep working on broken
+files. It always returns a [`ParseModuleResult`] with a [`Module`] and a
+(possibly empty) diagnostics list.
+
+Use **`parse::parse_module_strict`** or [`ParseModuleResult::into_result`] when
+any diagnostic should stop the caller — CI gates, batch analysis, or other
+fail-fast paths. Both are thin wrappers over tolerant parsing: they call
+`parse_module` and return [`Err`](`ParseModuleError`) when diagnostics are
+non-empty. The error carries the same diagnostics and partial module tree for
+inspection.
+
+```rust
+use daml_parser::parse::{parse_module, parse_module_strict};
+
+let tolerant = parse_module("module M where\n%%% junk\n");
+assert!(!tolerant.diagnostics.is_empty());
+
+let strict = parse_module_strict("module M where\n%%% junk\n");
+assert!(strict.is_err());
 ```
 
 ## Choosing a parser layer
@@ -74,6 +98,7 @@ Lower layers are public when a consumer needs more control:
 | `lexer::lex_with_trivia` | source tokens plus comments, CPP directives, blank-line trivia, and lexical diagnostics |
 | `layout::resolve_layout` | the token stream after Daml's offside rule has inserted virtual layout tokens |
 | `parse::parse_module` | a typed `ast::Module` with imports, declarations, expressions, types, byte spans, and parse diagnostics |
+| `parse::parse_module_strict` | the same tree as `parse_module`, but returns `Result` and fails on any diagnostic |
 | `ast_span::render_from_ast` | an oracle that checks AST spans plus trivia can reconstruct the source bytes |
 
 The parser does not prescribe what downstream crates do with the tree. A
@@ -225,7 +250,7 @@ assert!(laid_out.iter().any(|t| matches!(t.kind(), &TokenKind::VLBrace)));
 |------------|---------------------------------------------------------------|
 | `lexer`    | tokenizer, trivia, `TokenKind`/`Token`, `Pos`, lossless reconstruction |
 | `layout`   | offside-rule resolution into virtual `{ ; }` tokens           |
-| `parse`    | `parse_module` → typed AST + diagnostics                      |
+| `parse`    | `parse_module` → typed AST + diagnostics; `parse_module_strict` for fail-fast callers |
 | `ast`      | the syntax tree types, byte `Span` on every node              |
 | `ast_span` | `render_from_ast`, the byte-span losslessness oracle          |
 

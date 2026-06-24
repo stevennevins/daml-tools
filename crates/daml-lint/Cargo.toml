@@ -44,6 +44,7 @@ custom = { engines = { node = ">=18" }, publishConfig = { access = "public" } }
 workspace = true
 
 [dependencies]
+# Requires daml-parser >=0.7.0 for ast::Type::Lit (type-level string/char literals).
 daml-parser.workspace = true
 daml-syntax.workspace = true
 serde.workspace = true
@@ -61,7 +62,8 @@ default = ["cli", "js-runtime", "custom-rules"]
 cli = ["dep:clap", "js-runtime"]
 # `js-runtime`: enable the QuickJS-backed rule runtime used by shipped built-ins.
 js-runtime = ["dep:rquickjs"]
-# `custom-rules`: enable loading user-provided JavaScript AST rule files.
+# `custom-rules`: enable loading user-provided JavaScript AST rule files;
+# implies `js-runtime` (and therefore QuickJS/rquickjs).
 custom-rules = ["js-runtime"]
 
 # The CLI binary needs the clap CLI and the JS runtime for built-ins. The

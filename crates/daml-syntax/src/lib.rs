@@ -35,14 +35,51 @@ pub use coordinate::{
 };
 pub use text_size::{TextRange, TextSize};
 
+/// A parser or lexer diagnostic anchored in source text.
+///
+/// Constructed by [`SourceFile::parse`]; read fields through accessors so future
+/// metadata (severity, codes, notes) can be added without breaking callers.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Diagnostic {
-    pub range: TextRange,
-    pub line: LineNumber,
-    pub column: CharColumn,
-    pub end_column: Option<CharColumn>,
-    pub message: String,
-    pub category: DiagnosticCategory,
+    range: TextRange,
+    line: LineNumber,
+    column: CharColumn,
+    end_column: Option<CharColumn>,
+    message: String,
+    category: DiagnosticCategory,
+}
+
+impl Diagnostic {
+    #[must_use]
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+
+    #[must_use]
+    pub const fn line(&self) -> LineNumber {
+        self.line
+    }
+
+    #[must_use]
+    pub const fn column(&self) -> CharColumn {
+        self.column
+    }
+
+    #[must_use]
+    pub const fn end_column(&self) -> Option<CharColumn> {
+        self.end_column
+    }
+
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    #[must_use]
+    pub const fn category(&self) -> DiagnosticCategory {
+        self.category
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -623,7 +660,7 @@ mod tests {
         assert!(file
             .diagnostics()
             .iter()
-            .any(|diagnostic| diagnostic.category == DiagnosticCategory::Lex));
+            .any(|diagnostic| diagnostic.category() == DiagnosticCategory::Lex));
     }
 
     #[test]
@@ -684,6 +721,21 @@ mod tests {
         assert_eq!(err.source_len(), source.len());
         assert_eq!(err.span_start(), 1);
         assert_eq!(err.span_end(), 2);
+    }
+
+    #[test]
+    fn diagnostics_are_read_through_accessors_not_field_literals() {
+        let file = SourceFile::parse("module M where\nfoo = \"unterminated\n");
+
+        let diagnostic = file
+            .diagnostics()
+            .first()
+            .expect("malformed source should surface diagnostics");
+        assert_eq!(diagnostic.category(), DiagnosticCategory::Lex);
+        assert!(!diagnostic.message().is_empty());
+        assert!(diagnostic.range().start() <= diagnostic.range().end());
+        assert!(diagnostic.line().get() >= 1);
+        assert!(diagnostic.column().get() >= 1);
     }
 
     #[test]

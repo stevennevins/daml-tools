@@ -698,34 +698,47 @@ struct Lexer<'a> {
     byte: usize,
     line: usize,
     column: usize,
+    capture_trivia: bool,
     tokens: Vec<Token>,
     trivia: Vec<Trivia>,
     errors: Vec<LexError>,
 }
 
+impl<'a> Lexer<'a> {
+    fn new(source: &'a str, capture_trivia: bool) -> Self {
+        Self {
+            chars: source.chars().collect(),
+            src: source,
+            i: 0,
+            byte: 0,
+            line: 1,
+            column: 1,
+            capture_trivia,
+            tokens: Vec::new(),
+            trivia: Vec::new(),
+            errors: Vec::new(),
+        }
+    }
+}
+
 /// Lex `source` into tokens and lexical errors only.
 ///
-/// Use [`lex_with_trivia`] when callers also need comments and trivia.
+/// Skips trivia allocation and blank-line processing. Use [`lex_with_trivia`]
+/// when callers also need comments and trivia for lossless rendering.
 #[must_use]
 pub fn lex(source: &str) -> LexOutput {
-    let LexWithTriviaOutput { tokens, errors, .. } = lex_with_trivia(source);
-    LexOutput { tokens, errors }
+    let mut lexer = Lexer::new(source, false);
+    lexer.scan_tokens();
+    LexOutput {
+        tokens: lexer.tokens,
+        errors: lexer.errors,
+    }
 }
 
 /// Lex `source` into tokens, trivia, and lexical errors.
 #[must_use]
 pub fn lex_with_trivia(source: &str) -> LexWithTriviaOutput {
-    let mut lexer = Lexer {
-        chars: source.chars().collect(),
-        src: source,
-        i: 0,
-        byte: 0,
-        line: 1,
-        column: 1,
-        tokens: Vec::new(),
-        trivia: Vec::new(),
-        errors: Vec::new(),
-    };
+    let mut lexer = Lexer::new(source, true);
     lexer.scan_tokens();
     let mut trivia = lexer.trivia;
     add_blank_line_trivia(source, &lexer.tokens, &mut trivia);
@@ -902,6 +915,9 @@ impl<'a> Lexer<'a> {
     }
 
     fn push_trivia(&mut self, kind: TriviaKind, pos: Pos, start: usize) {
+        if !self.capture_trivia {
+            return;
+        }
         self.trivia.push(Trivia {
             kind,
             text: self.src[start..self.byte].to_string(),
@@ -1645,5 +1661,51 @@ mod tests {
             ]
         );
         let _ = upper("Ülf"); // helper used
+    }
+
+    /// Parse-only `lex` must emit the same tokens as `lex_with_trivia`; only
+    /// trivia differs. Comments and blank lines must not change tokenization.
+    fn assert_lex_tokens_match(src: &str) {
+        let (parse_tokens, parse_errors) = lex(src).into_parts();
+        let (trivia_tokens, _, trivia_errors) = lex_with_trivia(src).into_parts();
+        assert_eq!(parse_errors, trivia_errors, "lex errors differ for {src:?}");
+        assert_eq!(
+            parse_tokens.len(),
+            trivia_tokens.len(),
+            "token count for {src:?}"
+        );
+        for (a, b) in parse_tokens.iter().zip(trivia_tokens.iter()) {
+            assert_eq!(a.kind, b.kind, "token kind for {src:?}");
+            assert_eq!(a.pos, b.pos, "token pos for {src:?}");
+            assert_eq!(a.start, b.start, "token start for {src:?}");
+            assert_eq!(a.end, b.end, "token end for {src:?}");
+        }
+    }
+
+    #[test]
+    fn lex_and_lex_with_trivia_emit_identical_tokens() {
+        assert_lex_tokens_match("x = 1 -- electing to exercise\ny = 2\n");
+        assert_lex_tokens_match("module M where\n\n-- doc\nf : Int -> Int\nf x = x + 1\n");
+        assert_lex_tokens_match("{- outer {- inner -} still -} x");
+        assert_lex_tokens_match("#ifdef DAML_BIGNUMERIC\nx = 1\n#endif\n");
+        assert_lex_tokens_match("\n\n  \nf = 1  \n   ");
+    }
+
+    #[test]
+    fn lex_with_trivia_preserves_lossless_comment_and_blank_line_render() {
+        let sources = [
+            "x = 1 -- electing to exercise\ny = 2\n",
+            "x = 1\n\n\ny = 2\n",
+            "-- a\n\n-- b\nx = 1\n",
+        ];
+        for src in sources {
+            let (tokens, trivia, errors) = lex_with_trivia(src).into_parts();
+            assert!(errors.is_empty(), "lex errors for {src:?}: {errors:?}");
+            assert_eq!(
+                render_lossless(src, &tokens, &trivia).as_deref(),
+                Ok(src),
+                "lossless render failed for {src:?}"
+            );
+        }
     }
 }
