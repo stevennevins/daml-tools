@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/stevennevins/daml-tools/compare/daml-fmt-v0.5.0...daml-fmt-v0.6.0) - 2026-06-24
+
+### Added
+
+- *(api)* [**breaking**] improve Rust crate type APIs
+
 ### Added
 
 - *(daml-fmt)* typed [`FormatDiagnostic`] / [`FormatError`] API and fallible `try_format_source*` entry points

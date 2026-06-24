@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0](https://github.com/stevennevins/daml-tools/compare/daml-parser-v0.7.0...daml-parser-v0.8.0) - 2026-06-24
+
+### Added
+
+- *(api)* [**breaking**] improve Rust crate type APIs
+
 ### Changed
 
 - Add shared `homepage` and docs.rs `documentation` metadata.

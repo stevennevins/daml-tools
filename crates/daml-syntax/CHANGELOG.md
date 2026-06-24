@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0](https://github.com/stevennevins/daml-tools/compare/daml-syntax-v0.6.0...daml-syntax-v0.7.0) - 2026-06-24
+
+### Added
+
+- *(api)* [**breaking**] improve Rust crate type APIs
+
 ### Changed
 
 - Align crate package metadata with workspace inheritance: `homepage`, docs.rs
