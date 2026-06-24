@@ -110,13 +110,18 @@ jobs:
             exit 0
           fi
 
-          pr_number=$(jq -r '.number' <<<"${RELEASE_PR}")
-          head_branch=$(jq -r '.head_branch' <<<"${RELEASE_PR}")
+          if ! jq -e 'has("number") and .number != null and has("head_branch") and .head_branch != null' <<<"${RELEASE_PR}" >/dev/null; then
+            if jq -e '((.releases? // []) | length) == 0' <<<"${RELEASE_PR}" >/dev/null; then
+              echo "Release-plz did not open or update a release PR requiring metadata sync."
+              exit 0
+            fi
 
-          if [[ -z "${pr_number}" || "${pr_number}" == "null" || -z "${head_branch}" || "${head_branch}" == "null" ]]; then
             echo "::error::Release-plz output did not include a usable PR number and head branch."
             exit 1
           fi
+
+          pr_number=$(jq -r '.number' <<<"${RELEASE_PR}")
+          head_branch=$(jq -r '.head_branch' <<<"${RELEASE_PR}")
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
