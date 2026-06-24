@@ -505,9 +505,9 @@ pub enum TemplateBodyDecl {
 pub struct InterfaceInstanceDecl {
     /// Interface being implemented (`Disclosure.I`).
     pub interface_name: ModuleName,
-    /// Template it is for (from `for Foo`); the enclosing template when
-    /// declared inside one.
-    pub for_template: ModuleName,
+    /// Explicit template from `for Foo`; `None` when omitted (the enclosing
+    /// template when declared inside one).
+    pub for_template: Option<ModuleName>,
     /// Method implementations: name → bound expression.
     pub methods: Vec<Binding>,
     pub pos: Pos,

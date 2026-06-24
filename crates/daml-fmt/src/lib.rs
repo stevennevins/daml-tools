@@ -57,24 +57,100 @@
 // backend. See src/layout_ast.rs.
 mod layout_ast;
 
+use daml_parser::ast::DiagnosticCategory;
 use daml_parser::lexer::{TokenKind, TriviaKind};
-use daml_syntax::{Coordinate, SourceFile, SourceTokens};
+use daml_syntax::{CharColumn, LineNumber, SourceFile, SourceTokens};
+use std::error::Error;
+use std::fmt;
+
+/// A formatter input diagnostic with typed location and category.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FormatDiagnostic {
+    line: LineNumber,
+    column: CharColumn,
+    category: DiagnosticCategory,
+    message: String,
+}
+
+impl FormatDiagnostic {
+    /// 1-based line number of the diagnostic start.
+    #[must_use]
+    pub const fn line(&self) -> LineNumber {
+        self.line
+    }
+
+    /// 1-based character column of the diagnostic start.
+    #[must_use]
+    pub const fn column(&self) -> CharColumn {
+        self.column
+    }
+
+    /// Parser diagnostic category from `daml-parser`.
+    #[must_use]
+    pub const fn category(&self) -> DiagnosticCategory {
+        self.category
+    }
+
+    /// Human-readable diagnostic message.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+impl fmt::Display for FormatDiagnostic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.category == DiagnosticCategory::Lex {
+            write!(f, "{}:{}: {}", self.line, self.column, self.message)
+        } else {
+            write!(
+                f,
+                "{}:{}: [{}] {}",
+                self.line,
+                self.column,
+                self.category.as_str(),
+                self.message
+            )
+        }
+    }
+}
+
+/// Formatting failed because the source has lexical or parser diagnostics.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FormatError {
+    diagnostics: Vec<FormatDiagnostic>,
+}
+
+impl FormatError {
+    /// Typed diagnostics explaining why formatting was rejected.
+    #[must_use]
+    pub fn diagnostics(&self) -> &[FormatDiagnostic] {
+        &self.diagnostics
+    }
+}
+
+impl fmt::Display for FormatError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, diagnostic) in self.diagnostics.iter().enumerate() {
+            if index > 0 {
+                f.write_str("\n")?;
+            }
+            diagnostic.fmt(f)?;
+        }
+        Ok(())
+    }
+}
+
+impl Error for FormatError {}
 
 /// Lexer diagnostics for `src`.
 ///
-/// Returns one `line:col: message` string per error (e.g. unterminated string /
-/// block comment). Empty when the source lexes clean. The formatter still passes
-/// malformed input through verbatim (`format_source` is byte-safe); the CLI uses
-/// this to surface a non-zero exit + diagnostic so a formatter "success" is not
-/// mistaken for parse success. All 924 corpus files lex clean, so this never
-/// flags them.
+/// Empty when the source lexes clean. The formatter still passes malformed input
+/// through verbatim ([`format_source`] is byte-safe); callers that need a typed
+/// failure should use [`try_format_source_with_options`].
 #[must_use]
-pub fn lex_diagnostics(src: &str) -> Vec<String> {
-    SourceTokens::lex(src)
-        .lex_errors()
-        .iter()
-        .map(|error| format!("{}:{}: {}", error.pos.line, error.pos.column, error))
-        .collect()
+pub fn lex_diagnostics(src: &str) -> Vec<FormatDiagnostic> {
+    collect_lex_diagnostics(src)
 }
 
 /// Source diagnostics for `src`, including lexical and parser diagnostics.
@@ -84,10 +160,8 @@ pub fn lex_diagnostics(src: &str) -> Vec<String> {
 /// preprocess those branches, so parser recovery diagnostics there are not a
 /// reliable signal that formatter input is malformed. Lexical diagnostics are
 /// still reported.
-///
-/// Returns one `line:col: [category] message` string per error.
 #[must_use]
-pub fn source_diagnostics(src: &str) -> Vec<String> {
+pub fn source_diagnostics(src: &str) -> Vec<FormatDiagnostic> {
     if has_cpp_conditionals(src) {
         return lex_diagnostics(src);
     }
@@ -95,14 +169,24 @@ pub fn source_diagnostics(src: &str) -> Vec<String> {
     SourceFile::parse(src)
         .diagnostics()
         .iter()
-        .map(|diagnostic| {
-            format!(
-                "{}:{}: [{}] {}",
-                diagnostic.line().get(),
-                diagnostic.column().get(),
-                diagnostic.category().as_str(),
-                diagnostic.message()
-            )
+        .map(|diagnostic| FormatDiagnostic {
+            line: diagnostic.line(),
+            column: diagnostic.column(),
+            category: diagnostic.category(),
+            message: diagnostic.message().to_string(),
+        })
+        .collect()
+}
+
+fn collect_lex_diagnostics(src: &str) -> Vec<FormatDiagnostic> {
+    SourceTokens::lex(src)
+        .lex_errors()
+        .iter()
+        .map(|error| FormatDiagnostic {
+            line: LineNumber::new(error.pos.line),
+            column: CharColumn::new(error.pos.column),
+            category: DiagnosticCategory::Lex,
+            message: error.to_string(),
         })
         .collect()
 }
@@ -194,9 +278,33 @@ pub fn format_source(src: &str) -> String {
 }
 
 /// Format Daml source with explicit formatter options.
+///
+/// Malformed input is formatted as a byte-faithful passthrough. Use
+/// [`try_format_source_with_options`] when callers need a typed error instead.
 #[must_use]
 pub fn format_source_with_options(src: &str, options: FormatOptions) -> String {
     layout_ast::format_ast(src, options)
+}
+
+/// Format Daml source with explicit formatter options, rejecting malformed input.
+///
+/// Returns [`FormatError`] with typed [`FormatDiagnostic`] entries when lexical or
+/// parser diagnostics are present.
+pub fn try_format_source_with_options(
+    src: &str,
+    options: FormatOptions,
+) -> Result<String, FormatError> {
+    let diagnostics = source_diagnostics(src);
+    if diagnostics.is_empty() {
+        Ok(layout_ast::format_ast(src, options))
+    } else {
+        Err(FormatError { diagnostics })
+    }
+}
+
+/// Format Daml source with default formatter options, rejecting malformed input.
+pub fn try_format_source(src: &str) -> Result<String, FormatError> {
+    try_format_source_with_options(src, FormatOptions::default())
 }
 
 /// Structural formatter coverage over modeled constructs.
@@ -443,6 +551,7 @@ fn normalize_final_newline(out: &mut String) {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use daml_syntax::Coordinate;
 
     #[test]
     fn format_options_default_matches_new() {
@@ -499,8 +608,39 @@ mod tests {
         let src = "module M where\nx = \"oops\n";
         let diags = lex_diagnostics(src);
         assert!(!diags.is_empty(), "expected a diagnostic, got none");
-        assert!(diags.iter().any(|d| d.contains("unterminated string")));
+        let diagnostic = &diags[0];
+        assert_eq!(diagnostic.line().get(), 2);
+        assert_eq!(diagnostic.column().get(), 5);
+        assert_eq!(diagnostic.category(), DiagnosticCategory::Lex);
+        assert!(diagnostic.message().contains("unterminated string"));
         assert_eq!(format_source(src), src); // byte-faithful passthrough
+    }
+
+    #[test]
+    fn parser_diagnostic_exposes_typed_fields() {
+        let src = "module M where\nfoo = if x then 1\n";
+        let diagnostic = source_diagnostics(src)
+            .into_iter()
+            .next()
+            .expect("expected parser diagnostic");
+        assert!(diagnostic.line().get() >= 1);
+        assert!(diagnostic.column().get() >= 1);
+        assert_ne!(diagnostic.category(), DiagnosticCategory::Lex);
+        assert!(!diagnostic.message().is_empty());
+        assert!(diagnostic
+            .to_string()
+            .contains(diagnostic.category().as_str()));
+    }
+
+    #[test]
+    fn try_format_rejects_malformed_input_and_accepts_valid_source() {
+        let malformed = "module M where\nfoo = if x then 1\n";
+        let err = try_format_source(malformed).expect_err("malformed input must fail");
+        assert!(!err.diagnostics().is_empty());
+
+        let valid = "module M where\nfoo: Int\nfoo = 1\n";
+        let formatted = try_format_source(valid).expect("valid source must format");
+        assert_eq!(formatted, "module M where\nfoo: Int\nfoo = 1\n");
     }
 
     /// `render_from_ast` byte-span losslessness oracle over daml-fmt's own

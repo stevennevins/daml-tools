@@ -59,12 +59,15 @@ struct Context {
 /// use daml_parser::layout::resolve_layout;
 ///
 /// let lexed = lex("module M where\nfoo = 1\n");
-/// let laid_out = resolve_layout(&lexed.tokens);
-/// assert!(laid_out.len() >= lexed.tokens.len());
+/// let laid_out = resolve_layout(lexed.tokens);
+/// assert!(laid_out.len() >= 1);
 /// ```
 #[must_use]
-pub fn resolve_layout(tokens: impl AsRef<[Token]>) -> Vec<Token> {
-    let tokens = tokens.as_ref();
+pub fn resolve_layout(tokens: Vec<Token>) -> Vec<Token> {
+    let eof_pos = tokens
+        .last()
+        .map(|t| t.pos)
+        .unwrap_or(Pos { line: 1, column: 1 });
     let mut out: Vec<Token> = Vec::with_capacity(tokens.len() + tokens.len() / 4);
     let mut stack: Vec<Context> = Vec::new();
     let mut bracket_depth = 0usize;
@@ -104,7 +107,7 @@ pub fn resolve_layout(tokens: impl AsRef<[Token]>) -> Vec<Token> {
                     opened_by: kw,
                     bracket_depth,
                 });
-                out.push(token.clone());
+                out.push(token);
                 last_line = pos.line;
                 continue;
             }
@@ -223,25 +226,26 @@ pub fn resolve_layout(tokens: impl AsRef<[Token]>) -> Vec<Token> {
         let was_backslash = out
             .last()
             .is_some_and(|t| matches!(&t.kind, TokenKind::Op(o) if *o == "\\"));
-        out.push(token.clone());
+        let opens_layout = layout_keyword(&token.kind);
+        let case_after_backslash = token.kind.is_keyword("case") && was_backslash;
+        out.push(token);
 
-        if let Some(keyword) = layout_keyword(&token.kind) {
+        if let Some(keyword) = opens_layout {
             expecting_open = Some(keyword);
-        } else if token.kind.is_keyword("case") && was_backslash {
+        } else if case_after_backslash {
             // `\case` alternatives form a layout block like `of`.
             expecting_open = Some(LayoutKeyword::Of);
         }
     }
 
     // EOF closes everything implicit.
-    let eof = tokens.last().map_or(Pos { line: 1, column: 1 }, |t| t.pos);
     if expecting_open.is_some() {
-        out.push(virtual_tok(TokenKind::VLBrace, eof));
-        out.push(virtual_tok(TokenKind::VRBrace, eof));
+        out.push(virtual_tok(TokenKind::VLBrace, eof_pos));
+        out.push(virtual_tok(TokenKind::VRBrace, eof_pos));
     }
     for ctx in stack.iter().rev() {
         if ctx.col > 0 {
-            out.push(virtual_tok(TokenKind::VRBrace, eof));
+            out.push(virtual_tok(TokenKind::VRBrace, eof_pos));
         }
     }
 

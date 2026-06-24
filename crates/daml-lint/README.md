@@ -20,18 +20,18 @@ that fail to parse degrade to partial structure with a diagnostic on stderr
 
 The workspace docs split task guides, reference, and design background:
 
-- [Scan Daml source](../../docs/how-to/scan-daml.md) for CLI usage patterns
-- [Write a custom rule](../../docs/tutorials/write-a-daml-lint-custom-rule.md)
+- [Scan Daml source](https://github.com/stevennevins/daml-tools/blob/main/docs/how-to/scan-daml.md) for CLI usage patterns
+- [Write a custom rule](https://github.com/stevennevins/daml-tools/blob/main/docs/tutorials/write-a-daml-lint-custom-rule.md)
   for a guided first external rule
-- [Custom rule contract](../../docs/reference/daml-lint-custom-rule-contract.md)
+- [Custom rule contract](https://github.com/stevennevins/daml-tools/blob/main/docs/reference/daml-lint-custom-rule-contract.md)
   for the JavaScript runtime contract and TypeScript types
-- [CLI reference](../../docs/reference/cli.md) for options, output formats, and
+- [CLI reference](https://github.com/stevennevins/daml-tools/blob/main/docs/reference/cli.md) for options, output formats, and
   exit codes
-- [Crate reference](../../docs/reference/crates.md) for features and public
+- [Crate reference](https://github.com/stevennevins/daml-tools/blob/main/docs/reference/crates.md) for features and public
   modules
-- [Rule authoring model](../../docs/explanation/daml-lint-rule-authoring.md)
+- [Rule authoring model](https://github.com/stevennevins/daml-tools/blob/main/docs/explanation/daml-lint-rule-authoring.md)
   for why TypeScript authoring is bundled to JavaScript
-- [Workspace architecture](../../docs/explanation/workspace-architecture.md)
+- [Workspace architecture](https://github.com/stevennevins/daml-tools/blob/main/docs/explanation/workspace-architecture.md)
   for how `daml-lint` uses `daml-parser`
 
 ## Detectors
@@ -81,7 +81,7 @@ The default features build the published CLI and custom-rule engine:
 
 ```toml
 [dependencies]
-daml-lint = "0.7"
+daml-lint = "0.8"
 ```
 
 Library consumers that only need parser lowering and the rule-facing IR can
@@ -89,7 +89,7 @@ avoid the CLI parser and QuickJS runtime:
 
 ```toml
 [dependencies]
-daml-lint = { version = "0.7", default-features = false }
+daml-lint = { version = "0.8", default-features = false }
 ```
 
 The `js-runtime` feature enables the QuickJS-backed runtime used by shipped
@@ -325,6 +325,11 @@ wildcard arms when matching enums. Patch releases should remain compatible.
 
 Breaking updates introduced in this branch:
 
+- `Severity` no longer implements `Ord`/`PartialOrd`; use `rank()` or
+  `meets_or_exceeds()` for risk-based ordering and thresholds.
+- `Severity::from_str` now returns `SeverityParseError` instead of `()`.
+- Public IR/report DTO structs are `#[non_exhaustive]`; construct through
+  parser lowering or documented constructors such as `Finding::new`.
 - `parse_daml_with_diagnostics` now returns a named `ParseResult` with fields
   (`module`, `diagnostics`) instead of a tuple.
 - Rule setting values are now canonical only: `off`, `critical`, `high`,

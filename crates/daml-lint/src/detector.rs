@@ -46,8 +46,33 @@ impl std::fmt::Display for DetectError {
 
 impl std::error::Error for DetectError {}
 
+/// Error returned when parsing an unsupported severity value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeverityParseError {
+    value: String,
+}
+
+impl SeverityParseError {
+    #[must_use]
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+}
+
+impl std::fmt::Display for SeverityParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "invalid severity: {} (expected one of critical|high|medium|low|info)",
+            self.value
+        )
+    }
+}
+
+impl std::error::Error for SeverityParseError {}
+
 /// Severity assigned to a detector finding.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
 pub enum Severity {
     /// Critical issue that should fail any release or CI gate.
@@ -66,8 +91,8 @@ impl Severity {
     /// Relative risk ordering used by report sorting and threshold checks.
     ///
     /// `Critical` has the highest rank (`5`) and `Info` the lowest (`1`).
-    /// This stays additive and documents intent explicitly while preserving the
-    /// existing `Ord` implementation used by downstream consumers.
+    /// `Severity` intentionally does not implement `Ord`; use `rank()` or
+    /// `meets_or_exceeds()` for risk-based ordering and threshold checks.
     #[must_use]
     pub const fn rank(self) -> u8 {
         match self {
@@ -102,7 +127,7 @@ impl std::fmt::Display for Severity {
 }
 
 impl std::str::FromStr for Severity {
-    type Err = ();
+    type Err = SeverityParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
@@ -111,7 +136,9 @@ impl std::str::FromStr for Severity {
             "medium" => Ok(Self::Medium),
             "low" => Ok(Self::Low),
             "info" => Ok(Self::Info),
-            _ => Err(()),
+            _ => Err(SeverityParseError {
+                value: s.to_string(),
+            }),
         }
     }
 }
@@ -460,11 +487,11 @@ mod tests {
     }
 
     #[test]
-    fn severity_ord_follows_enum_order_not_risk_rank() {
-        // `Ord` follows declaration order (Critical is the smallest variant).
-        // Callers sorting or gating by risk must use `rank()` / `meets_or_exceeds`.
-        assert!(Severity::Critical < Severity::Info);
-        assert!(Severity::High < Severity::Low);
+    fn severity_parse_error_reports_invalid_value_and_allowed_levels() {
+        let err = "bogus".parse::<Severity>().unwrap_err();
+        assert_eq!(err.value(), "bogus");
+        assert!(err.to_string().contains("bogus"));
+        assert!(err.to_string().contains("critical|high|medium|low|info"));
     }
 
     #[test]

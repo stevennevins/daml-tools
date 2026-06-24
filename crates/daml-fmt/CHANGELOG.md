@@ -9,10 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- *(daml-fmt)* typed [`FormatDiagnostic`] / [`FormatError`] API and fallible `try_format_source*` entry points
 - *(daml-fmt)* document `FormatOptions` construction style and exhaustive-struct API posture
 
 ### Changed
 
+- *(daml-fmt)* `lex_diagnostics` and `source_diagnostics` now return typed diagnostics instead of formatted strings
+- *(daml-fmt)* `coverage` dev tool exits non-zero on unreadable inputs and when no `.daml` files are found
 - *(daml-fmt)* add shared `homepage` and docs.rs `documentation` metadata.
 
 ## [0.4.2](https://github.com/stevennevins/daml-tools/compare/daml-fmt-v0.4.1...daml-fmt-v0.4.2) - 2026-06-24

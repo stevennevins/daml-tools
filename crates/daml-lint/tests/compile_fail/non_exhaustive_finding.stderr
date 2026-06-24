@@ -1,0 +1,23 @@
+error[E0639]: cannot create non-exhaustive struct using struct expression
+  --> tests/compile_fail/non_exhaustive_finding.rs:5:20
+   |
+ 5 |       let _finding = Finding {
+   |  ____________________^
+ 6 | |         detector: String::from("rule"),
+ 7 | |         severity: Severity::High,
+ 8 | |         file: PathBuf::from("Test.daml"),
+...  |
+12 | |         evidence: String::from("evidence"),
+13 | |     };
+   | |_____^
+
+error[E0639]: cannot create non-exhaustive struct using struct expression
+  --> tests/compile_fail/non_exhaustive_finding.rs:14:13
+   |
+14 |       let _ = FindingLocation {
+   |  _____________^
+15 | |         file: PathBuf::from("Test.daml"),
+16 | |         line: 1,
+17 | |         column: 1,
+18 | |     };
+   | |_____^

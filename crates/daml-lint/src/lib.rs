@@ -17,18 +17,20 @@
 //! Matching contract for rule-facing IR:
 //! `TypeNode`, `LiteralKind`, `Expr`, `Consuming`, `Statement`, and
 //! `ImportStyle` are intentionally `#[non_exhaustive]`.
+//! Read-mostly IR/report DTO structs (`DamlModule`, `Template`, `Finding`, and
+//! related nodes) are also `#[non_exhaustive]` so fields can evolve in 0.x
+//! without breaking downstream field reads.
 //! Downstream code should include wildcard arms when matching any of these
 //! enums; adding variants is a compatible evolution for new Daml syntax and
-//! recovery paths. Existing struct fields are still public for inspection, but
-//! semver-sensitive additions should be considered when constructing IR nodes
-//! yourself.
+//! recovery paths. Construct IR through [`parser::parse_daml_with_diagnostics`]
+//! or documented constructors such as [`detector::Finding::new`].
 //!
 //! Parse diagnostics use [`parser::ParseDiagnosticCategory`] (not the parser
 //! crate's internal category enum) and [`parser::ParseResult`] (`module` +
 //! `diagnostics`) as the supported lowering entry point. For severity thresholds
-//! and report ordering, prefer [`detector::Severity::rank`] and
-//! [`detector::Severity::meets_or_exceeds`] over `Ord` — enum declaration
-//! order does not match risk rank.
+//! and report ordering, use [`detector::Severity::rank`] and
+//! [`detector::Severity::meets_or_exceeds`]; `Severity` does not implement
+//! `Ord` because declaration order does not match risk rank.
 //!
 //! # Example
 //!
