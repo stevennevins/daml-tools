@@ -11,15 +11,55 @@ membership is declared in [`Cargo.toml`](../../Cargo.toml).
 | Rust version | `1.87.0` |
 | License | `AGPL-3.0-only` |
 | Repository | `https://github.com/stevennevins/daml-tools` |
+| Homepage | `https://github.com/stevennevins/daml-tools` |
+
+All workspace members inherit `edition`, `rust-version`, `license`, `repository`,
+`homepage`, and `authors` from `[workspace.package]` in the root
+[`Cargo.toml`](../../Cargo.toml). Each crate sets its own `documentation` URL
+on docs.rs and keeps crate-specific `description`, `keywords`, `categories`, and
+`exclude` lists.
+
+### MSRV evidence
+
+The workspace MSRV is `1.87.0`, enforced by the `msrv` job in
+[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml). It is not raised
+speculatively:
+
+| Constraint | Source | Declared MSRV |
+|------------|--------|---------------|
+| QuickJS rule runtime | `rquickjs` 0.12 (`daml-lint` optional dep) | `1.87` |
+| CLI argument parsing | `clap` 4.6 (`daml-lint` optional dep) | `1.85` |
+
+`daml-parser` and `daml-fmt` have no external Rust dependencies beyond the
+shared syntax stack, but they share the workspace MSRV so `cargo install` and CI
+stay aligned.
+
+### Published package contents
+
+| Crate | `exclude` highlights | Notes |
+|-------|----------------------|-------|
+| `daml-parser` | _(none)_ | Ships `LICENSE`, `README.md`, `CHANGELOG.md`, and `src/`. |
+| `daml-syntax` | _(none)_ | Ships `LICENSE`, `README.md`, `CHANGELOG.md`, and `src/`. |
+| `daml-lint` | `test-fixtures/`, `docs/`, `tools/`, `lint-plugin/`, npm metadata, `rules/*.ts` | Keeps `examples/` and compiled `rules/*.js` (embedded via `include_str!`). |
+| `daml-fmt` | corpus, differential-test trees, dev scripts | Keeps the published `daml-fmt` binary and integration tests. |
 
 ## Workspace members
 
 | Crate | Version | Kind | Package description |
 |-------|---------|------|---------------------|
-| [`daml-parser`](../../crates/daml-parser) | `0.2.3` | library | Lossless lexer, layout resolver, and parser for the Daml smart-contract language. |
-| [`daml-syntax`](../../crates/daml-syntax) | `0.1.0` | library | Shared parsed-source surface for Daml tools. |
-| [`daml-lint`](../../crates/daml-lint) | `0.3.11` | library and CLI | Static analysis scanner for Daml smart contracts. |
-| [`daml-fmt`](../../crates/daml-fmt) | `0.2.8` | library and CLI | Canonical code formatter for the Daml smart-contract language, built on shared syntax. |
+| [`daml-parser`](../../crates/daml-parser) | `0.6.2` | library | Lossless lexer, layout resolver, and parser for the Daml smart-contract language. |
+| [`daml-syntax`](../../crates/daml-syntax) | `0.4.2` | library | Shared parsed-source surface for Daml tools. |
+| [`daml-lint`](../../crates/daml-lint) | `0.6.2` | library and CLI | Static analysis scanner for Daml smart contracts. |
+| [`daml-fmt`](../../crates/daml-fmt) | `0.4.2` | library and CLI | Canonical code formatter for the Daml smart-contract language, built on shared syntax. |
+
+### Per-crate docs.rs URLs
+
+| Crate | Documentation |
+|-------|---------------|
+| `daml-parser` | `https://docs.rs/daml-parser` |
+| `daml-syntax` | `https://docs.rs/daml-syntax` |
+| `daml-lint` | `https://docs.rs/daml-lint` |
+| `daml-fmt` | `https://docs.rs/daml-fmt` |
 
 ## `daml-parser`
 
