@@ -144,11 +144,17 @@ README: [`crates/daml-fmt/README.md`](../../crates/daml-fmt/README.md)
 |------|------------|-------------|
 | `format_source(src: &str) -> String` | Public | Formats Daml source with the AST-driven formatter. |
 | `format_source_with_options(src: &str, options: FormatOptions) -> String` | Public | Formats Daml source with explicit formatter options. |
-| `FormatOptions` | Public | Controls formatter behavior. `import_order` defaults to `ImportOrder::Organize`; use `ImportOrder::Preserve` to keep declaration order. |
+| `FormatOptions` | Public | Formatter switches. Prefer `Default`/`new()`/`with_*` for forward-compatible construction; struct literals remain supported while the option set is tiny. |
+| `ImportOrder` | Public | Import ordering strategy (`Organize` default, `Preserve` via CLI `--preserve-import-order`). `#[non_exhaustive]`. |
 | `lex_diagnostics(src: &str) -> Vec<String>` | Public | Returns lexer diagnostic strings for malformed source. |
 | `coverage(src: &str) -> FormatCoverage` | Public | Counts formatter structural edit candidates over modeled constructs. |
 
 The formatter backend is implemented in the private `layout_ast` module.
+
+`ImportOrder` is `#[non_exhaustive]` so new strategies can be added without
+breaking downstream `match` arms. `FormatOptions` stays an exhaustive struct:
+public fields plus `Default`/`new()` and `with_*` helpers are the supported
+construction path when new defaulted fields appear.
 
 ### Binaries
 
