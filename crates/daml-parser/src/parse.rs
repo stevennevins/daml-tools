@@ -229,6 +229,118 @@ impl Parser {
         });
     }
 
+    fn parse_type_annotation(
+        &mut self,
+        type_start: usize,
+        type_end: usize,
+        context: &'static str,
+    ) -> Option<Type> {
+        let type_start = type_start.min(self.toks.len());
+        let type_end = type_end.min(self.toks.len());
+        let tokens = &self.toks[type_start..type_end];
+        let ty = parse_type_from_tokens(tokens).or_else(|| {
+            let trimmed = Self::trim_type_tokens_for_parse(tokens);
+            if trimmed < tokens.len() {
+                parse_type_from_tokens(&tokens[..trimmed])
+            } else {
+                None
+            }
+        });
+        if ty.is_none() {
+            self.diags.push(ParseDiagnostic {
+                message: format!("malformed {context} type annotation"),
+                pos: self.pos_of_token(type_start),
+                span: self.span_of_token_range(type_start, type_end),
+                category: DiagnosticCategory::Malformed,
+            });
+        }
+        ty
+    }
+
+    /// Trim trailing tokens that belong to declaration tails (for example `= expr`
+    /// in typed function signatures, explicit semicolons, or the next field
+    /// declaration) so we can parse valid corpus forms that our tiny type
+    /// parser doesn't model directly.
+    fn trim_type_tokens_for_parse(tokens: &[Token]) -> usize {
+        let mut depth = 0usize;
+        let mut bracket_depth = 0usize;
+        let mut i = 0usize;
+        while i < tokens.len() {
+            match &tokens[i].kind {
+                TokenKind::LParen | TokenKind::LBracket => {
+                    depth += 1;
+                    i += 1;
+                }
+                TokenKind::RParen | TokenKind::RBracket => {
+                    depth = depth.saturating_sub(1);
+                    i += 1;
+                }
+                TokenKind::LBrace => {
+                    bracket_depth += 1;
+                    i += 1;
+                }
+                TokenKind::RBrace => {
+                    bracket_depth = bracket_depth.saturating_sub(1);
+                    i += 1;
+                }
+                TokenKind::Op(o) if o.as_str() == "=" && depth == 0 && bracket_depth == 0 => {
+                    return i;
+                }
+                TokenKind::Semi | TokenKind::VSemi if depth == 0 && bracket_depth == 0 => {
+                    return i;
+                }
+                TokenKind::Comma
+                    if depth == 0
+                        && bracket_depth == 0
+                        && matches!(
+                            tokens.get(i + 1),
+                            Some(Token {
+                                kind: TokenKind::LowerId {
+                                    qualifier: None,
+                                    ..
+                                },
+                                ..
+                            })
+                        )
+                        && matches!(
+                            tokens.get(i + 2),
+                            Some(Token { kind: TokenKind::Op(o), .. }) if o.as_str() == ":"
+                        ) =>
+                {
+                    return i;
+                }
+                _ => {
+                    i += 1;
+                }
+            }
+        }
+        tokens.len()
+    }
+
+    fn pos_of_token(&self, idx: usize) -> Pos {
+        self.toks.get(idx).map_or_else(|| self.pos(), |tok| tok.pos)
+    }
+
+    fn span_of_token_range(&self, start: usize, end: usize) -> Span {
+        let start = start.min(self.toks.len());
+        let end = end.min(self.toks.len());
+        let span_start = self.byte_at(start);
+        if end <= start {
+            return Span::new(span_start, span_start);
+        }
+
+        let mut cursor = end;
+        while cursor > start {
+            cursor -= 1;
+            let token = &self.toks[cursor];
+            if !token.is_virtual() {
+                return Span::new(span_start, token.end);
+            }
+        }
+
+        Span::new(span_start, span_start)
+    }
+
     /// Byte span of the next real (non-virtual) token, or a zero-width span at
     /// end-of-input. Used to anchor a diagnostic to the offending token.
     fn cur_span(&self) -> crate::ast::Span {
@@ -726,7 +838,7 @@ impl Parser {
             }
             let ty_start = self.i;
             self.skip_to_item_end();
-            let ty = parse_type_from_tokens(&self.toks[ty_start..self.i]);
+            let ty = self.parse_type_annotation(ty_start, self.i, "field");
             // The type is shared by all names but sits after the last one, so
             // only the last field can span `name : Type` without overlapping a
             // sibling; earlier names of `x, y : T` stay name-only. daml-fmt
@@ -825,7 +937,7 @@ impl Parser {
                 let ty = if self.eat_op(":") {
                     let ty_start = self.i;
                     self.skip_to_item_end();
-                    parse_type_from_tokens(&self.toks[ty_start..self.i])
+                    self.parse_type_annotation(ty_start, self.i, "key")
                 } else {
                     // The expression parser consumes `: Type` annotations;
                     // recover the key type from the last top-level colon.
@@ -839,7 +951,7 @@ impl Parser {
                             _ => {}
                         }
                     }
-                    let ty = colon.and_then(|j| parse_type_from_tokens(&self.toks[j + 1..self.i]));
+                    let ty = colon.and_then(|j| self.parse_type_annotation(j + 1, self.i, "key"));
                     self.skip_to_item_end();
                     ty
                 };
@@ -936,7 +1048,7 @@ impl Parser {
         let return_ty = if self.eat_op(":") {
             let ty_start = self.i;
             self.skip_type_tokens();
-            parse_type_from_tokens(&self.toks[ty_start..self.i])
+            self.parse_type_annotation(ty_start, self.i, "choice")
         } else {
             None
         };
@@ -1112,7 +1224,11 @@ impl Parser {
                             // Single name: span the whole `name : Type`.
                             methods.push(FieldDecl {
                                 name: mname,
-                                ty: parse_type_from_tokens(&self.toks[ty_start..self.i]),
+                                ty: self.parse_type_annotation(
+                                    ty_start,
+                                    self.i,
+                                    "interface method",
+                                ),
                                 pos: mpos,
                                 span: Span::new(mstart, self.end_byte().max(mstart)),
                             });
@@ -1233,7 +1349,7 @@ impl Parser {
             self.eat_op(":");
             let ty_start = self.i;
             self.skip_to_item_end();
-            let ty = parse_type_from_tokens(&self.toks[ty_start..self.i]);
+            let ty = self.parse_type_annotation(ty_start, self.i, "function");
             return Some(Decl::Function(FunctionDecl {
                 name,
                 ty,
@@ -2938,7 +3054,11 @@ impl<'a> TypeTokenParser<'a> {
     /// Full type: a constraint context `=> body`, or a function `a -> b`, or a
     /// bare application.
     fn parse_type(&mut self) -> Option<Type> {
-        let lhs = self.parse_application_type()?;
+        let lhs = if self.eat_keyword("forall") {
+            self.parse_forall_type()?
+        } else {
+            self.parse_application_type()?
+        };
         if self.eat_op("=>") {
             // `lhs` was the constraint context; drop it, keep the body.
             let body = self.parse_type()?;
@@ -2999,6 +3119,8 @@ impl<'a> TypeTokenParser<'a> {
                     | TokenKind::LowerId { .. }
                     | TokenKind::IntLit(_)
                     | TokenKind::DecimalLit(_)
+                    | TokenKind::StringLit(_)
+                    | TokenKind::CharLit(_)
                     | TokenKind::LBracket
                     | TokenKind::LParen
             )
@@ -3029,6 +3151,12 @@ impl<'a> TypeTokenParser<'a> {
                 self.cursor += 1;
                 Some(TypeAtom::DroppedLiteral(Span::new(tok.start, tok.end)))
             }
+            TokenKind::StringLit(_) | TokenKind::CharLit(_) => {
+                // Type arguments like `HasField \"x\"` are not type-shape; keep
+                // the token for span recovery.
+                self.cursor += 1;
+                Some(TypeAtom::DroppedLiteral(Span::new(tok.start, tok.end)))
+            }
             TokenKind::LBracket => {
                 let start = tok.start;
                 self.cursor += 1;
@@ -3040,6 +3168,60 @@ impl<'a> TypeTokenParser<'a> {
             TokenKind::LParen => {
                 let start = tok.start;
                 self.cursor += 1;
+                if let Some(op) = self.eat_token_if_operator() {
+                    let mut name = op.as_str().to_string();
+                    while matches!(
+                        self.tokens.get(self.cursor).map(|t| &t.kind),
+                        Some(TokenKind::Op(_))
+                    ) {
+                        self.cursor += 1;
+                        if let TokenKind::Op(o) = &self.tokens[self.cursor - 1].kind {
+                            name.push_str(o.as_str());
+                        }
+                    }
+                    if self.eat_token(&TokenKind::RParen).is_some()
+                        && self
+                            .tokens
+                            .get(self.cursor)
+                            .is_some_and(|t| Self::is_type_atom_start(&t.kind))
+                    {
+                        let end = self.tokens[self.cursor - 1];
+                        return Some(TypeAtom::ParsedType(Type::Con {
+                            qualifier: None,
+                            name: name.into(),
+                            span: Span::new(start, end.end),
+                        }));
+                    }
+                    return None;
+                }
+                if matches!(
+                    self.tokens.get(self.cursor).map(|t| &t.kind),
+                    Some(TokenKind::Comma)
+                ) {
+                    let mut name = String::from(",");
+                    self.cursor += 1;
+                    while matches!(
+                        self.tokens.get(self.cursor).map(|t| &t.kind),
+                        Some(TokenKind::Comma)
+                    ) {
+                        self.cursor += 1;
+                        name.push(',');
+                    }
+                    if self.eat_token(&TokenKind::RParen).is_some()
+                        && self
+                            .tokens
+                            .get(self.cursor)
+                            .is_some_and(|t| Self::is_type_atom_start(&t.kind))
+                    {
+                        let end = self.tokens[self.cursor - 1];
+                        return Some(TypeAtom::ParsedType(Type::Con {
+                            qualifier: None,
+                            name: name.into(),
+                            span: Span::new(start, end.end),
+                        }));
+                    }
+                    return None;
+                }
                 if let Some(end) = self.eat_token(&TokenKind::RParen) {
                     // ()
                     return Some(TypeAtom::ParsedType(Type::Unit(Span::new(start, end.end))));
@@ -3064,6 +3246,33 @@ impl<'a> TypeTokenParser<'a> {
         }
     }
 
+    fn eat_keyword(&mut self, kw: &str) -> bool {
+        if self.peek().is_some_and(|t| t.kind.is_keyword(kw)) {
+            self.cursor += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn parse_forall_type(&mut self) -> Option<Type> {
+        let start = self
+            .tokens
+            .get(self.cursor.wrapping_sub(1))
+            .map(|t| t.start)
+            .unwrap_or_default();
+        while self.cursor < self.tokens.len() {
+            if self.peek().is_some_and(|t| t.kind.is_op(".")) {
+                self.cursor += 1;
+                let body = self.parse_type()?;
+                let body_span = body.span();
+                return Some(body.with_span(Span::new(start, body_span.end)));
+            }
+            self.cursor += 1;
+        }
+        None
+    }
+
     fn eat_token(&mut self, tok: &TokenKind) -> Option<&'a Token> {
         if self.peek().is_some_and(|t| t.kind == *tok) {
             let t = self.peek();
@@ -3072,6 +3281,33 @@ impl<'a> TypeTokenParser<'a> {
         } else {
             None
         }
+    }
+
+    fn eat_token_if_operator(&mut self) -> Option<&'a Operator> {
+        match self.peek() {
+            Some(Token {
+                kind: TokenKind::Op(op),
+                ..
+            }) => {
+                self.cursor += 1;
+                Some(op)
+            }
+            _ => None,
+        }
+    }
+
+    const fn is_type_atom_start(kind: &TokenKind) -> bool {
+        matches!(
+            kind,
+            TokenKind::UpperId { .. }
+                | TokenKind::LowerId { .. }
+                | TokenKind::IntLit(_)
+                | TokenKind::DecimalLit(_)
+                | TokenKind::StringLit(_)
+                | TokenKind::CharLit(_)
+                | TokenKind::LParen
+                | TokenKind::LBracket
+        )
     }
 }
 

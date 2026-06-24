@@ -86,6 +86,127 @@ fn malformed_expression_is_categorized_malformed() {
 }
 
 #[test]
+fn malformed_type_annotation_is_reported_as_malformed() {
+    let src = r#"module M where
+template T
+  with
+    owner : %
+  where
+    signatory owner
+"#;
+    let (module, ds) = parse_module(src).into_parts();
+    let malformed = ds
+        .iter()
+        .find(|d| {
+            d.message == "malformed field type annotation"
+                && d.category == DiagnosticCategory::Malformed
+        })
+        .or_else(|| {
+            ds.iter().find(|d| {
+                d.category == DiagnosticCategory::Malformed
+                    && d.message.contains("field type annotation")
+            })
+        })
+        .expect("malformed type annotation diagnostic");
+    assert_eq!(
+        malformed.span.get(src),
+        Some("%"),
+        "diagnostic should pin malformed field annotation token"
+    );
+    assert!(module
+        .decls
+        .iter()
+        .any(|decl| matches!(decl, Decl::Template(template) if template.name == "T")),);
+}
+
+#[test]
+fn malformed_type_annotation_is_not_reported_for_function_signature_with_body() {
+    let src = r#"module M where
+f : Int = 1
+"#;
+    let (module, ds) = parse_module(src).into_parts();
+    assert!(
+        !ds.iter()
+            .any(|d| d.message == "malformed function type annotation"),
+        "a typed function declaration with a body should remain parseable: {ds:#?}",
+    );
+    assert!(module
+        .decls
+        .iter()
+        .any(|decl| matches!(decl, Decl::Function(function) if function.name == "f")),);
+}
+
+#[test]
+fn malformed_field_annotation_is_not_reported_for_inline_fields() {
+    let src = r#"module M where
+template T
+  with
+    a : Int, b : Int
+    c : Text; d : Text
+  where
+    signatory a
+"#;
+    let (_module, ds) = parse_module(src).into_parts();
+    assert!(
+        !ds.iter()
+            .any(|d| d.message == "malformed field type annotation"),
+        "inline field declarations should not emit malformed type diagnostics: {ds:#?}",
+    );
+}
+
+#[test]
+fn malformed_type_annotation_is_not_reported_for_section_constructor() {
+    let src = r#"module M where
+t : (,) Int Text = (1, "a")
+"#;
+    let (_module, ds) = parse_module(src).into_parts();
+    assert!(
+        !ds.iter()
+            .any(|d| d.message == "malformed function type annotation"),
+        "section constructor type annotations should be tolerated: {ds:#?}",
+    );
+}
+
+#[test]
+fn malformed_section_constructor_with_unclosed_list_is_reported() {
+    let src = r#"module M where
+f : (,) Int [Text
+"#;
+    let (_module, ds) = parse_module(src).into_parts();
+    assert!(
+        ds.iter()
+            .any(|d| d.message == "malformed function type annotation"),
+        "unclosed list argument in section constructor should be malformed: {ds:#?}",
+    );
+}
+
+#[test]
+fn malformed_section_constructor_with_unclosed_paren_is_reported() {
+    let src = r#"module M where
+f : (,) (Int
+"#;
+    let (_module, ds) = parse_module(src).into_parts();
+    assert!(
+        ds.iter()
+            .any(|d| d.message == "malformed function type annotation"),
+        "unclosed type argument paren in section constructor should be malformed: {ds:#?}",
+    );
+}
+
+#[test]
+fn malformed_section_constructor_with_trailing_comma_argument_is_reported() {
+    let src = r#"module M where
+f : (,) Int (Text,)
+"#;
+    let (_module, ds) = parse_module(src).into_parts();
+    assert!(
+        ds.iter()
+            .any(|d| d.message == "malformed function type annotation"),
+        "section-constructor argument `(Text,)` must be rejected: {ds:#?}",
+    );
+}
+
+#[test]
 fn deep_nesting_emits_recursion_limit_and_does_not_panic() {
     // Well past the parser's recursion bound. The parser must not overflow the
     // stack; it degrades and reports the truncation.

@@ -286,6 +286,9 @@ fn collect_decl(decl: &Decl, spans: &mut Vec<Span>) {
             spans.push(template.span);
             for field in &template.fields {
                 spans.push(field.span);
+                if let Some(ty) = &field.ty {
+                    collect_type(ty, spans);
+                }
             }
             for body_decl in &template.body {
                 collect_tbody(body_decl, spans);
@@ -295,6 +298,9 @@ fn collect_decl(decl: &Decl, spans: &mut Vec<Span>) {
             spans.push(interface.span);
             for method in &interface.methods {
                 spans.push(method.span);
+                if let Some(ty) = &method.ty {
+                    collect_type(ty, spans);
+                }
             }
             for choice in &interface.choices {
                 collect_choice(choice, spans);
@@ -309,6 +315,9 @@ fn collect_decl(decl: &Decl, spans: &mut Vec<Span>) {
             }
             if let Some(sig) = function.sig_span {
                 spans.push(sig);
+            }
+            if let Some(ty) = &function.ty {
+                collect_type(ty, spans);
             }
         }
         Decl::TypeDef { span, .. } | Decl::Unknown { span, .. } => spans.push(*span),
@@ -326,9 +335,24 @@ fn collect_tbody(template_body_decl: &TemplateBodyDecl, spans: &mut Vec<Span>) {
         }
         TemplateBodyDecl::Ensure { expr, span, .. }
         | TemplateBodyDecl::Maintainer { expr, span, .. }
-        | TemplateBodyDecl::Key { expr, span, .. } => {
+        | TemplateBodyDecl::Key {
+            expr,
+            span,
+            ty: None,
+            ..
+        } => {
             spans.push(*span);
             collect_expr(expr, spans);
+        }
+        TemplateBodyDecl::Key {
+            expr,
+            span,
+            ty: Some(ty),
+            ..
+        } => {
+            spans.push(*span);
+            collect_expr(expr, spans);
+            collect_type(ty, spans);
         }
         TemplateBodyDecl::Choice(choice) => collect_choice(choice, spans),
         TemplateBodyDecl::InterfaceInstance(interface_instance) => {
@@ -345,6 +369,9 @@ fn collect_choice(choice: &ChoiceDecl, spans: &mut Vec<Span>) {
     spans.push(choice.span);
     for param in &choice.params {
         spans.push(param.span);
+        if let Some(ty) = &param.ty {
+            collect_type(ty, spans);
+        }
     }
     for controller in &choice.controllers {
         collect_expr(controller, spans);
@@ -354,6 +381,32 @@ fn collect_choice(choice: &ChoiceDecl, spans: &mut Vec<Span>) {
     }
     if let Some(body) = &choice.body {
         collect_expr(body, spans);
+    }
+    if let Some(return_ty) = &choice.return_ty {
+        collect_type(return_ty, spans);
+    }
+}
+
+fn collect_type(ty: &Type, spans: &mut Vec<Span>) {
+    spans.push(ty.span());
+    match ty {
+        Type::Con { .. } | Type::Var(_, _) | Type::Unit(_) => {}
+        Type::App(head, args, _) => {
+            collect_type(head, spans);
+            for arg in args {
+                collect_type(arg, spans);
+            }
+        }
+        Type::List(inner, _) | Type::Constrained(inner, _) => collect_type(inner, spans),
+        Type::Tuple(elems, _) => {
+            for elem in elems {
+                collect_type(elem, spans);
+            }
+        }
+        Type::Fun(lhs, rhs, _) => {
+            collect_type(lhs, spans);
+            collect_type(rhs, spans);
+        }
     }
 }
 

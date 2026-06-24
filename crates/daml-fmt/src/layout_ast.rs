@@ -72,11 +72,11 @@ pub fn format_ast(src: &str, options: crate::FormatOptions) -> String {
 
     // Step 3: whitespace + colon normalization on top, gated vs `base`.
     // same_tokens keeps this final spacing step from changing `base`'s parse.
-    let full = crate::normalize_gaps(&base, true);
+    let full = crate::normalize_gaps(&base, crate::ColonSpacingMode::Canonical);
     if same_tokens(&base, &full) {
         return full;
     }
-    let ws_only = crate::normalize_gaps(&base, false);
+    let ws_only = crate::normalize_gaps(&base, crate::ColonSpacingMode::Preserve);
     if same_tokens(&base, &ws_only) {
         return ws_only;
     }

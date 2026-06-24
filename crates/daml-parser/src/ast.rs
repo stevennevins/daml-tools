@@ -41,6 +41,24 @@ impl Span {
         self.start == self.end
     }
 
+    #[must_use]
+    pub const fn range(&self) -> std::ops::Range<usize> {
+        self.start..self.end
+    }
+
+    #[must_use]
+    pub fn get<'a>(&self, source: &'a str) -> Option<&'a str> {
+        if self.start <= self.end
+            && self.end <= source.len()
+            && source.is_char_boundary(self.start)
+            && source.is_char_boundary(self.end)
+        {
+            Some(&source[self.start..self.end])
+        } else {
+            None
+        }
+    }
+
     /// `self` fully contains `other`.
     #[must_use]
     pub const fn contains(&self, other: &Self) -> bool {
@@ -949,6 +967,16 @@ mod tests {
         assert!(parent.contains(&span(3, 7)));
         assert!(!parent.contains(&span(7, 3)));
         assert!(!span(10, 1).contains(&span(3, 7)));
+    }
+
+    #[test]
+    fn span_range_and_get_share_source_bytes_safely() {
+        let source = "foo: Int";
+
+        assert_eq!(span(0, 3).range(), 0..3);
+        assert_eq!(span(0, 3).get(source), Some("foo"));
+        assert_eq!(span(3, 7).get(source), Some(": In"));
+        assert!(span(3, 100).get(source).is_none());
     }
 
     #[test]

@@ -338,11 +338,21 @@ pub fn parser_span_to_text_range(source: &str, span: ParserSpan) -> TextRange {
         .expect("parser span must map to a valid UTF-8 range")
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ParserSpanToTextRangeErrorKind {
+    OutOfBounds,
+    InvertedSpan,
+    NonUtf8Boundary,
+    TextSizeOverflow,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParserSpanToTextRangeError {
     source_len: usize,
     span_start: usize,
     span_end: usize,
+    kind: ParserSpanToTextRangeErrorKind,
 }
 
 impl ParserSpanToTextRangeError {
@@ -360,15 +370,27 @@ impl ParserSpanToTextRangeError {
     pub const fn span_end(&self) -> usize {
         self.span_end
     }
+
+    #[must_use]
+    pub const fn kind(&self) -> ParserSpanToTextRangeErrorKind {
+        self.kind
+    }
 }
 
 impl std::fmt::Display for ParserSpanToTextRangeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "parser span [{}, {}) is invalid for source length {}",
-            self.span_start, self.span_end, self.source_len
-        )
+        match self.kind {
+            ParserSpanToTextRangeErrorKind::TextSizeOverflow => write!(
+                f,
+                "parser span [{}, {}) cannot be represented as a text-size value",
+                self.span_start, self.span_end
+            ),
+            _ => write!(
+                f,
+                "parser span [{}, {}) is invalid for source length {}",
+                self.span_start, self.span_end, self.source_len
+            ),
+        }
     }
 }
 
@@ -385,18 +407,28 @@ pub fn try_parser_span_to_text_range(
     span: ParserSpan,
 ) -> Result<TextRange, ParserSpanToTextRangeError> {
     let source_len = source.len();
+    if span.start > source_len || span.end > source_len {
+        return Err(ParserSpanToTextRangeError {
+            source_len,
+            span_start: span.start,
+            span_end: span.end,
+            kind: ParserSpanToTextRangeErrorKind::OutOfBounds,
+        });
+    }
+    if span.start > span.end {
+        return Err(ParserSpanToTextRangeError {
+            source_len,
+            span_start: span.start,
+            span_end: span.end,
+            kind: ParserSpanToTextRangeErrorKind::InvertedSpan,
+        });
+    }
     if !source.is_char_boundary(span.start) || !source.is_char_boundary(span.end) {
         return Err(ParserSpanToTextRangeError {
             source_len,
             span_start: span.start,
             span_end: span.end,
-        });
-    }
-    if span.start > source_len || span.end > source_len || span.start > span.end {
-        return Err(ParserSpanToTextRangeError {
-            source_len,
-            span_start: span.start,
-            span_end: span.end,
+            kind: ParserSpanToTextRangeErrorKind::NonUtf8Boundary,
         });
     }
     Ok(TextRange::new(
@@ -404,11 +436,13 @@ pub fn try_parser_span_to_text_range(
             source_len,
             span_start: span.start,
             span_end: span.end,
+            kind: ParserSpanToTextRangeErrorKind::TextSizeOverflow,
         })?,
         TextSize::try_from(span.end).map_err(|_| ParserSpanToTextRangeError {
             source_len,
             span_start: span.start,
             span_end: span.end,
+            kind: ParserSpanToTextRangeErrorKind::TextSizeOverflow,
         })?,
     ))
 }
@@ -548,6 +582,7 @@ mod tests {
         let source = "module M where\nfoo = 1\n";
         let err = try_parser_span_to_text_range(source, ParserSpan::new(0, source.len() + 1))
             .unwrap_err();
+        assert_eq!(err.kind(), ParserSpanToTextRangeErrorKind::OutOfBounds);
         assert_eq!(
             err.to_string(),
             format!(
@@ -565,6 +600,7 @@ mod tests {
     fn try_parser_span_to_text_range_reports_inverted_spans() {
         let source = "abc";
         let err = try_parser_span_to_text_range(source, ParserSpan::new(2, 1)).unwrap_err();
+        assert_eq!(err.kind(), ParserSpanToTextRangeErrorKind::InvertedSpan);
         assert_eq!(
             err.to_string(),
             "parser span [2, 1) is invalid for source length 3"
@@ -578,6 +614,7 @@ mod tests {
     fn try_parser_span_to_text_range_rejects_non_utf8_boundary_spans() {
         let source = "a😀b";
         let err = try_parser_span_to_text_range(source, ParserSpan::new(1, 2)).unwrap_err();
+        assert_eq!(err.kind(), ParserSpanToTextRangeErrorKind::NonUtf8Boundary);
 
         assert_eq!(
             err.to_string(),

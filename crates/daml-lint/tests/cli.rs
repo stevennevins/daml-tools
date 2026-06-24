@@ -243,6 +243,86 @@ fn clean_file_exits_zero() {
 }
 
 #[test]
+#[cfg(unix)]
+fn unreadable_daml_file_exits_two() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let bad = temp_file(
+        "unreadable.daml",
+        r#"module Bad where
+f = ()"#,
+    );
+    let good = temp_file(
+        "good.daml",
+        r#"module Good where
+f = 1"#,
+    );
+    let parent = bad.parent().unwrap().to_path_buf();
+    let original_bad = std::fs::metadata(&bad).unwrap().permissions();
+    let mut bad_perm = original_bad.clone();
+    bad_perm.set_mode(0o000);
+    std::fs::set_permissions(&bad, bad_perm).unwrap();
+
+    let output = cmd()
+        .current_dir(&parent)
+        .arg(&good)
+        .arg(&bad)
+        .output()
+        .unwrap();
+
+    std::fs::set_permissions(&bad, original_bad).unwrap();
+    std::fs::remove_file(&bad).ok();
+    std::fs::remove_file(&good).ok();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("could not read"));
+    assert!(stdout.contains("Parse Errors (1)"), "stdout was:\n{stdout}");
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("No findings."));
+}
+
+#[test]
+#[cfg(unix)]
+fn unreadable_subdirectory_exits_two() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = temp_dir("unreadable-dir-project");
+    let unreadable = root.join("unreadable");
+    std::fs::create_dir(&unreadable).unwrap();
+    let original_dir = std::fs::metadata(&unreadable).unwrap().permissions();
+    let mut dir_perm = original_dir.clone();
+    dir_perm.set_mode(0o000);
+    std::fs::set_permissions(&unreadable, dir_perm).unwrap();
+
+    let output = cmd().current_dir(&root).arg("unreadable").output().unwrap();
+
+    std::fs::set_permissions(&unreadable, original_dir).unwrap();
+    std::fs::remove_dir_all(&unreadable).ok();
+    std::fs::remove_dir_all(&root).ok();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("could not read directory"));
+    assert!(stdout.contains("Parse Errors (1)"), "stdout was:\n{stdout}");
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("No findings."));
+}
+
+#[test]
+fn missing_input_exits_two() {
+    let root = temp_dir("missing-input-project");
+    let missing = root.join("missing.daml");
+    let output = cmd().current_dir(&root).arg(&missing).output().unwrap();
+
+    std::fs::remove_dir_all(&root).ok();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("does not exist"));
+    assert!(stdout.contains("Parse Errors (1)"), "stdout was:\n{stdout}");
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("No findings."));
+}
+
+#[test]
 fn findings_at_threshold_exit_one() {
     let path = temp_file(
         "finding.daml",
