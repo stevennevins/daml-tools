@@ -301,6 +301,7 @@ pub fn find_duplicate_detector_name(detectors: &[Box<dyn Detector>]) -> Option<S
 }
 
 #[cfg(all(test, feature = "js-runtime"))]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use std::path::PathBuf;

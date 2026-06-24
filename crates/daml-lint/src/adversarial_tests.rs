@@ -3,6 +3,7 @@
 //! these tests pin the failure modes the old line shim had.
 
 #![cfg(test)]
+#![allow(clippy::unwrap_used)]
 
 use crate::ir::*;
 use crate::parser::parse_daml_with_diagnostics;

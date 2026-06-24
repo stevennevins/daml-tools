@@ -1093,6 +1093,7 @@ fn choice_argument_of(arg: Option<&ast::Expr>) -> Option<Expr> {
     }
 }
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use std::path::Path;

@@ -566,6 +566,7 @@ fn collect_dostmt(do_stmt: &DoStmt, spans: &mut Vec<Span>) {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::lexer::{Pos, Trivia};

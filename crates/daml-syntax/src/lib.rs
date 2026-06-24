@@ -451,6 +451,7 @@ pub fn try_parser_span_to_text_range(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use daml_parser::ast_span::render_from_ast;

@@ -167,7 +167,7 @@ fn format_sarif(findings: &[Finding], parse_errors: &[ParseError]) -> String {
         }]
     });
 
-    serde_json::to_string_pretty(&sarif).unwrap()
+    serde_json::to_string_pretty(&sarif).expect("SARIF report value always serializes to JSON")
 }
 
 const fn sarif_level(severity: &Severity) -> &'static str {
@@ -339,7 +339,7 @@ fn format_json(findings: &[Finding], parse_errors: &[ParseError]) -> String {
         },
     };
 
-    serde_json::to_string_pretty(&report).unwrap()
+    serde_json::to_string_pretty(&report).expect("lint report value always serializes to JSON")
 }
 
 fn count_by_severity(findings: &[Finding]) -> (usize, usize, usize, usize, usize) {
@@ -380,6 +380,7 @@ pub fn exit_code(findings: &[Finding], fail_on: Severity) -> i32 {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::detector::FindingLocation;

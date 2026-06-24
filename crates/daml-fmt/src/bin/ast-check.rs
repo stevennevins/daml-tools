@@ -17,7 +17,7 @@ fn collect(path: &Path, out: &mut Vec<PathBuf>) {
     if path.is_dir() {
         let mut entries: Vec<_> = std::fs::read_dir(path)
             .unwrap_or_else(|e| panic!("read_dir {}: {}", path.display(), e))
-            .map(|e| e.unwrap().path())
+            .map(|e| e.expect("valid read_dir entry").path())
             .collect();
         entries.sort();
         for e in entries {

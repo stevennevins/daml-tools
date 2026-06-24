@@ -424,6 +424,7 @@ fn normalize_final_newline(out: &mut String) {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

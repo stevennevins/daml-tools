@@ -587,7 +587,10 @@ impl Parser {
                     )
                 ) =>
             {
-                let keyword = t.keyword().unwrap().to_string();
+                let keyword = t
+                    .keyword()
+                    .expect("declaration-head keyword token")
+                    .to_string();
                 self.bump();
                 let name = match self.peek() {
                     Some(TokenKind::UpperId { qualifier, name }) => {

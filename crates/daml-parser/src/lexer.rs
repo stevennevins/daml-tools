@@ -461,7 +461,10 @@ fn end_char_lit_error(source: &str, start: usize) -> usize {
         if len == 0 {
             return start + 1;
         }
-        let ch = source[i..i + len].chars().next().unwrap();
+        let ch = source[i..i + len]
+            .chars()
+            .next()
+            .expect("positive char_len_at guarantees one UTF-8 scalar");
         i += len;
 
         if escaped {
@@ -510,11 +513,17 @@ fn end_decimal_exponent_missing_digits(source: &str, start: usize) -> usize {
         if len == 0 {
             return start;
         }
-        let ch = source[byte..byte + len].chars().next().unwrap();
+        let ch = source[byte..byte + len]
+            .chars()
+            .next()
+            .expect("positive char_len_at guarantees one UTF-8 scalar");
         if matches!(ch, 'e' | 'E') {
             let mut end = byte + len;
             if let Some(sign_len) = char_len_at(source, end) {
-                let sign = source[end..end + sign_len].chars().next().unwrap();
+                let sign = source[end..end + sign_len]
+                    .chars()
+                    .next()
+                    .expect("positive char_len_at guarantees one UTF-8 scalar");
                 if matches!(sign, '+' | '-') {
                     end += sign_len;
                 }
@@ -868,6 +877,12 @@ impl<'a> Lexer<'a> {
         Some(c)
     }
 
+    /// Next char when `peek` / `peek_at` already confirmed input remains.
+    fn bump_after_peek(&mut self) -> char {
+        self.bump()
+            .expect("lexer cursor guarded by peek/peek_at before bump")
+    }
+
     const fn pos(&self) -> Pos {
         Pos {
             line: self.line,
@@ -1089,7 +1104,7 @@ impl<'a> Lexer<'a> {
         self.bump(); // opening '
         let mut value = String::new();
         while self.peek() != Some('\'') {
-            let c = self.bump().unwrap();
+            let c = self.bump_after_peek();
             if c == '\\' {
                 let escape_pos = Pos {
                     line: self.line,
@@ -1119,14 +1134,14 @@ impl<'a> Lexer<'a> {
         let start = self.byte;
         let mut text = String::new();
         if self.peek() == Some('0') && matches!(self.peek_at(1), Some('x' | 'X')) {
-            text.push(self.bump().unwrap());
-            text.push(self.bump().unwrap());
+            text.push(self.bump_after_peek());
+            text.push(self.bump_after_peek());
             let mut has_hex_digit = false;
             while self
                 .peek()
                 .is_some_and(|c| c.is_ascii_hexdigit() || c == '_')
             {
-                let c = self.bump().unwrap();
+                let c = self.bump_after_peek();
                 has_hex_digit |= c.is_ascii_hexdigit();
                 text.push(c);
             }
@@ -1137,15 +1152,15 @@ impl<'a> Lexer<'a> {
             return;
         }
         while self.peek().is_some_and(|c| c.is_ascii_digit() || c == '_') {
-            text.push(self.bump().unwrap());
+            text.push(self.bump_after_peek());
         }
         let mut decimal = false;
         // `1.5` is a decimal but `1..5` or `1.foo` is not.
         if self.peek() == Some('.') && self.peek_at(1).is_some_and(|c| c.is_ascii_digit()) {
             decimal = true;
-            text.push(self.bump().unwrap());
+            text.push(self.bump_after_peek());
             while self.peek().is_some_and(|c| c.is_ascii_digit() || c == '_') {
-                text.push(self.bump().unwrap());
+                text.push(self.bump_after_peek());
             }
         }
         if matches!(self.peek(), Some('e' | 'E')) {
@@ -1154,17 +1169,17 @@ impl<'a> Lexer<'a> {
                 || (matches!(self.peek_at(1), Some('+' | '-'))
                     && self.peek_at(2).is_some_and(|c| c.is_ascii_digit()))
             {
-                text.push(self.bump().unwrap());
+                text.push(self.bump_after_peek());
                 if matches!(self.peek(), Some('+' | '-')) {
-                    text.push(self.bump().unwrap());
+                    text.push(self.bump_after_peek());
                 }
                 while self.peek().is_some_and(|c| c.is_ascii_digit()) {
-                    text.push(self.bump().unwrap());
+                    text.push(self.bump_after_peek());
                 }
             } else {
-                text.push(self.bump().unwrap());
+                text.push(self.bump_after_peek());
                 if matches!(self.peek(), Some('+' | '-')) {
-                    text.push(self.bump().unwrap());
+                    text.push(self.bump_after_peek());
                 }
                 self.error(LexErrorKind::DecimalExponentMissingDigits, pos);
             }
@@ -1184,7 +1199,7 @@ impl<'a> Lexer<'a> {
         loop {
             let mut seg = String::new();
             while self.peek().is_some_and(is_ident_char) {
-                seg.push(self.bump().unwrap());
+                seg.push(self.bump_after_peek());
             }
             let seg_is_upper = seg.chars().next().is_some_and(|c| c.is_uppercase());
             segments.push(seg);
@@ -1199,7 +1214,9 @@ impl<'a> Lexer<'a> {
             }
             break;
         }
-        let name = segments.pop().unwrap();
+        let name = segments
+            .pop()
+            .expect("identifier loop always records at least one segment");
         let qualifier = if segments.is_empty() {
             None
         } else {

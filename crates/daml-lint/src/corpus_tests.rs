@@ -5,6 +5,7 @@
 //! extraction. The corpus is vendored under corpus/daml-finance/.
 
 #![cfg(test)]
+#![allow(clippy::unwrap_used)]
 
 use crate::ir::*;
 use crate::parser::parse_daml_with_diagnostics;
