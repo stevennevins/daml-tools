@@ -110,11 +110,6 @@ jobs:
             exit 0
           fi
 
-          if ! jq -e '.releases[]? | select(.package_name == "daml-lint")' <<<"${RELEASE_PR}" >/dev/null; then
-            echo "Release PR does not include daml-lint; nothing to sync."
-            exit 0
-          fi
-
           pr_number=$(jq -r '.number' <<<"${RELEASE_PR}")
           head_branch=$(jq -r '.head_branch' <<<"${RELEASE_PR}")
 
@@ -127,22 +122,94 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           gh pr checkout "${pr_number}"
 
-          ( cd crates/daml-lint && node tools/sync-lint-plugin-version.mjs )
+          # release-plz can update an existing release PR after newer main
+          # commits have also changed release metadata. In that case it may
+          # leave committed conflict markers in Cargo.toml/Cargo.lock; if we
+          # run the lint-plugin sync script before cleaning them, `cargo
+          # metadata` fails on the marker text instead of the workflow repairing
+          # the release PR. For release-managed metadata files, keep the
+          # "Stashed changes" side because that is the release-plz-generated
+          # version bump/changelog update.
+          python3 - <<'PY'
+          from pathlib import Path
+
+          release_managed_files = [
+              Path("Cargo.toml"),
+              Path("Cargo.lock"),
+              *Path("crates").glob("*/Cargo.toml"),
+              *Path("crates").glob("*/CHANGELOG.md"),
+          ]
+
+          def keep_stashed_changes(path: Path) -> bool:
+              text = path.read_text()
+              if "<<<<<<< Updated upstream" not in text:
+                  return False
+
+              resolved = []
+              state = "normal"
+              changed = False
+              for line in text.splitlines(keepends=True):
+                  if state == "normal" and line.startswith("<<<<<<< Updated upstream"):
+                      state = "updated"
+                      changed = True
+                      continue
+                  if state == "updated" and line.startswith("======="):
+                      state = "stashed"
+                      continue
+                  if state == "stashed" and line.startswith(">>>>>>> Stashed changes"):
+                      state = "normal"
+                      continue
+                  if state in {"normal", "stashed"}:
+                      resolved.append(line)
+
+              if state != "normal":
+                  raise SystemExit(f"unterminated conflict marker block in {path}")
+
+              path.write_text("".join(resolved))
+              return changed
+
+          fixed = [str(path) for path in release_managed_files if path.exists() and keep_stashed_changes(path)]
+          if fixed:
+              print("Resolved release-plz metadata conflict markers in:")
+              for path in fixed:
+                  print(f"  {path}")
+          else:
+              print("No release-plz metadata conflict markers found.")
+          PY
+
+          if grep -RInE '^(<<<<<<<|=======|>>>>>>>)' Cargo.toml Cargo.lock crates; then
+            echo "::error::Release PR still contains conflict markers after release metadata auto-resolution."
+            exit 1
+          fi
+
+          if jq -e '.releases[]? | select(.package_name == "daml-lint")' <<<"${RELEASE_PR}" >/dev/null; then
+            ( cd crates/daml-lint && node tools/sync-lint-plugin-version.mjs )
+          else
+            echo "Release PR does not include daml-lint; skipping lint-plugin package metadata sync."
+          fi
 
           if git diff --quiet -- \
+            Cargo.toml \
+            Cargo.lock \
+            crates/*/Cargo.toml \
+            crates/*/CHANGELOG.md \
             crates/daml-lint/package.json \
             crates/daml-lint/package-lock.json \
             crates/daml-lint/lint-plugin/package.json \
             crates/daml-lint/lint-plugin/templates/project/package.json; then
-            echo "lint-plugin package metadata is already synced."
+            echo "Release metadata and lint-plugin package metadata are already synced."
             exit 0
           fi
 
           git add \
+            Cargo.toml \
+            Cargo.lock \
+            crates/*/Cargo.toml \
+            crates/*/CHANGELOG.md \
             crates/daml-lint/package.json \
             crates/daml-lint/package-lock.json \
             crates/daml-lint/lint-plugin/package.json \
             crates/daml-lint/lint-plugin/templates/project/package.json
-          git commit -m "chore: sync lint-plugin package version"
+          git commit -m "chore: sync release metadata"
           git remote set-url origin "https://x-access-token:${RELEASE_PLZ_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push origin "HEAD:${head_branch}"
