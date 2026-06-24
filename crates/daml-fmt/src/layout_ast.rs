@@ -36,7 +36,7 @@
 //! (`crate::normalize_gaps`).
 
 use crate::ImportOrder;
-use daml_parser::ast::*;
+use daml_parser::ast::{ChoiceDecl, Decl, DoStmt, Expr, Module, Span, TemplateBodyDecl};
 use daml_parser::lexer::TriviaKind;
 use daml_syntax::{SourceFile, SourceTokens};
 

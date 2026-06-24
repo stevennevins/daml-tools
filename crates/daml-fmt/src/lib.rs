@@ -290,6 +290,10 @@ pub fn format_source_with_options(src: &str, options: FormatOptions) -> String {
 ///
 /// Returns [`FormatError`] with typed [`FormatDiagnostic`] entries when lexical or
 /// parser diagnostics are present.
+///
+/// # Errors
+///
+/// Returns [`FormatError`] when `src` produces lexical or parser diagnostics.
 pub fn try_format_source_with_options(
     src: &str,
     options: FormatOptions,
@@ -303,6 +307,10 @@ pub fn try_format_source_with_options(
 }
 
 /// Format Daml source with default formatter options, rejecting malformed input.
+///
+/// # Errors
+///
+/// Returns [`FormatError`] when `src` produces lexical or parser diagnostics.
 pub fn try_format_source(src: &str) -> Result<String, FormatError> {
     try_format_source_with_options(src, FormatOptions::default())
 }

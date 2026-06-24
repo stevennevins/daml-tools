@@ -10,7 +10,10 @@
 //! reconstruction is byte-identical to the source. A parser that dropped a
 //! token's bytes from every node span, or produced an overlap, fails here.
 
-use crate::ast::*;
+use crate::ast::{
+    Alt, Binding, ChoiceDecl, Decl, DoStmt, Equation, Expr, FieldAssign, Module, Pat, Span,
+    TemplateBodyDecl, Type,
+};
 use crate::lexer::{Trivia, TriviaKind};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,6 +127,11 @@ impl std::error::Error for AstSpanError {}
 /// no span covers (content the AST dropped).
 ///
 /// Obtain `trivia` from [`crate::lexer::lex_with_trivia`].
+///
+/// # Errors
+///
+/// Returns [`AstSpanError`] when spans fail nesting checks or when bytes in
+/// `source` are not covered by any AST node or trivia span.
 #[must_use = "check and handle render failures"]
 pub fn render_from_ast(
     source: &str,
