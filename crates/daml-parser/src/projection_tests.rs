@@ -25,7 +25,7 @@ fn parse(src: &str) -> Module {
 }
 
 fn text(src: &str, span: Span) -> &str {
-    &src[span.start..span.end]
+    span.get(src).expect("span must be valid UTF-8 slice")
 }
 
 /// Body expression of `name = <expr>` in a tiny module.

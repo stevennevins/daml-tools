@@ -30,7 +30,7 @@ fn parse(src: &str) -> Module {
 
 /// Substring of `src` covered by `span`.
 fn text(src: &str, span: Span) -> &str {
-    &src[span.start..span.end]
+    span.get(src).expect("span must be valid UTF-8 slice")
 }
 
 fn first_function<'a>(m: &'a Module, name: &str) -> &'a FunctionDecl {
@@ -182,6 +182,14 @@ f cid = pure ()
     let f = first_function(&m, "f");
     let fn_ty = f.ty.as_ref().expect("function signature type");
     assert_eq!(text(src, fn_ty.span()), "ContractId T -> Script ()");
+
+    match choice_ty {
+        Type::App(head, args, _) => {
+            assert_eq!(text(src, head.span()), "Optional");
+            assert_eq!(text(src, args[0].span()), "(ContractId T)");
+        }
+        _ => panic!("expected app type for choice return"),
+    }
 }
 
 #[test]

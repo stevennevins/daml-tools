@@ -2,7 +2,8 @@ use clap::Parser;
 use daml_lint::detector::{self, Severity};
 use daml_lint::reporter::{self, OutputFormat};
 use daml_lint::{detectors, parser};
-use std::path::PathBuf;
+use std::io::Write as _;
+use std::path::{Path, PathBuf};
 
 #[cfg(feature = "custom-rules")]
 mod config;
@@ -84,8 +85,13 @@ fn main() {
     }
 
     // Discover .daml files
-    let files = discover_daml_files(&cli.paths);
-    if files.is_empty() {
+    let (files, mut input_errors) = discover_daml_files(&cli.paths);
+    if !input_errors.is_empty() {
+        for error in &input_errors {
+            eprintln!("{error}");
+        }
+    }
+    if files.is_empty() && input_errors.is_empty() {
         eprintln!("No .daml files found.");
         std::process::exit(2);
     }
@@ -98,7 +104,11 @@ fn main() {
         let source = match std::fs::read_to_string(file) {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("Warning: could not read {}: {e}", file.display());
+                eprintln!("Error: could not read {}: {e}", file.display());
+                input_errors.push(InputDiscoveryError::ReadFailure {
+                    path: file.clone(),
+                    error: e,
+                });
                 continue;
             }
         };
@@ -143,8 +153,13 @@ fn main() {
             .then_with(|| a.line.cmp(&b.line))
     });
 
+    // Include input-path failures in the report channel so the output never
+    // reads as clean when input could not be discovered/read.
+    let mut reportable_parse_errors = parse_errors.clone();
+    reportable_parse_errors.extend(input_errors.iter().map(input_error_to_parse_error));
+
     // Format output
-    let output = reporter::format_findings(&all_findings, &parse_errors, cli.format);
+    let output = reporter::format_findings(&all_findings, &reportable_parse_errors, cli.format);
 
     if let Some(output_path) = &cli.output {
         std::fs::write(output_path, &output).unwrap_or_else(|e| {
@@ -157,19 +172,40 @@ fn main() {
             output_path.display()
         );
     } else {
-        println!("{output}");
+        print!("{output}");
+        let _ = std::io::stdout().flush();
     }
 
     // Parse failures mean the scan is not authoritative: signal that with a
     // distinct exit code (3) so callers can tell it apart from a clean scan (0),
     // a findings-over-threshold scan (1), and usage/IO errors (2). This is
     // independent of --fail-on, which only governs findings severity.
-    let code = if parse_errors.is_empty() {
-        reporter::exit_code(&all_findings, cli.fail_on)
+    let code = if input_errors.is_empty() {
+        if parse_errors.is_empty() {
+            reporter::exit_code(&all_findings, cli.fail_on)
+        } else {
+            3
+        }
     } else {
-        3
+        2
     };
     std::process::exit(code);
+}
+
+fn input_error_to_parse_error(error: &InputDiscoveryError) -> reporter::ParseError {
+    reporter::ParseError {
+        file: match error {
+            InputDiscoveryError::NotFound(path)
+            | InputDiscoveryError::NotADirectory(path)
+            | InputDiscoveryError::ReadDir { path, .. }
+            | InputDiscoveryError::ReadFailure { path, .. } => path.display().to_string(),
+        },
+        line: 1,
+        column: 1,
+        end_column: None,
+        message: error.to_string(),
+        category: daml_parser::ast::DiagnosticCategory::UnsupportedSyntax,
+    }
 }
 
 fn parse_output_format(value: &str) -> Result<OutputFormat, String> {
@@ -184,32 +220,101 @@ fn parse_fail_on(value: &str) -> Result<Severity, String> {
     })
 }
 
-fn discover_daml_files(paths: &[PathBuf]) -> Vec<PathBuf> {
-    let mut daml_files = Vec::new();
-    for path in paths {
-        if path.is_file() {
-            if path.extension().is_some_and(|e| e == "daml") {
-                daml_files.push(path.clone());
-            }
-        } else if path.is_dir() {
-            collect_daml_files(path, &mut daml_files);
-        } else {
-            eprintln!("Warning: scan path {} does not exist.", path.display());
-        }
-    }
-    daml_files.sort();
-    daml_files
+#[derive(Debug)]
+enum InputDiscoveryError {
+    NotFound(PathBuf),
+    NotADirectory(PathBuf),
+    ReadDir {
+        path: PathBuf,
+        error: std::io::Error,
+    },
+    ReadFailure {
+        path: PathBuf,
+        error: std::io::Error,
+    },
 }
 
-fn collect_daml_files(dir: &PathBuf, daml_files: &mut Vec<PathBuf>) {
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                collect_daml_files(&path, daml_files);
-            } else if path.extension().is_some_and(|e| e == "daml") {
-                daml_files.push(path);
+impl std::fmt::Display for InputDiscoveryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound(path) => {
+                write!(f, "Error: scan path {} does not exist", path.display())
+            }
+            Self::NotADirectory(path) => {
+                write!(
+                    f,
+                    "Error: scan path {} is not a file or directory",
+                    path.display()
+                )
+            }
+            Self::ReadDir { path, error } => {
+                write!(
+                    f,
+                    "Error: could not read directory {}: {error}",
+                    path.display()
+                )
+            }
+            Self::ReadFailure { path, error } => {
+                write!(f, "Error: could not read {}: {error}", path.display())
             }
         }
     }
+}
+
+fn discover_daml_files(paths: &[PathBuf]) -> (Vec<PathBuf>, Vec<InputDiscoveryError>) {
+    let mut daml_files = Vec::new();
+    let mut errors = Vec::new();
+    for path in paths {
+        collect_input_path(path, &mut daml_files, &mut errors);
+    }
+    daml_files.sort();
+    (daml_files, errors)
+}
+
+fn collect_input_path(
+    path: &Path,
+    daml_files: &mut Vec<PathBuf>,
+    errors: &mut Vec<InputDiscoveryError>,
+) {
+    match path.metadata() {
+        Ok(_md) if _md.is_file() => {
+            if path.extension().is_some_and(|e| e == "daml") {
+                daml_files.push(path.to_path_buf());
+            }
+        }
+        Ok(md) if md.is_dir() => {
+            let entries = match std::fs::read_dir(path) {
+                Ok(entries) => entries,
+                Err(error) => {
+                    errors.push(InputDiscoveryError::ReadDir {
+                        path: path.to_path_buf(),
+                        error,
+                    });
+                    return;
+                }
+            };
+            for entry in entries {
+                match entry {
+                    Ok(entry) => collect_input_path(&entry.path(), daml_files, errors),
+                    Err(error) => errors.push(InputDiscoveryError::ReadDir {
+                        path: path.to_path_buf(),
+                        error,
+                    }),
+                }
+            }
+        }
+        Ok(_) => {
+            errors.push(InputDiscoveryError::NotADirectory(path.to_path_buf()));
+        }
+        Err(error) => {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                errors.push(InputDiscoveryError::NotFound(path.to_path_buf()));
+            } else {
+                errors.push(InputDiscoveryError::ReadDir {
+                    path: path.to_path_buf(),
+                    error,
+                });
+            }
+        }
+    };
 }

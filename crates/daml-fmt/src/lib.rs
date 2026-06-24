@@ -167,12 +167,7 @@ pub fn coverage(src: &str) -> FormatCoverage {
 /// Reconstruct `src`, normalizing gap whitespace. With `colon`, also drop
 /// same-line spaces before a lone `:` token. Shared with the AST backend
 /// (`layout_ast`) so both paths apply the same proven, token-gated spacing.
-pub(crate) fn normalize_gaps(src: &str, colon: bool) -> String {
-    let mode = if colon {
-        ColonSpacingMode::Canonical
-    } else {
-        ColonSpacingMode::Preserve
-    };
+pub(crate) fn normalize_gaps(src: &str, mode: ColonSpacingMode) -> String {
     rewrite(src, mode)
 }
 
@@ -198,7 +193,7 @@ struct GapTokenSpan {
     is_token: bool,
 }
 
-fn rewrite(src: &str, colon: ColonSpacingMode) -> String {
+fn rewrite(src: &str, mode: ColonSpacingMode) -> String {
     let source_tokens = SourceTokens::lex(src);
 
     // Items that carry bytes, in source order. For each: brace-depth delta
@@ -266,7 +261,7 @@ fn rewrite(src: &str, colon: ColonSpacingMode) -> String {
         // but `{ field : Type }`, `(n : Nat)` and function-return `(args) : Ret`
         // keep the space (expected/ convention).
         let this_is_canon_colon =
-            colon.do_canonicalize_colons() && is_colon && brace_depth == 0 && !prev_was_rparen;
+            mode.do_canonicalize_colons() && is_colon && brace_depth == 0 && !prev_was_rparen;
         if this_is_canon_colon && !gap.is_empty() && !gap.contains('\n') {
             // drop same-line space(s) before the colon
         } else if prev_was_canon_colon && !gap.is_empty() && !gap.contains('\n') {
@@ -308,25 +303,30 @@ const fn brace_delta(t: &TokenKind) -> i32 {
 /// In a whitespace-only gap, drop runs of spaces/tabs that immediately precede a
 /// newline. Leading indentation and inter-token spacing are preserved.
 fn strip_trailing_ws(gap: &str) -> String {
-    let chars: Vec<char> = gap.chars().collect();
     let mut out = String::with_capacity(gap.len());
-    let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
-        if c == ' ' || c == '\t' {
-            let mut j = i;
-            while j < chars.len() && (chars[j] == ' ' || chars[j] == '\t') {
+    let bytes = gap.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b' ' || b == b'\t' {
+            let mut j = i + 1;
+            while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t') {
                 j += 1;
             }
-            if j < chars.len() && chars[j] == '\n' {
-                // trailing whitespace before a newline: drop it
-            } else {
-                out.extend(&chars[i..j]);
+            if !matches!(bytes.get(j), Some(b'\n' | b'\r')) {
+                out.push_str(&gap[i..j]);
             }
             i = j;
         } else {
-            out.push(c);
-            i += 1;
+            let ch = gap[i..].chars().next().expect("non-empty gap substring");
+            let width = ch.len_utf8();
+            if width == 1 {
+                out.push(ch);
+                i += 1;
+            } else {
+                out.push_str(&gap[i..i + width]);
+                i += width;
+            }
         }
     }
     out
@@ -467,8 +467,39 @@ mod tests {
             let Ok(src) = std::fs::read_to_string(f) else {
                 continue;
             };
+            let parsed = daml_parser::parse::parse_module(&src);
+            if let Some((message, kind)) = parsed.diagnostics.iter().find_map(|diagnostic| {
+                daml_syntax::try_parser_span_to_text_range(&src, diagnostic.span)
+                    .err()
+                    .map(|e| {
+                        (
+                            format!(
+                                "diagnostic {:?}: {}",
+                                diagnostic.category, diagnostic.message
+                            ),
+                            e,
+                        )
+                    })
+            }) {
+                if std::env::var_os("DAML_FMT_CORPUS_DEBUG").is_some() {
+                    eprintln!(
+                        "parser produced invalid span for {}: {} ({:?})",
+                        f.display(),
+                        message,
+                        kind
+                    );
+                }
+                failures.push(format!(
+                    "parse diagnostic span invalid for {}: {message}",
+                    f.display()
+                ));
+                continue;
+            }
             let source_file = SourceFile::parse(&src);
             if let Err(e) = render_from_ast(&src, source_file.module(), source_file.trivia()) {
+                if std::env::var_os("DAML_FMT_CORPUS_DEBUG").is_some() {
+                    eprintln!("render_from_ast failed for {}: {}", f.display(), e);
+                }
                 failures.push(format!("render_from_ast {}: {}", f.display(), e));
             }
             // Lex errors drop bytes by design; losslessness is only promised for
