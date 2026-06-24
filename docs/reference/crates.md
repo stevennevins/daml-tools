@@ -48,8 +48,8 @@ stay aligned.
 | Crate | Version | Kind | Package description |
 |-------|---------|------|---------------------|
 | [`daml-parser`](../../crates/daml-parser) | `0.6.2` | library | Lossless lexer, layout resolver, and parser for the Daml smart-contract language. |
-| [`daml-syntax`](../../crates/daml-syntax) | `0.4.2` | library | Shared parsed-source surface for Daml tools. |
-| [`daml-lint`](../../crates/daml-lint) | `0.6.2` | library and CLI | Static analysis scanner for Daml smart contracts. |
+| [`daml-syntax`](../../crates/daml-syntax) | `0.5.0` | library | Shared parsed-source surface for Daml tools. |
+| [`daml-lint`](../../crates/daml-lint) | `0.7.0` | library and CLI | Static analysis scanner for Daml smart contracts. |
 | [`daml-fmt`](../../crates/daml-fmt) | `0.4.2` | library and CLI | Canonical code formatter for the Daml smart-contract language, built on shared syntax. |
 
 ### Per-crate docs.rs URLs
@@ -104,7 +104,7 @@ README: [`crates/daml-syntax/README.md`](../../crates/daml-syntax/README.md)
 | `SourceTokens` | Tokenized source for callers that need tokens, trivia, lex errors, or laid-out tokens without a full parse. |
 | `LineIndex` | Byte, line/column, and UTF-16 offset mapping over one source string. |
 | `Diagnostic` | Parser diagnostic with source range, line/column, message, and category. |
-| `LineCol` | 1-based line and column pair. |
+| `ByteLineCol`, `CharLineCol` | 1-based line/column pairs that distinguish byte columns from Unicode scalar columns. |
 | `TextRange`, `TextSize` | Re-exported `text-size` range and offset types used by public range APIs. |
 
 ## `daml-lint`
