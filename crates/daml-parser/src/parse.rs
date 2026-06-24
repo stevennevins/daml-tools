@@ -1411,12 +1411,12 @@ impl Parser {
     fn function_item(&mut self) -> Option<Decl> {
         let pos = self.pos();
         let start_i = self.i;
-        let name = match self.peek().cloned() {
-            Some(TokenKind::LowerId {
-                qualifier: None,
-                name,
-            }) => name,
-            _ => return None,
+        let Some(TokenKind::LowerId {
+            qualifier: None,
+            name,
+        }) = self.peek().cloned()
+        else {
+            return None;
         };
 
         // Type signature: `name [, name2] : Type`
@@ -2065,21 +2065,18 @@ impl Parser {
         pos: Pos,
         start_i: usize,
     ) -> Expr {
-        let mut lhs = match self.unary(do_mode) {
-            Some(e) => e,
-            None => {
-                // Unparseable here: degrade to raw text up to the item end.
-                let start = self.i;
-                self.skip_to_item_end();
-                if self.i == start {
-                    self.bump();
-                }
-                return Expr::Error {
-                    raw: self.slice_text(start),
-                    span: self.node_span(start),
-                    pos,
-                };
+        let Some(mut lhs) = self.unary(do_mode) else {
+            // Unparseable here: degrade to raw text up to the item end.
+            let start = self.i;
+            self.skip_to_item_end();
+            if self.i == start {
+                self.bump();
             }
+            return Expr::Error {
+                raw: self.slice_text(start),
+                span: self.node_span(start),
+                pos,
+            };
         };
         loop {
             let (op, prec, right_assoc) = match self.peek() {
@@ -2389,9 +2386,8 @@ impl Parser {
         if self.i == 0 {
             return false;
         }
-        let dot = match self.toks.get(self.i) {
-            Some(t) => t,
-            None => return false,
+        let Some(dot) = self.toks.get(self.i) else {
+            return false;
         };
         if !matches!(&dot.kind, TokenKind::Op(o) if o.as_str() == ".") {
             return false;

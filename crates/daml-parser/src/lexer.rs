@@ -506,9 +506,8 @@ fn end_hex_missing_digits(source: &str, start: usize) -> usize {
 fn end_decimal_exponent_missing_digits(source: &str, start: usize) -> usize {
     let mut byte = start;
     while byte < source.len() {
-        let len = match char_len_at(source, byte) {
-            Some(len) => len,
-            None => return start,
+        let Some(len) = char_len_at(source, byte) else {
+            return start;
         };
         if len == 0 {
             return start;
