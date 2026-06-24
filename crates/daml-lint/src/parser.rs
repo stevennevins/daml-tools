@@ -5,7 +5,11 @@
 //! stable contract with rule scripts; structured `Expr` and `TypeNode`
 //! payloads carry the actual parse tree.
 
-use crate::ir::*;
+use crate::ir::{
+    BranchArm, CaseAlt, Choice, Consuming, DamlModule, EnsureClause, Expr, Field, Function, Import,
+    ImportStyle, Interface, InterfaceInstance, InterfaceMethod, LetBinding, LiteralKind,
+    RecordField, Span, SrcPos, Statement, Template, TypeNode,
+};
 use daml_parser::ast::{
     self, Consuming as ParserConsuming, Decl, DiagnosticCategory as ParserDiagnosticCategory,
     DoStmt, ImportStyle as ParserImportStyle, TemplateBodyDecl,
@@ -54,6 +58,7 @@ pub enum ParseDiagnosticCategory {
 }
 
 impl ParseDiagnosticCategory {
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::SkippedDeclaration => "skipped-declaration",
@@ -65,6 +70,7 @@ impl ParseDiagnosticCategory {
         }
     }
 
+    #[must_use]
     pub const fn from_parser_category(category: ParserDiagnosticCategory) -> Self {
         match category {
             ParserDiagnosticCategory::SkippedDecl => Self::SkippedDeclaration,

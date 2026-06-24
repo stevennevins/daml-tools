@@ -4,7 +4,12 @@
 //! `Decl::Unknown` plus a diagnostic, and parsing continues at the next
 //! virtual semicolon. The parser never panics and never aborts the file.
 
-use crate::ast::*;
+use crate::ast::{
+    Alt, Binding, ChoiceDecl, Consuming, Decl, DiagnosticCategory, DoStmt, Equation, Expr,
+    FieldAssign, FieldDecl, FunctionDecl, Identifier, ImportDecl, ImportStyle, InterfaceDecl,
+    InterfaceInstanceDecl, LitKind, Module, ModuleName, Operator, ParseDiagnostic, Pat,
+    SectionSide, Span, TemplateBodyDecl, TemplateDecl, Type,
+};
 use crate::layout::resolve_layout;
 use crate::lexer::{lex, Pos, Token, TokenKind};
 use std::collections::HashMap;
@@ -90,6 +95,10 @@ impl ParseModuleResult {
     /// Returns [`Ok`] only when [`Self::diagnostics`] is empty. Any diagnostic —
     /// lexical, malformed, skipped declaration, unsupported syntax, or
     /// recursion-limit degradation — becomes [`Err`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ParseModuleError`] when [`Self::diagnostics`] is non-empty.
     pub fn into_result(self) -> Result<Module, ParseModuleError> {
         if self.diagnostics.is_empty() {
             Ok(self.module)
@@ -165,6 +174,10 @@ pub fn parse_module(source: &str) -> ParseModuleResult {
 /// let err = parse_module_strict("module M where\n%%% junk\n").unwrap_err();
 /// assert!(!err.diagnostics().is_empty());
 /// ```
+///
+/// # Errors
+///
+/// Returns [`ParseModuleError`] when [`parse_module`] records any diagnostic.
 pub fn parse_module_strict(source: &str) -> Result<Module, ParseModuleError> {
     parse_module(source).into_result()
 }

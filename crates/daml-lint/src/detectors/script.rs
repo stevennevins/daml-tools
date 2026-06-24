@@ -212,6 +212,11 @@ fn parse_node<'js>(
 ///
 /// Returns `Err` when the file cannot be read, JS initialization fails, script
 /// execution fails, or required rule metadata is missing/invalid.
+///
+/// # Errors
+///
+/// Returns [`ScriptLoadError`] when the script cannot be read, initialized, or
+/// validated.
 #[must_use = "handle script load failures instead of ignoring diagnostics"]
 pub fn load_script(path: &Path) -> Result<Box<dyn Detector>, ScriptLoadError> {
     let options = empty_options();
@@ -223,6 +228,11 @@ pub fn load_script(path: &Path) -> Result<Box<dyn Detector>, ScriptLoadError> {
 ///
 /// Returns `Err` for I/O errors, JS runtime initialization failures, malformed
 /// JS metadata, or execution/visitor contract violations.
+///
+/// # Errors
+///
+/// Returns [`ScriptLoadError`] when the script cannot be read, initialized, or
+/// validated with the supplied `options`.
 #[must_use = "use loaded detector or propagate load errors"]
 pub fn load_script_with_options(
     path: &Path,

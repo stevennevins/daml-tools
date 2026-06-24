@@ -306,6 +306,11 @@ impl SourceFile {
     ///
     /// Malformed input still returns a partial module and surfaces diagnostics;
     /// this function does not fail with `Result`.
+    ///
+    /// # Panics
+    ///
+    /// Panics when a parser diagnostic span does not map to valid UTF-8 source
+    /// bytes in `source`.
     #[must_use]
     pub fn parse(source: &str) -> Self {
         let parsed = parse_module(source);
@@ -406,6 +411,11 @@ impl SourceFile {
     /// untrusted sources where offsets may be invalid. Use
     /// [`SourceFile::parser_span_to_text_range`] for spans that originate from
     /// this source and are expected to map to valid UTF-8 bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ParserSpanToTextRangeError`] when `span` is out of bounds,
+    /// inverted, not on a UTF-8 boundary, or cannot fit in [`TextSize`].
     #[must_use = "handle invalid span offsets before using the range"]
     pub fn try_parser_span_to_text_range(
         &self,
@@ -522,6 +532,11 @@ impl std::error::Error for ParserSpanToTextRangeError {}
 /// This is the fallible API and should be used for spans sourced outside
 /// `SourceFile` where invalid offsets are possible; offsets must be valid
 /// UTF-8 character boundaries.
+///
+/// # Errors
+///
+/// Returns [`ParserSpanToTextRangeError`] when `span` is out of bounds,
+/// inverted, not on a UTF-8 boundary, or cannot fit in [`TextSize`].
 #[must_use = "handle invalid span offsets before converting"]
 pub fn try_parser_span_to_text_range(
     source: &str,

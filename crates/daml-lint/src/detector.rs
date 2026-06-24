@@ -239,6 +239,10 @@ pub trait Detector {
             .unwrap_or_else(|e| panic!("detector '{}' failed: {}", self.name(), e))
     }
     /// Run a detector that may fail without terminating the caller.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DetectError`] when the detector cannot analyze `module`.
     fn try_detect(&self, module: &DamlModule) -> Result<Vec<Finding>, DetectError>;
 }
 

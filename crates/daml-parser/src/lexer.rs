@@ -756,6 +756,11 @@ pub fn lex_with_trivia(source: &str) -> LexWithTriviaOutput {
 /// exactly one token or comment span — in which case the result is
 /// byte-identical to `source`. This is the lossless-trivia oracle for the
 /// formatter.
+///
+/// # Errors
+///
+/// Returns [`RenderLosslessError`] when token/trivia spans overlap, leave gaps,
+/// or extend past the end of `source`.
 #[must_use = "handle render errors instead of discarding"]
 pub fn render_lossless(
     source: &str,
