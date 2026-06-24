@@ -343,6 +343,13 @@ pub enum Type {
     /// A constrained type `C a => T`: the context is not modeled, the body `T`
     /// is kept.
     Constrained(Box<Self>, Span),
+    /// Type-level string or char literal, e.g. the `"observers"` in
+    /// `HasField "observers" t PartiesMap`.
+    Lit {
+        kind: LitKind,
+        text: String,
+        span: Span,
+    },
 }
 
 /// Type equality intentionally ignores source spans.
@@ -371,6 +378,14 @@ impl PartialEq for Type {
             (Self::Fun(al, ar, _), Self::Fun(bl, br, _)) => al == bl && ar == br,
             (Self::Var(a, _), Self::Var(b, _)) => a == b,
             (Self::Unit(_), Self::Unit(_)) => true,
+            (
+                Self::Lit {
+                    kind: ak, text: at, ..
+                },
+                Self::Lit {
+                    kind: bk, text: bt, ..
+                },
+            ) => ak == bk && at == bt,
             _ => false,
         }
     }
@@ -389,7 +404,8 @@ impl Type {
             | Self::Fun(_, _, span)
             | Self::Var(_, span)
             | Self::Unit(span)
-            | Self::Constrained(_, span) => *span,
+            | Self::Constrained(_, span)
+            | Self::Lit { span, .. } => *span,
         }
     }
 
@@ -402,7 +418,8 @@ impl Type {
             | Self::Fun(_, _, s)
             | Self::Var(_, s)
             | Self::Unit(s)
-            | Self::Constrained(_, s) => *s = span,
+            | Self::Constrained(_, s)
+            | Self::Lit { span: s, .. } => *s = span,
         }
         self
     }

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Align crate package metadata with workspace inheritance: `homepage`, docs.rs
+  `documentation` URL, and AGPL `LICENSE` in the published tarball.
+
 ## [0.4.2](https://github.com/stevennevins/daml-tools/compare/daml-syntax-v0.4.1...daml-syntax-v0.4.2) - 2026-06-24
 
 ### Fixed

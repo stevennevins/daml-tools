@@ -126,8 +126,15 @@ plugin name.
 ### Parse diagnostics
 
 `daml-lint` reports parser diagnostics on stderr and includes parse errors in
-formatted output. A scan with parse errors exits `3`, even if no detector
-findings meet the `--fail-on` threshold.
+formatted output. Each diagnostic carries a stable category tag such as
+`lexical-error`, `malformed`, `skipped-declaration`, `unsupported-syntax`, or
+`recursion-limit` (JSON `parseErrors[].category`, SARIF notification
+`properties.category`, markdown report headings). A scan with parse errors exits
+`3`, even if no detector findings meet the `--fail-on` threshold.
+
+Rule settings in `.daml-lint.json` accept only canonical severities:
+`off`, `critical`, `high`, `medium`, `low`, and `info`. Legacy aliases such as
+`warn`/`error` and numeric shortcuts are rejected.
 
 ### Exit codes
 

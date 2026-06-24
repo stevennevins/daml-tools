@@ -11,15 +11,55 @@ membership is declared in [`Cargo.toml`](../../Cargo.toml).
 | Rust version | `1.87.0` |
 | License | `AGPL-3.0-only` |
 | Repository | `https://github.com/stevennevins/daml-tools` |
+| Homepage | `https://github.com/stevennevins/daml-tools` |
+
+All workspace members inherit `edition`, `rust-version`, `license`, `repository`,
+`homepage`, and `authors` from `[workspace.package]` in the root
+[`Cargo.toml`](../../Cargo.toml). Each crate sets its own `documentation` URL
+on docs.rs and keeps crate-specific `description`, `keywords`, `categories`, and
+`exclude` lists.
+
+### MSRV evidence
+
+The workspace MSRV is `1.87.0`, enforced by the `msrv` job in
+[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml). It is not raised
+speculatively:
+
+| Constraint | Source | Declared MSRV |
+|------------|--------|---------------|
+| QuickJS rule runtime | `rquickjs` 0.12 (`daml-lint` optional dep) | `1.87` |
+| CLI argument parsing | `clap` 4.6 (`daml-lint` optional dep) | `1.85` |
+
+`daml-parser` and `daml-fmt` have no external Rust dependencies beyond the
+shared syntax stack, but they share the workspace MSRV so `cargo install` and CI
+stay aligned.
+
+### Published package contents
+
+| Crate | `exclude` highlights | Notes |
+|-------|----------------------|-------|
+| `daml-parser` | _(none)_ | Ships `LICENSE`, `README.md`, `CHANGELOG.md`, and `src/`. |
+| `daml-syntax` | _(none)_ | Ships `LICENSE`, `README.md`, `CHANGELOG.md`, and `src/`. |
+| `daml-lint` | `test-fixtures/`, `docs/`, `tools/`, `lint-plugin/`, npm metadata, `rules/*.ts` | Keeps `examples/` and compiled `rules/*.js` (embedded via `include_str!`). |
+| `daml-fmt` | corpus, differential-test trees, dev scripts | Keeps the published `daml-fmt` binary and integration tests. |
 
 ## Workspace members
 
 | Crate | Version | Kind | Package description |
 |-------|---------|------|---------------------|
-| [`daml-parser`](../../crates/daml-parser) | `0.2.3` | library | Lossless lexer, layout resolver, and parser for the Daml smart-contract language. |
-| [`daml-syntax`](../../crates/daml-syntax) | `0.1.0` | library | Shared parsed-source surface for Daml tools. |
-| [`daml-lint`](../../crates/daml-lint) | `0.3.11` | library and CLI | Static analysis scanner for Daml smart contracts. |
-| [`daml-fmt`](../../crates/daml-fmt) | `0.2.8` | library and CLI | Canonical code formatter for the Daml smart-contract language, built on shared syntax. |
+| [`daml-parser`](../../crates/daml-parser) | `0.6.2` | library | Lossless lexer, layout resolver, and parser for the Daml smart-contract language. |
+| [`daml-syntax`](../../crates/daml-syntax) | `0.5.0` | library | Shared parsed-source surface for Daml tools. |
+| [`daml-lint`](../../crates/daml-lint) | `0.7.0` | library and CLI | Static analysis scanner for Daml smart contracts. |
+| [`daml-fmt`](../../crates/daml-fmt) | `0.4.2` | library and CLI | Canonical code formatter for the Daml smart-contract language, built on shared syntax. |
+
+### Per-crate docs.rs URLs
+
+| Crate | Documentation |
+|-------|---------------|
+| `daml-parser` | `https://docs.rs/daml-parser` |
+| `daml-syntax` | `https://docs.rs/daml-syntax` |
+| `daml-lint` | `https://docs.rs/daml-lint` |
+| `daml-fmt` | `https://docs.rs/daml-fmt` |
 
 ## `daml-parser`
 
@@ -64,7 +104,7 @@ README: [`crates/daml-syntax/README.md`](../../crates/daml-syntax/README.md)
 | `SourceTokens` | Tokenized source for callers that need tokens, trivia, lex errors, or laid-out tokens without a full parse. |
 | `LineIndex` | Byte, line/column, and UTF-16 offset mapping over one source string. |
 | `Diagnostic` | Parser diagnostic with source range, line/column, message, and category. |
-| `LineCol` | 1-based line and column pair. |
+| `ByteLineCol`, `CharLineCol` | 1-based line/column pairs that distinguish byte columns from Unicode scalar columns. |
 | `TextRange`, `TextSize` | Re-exported `text-size` range and offset types used by public range APIs. |
 
 ## `daml-lint`
@@ -107,7 +147,7 @@ stable.
 | `detectors` | Built-in detector registration through `create_builtin_detectors` when `js-runtime` is enabled. |
 | `detectors::script` | JavaScript rule runtime support when `js-runtime` is enabled; file loading is available with `custom-rules`. |
 | `ir` | Rule-facing Daml intermediate representation. |
-| `parser` | Lowering from `daml-syntax` parsed source to the linter IR, including parse diagnostics. |
+| `parser` | Lowering from `daml-syntax` parsed source to the linter IR. Key types: `parse_daml_with_diagnostics`, `ParseResult` (`module`, `diagnostics`), `ParseDiagnostic`, and stable `ParseDiagnosticCategory` tags (`lexical-error`, `malformed`, `unsupported-syntax`, …). |
 | `reporter` | Markdown, JSON, and SARIF report formatting plus exit-code support. |
 
 ### Built-in detectors
@@ -144,11 +184,17 @@ README: [`crates/daml-fmt/README.md`](../../crates/daml-fmt/README.md)
 |------|------------|-------------|
 | `format_source(src: &str) -> String` | Public | Formats Daml source with the AST-driven formatter. |
 | `format_source_with_options(src: &str, options: FormatOptions) -> String` | Public | Formats Daml source with explicit formatter options. |
-| `FormatOptions` | Public | Controls formatter behavior. `import_order` defaults to `ImportOrder::Organize`; use `ImportOrder::Preserve` to keep declaration order. |
+| `FormatOptions` | Public | Formatter switches. Prefer `Default`/`new()`/`with_*` for forward-compatible construction; struct literals remain supported while the option set is tiny. |
+| `ImportOrder` | Public | Import ordering strategy (`Organize` default, `Preserve` via CLI `--preserve-import-order`). `#[non_exhaustive]`. |
 | `lex_diagnostics(src: &str) -> Vec<String>` | Public | Returns lexer diagnostic strings for malformed source. |
 | `coverage(src: &str) -> FormatCoverage` | Public | Counts formatter structural edit candidates over modeled constructs. |
 
 The formatter backend is implemented in the private `layout_ast` module.
+
+`ImportOrder` is `#[non_exhaustive]` so new strategies can be added without
+breaking downstream `match` arms. `FormatOptions` stays an exhaustive struct:
+public fields plus `Default`/`new()` and `with_*` helpers are the supported
+construction path when new defaulted fields appear.
 
 ### Binaries
 

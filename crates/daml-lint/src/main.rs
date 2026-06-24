@@ -113,8 +113,9 @@ fn main() {
             }
         };
 
-        let (module, diagnostics) = parser::parse_daml_with_diagnostics(&source, file);
-        for d in &diagnostics {
+        let parse_result = parser::parse_daml_with_diagnostics(&source, file);
+        let module = parse_result.module;
+        for d in &parse_result.diagnostics {
             eprintln!(
                 "daml-lint: parse [{}]: {}:{}:{}: {}",
                 d.category.as_str(),
@@ -204,7 +205,7 @@ fn input_error_to_parse_error(error: &InputDiscoveryError) -> reporter::ParseErr
         column: 1,
         end_column: None,
         message: error.to_string(),
-        category: daml_parser::ast::DiagnosticCategory::UnsupportedSyntax,
+        category: parser::ParseDiagnosticCategory::UnsupportedSyntax,
     }
 }
 

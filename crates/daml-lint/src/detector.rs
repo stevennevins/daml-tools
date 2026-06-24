@@ -301,6 +301,7 @@ pub fn find_duplicate_detector_name(detectors: &[Box<dyn Detector>]) -> Option<S
 }
 
 #[cfg(all(test, feature = "js-runtime"))]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
@@ -459,6 +460,14 @@ mod tests {
     }
 
     #[test]
+    fn severity_ord_follows_enum_order_not_risk_rank() {
+        // `Ord` follows declaration order (Critical is the smallest variant).
+        // Callers sorting or gating by risk must use `rank()` / `meets_or_exceeds`.
+        assert!(Severity::Critical < Severity::Info);
+        assert!(Severity::High < Severity::Low);
+    }
+
+    #[test]
     fn severity_rank_is_explicitly_risk_ordered() {
         assert!(Severity::Critical.rank() > Severity::High.rank());
         assert!(Severity::High.rank() > Severity::Medium.rank());
@@ -469,5 +478,44 @@ mod tests {
         assert!(!Severity::Medium.meets_or_exceeds(Severity::High));
         assert!(!Severity::Low.meets_or_exceeds(Severity::High));
         assert!(!Severity::Info.meets_or_exceeds(Severity::High));
+    }
+
+    #[test]
+    fn findings_are_sorted_by_explicit_severity_ranking() {
+        let mut findings = [
+            Finding::new(
+                "rule-medium",
+                Severity::Medium,
+                FindingLocation::new("b.daml", 10, 4),
+                "medium finding",
+                "evidence",
+            ),
+            Finding::new(
+                "rule-critical",
+                Severity::Critical,
+                FindingLocation::new("a.daml", 3, 1),
+                "critical finding",
+                "evidence",
+            ),
+            Finding::new(
+                "rule-high",
+                Severity::High,
+                FindingLocation::new("a.daml", 5, 2),
+                "high finding",
+                "evidence",
+            ),
+        ];
+
+        findings.sort_by(|a, b| {
+            b.severity
+                .rank()
+                .cmp(&a.severity.rank())
+                .then_with(|| a.file.cmp(&b.file))
+                .then_with(|| a.line.cmp(&b.line))
+        });
+
+        assert_eq!(findings[0].severity, Severity::Critical);
+        assert_eq!(findings[1].severity, Severity::High);
+        assert_eq!(findings[2].severity, Severity::Medium);
     }
 }

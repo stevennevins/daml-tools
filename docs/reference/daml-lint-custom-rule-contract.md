@@ -106,10 +106,8 @@ Rule settings accept:
 
 | Setting | Meaning |
 |---------|---------|
-| `"off"` or `0` | Disable the rule. |
+| `"off"` | Disable the rule. |
 | `"critical"`, `"high"`, `"medium"`, `"low"`, `"info"` | Enable and set a `daml-lint` severity. |
-| `"warn"` or `1` | Enable as `medium`. |
-| `"error"` or `2` | Enable as `high`. |
 | `[severity, options]` | Enable with options exposed to the rule as global `CONFIG`. |
 
 `CONFIG` defaults to `{}`. If more than one option value is provided after the

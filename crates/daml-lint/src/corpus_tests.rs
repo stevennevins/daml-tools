@@ -5,6 +5,7 @@
 //! extraction. The corpus is vendored under corpus/daml-finance/.
 
 #![cfg(test)]
+#![allow(clippy::unwrap_used)]
 
 use crate::ir::*;
 use crate::parser::parse_daml_with_diagnostics;
@@ -41,9 +42,13 @@ fn load(rel: &str) -> Option<DamlModule> {
     let path = corpus_root().join("src/main/daml/Daml/Finance").join(rel);
     assert!(path.exists(), "corpus file missing: {}", path.display());
     let source = std::fs::read_to_string(&path).unwrap();
-    let (module, diags) = parse_daml_with_diagnostics(&source, Path::new(rel));
-    assert!(diags.is_empty(), "parse diagnostics in {rel}: {diags:?}");
-    Some(module)
+    let result = parse_daml_with_diagnostics(&source, Path::new(rel));
+    assert!(
+        result.diagnostics.is_empty(),
+        "parse diagnostics in {rel}: {:?}",
+        result.diagnostics
+    );
+    Some(result.module)
 }
 
 fn template<'a>(m: &'a DamlModule, name: &str) -> &'a Template {
@@ -355,11 +360,11 @@ fn corpus_parses_clean() {
     let mut diag_count = 0;
     for f in &files {
         let src = std::fs::read_to_string(f).unwrap();
-        let (_, diags) = parse_daml_with_diagnostics(&src, f);
-        if !diags.is_empty() {
-            eprintln!("{}: {:?}", f.display(), diags);
+        let result = parse_daml_with_diagnostics(&src, f);
+        if !result.diagnostics.is_empty() {
+            eprintln!("{}: {:?}", f.display(), result.diagnostics);
         }
-        diag_count += diags.len();
+        diag_count += result.diagnostics.len();
     }
     assert_eq!(diag_count, 0, "parse diagnostics across corpus");
 }

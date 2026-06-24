@@ -1,18 +1,30 @@
 [package]
 name = "daml-lint"
-version = "0.6.2"
+version = "0.7.0"
 description = "Static analysis scanner for Daml smart contracts"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
+documentation = "https://docs.rs/daml-lint"
 readme = "README.md"
 keywords = ["daml", "linter", "static-analysis", "smart-contracts", "security"]
 categories = ["development-tools", "command-line-utilities"]
-# Dev-only fixtures/notes stay out of the published crate (the custom-rule
-# `examples/` are kept — users writing AST rules need them).
-exclude = ["test-fixtures/", "docs/"]
+# Dev-only fixtures/notes stay out of the published crate. Keep `examples/` and
+# compiled `rules/*.js` (embedded at build time via `include_str!`); exclude
+# TypeScript rule sources, lint-plugin npm metadata, and release sync scripts.
+exclude = [
+    "test-fixtures/",
+    "docs/",
+    "tools/",
+    "lint-plugin/",
+    "package.json",
+    "package-lock.json",
+    "tsconfig.json",
+    "rules/*.ts",
+]
 
 # npm distribution of the CLI (cargo-npm). `cargo npm generate` builds a thin
 # wrapper package plus one optional native package per target.

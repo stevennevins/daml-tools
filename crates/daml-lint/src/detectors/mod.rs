@@ -2,6 +2,7 @@
 pub mod script;
 
 #[cfg(all(test, feature = "js-runtime"))]
+#[allow(clippy::unwrap_used)]
 mod builtin_script_tests;
 
 #[cfg(feature = "js-runtime")]

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Add shared `homepage` and docs.rs `documentation` metadata.
+
 ## [0.6.2](https://github.com/stevennevins/daml-tools/compare/daml-parser-v0.6.1...daml-parser-v0.6.2) - 2026-06-24
 
 ### Fixed

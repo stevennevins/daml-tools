@@ -9,11 +9,12 @@ import { z } from "zod/v4";
 import { agents } from "../agents";
 
 const followUpIds = [
-  "line-index-coupling",
-  "public-ir-non-exhaustive",
-  "parser-bool-flags",
-  "formatter-bool-tuple-cleanup",
-  "must-use-error-docs",
+  "daml-lint-public-api",
+  "parser-type-literals",
+  "syntax-coordinate-newtypes",
+  "format-options-api",
+  "msrv-package-metadata",
+  "unwrap-used-lint",
 ] as const;
 
 type FollowUpId = typeof followUpIds[number];
@@ -29,92 +30,136 @@ type FollowUp = {
 
 const followUps: FollowUp[] = [
   {
-    id: "line-index-coupling",
-    title: "LineIndex source/index coupling redesign",
+    id: "daml-lint-public-api",
+    title: "daml-lint public API reshaping",
     objective:
-      "Redesign the SourceFile/LineIndex relationship so callers cannot accidentally compute locations with a LineIndex built from different source text.",
+      "Review and complete the broader daml-lint public API cleanup around diagnostic categories, parse result API shape, rule settings, and severity ordering.",
     primaryFiles: [
-      "crates/daml-syntax/src",
+      "crates/daml-lint/src/lib.rs",
+      "crates/daml-lint/src/parser.rs",
+      "crates/daml-lint/src/detector.rs",
+      "crates/daml-lint/src/config.rs",
+      "crates/daml-lint/src/reporter.rs",
+      "crates/daml-lint/README.md",
+      "crates/daml-lint/lint-plugin",
+    ],
+    constraints: [
+      "Read public exports and immediate internal/CLI/plugin callers before changing the API.",
+      "Prefer clean breaks over compatibility shims; document any intentional breaking change in rustdoc/README where downstream callers need to know.",
+      "Use Rust SemVer guidance when deciding whether #[non_exhaustive], enum variants, public fields, or ordering changes are acceptable in this pre-1.0 crate.",
+      "Keep the slice focused on diagnostic categories, parse result API, rule settings, and severity ordering; do not redesign unrelated detectors.",
+    ],
+    validationHints: [
+      "Add or update tests that encode why severity ordering and rule-setting parsing matter.",
+      "Verify CLI/reporting/plugin type generation still compiles or clearly record any generated-file step that is needed.",
+    ],
+  },
+  {
+    id: "parser-type-literals",
+    title: "Parser type literal modeling",
+    objective:
+      "Model Daml type literals beyond the current safe malformed-annotation diagnostics so callers get structured AST coverage instead of only diagnostics where possible.",
+    primaryFiles: [
+      "crates/daml-parser/src/ast.rs",
+      "crates/daml-parser/src/parse.rs",
+      "crates/daml-parser/src/diag_tests.rs",
+      "crates/daml-parser/src/projection_tests.rs",
+      "crates/daml-lint/src/parser.rs",
+      "crates/daml-lint/src/ir.rs",
+    ],
+    constraints: [
+      "Read existing type AST modeling and parser tests before adding grammar coverage.",
+      "Do not broaden malformed annotation behavior accidentally; preserve diagnostics that intentionally protect unsupported syntax.",
+      "Make the smallest AST/API addition that represents the type literal cases found during audit.",
+    ],
+    validationHints: [
+      "Add parser tests that would fail if type literals collapse back to malformed-only diagnostics.",
+      "Run parser and lint tests that exercise type projection into lint IR.",
+    ],
+  },
+  {
+    id: "syntax-coordinate-newtypes",
+    title: "daml-syntax coordinate/domain newtypes",
+    objective:
+      "Introduce or complete domain-specific coordinate newtypes in daml-syntax so byte offsets, line/column positions, and source-domain identifiers are harder to mix up.",
+    primaryFiles: [
+      "crates/daml-syntax/src/lib.rs",
       "crates/daml-lint/src/ir.rs",
       "crates/daml-lint/src/parser.rs",
+      "crates/daml-parser/src/ast_span.rs",
+      "crates/daml-parser/src/span_tests.rs",
     ],
     constraints: [
-      "Read SourceFile and LineIndex exports, constructors, and immediate callers before editing.",
-      "Prefer a clean break over compatibility shims; make mismatched source/index usage impossible or visibly hard.",
-      "Keep the redesign narrow; do not refactor unrelated syntax or lint IR code.",
+      "Read all SourceFile, LineIndex, span, and coordinate exports/callers before editing.",
+      "Prefer typed clean breaks over adapters or duplicate raw usize APIs unless a raw API is demonstrably needed internally.",
+      "Keep conversions explicit at crate boundaries and avoid refactoring unrelated syntax representation.",
     ],
     validationHints: [
-      "Add or update tests that would fail if spans were resolved with a mismatched source/index pair.",
-      "Check all callers that currently pass SourceFile and LineIndex separately.",
+      "Add or update tests that catch mixed byte/line/column/domain usage.",
+      "Compile all crates that currently consume daml-syntax span/coordinate APIs.",
     ],
   },
   {
-    id: "public-ir-non-exhaustive",
-    title: "Public IR #[non_exhaustive] decision",
+    id: "format-options-api",
+    title: "FormatOptions builder and non-exhaustive API decision",
     objective:
-      "Audit the public daml-lint IR surface and either apply #[non_exhaustive] consistently where forward extension is intended or document why specific types stay exhaustive.",
-    primaryFiles: ["crates/daml-lint/src/ir.rs", "crates/daml-lint/src/lib.rs"],
-    constraints: [
-      "Make an explicit decision rather than copying attributes mechanically.",
-      "Use a clean break if public pattern matching must change; do not add compatibility adapters.",
-      "Update rustdoc/module docs so downstream users know the intended matching contract.",
-    ],
-    validationHints: [
-      "Compile public examples/tests after the decision.",
-      "Look for exported enums/structs that encode parsed Daml IR and may grow over time.",
-    ],
-  },
-  {
-    id: "parser-bool-flags",
-    title: "Parser bool-flag cleanup",
-    objective:
-      "Replace ambiguous private parser boolean flags with named intent-bearing types or small option structs where that improves readability.",
-    primaryFiles: ["crates/daml-parser/src/parse.rs"],
-    constraints: [
-      "Target private flags such as parsing mode booleans; leave simple predicate returns alone.",
-      "Do not broaden parser behavior or grammar support while cleaning names.",
-      "Keep changes local to parser control-flow readability unless immediate tests/callers require updates.",
-    ],
-    validationHints: [
-      "Parser behavior tests should remain unchanged except for added regression coverage around any touched mode flag.",
-      "Prefer enums/newtypes with names that make call sites self-documenting.",
-    ],
-  },
-  {
-    id: "formatter-bool-tuple-cleanup",
-    title: "Formatter private bool/tuple cleanup",
-    objective:
-      "Replace private formatter boolean flags and opaque tuple records with named structs/enums where the tuple or flag meaning is currently unclear.",
-    primaryFiles: ["crates/daml-fmt/src/lib.rs", "crates/daml-fmt/src/layout_ast.rs"],
-    constraints: [
-      "Focus on private implementation clarity; do not alter formatted output intentionally.",
-      "Avoid speculative formatter architecture changes.",
-      "Use named fields for tuple elements that represent token/layout state.",
-    ],
-    validationHints: [
-      "Run formatter snapshot/corpus tests and confirm expected output files do not change unless a real bug is intentionally fixed.",
-      "Add a focused test only if the cleanup exposes a previously unencoded invariant.",
-    ],
-  },
-  {
-    id: "must-use-error-docs",
-    title: "Broader #[must_use]/error-doc pass",
-    objective:
-      "Audit public APIs across the workspace for missing #[must_use] attributes and incomplete error documentation, then patch the highest-value gaps.",
+      "Review FormatOptions as a public API and either add a narrow builder/non_exhaustive design or document why the current exhaustive struct API is intentional.",
     primaryFiles: [
-      "crates/daml-parser/src",
-      "crates/daml-syntax/src",
-      "crates/daml-lint/src",
-      "crates/daml-fmt/src",
+      "crates/daml-fmt/src/lib.rs",
+      "crates/daml-fmt/Cargo.toml",
+      "crates/daml-fmt/tests/cli.rs",
+      "README.md",
     ],
     constraints: [
-      "Prioritize public constructors, accessors, analysis results, parse/format/lint outputs, and error-returning APIs.",
-      "Do not churn private helpers or add ceremonial attributes where ignoring the value is harmless.",
-      "Keep rustdoc concise and accurate; document when functions can error instead of restating signatures.",
+      "Use Cargo SemVer guidance: adding #[non_exhaustive] to an existing public struct is a breaking change; if used, make the break explicit.",
+      "Do not change formatter output intentionally.",
+      "Keep the API ergonomic for simple callers; avoid a large builder abstraction if Default plus documented struct fields remains the simpler choice.",
     ],
     validationHints: [
-      "Run cargo doc with workspace rustdoc lints enabled.",
-      "Add doc tests only when they clarify public usage and are cheap to maintain.",
+      "Add tests or doctests for the intended FormatOptions construction style if the API changes.",
+      "Run formatter tests and verify formatted snapshots/corpus output do not change unless explicitly justified.",
+    ],
+  },
+  {
+    id: "msrv-package-metadata",
+    title: "Per-crate MSRV and package metadata audit",
+    objective:
+      "Audit each Rust crate's rust-version and package metadata against Cargo publishing guidance, then patch high-value gaps consistently.",
+    primaryFiles: [
+      "Cargo.toml",
+      "crates/*/Cargo.toml",
+      "crates/*/README.md",
+      "README.md",
+    ],
+    constraints: [
+      "Use Cargo manifest/workspace inheritance guidance for rust-version, license, repository, readme, keywords, categories, and package include/exclude decisions.",
+      "Do not bump MSRV speculatively; if code requires the current workspace MSRV, record the evidence.",
+      "Keep metadata consistent across crates but preserve legitimate crate-specific differences.",
+    ],
+    validationHints: [
+      "Run cargo metadata and cargo package --list or --dry-run where practical for changed crates.",
+      "Document any validation skipped due to time or external packaging/network constraints.",
+    ],
+  },
+  {
+    id: "unwrap-used-lint",
+    title: "clippy unwrap_used readiness and lint policy",
+    objective:
+      "Audit whether the workspace is ready for clippy::unwrap_used = deny; enable it only if the resulting changes are surgical and validated, otherwise report the exact blockers.",
+    primaryFiles: [
+      "Cargo.toml",
+      "clippy.toml",
+      "crates/*/src/**/*.rs",
+      "crates/*/tests/**/*.rs",
+    ],
+    constraints: [
+      "Treat unwrap_used = deny as optional unless the codebase is ready; do not perform broad mechanical churn to force readiness.",
+      "Prefer intent-preserving Result propagation, expect messages with invariant rationale, or test-only allowances where those match existing conventions.",
+      "Do not hide panics with lossy fallbacks. Fail loud if an unwrap represents an unresolved design decision.",
+    ],
+    validationHints: [
+      "Run cargo clippy --workspace --all-targets -- -D warnings with unwrap_used denied if enabled.",
+      "Record representative remaining unwrap blockers if the lint is not enabled.",
     ],
   },
 ];
@@ -128,7 +173,7 @@ const scopeOutputSchema = z.looseObject({
 });
 
 const followUpResultSchema = z.looseObject({
-  id: z.enum(followUpIds).default("line-index-coupling"),
+  id: z.enum(followUpIds).default("daml-lint-public-api"),
   status: z.enum(["completed", "partial", "blocked"]).default("partial"),
   summary: z.string().default("Follow-up task completed."),
   filesChanged: z.array(z.string()).default([]),
@@ -298,7 +343,7 @@ export default smithers((ctx) => (
       <Task
         id="deferred-followups:scope"
         output={outputs.scope}
-        agent={agents.smartTool}
+        agent={agents.smart}
         timeoutMs={1_800_000}
         heartbeatTimeoutMs={600_000}
       >
@@ -329,7 +374,7 @@ export default smithers((ctx) => (
       <Task
         id="deferred-followups:validate"
         output={outputs.validation}
-        agent={agents.smartTool}
+        agent={agents.smart}
         needs={allFollowUpNeeds()}
         deps={allFollowUpDeps()}
         timeoutMs={3_600_000}

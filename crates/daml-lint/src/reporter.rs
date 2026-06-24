@@ -1,5 +1,5 @@
 use crate::detector::{Finding, Severity};
-use daml_parser::ast::DiagnosticCategory;
+use crate::parser::ParseDiagnosticCategory;
 use serde::Serialize;
 use serde_json::json;
 use std::error::Error;
@@ -59,7 +59,7 @@ pub struct ParseError {
     pub end_column: Option<usize>,
     pub message: String,
     /// Recovery category tag (e.g. `skipped-declaration`, `unsupported-syntax`).
-    pub category: DiagnosticCategory,
+    pub category: ParseDiagnosticCategory,
 }
 
 /// Format lint `findings` and parse errors into a stable output text format.
@@ -167,7 +167,7 @@ fn format_sarif(findings: &[Finding], parse_errors: &[ParseError]) -> String {
         }]
     });
 
-    serde_json::to_string_pretty(&sarif).unwrap()
+    serde_json::to_string_pretty(&sarif).expect("SARIF report value always serializes to JSON")
 }
 
 const fn sarif_level(severity: &Severity) -> &'static str {
@@ -339,7 +339,7 @@ fn format_json(findings: &[Finding], parse_errors: &[ParseError]) -> String {
         },
     };
 
-    serde_json::to_string_pretty(&report).unwrap()
+    serde_json::to_string_pretty(&report).expect("lint report value always serializes to JSON")
 }
 
 fn count_by_severity(findings: &[Finding]) -> (usize, usize, usize, usize, usize) {
@@ -380,6 +380,7 @@ pub fn exit_code(findings: &[Finding], fail_on: Severity) -> i32 {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::detector::FindingLocation;
@@ -391,7 +392,7 @@ mod tests {
             column: 5,
             end_column: Some(11),
             message: "unterminated string literal".to_string(),
-            category: DiagnosticCategory::Lex,
+            category: ParseDiagnosticCategory::LexicalError,
         }
     }
 

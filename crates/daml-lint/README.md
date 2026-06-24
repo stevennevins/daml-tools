@@ -322,6 +322,14 @@ source substrings. Detector result types such as `Finding`, `Severity`, and
 `DetectError` are non-exhaustive; use their documented fields/accessors and keep
 wildcard arms when matching enums. Patch releases should remain compatible.
 
+Breaking updates introduced in this branch:
+
+- `parse_daml_with_diagnostics` now returns a named `ParseResult` with fields
+  (`module`, `diagnostics`) instead of a tuple.
+- Rule setting values are now canonical only: `off`, `critical`, `high`,
+  `medium`, `low`, `info` (legacy `warn`/`error` and numeric shortcuts
+  `0`/`1`/`2` are intentionally rejected).
+
 ## License
 
 AGPL-3.0-only. See [LICENSE](LICENSE).

@@ -25,13 +25,43 @@
 //!
 //! assert_eq!(formatted, "module M where\nfoo: Int\nfoo = 1\n");
 //! ```
+//!
+//! # Formatter options
+//!
+//! ```
+//! use daml_fmt::{FormatOptions, ImportOrder, format_source_with_options};
+//!
+//! let src = "module M where\nimport DA.Optional\nimport DA.List\n\nx = []\n";
+//!
+//! // Default: organize imports.
+//! let organized = format_source_with_options(src, FormatOptions::default());
+//!
+//! // Preserve declaration order when package identity must stay stable.
+//! let preserved = format_source_with_options(
+//!     src,
+//!     FormatOptions::new().with_import_order(ImportOrder::Preserve),
+//! );
+//!
+//! assert_eq!(organized, "module M where\nimport DA.List\nimport DA.Optional\n\nx = []\n");
+//! assert_eq!(preserved, src);
+//! ```
+//!
+//! ## API posture
+//!
+//! This crate is pre-1.0. [`ImportOrder`] is `#[non_exhaustive]` so downstream
+//! `match` arms stay forward-compatible when new import strategies appear.
+//! [`FormatOptions`] stays an exhaustive struct: with one behavior switch today,
+//! public fields plus [`Default`]/[`FormatOptions::new`] and `with_*` helpers are
+//! simpler than `#[non_exhaustive]` (which would break struct literals per Cargo
+//! `SemVer`) or a dedicated builder type. New options will add fields with defaults
+//! and matching `with_*` methods.
 
 // AST-driven layout (own-design canonical layout). This is the shipping
 // backend. See src/layout_ast.rs.
 mod layout_ast;
 
 use daml_parser::lexer::{TokenKind, TriviaKind};
-use daml_syntax::{SourceFile, SourceTokens};
+use daml_syntax::{Coordinate, SourceFile, SourceTokens};
 
 /// Lexer diagnostics for `src`.
 ///
@@ -71,8 +101,8 @@ pub fn source_diagnostics(src: &str) -> Vec<String> {
         .map(|diagnostic| {
             format!(
                 "{}:{}: [{}] {}",
-                diagnostic.line,
-                diagnostic.column,
+                diagnostic.line.get(),
+                diagnostic.column.get(),
                 diagnostic.category.as_str(),
                 diagnostic.message
             )
@@ -98,6 +128,26 @@ pub enum ImportOrder {
 }
 
 /// Formatter behavior switches.
+///
+/// Prefer [`Default`], [`FormatOptions::new`], or the `with_*` helpers when
+/// constructing options so new fields can ship with defaults without breaking
+/// call sites. Struct literals and field updates remain supported while the
+/// option set stays small and exhaustive.
+///
+/// # Examples
+///
+/// ```
+/// use daml_fmt::{FormatOptions, ImportOrder};
+///
+/// let from_default = FormatOptions::default();
+/// let from_builder = FormatOptions::new().with_import_order(ImportOrder::Preserve);
+/// let from_literal = FormatOptions {
+///     import_order: ImportOrder::Preserve,
+/// };
+///
+/// assert_eq!(from_builder, from_literal);
+/// assert_ne!(from_default, from_builder);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FormatOptions {
     /// How formatter handles import declarations:
@@ -374,14 +424,26 @@ fn normalize_final_newline(out: &mut String) {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn format_options_default_matches_new() {
+        assert_eq!(FormatOptions::default(), FormatOptions::new());
+    }
 
     #[test]
     fn format_options_can_be_created_and_built() {
         let options = FormatOptions::new().with_import_order(ImportOrder::Preserve);
 
         assert_eq!(options.import_order, ImportOrder::Preserve);
+        assert_eq!(
+            options,
+            FormatOptions {
+                import_order: ImportOrder::Preserve,
+            }
+        );
     }
 
     #[test]

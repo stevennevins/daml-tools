@@ -6,6 +6,7 @@
 //! daml-finance corpus shared at the workspace root.
 
 #![cfg(test)]
+#![allow(clippy::unwrap_used)]
 
 use crate::ast::*;
 use crate::ast_span::{render_from_ast, AstSpanError};

@@ -12,19 +12,22 @@ members = [
 # bump faster), but the boilerplate below is written once here.
 [workspace.package]
 edition = "2021"
-# Verified workspace MSRV: rquickjs 0.12 (a daml-lint dependency) requires
-# rustc 1.87, and clap 4.6 pulls in edition-2024 crates needing 1.85. The
-# parser/formatter alone are lighter, but the workspace declares one MSRV.
+# Workspace MSRV (also enforced by `.github/workflows/ci.yml` `msrv` job on
+# 1.87.0). Lower bound from optional deps on `daml-lint`: `rquickjs` 0.12
+# declares `rust-version = "1.87"`; `clap` 4.6 declares `1.85`. Parser and
+# formatter crates alone are lighter, but one workspace MSRV keeps CI and
+# `cargo install` predictable.
 rust-version = "1.87.0"
 license = "AGPL-3.0-only"
 repository = "https://github.com/stevennevins/daml-tools"
+homepage = "https://github.com/stevennevins/daml-tools"
 authors = ["Steven Nevins"]
 
 [workspace.dependencies]
 # Inter-crate dep declared once; crates opt in with `daml-parser.workspace = true`.
 # Carries BOTH path (for local builds) and version (for crates.io publish).
 daml-parser = { path = "crates/daml-parser", version = "0.6.2" }
-daml-syntax = { path = "crates/daml-syntax", version = "0.4.2" }
+daml-syntax = { path = "crates/daml-syntax", version = "0.5.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }
@@ -71,3 +74,4 @@ uninlined_format_args = "deny"
 unnested_or_patterns = "deny"
 useless_let_if_seq = "deny"
 use_self = "deny"
+unwrap_used = "deny"

@@ -89,6 +89,30 @@ cat Foo.daml | daml-fmt                            # stdin -> stdout
 
 Exit codes: 0 ok, 1 `--check` found unformatted files, 2 error.
 
+## Library API
+
+`daml-fmt` is also a Rust library. The primary entry points are
+`format_source` (defaults) and `format_source_with_options`.
+
+```rust
+use daml_fmt::{FormatOptions, ImportOrder, format_source, format_source_with_options};
+
+let formatted = format_source("module M where\nfoo : Int\nfoo = 1\n");
+
+let preserved = format_source_with_options(
+    "module M where\nimport DA.List\nimport DA.Optional\n\nx = []\n",
+    FormatOptions::new().with_import_order(ImportOrder::Preserve),
+);
+```
+
+`ImportOrder` is `#[non_exhaustive]` for forward-compatible `match` arms.
+`FormatOptions` stays an exhaustive struct with public fields: with one option
+today, `Default`/`new()` plus `with_*` helpers are simpler than
+`#[non_exhaustive]` (which would break struct literals) or a dedicated builder.
+New formatter switches will add defaulted fields and matching `with_*` methods.
+
+See [crate reference](../../docs/reference/crates.md) for the full public API.
+
 ## Workspace-Only Tests
 
 These commands require a full repository checkout. The published crate excludes

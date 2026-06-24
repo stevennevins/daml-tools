@@ -22,6 +22,6 @@ export const providers = {
 export const agents = {
   cheapFast: [providers.codexSpark],
   smart: [providers.codexPlanner],
-  smartTool: [providers.codexSpark],
+  smartTool: [providers.cursorDefault],
   cursor: [providers.cursorDefault],
 } as const satisfies Record<string, AgentLike[]>;

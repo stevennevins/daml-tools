@@ -7,7 +7,7 @@
 //! wildcard arms when matching instead of exhaustiveness assumptions.
 
 use daml_parser::ast::Type;
-use daml_syntax::{SourceFile, TextRange};
+use daml_syntax::{Coordinate, SourceFile, TextRange};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -40,10 +40,10 @@ impl SourceSpan {
         let (start, end) = source_file.line_index().utf16_range(range);
         Self {
             file: file.to_path_buf(),
-            line: line_col.line,
-            column: line_col.column,
-            start,
-            end,
+            line: line_col.line.get(),
+            column: line_col.column.get(),
+            start: start.get(),
+            end: end.get(),
             byte_start,
             byte_end,
         }
@@ -85,6 +85,11 @@ pub enum TypeNode {
     },
     Constrained {
         body: Box<Self>,
+        span: SourceSpan,
+    },
+    Lit {
+        kind: LiteralKind,
+        value: String,
         span: SourceSpan,
     },
 }
@@ -139,6 +144,16 @@ impl TypeNode {
             },
             Type::Constrained(body, _) => Self::Constrained {
                 body: Box::new(Self::from_type(body, file, source_file)),
+                span: source_span(),
+            },
+            Type::Lit { kind, text, .. } => Self::Lit {
+                kind: match kind {
+                    daml_parser::ast::LitKind::Char => LiteralKind::Char,
+                    daml_parser::ast::LitKind::Int => LiteralKind::Int,
+                    daml_parser::ast::LitKind::Decimal => LiteralKind::Decimal,
+                    _ => LiteralKind::Text,
+                },
+                value: text.clone(),
                 span: source_span(),
             },
             _ => Self::Con {

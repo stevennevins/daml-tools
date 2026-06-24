@@ -23,6 +23,13 @@
 //! semver-sensitive additions should be considered when constructing IR nodes
 //! yourself.
 //!
+//! Parse diagnostics use [`parser::ParseDiagnosticCategory`] (not the parser
+//! crate's internal category enum) and [`parser::ParseResult`] (`module` +
+//! `diagnostics`) as the supported lowering entry point. For severity thresholds
+//! and report ordering, prefer [`detector::Severity::rank`] and
+//! [`detector::Severity::meets_or_exceeds`] over `Ord` — enum declaration
+//! order does not match risk rank.
+//!
 //! # Example
 //!
 //! ```
@@ -38,8 +45,10 @@
 //!     signatory owner
 //! ";
 //!
-//! let (module, diagnostics) =
+//! let parse_result =
 //!     daml_lint::parser::parse_daml_with_diagnostics(source, Path::new("M.daml"));
+//! let module = parse_result.module;
+//! let diagnostics = parse_result.diagnostics;
 //!
 //! assert!(diagnostics.is_empty());
 //! assert_eq!(module.name, "M");

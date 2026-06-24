@@ -390,7 +390,7 @@ fn collect_choice(choice: &ChoiceDecl, spans: &mut Vec<Span>) {
 fn collect_type(ty: &Type, spans: &mut Vec<Span>) {
     spans.push(ty.span());
     match ty {
-        Type::Con { .. } | Type::Var(_, _) | Type::Unit(_) => {}
+        Type::Con { .. } | Type::Var(_, _) | Type::Unit(_) | Type::Lit { .. } => {}
         Type::App(head, args, _) => {
             collect_type(head, spans);
             for arg in args {
@@ -566,6 +566,7 @@ fn collect_dostmt(do_stmt: &DoStmt, spans: &mut Vec<Span>) {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::lexer::{Pos, Trivia};
