@@ -7,15 +7,15 @@
 
 use crate::ir::*;
 use daml_parser::ast::{
-    self, Consuming as ParserConsuming, Decl, DiagnosticCategory, DoStmt,
-    ImportStyle as ParserImportStyle, TemplateBodyDecl,
+    self, Consuming as ParserConsuming, Decl, DiagnosticCategory as ParserDiagnosticCategory,
+    DoStmt, ImportStyle as ParserImportStyle, TemplateBodyDecl,
 };
 use daml_syntax::SourceFile;
 use std::path::Path;
 
 #[cfg(test)]
 pub(crate) fn parse_daml(source: &str, file: &Path) -> DamlModule {
-    parse_daml_with_diagnostics(source, file).0
+    parse_daml_with_diagnostics(source, file).module
 }
 
 /// A parse diagnostic for the caller to report.
@@ -23,20 +23,77 @@ pub(crate) fn parse_daml(source: &str, file: &Path) -> DamlModule {
 /// `end_column` is present when the offending span sits on a single line (most
 /// tokens); `category` is the parser's recovery classification.
 #[derive(Debug)]
-pub struct Diagnostic {
+pub struct ParseDiagnostic {
     pub line: usize,
     pub column: usize,
     pub end_column: Option<usize>,
     pub message: String,
-    pub category: DiagnosticCategory,
+    pub category: ParseDiagnosticCategory,
+}
+
+/// Stable, machine-readable parse-diagnostic categories.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ParseDiagnosticCategory {
+    /// A declaration could not be parsed and was skipped to the next item.
+    SkippedDeclaration,
+    /// A malformed expression, pattern, or expected-token error inside an
+    /// otherwise-recognized construct.
+    Malformed,
+    /// A construct the parser intentionally does not support, e.g. legacy
+    /// `controller ... can` choice syntax.
+    UnsupportedSyntax,
+    /// Expression/pattern nesting exceeded the recursion bound and was degraded
+    /// to raw text.
+    RecursionLimit,
+    /// A lexical error (unterminated string/comment, stray character).
+    LexicalError,
+    /// The parser reported an unknown or forward-compatible diagnostic category.
+    Unknown,
+}
+
+impl ParseDiagnosticCategory {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SkippedDeclaration => "skipped-declaration",
+            Self::Malformed => "malformed",
+            Self::UnsupportedSyntax => "unsupported-syntax",
+            Self::RecursionLimit => "recursion-limit",
+            Self::LexicalError => "lexical-error",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    pub const fn from_parser_category(category: ParserDiagnosticCategory) -> Self {
+        match category {
+            ParserDiagnosticCategory::SkippedDecl => Self::SkippedDeclaration,
+            ParserDiagnosticCategory::Malformed => Self::Malformed,
+            ParserDiagnosticCategory::UnsupportedSyntax => Self::UnsupportedSyntax,
+            ParserDiagnosticCategory::RecursionLimit => Self::RecursionLimit,
+            ParserDiagnosticCategory::Lex => Self::LexicalError,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ParseResult {
+    pub module: DamlModule,
+    pub diagnostics: Vec<ParseDiagnostic>,
 }
 
 /// Parse DAML source into the lint IR plus parse diagnostics.
 ///
 /// Parsing is loss-tolerant: a `DamlModule` is returned even when `diags` is
 /// non-empty.
+///
+/// # API note
+///
+/// `ParseResult` is the supported return type (`{ module, diagnostics }`) and
+/// replaces the previous tuple-shaped return. This is a breaking API shape
+/// change in favor of clearer, named-field access.
 #[must_use]
-pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> (DamlModule, Vec<Diagnostic>) {
+pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> ParseResult {
     let source_file = SourceFile::parse(source);
     let module = source_file.module();
     let imports = module
@@ -72,7 +129,7 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> (DamlModule, Ve
         }
     }
 
-    let ir = DamlModule {
+    let module = DamlModule {
         ir_version: 4,
         name: module.name.to_string(),
         file: file.to_path_buf(),
@@ -85,15 +142,18 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> (DamlModule, Ve
     let diags = source_file
         .diagnostics()
         .iter()
-        .map(|d| Diagnostic {
+        .map(|d| ParseDiagnostic {
             line: d.line,
             column: d.column,
             end_column: d.end_column,
             message: d.message.clone(),
-            category: d.category,
+            category: ParseDiagnosticCategory::from_parser_category(d.category),
         })
         .collect();
-    (ir, diags)
+    ParseResult {
+        module,
+        diagnostics: diags,
+    }
 }
 
 fn span_at(file: &Path, pos: ast::Pos) -> Span {
@@ -1336,5 +1396,18 @@ interface Base where
             "interface methods must not be extracted as top-level functions: {:?}",
             module.functions.iter().map(|f| &f.name).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn parse_result_carries_named_fields() {
+        let source = "module Hostile where\nf = \"unterminated";
+        let result = parse_daml_with_diagnostics(source, Path::new("Hostile.daml"));
+
+        assert_eq!(result.module.name, "Hostile");
+        assert!(!result.diagnostics.is_empty());
+        assert!(matches!(
+            result.diagnostics[0].category,
+            ParseDiagnosticCategory::LexicalError
+        ));
     }
 }

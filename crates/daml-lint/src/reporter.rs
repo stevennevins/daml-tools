@@ -1,5 +1,5 @@
 use crate::detector::{Finding, Severity};
-use daml_parser::ast::DiagnosticCategory;
+use crate::parser::ParseDiagnosticCategory;
 use serde::Serialize;
 use serde_json::json;
 use std::error::Error;
@@ -59,7 +59,7 @@ pub struct ParseError {
     pub end_column: Option<usize>,
     pub message: String,
     /// Recovery category tag (e.g. `skipped-declaration`, `unsupported-syntax`).
-    pub category: DiagnosticCategory,
+    pub category: ParseDiagnosticCategory,
 }
 
 /// Format lint `findings` and parse errors into a stable output text format.
@@ -391,7 +391,7 @@ mod tests {
             column: 5,
             end_column: Some(11),
             message: "unterminated string literal".to_string(),
-            category: DiagnosticCategory::Lex,
+            category: ParseDiagnosticCategory::LexicalError,
         }
     }
 

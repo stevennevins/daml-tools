@@ -10,7 +10,7 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 fn parse(source: &str) -> DamlModule {
-    parse_daml_with_diagnostics(source, Path::new("hostile.daml")).0
+    parse_daml_with_diagnostics(source, Path::new("hostile.daml")).module
 }
 
 fn single_var(exprs: &[Expr], expected: &str) -> bool {
@@ -104,8 +104,9 @@ fn ten_thousand_line_file_parses_quickly() {
     }
     assert!(src.lines().count() > 10_000);
     let start = std::time::Instant::now();
-    let (m, diags) = parse_daml_with_diagnostics(&src, Path::new("big.daml"));
-    assert!(diags.is_empty());
+    let result = parse_daml_with_diagnostics(&src, Path::new("big.daml"));
+    assert!(result.diagnostics.is_empty());
+    let m = result.module;
     assert_eq!(m.templates.len(), 1000);
     assert!(
         start.elapsed().as_secs() < 5,

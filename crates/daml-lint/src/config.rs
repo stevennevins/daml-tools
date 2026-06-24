@@ -408,14 +408,6 @@ impl RuleSetting {
     fn from_level_value(value: &Value) -> Result<RuleLevel, ConfigError> {
         match value {
             Value::String(level) => parse_level_string(level),
-            Value::Number(level) => match level.as_u64() {
-                Some(0) => Ok(RuleLevel::Off),
-                Some(1) => Ok(RuleLevel::Severity(Severity::Medium)),
-                Some(2) => Ok(RuleLevel::Severity(Severity::High)),
-                _ => Err(ConfigError::RuleSettingInvalidSeverity {
-                    value: value.to_string(),
-                }),
-            },
             _ => Err(ConfigError::RuleSettingInvalidType {
                 kind: serde_json::to_string(value).unwrap_or_else(|_| "value".to_string()),
             }),
@@ -522,17 +514,68 @@ fn strip_plugin_prefix(package: &str) -> &str {
 fn parse_level_string(level: &str) -> Result<RuleLevel, ConfigError> {
     match level.to_lowercase().as_str() {
         "off" => Ok(RuleLevel::Off),
-        "warn" | "warning" | "medium" => Ok(RuleLevel::Severity(Severity::Medium)),
-        "error" | "high" => Ok(RuleLevel::Severity(Severity::High)),
         "critical" => Ok(RuleLevel::Severity(Severity::Critical)),
+        "high" => Ok(RuleLevel::Severity(Severity::High)),
+        "medium" => Ok(RuleLevel::Severity(Severity::Medium)),
         "low" => Ok(RuleLevel::Severity(Severity::Low)),
         "info" => Ok(RuleLevel::Severity(Severity::Info)),
         _ => Err(ConfigError::RuleSettingInvalidSeverity {
-            value: level.to_string(),
+            value: format!("{level} (expected one of critical|high|medium|low|info|off)"),
         }),
     }
 }
 
 fn empty_options() -> Value {
     Value::Object(serde_json::Map::new())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rule_setting_parses_canonical_severities_and_off() {
+        let off = RuleSetting::from_value(serde_json::json!("off")).unwrap();
+        assert!(!off.enabled);
+        assert_eq!(off.severity, None);
+        assert_eq!(off.options, serde_json::json!({}));
+
+        let high = RuleSetting::from_value(serde_json::json!("high")).unwrap();
+        assert!(high.enabled);
+        assert_eq!(high.severity, Some(Severity::High));
+        assert_eq!(high.options, serde_json::json!({}));
+
+        let medium_with_options =
+            RuleSetting::from_value(serde_json::json!(["medium", { "names": ["Iou"] }])).unwrap();
+        assert!(medium_with_options.enabled);
+        assert_eq!(medium_with_options.severity, Some(Severity::Medium));
+        assert_eq!(
+            medium_with_options.options,
+            serde_json::json!({ "names": ["Iou"] })
+        );
+    }
+
+    #[test]
+    fn rule_setting_rejects_numeric_levels_and_legacy_aliases() {
+        assert!(matches!(
+            RuleSetting::from_value(serde_json::json!(1)),
+            Err(ConfigError::RuleSettingInvalidType { .. })
+        ));
+        assert!(matches!(
+            RuleSetting::from_value(serde_json::json!("warn")),
+            Err(ConfigError::RuleSettingInvalidSeverity { .. })
+        ));
+        assert!(matches!(
+            RuleSetting::from_value(serde_json::json!("error")),
+            Err(ConfigError::RuleSettingInvalidSeverity { .. })
+        ));
+    }
+
+    #[test]
+    fn rule_setting_requires_initial_severity_or_off() {
+        assert!(matches!(
+            RuleSetting::from_value(serde_json::json!([])),
+            Err(ConfigError::RuleSettingMissingSeverity { .. })
+        ));
+    }
 }

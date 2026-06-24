@@ -38,8 +38,10 @@
 //!     signatory owner
 //! ";
 //!
-//! let (module, diagnostics) =
+//! let parse_result =
 //!     daml_lint::parser::parse_daml_with_diagnostics(source, Path::new("M.daml"));
+//! let module = parse_result.module;
+//! let diagnostics = parse_result.diagnostics;
 //!
 //! assert!(diagnostics.is_empty());
 //! assert_eq!(module.name, "M");
