@@ -27,20 +27,20 @@ use daml_parser::lexer::{lex_with_trivia, LexError, Token, Trivia};
 use daml_parser::parse::parse_module;
 use std::sync::OnceLock;
 
-pub use text_size::{TextRange, TextSize};
+pub mod coordinate;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LineCol {
-    pub line: usize,
-    pub column: usize,
-}
+pub use coordinate::{
+    ByteColumn, ByteLineCol, ByteOffset, CharColumn, CharLineCol, Coordinate, LineNumber,
+    Utf16Offset,
+};
+pub use text_size::{TextRange, TextSize};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Diagnostic {
     pub range: TextRange,
-    pub line: usize,
-    pub column: usize,
-    pub end_column: Option<usize>,
+    pub line: LineNumber,
+    pub column: CharColumn,
+    pub end_column: Option<CharColumn>,
     pub message: String,
     pub category: DiagnosticCategory,
 }
@@ -116,52 +116,54 @@ impl LineIndex {
     }
 
     #[must_use]
-    pub fn line_col(&self, offset: TextSize) -> LineCol {
+    pub fn line_col(&self, offset: TextSize) -> ByteLineCol {
         let byte = usize::from(offset).min(self.source_len);
         let line_idx = match self.line_start_bytes.binary_search(&byte) {
             Ok(idx) => idx,
             Err(idx) => idx.saturating_sub(1),
         };
-        LineCol {
-            line: line_idx + 1,
-            column: byte - self.line_start_bytes[line_idx] + 1,
+        ByteLineCol {
+            line: LineNumber::new(line_idx + 1),
+            column: ByteColumn::new(byte - self.line_start_bytes[line_idx] + 1),
         }
     }
 
     #[must_use]
-    pub fn char_line_col(&self, offset: TextSize) -> LineCol {
+    pub fn char_line_col(&self, offset: TextSize) -> CharLineCol {
         let byte = usize::from(offset).min(self.source_len);
         let line_idx = match self.line_start_bytes.binary_search(&byte) {
             Ok(idx) => idx,
             Err(idx) => idx.saturating_sub(1),
         };
         let line_start = self.line_start_bytes[line_idx];
-        LineCol {
-            line: line_idx + 1,
-            column: self.char_offset_by_byte[byte] - self.char_offset_by_byte[line_start] + 1,
+        CharLineCol {
+            line: LineNumber::new(line_idx + 1),
+            column: CharColumn::new(
+                self.char_offset_by_byte[byte] - self.char_offset_by_byte[line_start] + 1,
+            ),
         }
     }
 
     #[must_use]
-    pub fn utf16_col(&self, line: usize, byte_col: usize) -> usize {
+    pub fn utf16_col(&self, line: LineNumber, byte_col: ByteColumn) -> Utf16Offset {
         let line_start = self
             .line_start_bytes
-            .get(line.saturating_sub(1))
+            .get(line.get().saturating_sub(1))
             .copied()
             .unwrap_or(self.source_len);
         let byte = line_start
-            .saturating_add(byte_col.saturating_sub(1))
+            .saturating_add(byte_col.get().saturating_sub(1))
             .min(self.source_len);
-        self.utf16_offset_by_byte[byte] - self.utf16_offset_by_byte[line_start]
+        Utf16Offset::new(self.utf16_offset_by_byte[byte] - self.utf16_offset_by_byte[line_start])
     }
 
     #[must_use]
-    pub fn utf16_range(&self, range: TextRange) -> (usize, usize) {
+    pub fn utf16_range(&self, range: TextRange) -> (Utf16Offset, Utf16Offset) {
         let start = usize::from(range.start()).min(self.source_len);
         let end = usize::from(range.end()).min(self.source_len).max(start);
         (
-            self.utf16_offset_by_byte[start],
-            self.utf16_offset_by_byte[end],
+            Utf16Offset::new(self.utf16_offset_by_byte[start]),
+            Utf16Offset::new(self.utf16_offset_by_byte[end]),
         )
     }
 }
@@ -232,11 +234,12 @@ impl SourceFile {
                 let end_column = source
                     .get(usize::from(range.start())..usize::from(range.end()))
                     .filter(|s| !s.is_empty() && !s.contains('\n'))
-                    .map(|s| diagnostic.pos.column + s.chars().count());
+                    .map(|s| CharColumn::new(diagnostic.pos.column + s.chars().count()));
+                let start_pos = line_index.char_line_col(start);
                 Diagnostic {
                     range,
-                    line: line_index.char_line_col(start).line,
-                    column: diagnostic.pos.column,
+                    line: start_pos.line,
+                    column: CharColumn::new(diagnostic.pos.column),
                     end_column,
                     message: diagnostic.message,
                     category: diagnostic.category,
@@ -457,8 +460,17 @@ mod tests {
     fn maps_empty_source_to_first_line() {
         let index = LineIndex::new("");
 
-        assert_eq!(index.line_col(0.into()), LineCol { line: 1, column: 1 });
-        assert_eq!(index.utf16_range(TextRange::empty(0.into())), (0, 0));
+        assert_eq!(
+            index.line_col(0.into()),
+            ByteLineCol {
+                line: LineNumber::new(1),
+                column: ByteColumn::new(1),
+            }
+        );
+        assert_eq!(
+            index.utf16_range(TextRange::empty(0.into())),
+            (Utf16Offset::new(0), Utf16Offset::new(0))
+        );
     }
 
     #[test]
@@ -466,8 +478,17 @@ mod tests {
         let source = "module M where\nfoo = 1\n";
         let index = LineIndex::new(source);
 
-        assert_eq!(index.line_col(15.into()), LineCol { line: 2, column: 1 });
-        assert_eq!(index.utf16_col(2, 4), 3);
+        assert_eq!(
+            index.line_col(15.into()),
+            ByteLineCol {
+                line: LineNumber::new(2),
+                column: ByteColumn::new(1),
+            }
+        );
+        assert_eq!(
+            index.utf16_col(LineNumber::new(2), ByteColumn::new(4)),
+            Utf16Offset::new(3)
+        );
     }
 
     #[test]
@@ -477,12 +498,18 @@ mod tests {
 
         assert_eq!(
             index.utf16_range(TextRange::new(0.into(), 6.into())),
-            (0, 4)
+            (Utf16Offset::new(0), Utf16Offset::new(4))
         );
-        assert_eq!(index.utf16_col(1, 6), 3);
+        assert_eq!(
+            index.utf16_col(LineNumber::new(1), ByteColumn::new(6)),
+            Utf16Offset::new(3)
+        );
         assert_eq!(
             index.char_line_col(5.into()),
-            LineCol { line: 1, column: 3 }
+            CharLineCol {
+                line: LineNumber::new(1),
+                column: CharColumn::new(3),
+            }
         );
     }
 
@@ -494,7 +521,10 @@ mod tests {
         // Offset 3 is inside the 4-byte 😀 sequence (1..5), so we expect snapping to 1.
         assert_eq!(
             index.char_line_col(3.into()),
-            LineCol { line: 1, column: 2 }
+            CharLineCol {
+                line: LineNumber::new(1),
+                column: CharColumn::new(2),
+            }
         );
     }
 
@@ -502,14 +532,26 @@ mod tests {
     fn preserves_trailing_newline_line_start() {
         let index = LineIndex::new("a\n");
 
-        assert_eq!(index.line_col(2.into()), LineCol { line: 2, column: 1 });
+        assert_eq!(
+            index.line_col(2.into()),
+            ByteLineCol {
+                line: LineNumber::new(2),
+                column: ByteColumn::new(1),
+            }
+        );
     }
 
     #[test]
     fn treats_crlf_as_bytes_without_normalization() {
         let index = LineIndex::new("a\r\nb");
 
-        assert_eq!(index.line_col(3.into()), LineCol { line: 2, column: 1 });
+        assert_eq!(
+            index.line_col(3.into()),
+            ByteLineCol {
+                line: LineNumber::new(2),
+                column: ByteColumn::new(1),
+            }
+        );
     }
 
     #[test]
@@ -517,7 +559,25 @@ mod tests {
         let index = LineIndex::new("abc");
         let range = TextRange::new(1.into(), 99.into());
 
-        assert_eq!(index.utf16_range(range), (1, 3));
+        assert_eq!(
+            index.utf16_range(range),
+            (Utf16Offset::new(1), Utf16Offset::new(3))
+        );
+    }
+
+    #[test]
+    fn byte_and_char_line_col_columns_differ_for_multibyte_utf8() {
+        let source = "😀\n";
+        let index = LineIndex::new(source);
+        let offset = TextSize::from(4);
+
+        let byte_pos = index.line_col(offset);
+        let char_pos = index.char_line_col(offset);
+
+        assert_eq!(byte_pos.line, char_pos.line);
+        assert_ne!(byte_pos.column.get(), char_pos.column.get());
+        assert_eq!(byte_pos.column, ByteColumn::new(5));
+        assert_eq!(char_pos.column, CharColumn::new(2));
     }
 
     #[test]

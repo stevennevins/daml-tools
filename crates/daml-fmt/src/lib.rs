@@ -31,7 +31,7 @@
 mod layout_ast;
 
 use daml_parser::lexer::{TokenKind, TriviaKind};
-use daml_syntax::{SourceFile, SourceTokens};
+use daml_syntax::{Coordinate, SourceFile, SourceTokens};
 
 /// Lexer diagnostics for `src`.
 ///
@@ -71,8 +71,8 @@ pub fn source_diagnostics(src: &str) -> Vec<String> {
         .map(|diagnostic| {
             format!(
                 "{}:{}: [{}] {}",
-                diagnostic.line,
-                diagnostic.column,
+                diagnostic.line.get(),
+                diagnostic.column.get(),
                 diagnostic.category.as_str(),
                 diagnostic.message
             )

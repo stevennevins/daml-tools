@@ -7,7 +7,7 @@
 //! wildcard arms when matching instead of exhaustiveness assumptions.
 
 use daml_parser::ast::Type;
-use daml_syntax::{SourceFile, TextRange};
+use daml_syntax::{Coordinate, SourceFile, TextRange};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -40,10 +40,10 @@ impl SourceSpan {
         let (start, end) = source_file.line_index().utf16_range(range);
         Self {
             file: file.to_path_buf(),
-            line: line_col.line,
-            column: line_col.column,
-            start,
-            end,
+            line: line_col.line.get(),
+            column: line_col.column.get(),
+            start: start.get(),
+            end: end.get(),
             byte_start,
             byte_end,
         }

@@ -10,7 +10,7 @@ use daml_parser::ast::{
     self, Consuming as ParserConsuming, Decl, DiagnosticCategory as ParserDiagnosticCategory,
     DoStmt, ImportStyle as ParserImportStyle, TemplateBodyDecl,
 };
-use daml_syntax::SourceFile;
+use daml_syntax::{Coordinate, SourceFile};
 use std::path::Path;
 
 #[cfg(test)]
@@ -143,9 +143,9 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> ParseResult {
         .diagnostics()
         .iter()
         .map(|d| ParseDiagnostic {
-            line: d.line,
-            column: d.column,
-            end_column: d.end_column,
+            line: d.line.get(),
+            column: d.column.get(),
+            end_column: d.end_column.map(Coordinate::get),
             message: d.message.clone(),
             category: ParseDiagnosticCategory::from_parser_category(d.category),
         })

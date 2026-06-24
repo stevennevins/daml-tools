@@ -10,7 +10,7 @@ let file = daml_syntax::SourceFile::parse(source);
 
 assert!(file.diagnostics().is_empty());
 assert_eq!(file.module().name, "M");
-assert_eq!(file.line_index().line_col(0.into()).line, 1);
+assert_eq!(file.line_index().line_col(0.into()).line, LineNumber::new(1));
 ```
 
 For callers that only need lexer, trivia, or laid-out token facts, use the
