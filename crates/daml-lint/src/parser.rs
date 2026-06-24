@@ -1410,4 +1410,35 @@ interface Base where
             ParseDiagnosticCategory::LexicalError
         ));
     }
+
+    #[test]
+    fn type_string_literal_projects_into_lint_ir() {
+        let source = r#"module Test where
+
+template T
+  with
+    ref : HasField "cid" t (ContractId Asset)
+  where
+    signatory ref
+"#;
+        let module = parse_daml(source, Path::new("Test.daml"));
+        assert_eq!(module.templates.len(), 1);
+        let field_ty = module.templates[0].fields[0]
+            .type_
+            .as_ref()
+            .expect("field type");
+        assert!(matches!(
+            field_ty,
+            TypeNode::App { head, args, .. }
+                if matches!(&**head, TypeNode::Con { name, .. } if name == "HasField")
+                    && matches!(
+                        &args[..],
+                        [
+                            TypeNode::Lit { value, .. },
+                            TypeNode::Var { .. },
+                            TypeNode::App { .. },
+                        ] if value == "cid"
+                    )
+        ));
+    }
 }

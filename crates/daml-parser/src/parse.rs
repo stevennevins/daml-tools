@@ -3151,11 +3151,21 @@ impl<'a> TypeTokenParser<'a> {
                 self.cursor += 1;
                 Some(TypeAtom::DroppedLiteral(Span::new(tok.start, tok.end)))
             }
-            TokenKind::StringLit(_) | TokenKind::CharLit(_) => {
-                // Type arguments like `HasField \"x\"` are not type-shape; keep
-                // the token for span recovery.
+            TokenKind::StringLit(text) => {
                 self.cursor += 1;
-                Some(TypeAtom::DroppedLiteral(Span::new(tok.start, tok.end)))
+                Some(TypeAtom::ParsedType(Type::Lit {
+                    kind: LitKind::Text,
+                    text: text.clone(),
+                    span: Span::new(tok.start, tok.end),
+                }))
+            }
+            TokenKind::CharLit(text) => {
+                self.cursor += 1;
+                Some(TypeAtom::ParsedType(Type::Lit {
+                    kind: LitKind::Char,
+                    text: text.clone(),
+                    span: Span::new(tok.start, tok.end),
+                }))
             }
             TokenKind::LBracket => {
                 let start = tok.start;
@@ -3405,6 +3415,22 @@ mod type_tests {
         Type::Constrained(Box::new(body), Span::default())
     }
 
+    fn text_lit(value: &str) -> Type {
+        Type::Lit {
+            kind: LitKind::Text,
+            text: value.to_string(),
+            span: Span::default(),
+        }
+    }
+
+    fn char_lit(value: &str) -> Type {
+        Type::Lit {
+            kind: LitKind::Char,
+            text: value.to_string(),
+            span: Span::default(),
+        }
+    }
+
     #[test]
     fn atoms() {
         assert_eq!(ty("Party"), Some(con("Party")));
@@ -3490,6 +3516,55 @@ mod type_tests {
         // and the head Con stands alone. `Numeric n` keeps the type variable.
         assert_eq!(ty("Numeric 10"), Some(con("Numeric")));
         assert_eq!(ty("Numeric n"), Some(app(con("Numeric"), vec![var("n")])));
+    }
+
+    #[test]
+    fn string_and_char_type_literals_are_structured() {
+        // `HasField "observers"` — the field name is a type-level string
+        // literal, not opaque syntax that collapses to malformed diagnostics.
+        assert_eq!(
+            ty(r#"HasField "observers""#),
+            Some(app(con("HasField"), vec![text_lit("observers")]))
+        );
+        assert_eq!(
+            ty(r#"HasField "observers" t PartiesMap"#),
+            Some(app(
+                con("HasField"),
+                vec![text_lit("observers"), var("t"), con("PartiesMap")]
+            ))
+        );
+        assert_eq!(
+            ty(r"HasField 'x'"),
+            Some(app(con("HasField"), vec![char_lit("x")]))
+        );
+    }
+
+    #[test]
+    fn type_literal_in_function_signature_is_not_malformed() {
+        let src = r#"module M where
+f : HasField "observers" t PartiesMap => ()
+  = ()
+"#;
+        let (module, diagnostics) = parse_module(src).into_parts();
+        assert!(
+            !diagnostics
+                .iter()
+                .any(|d| d.message.contains("malformed function type annotation")),
+            "constraint with type string literal must parse cleanly: {diagnostics:#?}"
+        );
+        let function = match &module.decls[0] {
+            Decl::Function(f) => f,
+            other => panic!("expected function, got {other:?}"),
+        };
+        let ty = function.ty.as_ref().expect("function signature type");
+        assert!(matches!(
+            ty,
+            Type::Constrained(body, _)
+                if matches!(
+                    &**body,
+                    Type::Unit(_)
+                )
+        ));
     }
 
     #[test]

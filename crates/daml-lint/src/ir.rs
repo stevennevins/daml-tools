@@ -87,6 +87,11 @@ pub enum TypeNode {
         body: Box<Self>,
         span: SourceSpan,
     },
+    Lit {
+        kind: LiteralKind,
+        value: String,
+        span: SourceSpan,
+    },
 }
 
 impl TypeNode {
@@ -139,6 +144,16 @@ impl TypeNode {
             },
             Type::Constrained(body, _) => Self::Constrained {
                 body: Box::new(Self::from_type(body, file, source_file)),
+                span: source_span(),
+            },
+            Type::Lit { kind, text, .. } => Self::Lit {
+                kind: match kind {
+                    daml_parser::ast::LitKind::Char => LiteralKind::Char,
+                    daml_parser::ast::LitKind::Int => LiteralKind::Int,
+                    daml_parser::ast::LitKind::Decimal => LiteralKind::Decimal,
+                    _ => LiteralKind::Text,
+                },
+                value: text.clone(),
                 span: source_span(),
             },
             _ => Self::Con {
