@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2](https://github.com/stevennevins/daml-tools/compare/daml-lint-v0.6.1...daml-lint-v0.6.2) - 2026-06-24
+
+### Fixed
+
+- *(rust)* tighten parser spans and lint input errors
+
 ## [0.6.1](https://github.com/stevennevins/daml-tools/compare/daml-lint-v0.6.0...daml-lint-v0.6.1) - 2026-06-23
 
 ### Added
