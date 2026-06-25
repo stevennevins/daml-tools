@@ -1,4 +1,4 @@
-//! Tests for record-projection precedence (`.`).
+//! Integration tests for record-projection precedence (`.`).
 //!
 //! A *tight* dot (`this.note`, no surrounding spaces) is record projection and
 //! binds tighter than application: `length this.note` is `length (this.note)`,
@@ -6,12 +6,10 @@
 //! and is left to the binary-operator layer. Qualified names (`Map.lookup`) are
 //! a single lexer token and never reach the projection path at all.
 
-#![cfg(test)]
-
-use crate::ast::*;
-use crate::ast_span::render_from_ast;
-use crate::lexer::lex_with_trivia;
-use crate::parse::parse_module;
+use daml_parser::ast::*;
+use daml_parser::ast_span::render_from_ast;
+use daml_parser::lexer::lex_with_trivia;
+use daml_parser::parse::parse_module;
 
 fn parse(src: &str) -> Module {
     let (module, diagnostics) = parse_module(src).into_parts();
@@ -232,6 +230,7 @@ fn find_binop<'a>(e: &'a Expr, op: &str) -> Option<&'a Expr> {
             DoStmt::Let { bindings, .. } => bindings
                 .iter()
                 .find_map(|binding| find_binop_in_binding(binding, op)),
+            _ => None,
         }),
         Expr::LetIn { bindings, body, .. } => bindings
             .iter()
@@ -252,7 +251,7 @@ fn find_binop<'a>(e: &'a Expr, op: &str) -> Option<&'a Expr> {
                 .find_map(|handler| find_binop(&handler.body, op))
         }),
         Expr::Section { operand, .. } => operand.as_deref().and_then(|expr| find_binop(expr, op)),
-        Expr::Var { .. } | Expr::Con { .. } | Expr::Lit { .. } | Expr::Error { .. } => None,
+        _ => None,
     }
 }
 

@@ -49,8 +49,3 @@ pub mod layout;
 pub mod lexer;
 /// Recursive-descent parser entry points and diagnostics.
 pub mod parse;
-
-#[cfg(test)]
-mod projection_tests;
-#[cfg(test)]
-mod span_tests;
