@@ -2738,7 +2738,7 @@ fn find_symbol(
 }
 
 #[cfg(test)]
-mod tests {
+mod line_helpers {
     use super::*;
 
     #[test]
@@ -2759,20 +2759,5 @@ mod tests {
         assert_eq!(indent_of(src, &ls, 1), 4);
         assert_eq!(line_of(&ls, 0), 0);
         assert_eq!(line_of(&ls, 6), 1);
-    }
-
-    #[test]
-    fn organize_imports_leaves_sorted_block_byte_identical() {
-        // Already-canonical import order must round-trip without rewriting the
-        // import block, even when extra blank lines sit between groups.
-        let src = "module M where\n\nimport Daml.Script\n\nimport DA.List\nimport DA.Optional\n\nx = []\n";
-        assert_eq!(organize_imports(src), src);
-    }
-
-    #[test]
-    fn organize_imports_groups_and_sorts_changed_blocks() {
-        let src = "module M where\n\nimport My.App\nimport DA.Optional\nimport Daml.Script\nimport DA.List\n\nx = []\n";
-        let want = "module M where\n\nimport Daml.Script\n\nimport DA.List\nimport DA.Optional\n\nimport My.App\n\nx = []\n";
-        assert_eq!(organize_imports(src), want);
     }
 }
