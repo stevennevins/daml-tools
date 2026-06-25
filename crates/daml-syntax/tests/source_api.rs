@@ -8,8 +8,8 @@ use daml_parser::ast::Span as ParserSpan;
 use daml_parser::ast_span::render_from_ast;
 use daml_parser::lexer::render_lossless;
 use daml_syntax::{
-    try_parser_span_to_text_range, ByteOffset, DiagnosticEndColumn, ParserSpanToTextRangeErrorKind,
-    SourceFile, SourceTokens, TextRange,
+    try_parser_span_to_text_range, ByteOffset, CharColumn, DiagnosticEndColumn,
+    ParserSpanToTextRangeErrorKind, SourceFile, SourceTokens, TextRange,
 };
 
 #[test]
@@ -142,6 +142,26 @@ fn try_parser_span_to_text_range_rejects_non_utf8_boundary_spans() {
     assert_eq!(err.source_len_bytes(), ByteOffset::new(source.len()));
     assert_eq!(err.span_start(), daml_syntax::ByteOffset::new(1));
     assert_eq!(err.span_end(), daml_syntax::ByteOffset::new(2));
+}
+
+#[test]
+fn diagnostics_expose_precise_end_column_shape_through_public_api() {
+    let same_line_file = SourceFile::parse("module M where\n%%% junk\n");
+    let same_line = same_line_file
+        .diagnostics()
+        .first()
+        .expect("junk declaration should surface a diagnostic");
+    assert_eq!(
+        same_line.end_column(),
+        DiagnosticEndColumn::SameLineEnd(CharColumn::new(4))
+    );
+
+    let empty_span_file = SourceFile::parse("module M where\nf = if x then 1\n");
+    let empty_span = empty_span_file
+        .diagnostics()
+        .first()
+        .expect("missing else should surface a zero-width diagnostic");
+    assert_eq!(empty_span.end_column(), DiagnosticEndColumn::EmptySpan);
 }
 
 #[test]

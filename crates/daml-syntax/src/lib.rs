@@ -59,6 +59,8 @@ pub use text_size::{TextRange, TextSize};
 ///
 /// Constructed by [`SourceFile::parse`]; read fields through accessors so future
 /// metadata (severity, codes, notes) can be added without breaking callers.
+/// Diagnostic positions are 1-based Unicode scalar columns; byte ranges remain
+/// available through [`Diagnostic::range`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Diagnostic {
@@ -105,7 +107,11 @@ impl Diagnostic {
         self.column
     }
 
-    /// Shape of the diagnostic span end.
+    /// End-column shape for the diagnostic span.
+    ///
+    /// [`DiagnosticEndColumn::SameLineEnd`] contains the exclusive 1-based
+    /// Unicode-scalar column for non-empty same-line spans. Empty and multi-line
+    /// spans are reported as distinct variants instead of a nullable column.
     #[must_use]
     pub const fn end_column(&self) -> DiagnosticEndColumn {
         self.end_column
@@ -126,8 +132,11 @@ impl Diagnostic {
 
 /// Precomputed line, character, and UTF-16 offset tables for a source string.
 ///
-/// Offsets passed to lookup methods are clamped to the source length. Returned
-/// line and column coordinates are always valid 1-based values.
+/// Byte offsets passed to [`LineIndex::line_col`] and
+/// [`LineIndex::char_line_col`] are clamped to the source length, and
+/// [`LineIndex::utf16_range`] clamps ranges to source bounds.
+/// [`LineIndex::utf16_col`] is deliberately fallible for line/column pairs and
+/// returns [`CoordinateRangeError`] when the pair is outside this source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LineIndex {
     source_len: usize,
@@ -798,25 +807,10 @@ pub fn try_parser_span_to_text_range(
     ))
 }
 
-// README examples are compile-tested by `cargo test -p daml-syntax --doc`.
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
 #[doc(hidden)]
-mod readme_examples {
-    //! ```rust
-    //! use daml_syntax::{LineNumber, SourceFile, SourceTokens};
-    //!
-    //! let source = "module M where\nfoo : Int\nfoo = 1\n";
-    //! let file = SourceFile::parse(source);
-    //!
-    //! assert!(file.diagnostics().is_empty());
-    //! assert_eq!(file.module().name, "M");
-    //! assert_eq!(file.line_index().line_col(0.into()).line, LineNumber::new(1));
-    //!
-    //! let tokens = SourceTokens::lex(source);
-    //!
-    //! assert!(tokens.lex_errors().is_empty());
-    //! assert!(!tokens.laid_out_tokens().is_empty());
-    //! ```
-}
+pub struct ReadmeDoctests;
 
 // Unit tests for [`LineIndex`] mapping internals stay here; [`SourceFile`],
 // [`SourceTokens`], diagnostics, and span-conversion behavior live in integration tests.

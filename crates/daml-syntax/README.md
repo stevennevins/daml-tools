@@ -19,8 +19,10 @@ coordinates reject zero through `try_new` and `TryFrom<usize>`, while raw
 coordinate extraction uses `usize::from(coordinate)`. UTF-16 column lookup
 returns `CoordinateRangeError` instead of clamping lines or columns past the
 source. UTF-16 slices are returned as `Utf16Range` values with named
-`start()`/`end()` accessors, and diagnostic end columns use `DiagnosticEndColumn`
-so same-line, multi-line, and empty spans cannot be collapsed accidentally.
+`start()`/`end()` accessors. Diagnostic end columns use `DiagnosticEndColumn`:
+non-empty same-line diagnostic spans carry an exclusive 1-based Unicode-scalar
+end column, while multi-line and empty spans are named separately so callers
+cannot collapse them accidentally.
 
 ## Quick start
 
@@ -48,4 +50,5 @@ assert!(tokens.lex_errors().is_empty());
 assert!(!tokens.laid_out_tokens().is_empty());
 ```
 
-README examples are also compile-tested via `cargo test -p daml-syntax --doc`.
+README examples are included in hidden rustdoc items and compile-tested via
+`cargo test -p daml-syntax --doc`.
