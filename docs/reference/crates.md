@@ -48,7 +48,7 @@ stay aligned.
 | Crate | Version | Kind | Package description |
 |-------|---------|------|---------------------|
 | [`daml-parser`](../../crates/daml-parser) | `0.7.0` | library | Lossless lexer, layout resolver, and parser for the Daml smart-contract language. |
-| [`daml-syntax`](../../crates/daml-syntax) | `0.6.0` | library | Shared parsed-source surface for Daml tools. |
+| [`daml-syntax`](../../crates/daml-syntax) | `0.7.0` | library | Shared parsed-source surface for Daml tools. |
 | [`daml-lint`](../../crates/daml-lint) | `0.8.1` | library and CLI | Static analysis scanner for Daml smart contracts. |
 | [`daml-fmt`](../../crates/daml-fmt) | `0.6.0` | library and CLI | Canonical code formatter for the Daml smart-contract language, built on shared syntax. |
 
