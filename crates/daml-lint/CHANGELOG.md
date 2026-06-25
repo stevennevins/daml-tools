@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0](https://github.com/stevennevins/daml-tools/compare/daml-lint-v0.8.1...daml-lint-v0.9.0) - 2026-06-25
+
+### Added
+
+- *(api)* [**breaking**] expose lint locations with `LineNumber` and `CharColumn` newtypes instead of raw `usize` coordinates.
+- *(api)* add typed error chaining for recoverable configuration and detector failures via `ConfigError::source` and `DetectError::with_source`.
+- *(api)* add typed parser/linting contracts for custom-rule runtime behavior, detector wrappers, parser lowering, and reporter output.
+
+### Changed
+
+- *(api)* [**breaking**] `Finding` and `FindingLocation` now use typed source coordinates; construct locations with `FindingLocation::new(file, LineNumber, CharColumn)`.
+- *(api)* [**breaking**] `DetectError` now preserves an optional source error and no longer implements `Clone`, `PartialEq`, or `Eq`.
+- *(api)* [**breaking**] `ConfiguredDetector::new` is no longer part of the public construction API; configure detectors through the documented lint configuration path.
+- *(api)* [**breaking**] detector wrapper failures now retain the wrapped detector error as the source instead of flattening it to a string.
+- *(api)* update dependencies on the breaking `daml-parser 0.9.0` and `daml-syntax 0.8.0` APIs.
+
 ## [0.8.1](https://github.com/stevennevins/daml-tools/compare/daml-lint-v0.8.0...daml-lint-v0.8.1) - 2026-06-24
 
 ### Other

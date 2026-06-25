@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0](https://github.com/stevennevins/daml-tools/compare/daml-fmt-v0.6.0...daml-fmt-v0.7.0) - 2026-06-25
+
+### Added
+
+- *(api)* add formatter behavior tests for library calls, layout fixtures, coverage failures, and corpus span preservation.
+
+### Changed
+
+- *(api)* [**breaking**] update formatter internals and public behavior to consume the typed `daml-parser 0.9.0` span and field-assignment APIs.
+- *(api)* [**breaking**] update formatter diagnostics and source mapping to consume the typed `daml-syntax 0.8.0` coordinate APIs.
+- *(api)* keep formatter output stable while replacing ambiguous raw byte/line counters in layout code with typed internal coordinates.
+
 ## [0.6.0](https://github.com/stevennevins/daml-tools/compare/daml-fmt-v0.5.0...daml-fmt-v0.6.0) - 2026-06-24
 
 ### Added

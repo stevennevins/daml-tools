@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0](https://github.com/stevennevins/daml-tools/compare/daml-parser-v0.8.0...daml-parser-v0.9.0) - 2026-06-25
+
+### Added
+
+- *(api)* [**breaking**] add typed byte-offset surfaces for parser spans: `ByteOffset`, `ByteSpan`, `Span::from_usize`, `Span::start_usize`, and `Span::end_usize`.
+- *(api)* [**breaking**] add typed parser diagnostics with `ParseDiagnosticKind`, `ExpectedToken`, `TypeAnnotationContext`, `MalformedSyntaxKind`, `SkippedDeclarationReason`, `UnsupportedSyntaxKind`, and strict parsing via `parse_module_strict`.
+- *(api)* add interop trait impls for parser domain types including identifiers, operators, module names, positions, and spans.
+
+### Changed
+
+- *(api)* [**breaking**] `Span::new` now accepts typed `ByteOffset` values instead of raw `usize` offsets.
+- *(api)* [**breaking**] record updates now model explicit assignments, puns, and wildcards with `FieldAssign::{Assign, Pun, Wildcard}` instead of a struct with nullable value fields.
+- *(api)* [**breaking**] parser diagnostics now expose typed diagnostic kinds for logic and keep the human message for presentation.
+
 ## [0.8.0](https://github.com/stevennevins/daml-tools/compare/daml-parser-v0.7.0...daml-parser-v0.8.0) - 2026-06-24
 
 ### Added
