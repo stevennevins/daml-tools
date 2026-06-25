@@ -27,7 +27,11 @@
 //!
 //! Parse diagnostics use [`parser::ParseDiagnosticCategory`] (not the parser
 //! crate's internal category enum) and [`parser::ParseResult`] (`module` +
-//! `diagnostics`) as the supported lowering entry point. For severity thresholds
+//! `diagnostics`) as the supported lowering entry point. Rust-facing locations
+//! and spans use [`daml_syntax::LineNumber`], [`daml_syntax::CharColumn`],
+//! [`daml_syntax::Utf16Offset`], and [`daml_syntax::ByteOffset`] so coordinate
+//! spaces cannot be mixed accidentally; JSON, SARIF, and custom-rule JavaScript
+//! output still serialize those coordinates as numbers. For severity thresholds
 //! and report ordering, use [`detector::Severity::rank`] and
 //! [`detector::Severity::meets_or_exceeds`]; `Severity` does not implement
 //! `Ord` because declaration order does not match risk rank.

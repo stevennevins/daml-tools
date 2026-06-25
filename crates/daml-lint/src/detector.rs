@@ -1,6 +1,21 @@
 use crate::ir::DamlModule;
-use serde::Serialize;
+use daml_syntax::{CharColumn, LineNumber};
+use serde::{Serialize, Serializer};
 use std::path::PathBuf;
+
+fn serialize_line_number<S>(line: &LineNumber, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_u64(line.get() as u64)
+}
+
+fn serialize_char_column<S>(column: &CharColumn, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_u64(column.get() as u64)
+}
 
 /// Error returned by fallible detector execution.
 ///
@@ -154,9 +169,11 @@ pub struct Finding {
     /// Source file where the finding was reported.
     pub file: PathBuf,
     /// 1-based source line.
-    pub line: usize,
+    #[serde(serialize_with = "serialize_line_number")]
+    pub line: LineNumber,
     /// 1-based source column.
-    pub column: usize,
+    #[serde(serialize_with = "serialize_char_column")]
+    pub column: CharColumn,
     /// Human-readable finding message.
     pub message: String,
     /// Source excerpt or structural evidence for the finding.
@@ -170,15 +187,15 @@ pub struct FindingLocation {
     /// Source file where the finding was reported.
     pub file: PathBuf,
     /// 1-based source line.
-    pub line: usize,
+    pub line: LineNumber,
     /// 1-based source column.
-    pub column: usize,
+    pub column: CharColumn,
 }
 
 impl FindingLocation {
     /// Construct a finding source location without relying on struct literal syntax.
     #[must_use]
-    pub fn new(file: impl Into<PathBuf>, line: usize, column: usize) -> Self {
+    pub fn new(file: impl Into<PathBuf>, line: LineNumber, column: CharColumn) -> Self {
         Self {
             file: file.into(),
             line,
@@ -210,9 +227,13 @@ impl Finding {
 }
 
 /// Parse a severity string accepted by the CLI.
-#[must_use]
-pub fn parse_severity(s: &str) -> Option<Severity> {
-    s.parse().ok()
+///
+/// # Errors
+///
+/// Returns [`SeverityParseError`] when `s` is not one of
+/// `critical`, `high`, `medium`, `low`, or `info`.
+pub fn parse_severity(s: &str) -> Result<Severity, SeverityParseError> {
+    s.parse()
 }
 
 // Scanning is single-threaded; detectors hold per-rule QuickJS state.
@@ -254,8 +275,7 @@ pub struct ConfiguredDetector {
 }
 
 impl ConfiguredDetector {
-    #[must_use]
-    pub fn new(
+    fn new(
         inner: Box<dyn Detector>,
         name_override: Option<String>,
         severity_override: Option<Severity>,
@@ -362,7 +382,7 @@ mod configured_detector_tests {
                 Ok(vec![Finding::new(
                     self.name(),
                     self.severity(),
-                    FindingLocation::new("named.daml", 9, 11),
+                    FindingLocation::new("named.daml", LineNumber::new(9), CharColumn::new(11)),
                     "rewritable finding",
                     "x",
                 )])
@@ -387,7 +407,7 @@ mod configured_detector_tests {
         let findings = detector.try_detect(&module).unwrap();
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].detector, "rewrite");
-        assert_eq!(findings[0].line, 9);
+        assert_eq!(findings[0].line, LineNumber::new(9));
     }
 
     #[test]
@@ -415,7 +435,7 @@ mod configured_detector_tests {
                 Ok(vec![Finding::new(
                     self.name(),
                     self.severity(),
-                    FindingLocation::new("severity.daml", 3, 7),
+                    FindingLocation::new("severity.daml", LineNumber::new(3), CharColumn::new(7)),
                     "high-severity finding",
                     "y",
                 )])

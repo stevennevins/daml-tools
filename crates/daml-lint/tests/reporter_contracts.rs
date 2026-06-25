@@ -5,13 +5,14 @@
 use daml_lint::detector::{Finding, FindingLocation, Severity};
 use daml_lint::parser::ParseDiagnosticCategory;
 use daml_lint::reporter::{self, OutputFormat, ParseError};
+use daml_syntax::{CharColumn, LineNumber};
 
 fn parse_err() -> ParseError {
     ParseError::new(
         "Bad.daml",
-        3,
-        5,
-        Some(11),
+        LineNumber::new(3),
+        CharColumn::new(5),
+        Some(CharColumn::new(11)),
         "unterminated string literal",
         ParseDiagnosticCategory::LexicalError,
     )
@@ -21,7 +22,7 @@ fn finding(column: usize, severity: Severity) -> Finding {
     Finding::new(
         "test-rule",
         severity,
-        FindingLocation::new("Test.daml", 3, column),
+        FindingLocation::new("Test.daml", LineNumber::new(3), CharColumn::new(column)),
         "finding message",
         "evidence",
     )

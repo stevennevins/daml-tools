@@ -1,0 +1,14 @@
+error[E0624]: associated function `new` is private
+  --> tests/compile_fail/configured_detector_new_private.rs:25:41
+   |
+25 |       let _detector = ConfiguredDetector::new(Box::new(DummyDetector), None, None);
+   |                                           ^^^ private associated function
+   |
+  ::: src/detector.rs
+   |
+   | /     fn new(
+   | |         inner: Box<dyn Detector>,
+   | |         name_override: Option<String>,
+   | |         severity_override: Option<Severity>,
+   | |     ) -> Self {
+   | |_____________- private associated function defined here

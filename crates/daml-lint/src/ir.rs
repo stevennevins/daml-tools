@@ -7,47 +7,81 @@
 //! wildcard arms when matching instead of exhaustiveness assumptions.
 
 use daml_parser::ast::Type;
-use daml_syntax::{SourceFile, TextRange};
-use serde::Serialize;
+use daml_syntax::{ByteOffset, CharColumn, LineNumber, SourceFile, TextRange, Utf16Offset};
+use serde::{Serialize, Serializer};
 use std::path::{Path, PathBuf};
+
+fn serialize_line_number<S>(line: &LineNumber, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_u64(line.get() as u64)
+}
+
+fn serialize_char_column<S>(column: &CharColumn, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_u64(column.get() as u64)
+}
+
+fn serialize_utf16_offset<S>(offset: &Utf16Offset, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_u64(offset.get() as u64)
+}
+
+fn serialize_byte_offset<S>(offset: &ByteOffset, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_u64(offset.get() as u64)
+}
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Span {
     pub file: PathBuf,
-    pub line: usize,
-    pub column: usize,
+    #[serde(serialize_with = "serialize_line_number")]
+    pub line: LineNumber,
+    #[serde(serialize_with = "serialize_char_column")]
+    pub column: CharColumn,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct SourceSpan {
     pub file: PathBuf,
-    pub line: usize,
-    pub column: usize,
+    #[serde(serialize_with = "serialize_line_number")]
+    pub line: LineNumber,
+    #[serde(serialize_with = "serialize_char_column")]
+    pub column: CharColumn,
     /// UTF-16 code-unit offset into `DamlModule.source`, suitable for
     /// JavaScript's `module.source.slice(start, end)`.
-    pub start: usize,
-    pub end: usize,
+    #[serde(serialize_with = "serialize_utf16_offset")]
+    pub start: Utf16Offset,
+    #[serde(serialize_with = "serialize_utf16_offset")]
+    pub end: Utf16Offset,
     /// Parser byte offsets into the UTF-8 source.
-    pub byte_start: usize,
-    pub byte_end: usize,
+    #[serde(serialize_with = "serialize_byte_offset")]
+    pub byte_start: ByteOffset,
+    #[serde(serialize_with = "serialize_byte_offset")]
+    pub byte_end: ByteOffset,
 }
 
 impl SourceSpan {
     fn from_text_range(file: &Path, source_file: &SourceFile, range: TextRange) -> Self {
-        let byte_start = usize::from(range.start());
-        let byte_end = usize::from(range.end());
         let line_col = source_file.line_index().char_line_col(range.start());
         let utf16_range = source_file.line_index().utf16_range(range);
         Self {
             file: file.to_path_buf(),
-            line: line_col.line.get(),
-            column: line_col.column.get(),
-            start: utf16_range.start().get(),
-            end: utf16_range.end().get(),
-            byte_start,
-            byte_end,
+            line: line_col.line,
+            column: line_col.column,
+            start: utf16_range.start(),
+            end: utf16_range.end(),
+            byte_start: range.start().into(),
+            byte_end: range.end().into(),
         }
     }
 }
@@ -173,8 +207,10 @@ impl TypeNode {
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct SrcPos {
-    pub line: usize,
-    pub column: usize,
+    #[serde(serialize_with = "serialize_line_number")]
+    pub line: LineNumber,
+    #[serde(serialize_with = "serialize_char_column")]
+    pub column: CharColumn,
 }
 
 #[non_exhaustive]
@@ -533,10 +569,10 @@ mod tests {
         let span_a = SourceSpan::from_text_range(Path::new("A.daml"), &source_a, range);
         let span_b = SourceSpan::from_text_range(Path::new("B.daml"), &source_b, range);
 
-        assert_eq!(span_a.line, 2);
-        assert_eq!(span_b.line, 3);
+        assert_eq!(span_a.line, LineNumber::new(2));
+        assert_eq!(span_b.line, LineNumber::new(3));
         assert_ne!(span_a.column, span_b.column);
-        assert_eq!(span_a.column, 3);
-        assert_eq!(span_b.column, 1);
+        assert_eq!(span_a.column, CharColumn::new(3));
+        assert_eq!(span_b.column, CharColumn::new(1));
     }
 }

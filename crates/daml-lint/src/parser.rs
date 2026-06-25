@@ -14,7 +14,7 @@ use daml_parser::ast::{
     self, Consuming as ParserConsuming, Decl, DiagnosticCategory as ParserDiagnosticCategory,
     DoStmt, ImportStyle as ParserImportStyle, TemplateBodyDecl,
 };
-use daml_syntax::{DiagnosticEndColumn, SourceFile};
+use daml_syntax::{CharColumn, DiagnosticEndColumn, LineNumber, SourceFile};
 use std::path::Path;
 
 #[cfg(all(test, feature = "js-runtime"))]
@@ -29,9 +29,9 @@ pub(crate) fn parse_daml(source: &str, file: &Path) -> DamlModule {
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct ParseDiagnostic {
-    pub line: usize,
-    pub column: usize,
-    pub end_column: Option<usize>,
+    pub line: LineNumber,
+    pub column: CharColumn,
+    pub end_column: Option<CharColumn>,
     pub message: String,
     pub category: ParseDiagnosticCategory,
 }
@@ -151,10 +151,10 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> ParseResult {
         .diagnostics()
         .iter()
         .map(|d| ParseDiagnostic {
-            line: d.line().get(),
-            column: d.column().get(),
+            line: d.line(),
+            column: d.column(),
             end_column: if let DiagnosticEndColumn::SameLineEnd(end_column) = d.end_column() {
-                Some(end_column.get())
+                Some(end_column)
             } else {
                 None
             },
@@ -171,15 +171,15 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> ParseResult {
 fn span_at(file: &Path, pos: ast::Pos) -> Span {
     Span {
         file: file.to_path_buf(),
-        line: pos.line,
-        column: pos.column,
+        line: LineNumber::new(pos.line),
+        column: CharColumn::new(pos.column),
     }
 }
 
 const fn src_pos(pos: ast::Pos) -> SrcPos {
     SrcPos {
-        line: pos.line,
-        column: pos.column,
+        line: LineNumber::new(pos.line),
+        column: CharColumn::new(pos.column),
     }
 }
 

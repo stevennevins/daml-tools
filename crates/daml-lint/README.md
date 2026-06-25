@@ -92,6 +92,12 @@ avoid the CLI parser and QuickJS runtime:
 daml-lint = { version = "0.8", default-features = false }
 ```
 
+Rust-facing finding locations, parser diagnostics, and IR spans use the
+coordinate newtypes from `daml-syntax` (`LineNumber`, `CharColumn`,
+`Utf16Offset`, and `ByteOffset`) so byte, UTF-16, line, and column coordinates
+cannot be mixed accidentally. JSON, SARIF, and custom-rule JavaScript output
+still serialize those coordinates as numbers.
+
 The `js-runtime` feature enables the QuickJS-backed runtime used by shipped
 built-ins. The `custom-rules` feature implies `js-runtime` and enables loading
 user-provided rule files through `--rules` and configured plugin packages.

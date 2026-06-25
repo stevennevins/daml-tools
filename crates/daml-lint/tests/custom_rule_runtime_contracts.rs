@@ -7,6 +7,7 @@ use daml_lint::detector::Detector;
 use daml_lint::detectors::script::load_script;
 use daml_lint::ir::DamlModule;
 use daml_lint::parser::parse_daml_with_diagnostics;
+use daml_syntax::{CharColumn, LineNumber};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -74,8 +75,8 @@ function on_template(template) {
     assert_eq!(findings.len(), 1);
     assert_eq!(findings[0].detector, "template-requires-ensure");
     assert_eq!(findings[0].file, Path::new("Test.daml"));
-    assert_eq!(findings[0].line, 3);
-    assert_eq!(findings[0].column, 1);
+    assert_eq!(findings[0].line, LineNumber::new(3));
+    assert_eq!(findings[0].column, CharColumn::new(1));
     assert!(findings[0].message.contains("Iou"));
     assert_eq!(findings[0].evidence, "template Iou");
 }
@@ -290,7 +291,7 @@ function check(module) {
     let module = parse_module(TEMPLATE_NO_ENSURE, "Test.daml");
     let findings = det.detect(&module);
     assert_eq!(findings.len(), 1);
-    assert_eq!(findings[0].line, 1);
+    assert_eq!(findings[0].line, LineNumber::new(1));
 }
 
 #[test]
@@ -803,5 +804,5 @@ foo x = trace "dbg" (x + 1)
     let module = parse_module(source, "RealTrace.daml");
     let findings = det.detect(&module);
     assert_eq!(findings.len(), 1);
-    assert_eq!(findings[0].line, 4);
+    assert_eq!(findings[0].line, LineNumber::new(4));
 }

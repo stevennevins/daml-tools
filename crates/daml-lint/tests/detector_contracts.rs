@@ -2,14 +2,15 @@
 
 #![allow(clippy::unwrap_used)]
 
-use daml_lint::detector::{Finding, FindingLocation, Severity};
+use daml_lint::detector::{parse_severity, Finding, FindingLocation, Severity};
+use daml_syntax::{CharColumn, LineNumber};
 use std::path::PathBuf;
 
 fn finding() -> Finding {
     Finding::new(
         "unused-foo",
         Severity::High,
-        FindingLocation::new("foo.daml", 10, 4),
+        FindingLocation::new("foo.daml", LineNumber::new(10), CharColumn::new(4)),
         "consider removing",
         "foo",
     )
@@ -25,15 +26,15 @@ fn finding_new_populates_public_fields_from_named_location() {
     let finding = Finding::new(
         "named-rule",
         Severity::Medium,
-        FindingLocation::new("src/Main.daml", 7, 4),
+        FindingLocation::new("src/Main.daml", LineNumber::new(7), CharColumn::new(4)),
         "expected a check",
         "amount = x",
     );
     assert_eq!(finding.detector, "named-rule");
     assert_eq!(finding.severity, Severity::Medium);
     assert_eq!(finding.file, PathBuf::from("src/Main.daml"));
-    assert_eq!(finding.line, 7);
-    assert_eq!(finding.column, 4);
+    assert_eq!(finding.line, LineNumber::new(7));
+    assert_eq!(finding.column, CharColumn::new(4));
     assert_eq!(finding.message, "expected a check");
     assert_eq!(finding.evidence, "amount = x");
 }
@@ -44,6 +45,13 @@ fn severity_parse_error_reports_invalid_value_and_allowed_levels() {
     assert_eq!(err.value(), "bogus");
     assert!(err.to_string().contains("bogus"));
     assert!(err.to_string().contains("critical|high|medium|low|info"));
+}
+
+#[test]
+fn parse_severity_preserves_meaningful_errors() {
+    assert_eq!(parse_severity("high"), Ok(Severity::High));
+    let err = parse_severity("bogus").unwrap_err();
+    assert_eq!(err.value(), "bogus");
 }
 
 #[test]
@@ -65,21 +73,21 @@ fn findings_are_sorted_by_explicit_severity_ranking() {
         Finding::new(
             "rule-medium",
             Severity::Medium,
-            FindingLocation::new("b.daml", 10, 4),
+            FindingLocation::new("b.daml", LineNumber::new(10), CharColumn::new(4)),
             "medium finding",
             "evidence",
         ),
         Finding::new(
             "rule-critical",
             Severity::Critical,
-            FindingLocation::new("a.daml", 3, 1),
+            FindingLocation::new("a.daml", LineNumber::new(3), CharColumn::new(1)),
             "critical finding",
             "evidence",
         ),
         Finding::new(
             "rule-high",
             Severity::High,
-            FindingLocation::new("a.daml", 5, 2),
+            FindingLocation::new("a.daml", LineNumber::new(5), CharColumn::new(2)),
             "high finding",
             "evidence",
         ),

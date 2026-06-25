@@ -1,5 +1,6 @@
 use crate::detector::{Finding, Severity};
 use crate::parser::ParseDiagnosticCategory;
+use daml_syntax::{CharColumn, LineNumber};
 use serde::Serialize;
 use serde_json::json;
 use std::error::Error;
@@ -54,10 +55,10 @@ impl std::str::FromStr for OutputFormat {
 #[non_exhaustive]
 pub struct ParseError {
     pub file: String,
-    pub line: usize,
-    pub column: usize,
+    pub line: LineNumber,
+    pub column: CharColumn,
     /// End column when the diagnostic span sits on one line; `None` otherwise.
-    pub end_column: Option<usize>,
+    pub end_column: Option<CharColumn>,
     pub message: String,
     /// Recovery category tag (e.g. `skipped-declaration`, `unsupported-syntax`).
     pub category: ParseDiagnosticCategory,
@@ -68,9 +69,9 @@ impl ParseError {
     #[must_use]
     pub fn new(
         file: impl Into<String>,
-        line: usize,
-        column: usize,
-        end_column: Option<usize>,
+        line: LineNumber,
+        column: CharColumn,
+        end_column: Option<CharColumn>,
         message: impl Into<String>,
         category: ParseDiagnosticCategory,
     ) -> Self {
@@ -115,8 +116,8 @@ fn format_sarif(findings: &[Finding], parse_errors: &[ParseError]) -> String {
                             "uri": f.file.display().to_string(),
                         },
                         "region": {
-                            "startLine": f.line,
-                            "startColumn": f.column,
+                            "startLine": f.line.get(),
+                            "startColumn": f.column.get(),
                         }
                     }
                 }],
@@ -152,9 +153,9 @@ fn format_sarif(findings: &[Finding], parse_errors: &[ParseError]) -> String {
     let notifications: Vec<serde_json::Value> = parse_errors
         .iter()
         .map(|e| {
-            let mut region = json!({ "startLine": e.line, "startColumn": e.column });
+            let mut region = json!({ "startLine": e.line.get(), "startColumn": e.column.get() });
             if let Some(end) = e.end_column {
-                region["endColumn"] = json!(end);
+                region["endColumn"] = json!(end.get());
             }
             json!({
                 "level": "error",
@@ -213,8 +214,8 @@ fn format_markdown(findings: &[Finding], parse_errors: &[ParseError]) -> String 
                 out,
                 "- `{}:{}:{}` [{}] {}",
                 e.file,
-                e.line,
-                e.column,
+                e.line.get(),
+                e.column.get(),
                 e.category.as_str(),
                 e.message
             )
@@ -268,7 +269,7 @@ fn format_markdown(findings: &[Finding], parse_errors: &[ParseError]) -> String 
             write!(out, "### {} `{}`\n\n", f.severity, f.detector)
                 .expect("writing to a String cannot fail");
             write!(out, "**{}**\n\n", f.message).expect("writing to a String cannot fail");
-            writeln!(out, "- **File:** `{}:{}`", f.file.display(), f.line)
+            writeln!(out, "- **File:** `{}:{}`", f.file.display(), f.line.get())
                 .expect("writing to a String cannot fail");
             write!(out, "- **Evidence:**\n  ```\n  {}\n  ```\n\n", f.evidence)
                 .expect("writing to a String cannot fail");
@@ -334,8 +335,8 @@ fn format_json(findings: &[Finding], parse_errors: &[ParseError]) -> String {
                 detector: f.detector.clone(),
                 severity: f.severity.to_string(),
                 file: f.file.display().to_string(),
-                line: f.line,
-                column: f.column,
+                line: f.line.get(),
+                column: f.column.get(),
                 message: f.message.clone(),
                 evidence: f.evidence.clone(),
             })
@@ -344,9 +345,9 @@ fn format_json(findings: &[Finding], parse_errors: &[ParseError]) -> String {
             .iter()
             .map(|e| ParseErrorJson {
                 file: e.file.clone(),
-                line: e.line,
-                column: e.column,
-                end_column: e.end_column,
+                line: e.line.get(),
+                column: e.column.get(),
+                end_column: e.end_column.map(|column| column.get()),
                 message: e.message.clone(),
                 category: e.category.as_str(),
             })

@@ -1,5 +1,6 @@
 use crate::detector::{parse_severity, DetectError, Detector, Finding, FindingLocation, Severity};
 use crate::ir::DamlModule;
+use daml_syntax::{CharColumn, LineNumber};
 use rquickjs::{CatchResultExt, Context, Ctx, Function, Object, Runtime, Value};
 use std::cell::RefCell;
 use std::error::Error;
@@ -279,11 +280,9 @@ pub(crate) fn load_script_source_with_options(
                 label: label.to_string(),
             })?;
         let severity =
-            parse_severity(&severity_str).ok_or_else(|| ScriptLoadError::UnknownSeverity {
+            parse_severity(&severity_str).map_err(|err| ScriptLoadError::UnknownSeverity {
                 name: name.to_string(),
-                source: format!(
-                    "unknown severity '{severity_str}'. Use critical, high, medium, low, or info."
-                ),
+                source: err.to_string(),
             })?;
         let description = read_const(&ctx, "DESCRIPTION").unwrap_or_default();
 
@@ -485,7 +484,11 @@ impl ScriptDetector {
                 Finding::new(
                     self.name.clone(),
                     self.severity,
-                    FindingLocation::new(module.file.clone(), *line, *column),
+                    FindingLocation::new(
+                        module.file.clone(),
+                        LineNumber::new(*line),
+                        CharColumn::new(*column),
+                    ),
                     message,
                     evidence.clone().unwrap_or_else(|| {
                         module
