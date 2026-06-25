@@ -254,8 +254,11 @@ escape hatches for constructs with no structured form (e.g.
 Heads up: visitors must be `function` declarations — arrow functions assigned
 to `const` are not discovered. If a script fails at runtime, the CLI exits 2;
 library callers can use `Detector::try_detect` to receive the rule error
-without terminating the host process. Rule errors are never swallowed. A runaway
-loop is interrupted so a broken rule can't hang CI. The engine runs JavaScript
+without terminating the host process. `DetectError` preserves the underlying
+`ScriptLoadError` through `std::error::Error::source()` when one is available,
+so library callers can inspect the typed failure chain instead of parsing
+strings. Rule errors are never swallowed. A runaway loop is interrupted so a
+broken rule can't hang CI. The engine runs JavaScript
 (ES2023) — no Node APIs, no `require`/`import`, no filesystem or network.
 Each rule's script is evaluated once and its visitors are then called for
 every module — visitors should be stateless; don't accumulate findings in

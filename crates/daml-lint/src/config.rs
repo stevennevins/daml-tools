@@ -151,7 +151,27 @@ impl std::fmt::Display for ConfigError {
     }
 }
 
-impl Error for ConfigError {}
+impl Error for ConfigError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::MissingCurrentDir { source }
+            | Self::ReadConfig { source, .. }
+            | Self::PluginManifestRead { source, .. } => Some(source),
+            Self::ParseConfig { source, .. } | Self::PluginManifestParse { source, .. } => {
+                Some(source)
+            }
+            Self::RuleLoadFailed { source, .. } => Some(source.as_ref()),
+            Self::PluginResolveFailed { .. }
+            | Self::PluginManifestMissingSection { .. }
+            | Self::UnknownRuleId { .. }
+            | Self::MissingPluginRule { .. }
+            | Self::RuleNameMismatch { .. }
+            | Self::RuleSettingMissingSeverity { .. }
+            | Self::RuleSettingInvalidSeverity { .. }
+            | Self::RuleSettingInvalidType { .. } => None,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct LintConfig {
@@ -578,5 +598,34 @@ mod tests {
             RuleSetting::from_value(serde_json::json!([])),
             Err(ConfigError::RuleSettingMissingSeverity { .. })
         ));
+    }
+
+    #[test]
+    fn config_error_exposes_recoverable_source_errors() {
+        let read = ConfigError::ReadConfig {
+            path: PathBuf::from(".daml-lint.json"),
+            source: std::io::Error::new(std::io::ErrorKind::PermissionDenied, "no access"),
+        };
+        assert!(std::error::Error::source(&read)
+            .is_some_and(|source| source.to_string() == "no access"));
+
+        let plugin = ConfigError::RuleLoadFailed {
+            plugin: "example".to_string(),
+            rule: "no-foo".to_string(),
+            path: PathBuf::from("rules/no-foo.js"),
+            source: Box::new(crate::detectors::script::ScriptLoadError::MissingName {
+                label: "rules/no-foo.js".to_string(),
+            }),
+        };
+        assert!(std::error::Error::source(&plugin)
+            .is_some_and(|source| source.is::<crate::detectors::script::ScriptLoadError>()));
+    }
+
+    #[test]
+    fn config_error_has_no_fake_source_for_validation_messages() {
+        let err = ConfigError::UnknownRuleId {
+            rule_id: "unknown-rule".to_string(),
+        };
+        assert!(std::error::Error::source(&err).is_none());
     }
 }
