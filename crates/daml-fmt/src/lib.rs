@@ -254,6 +254,10 @@ pub struct FormatOptions {
 }
 
 impl FormatOptions {
+    /// Create formatter options with the default organizing configuration.
+    ///
+    /// This is equivalent to [`Default::default`] and currently uses
+    /// [`ImportOrder::Organize`].
     #[must_use]
     pub const fn new() -> Self {
         Self {
@@ -274,6 +278,10 @@ impl FormatOptions {
         self.import_order
     }
 
+    /// Set the import ordering strategy.
+    ///
+    /// See [`FormatOptions::import_order`] for the package-identity warning
+    /// when imports are reordered.
     #[must_use]
     pub const fn with_import_order(mut self, import_order: ImportOrder) -> Self {
         self.import_order = import_order;
