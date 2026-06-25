@@ -284,6 +284,11 @@ Each example is authored in TypeScript and ships with its compiled `.js` under
 
 To check that a rule script parses without running a scan, point the tool at a nonexistent path — rule errors are reported before file discovery. (A valid script then prints `No .daml files found.`, which also exits 2 — go by the message, not the exit code.)
 
+Library callers can load custom rules without writing temporary files:
+`detectors::script::load_script_source(label, source)` accepts in-memory
+JavaScript, and `load_script_reader_with_options(label, reader, options)`
+accepts any `std::io::Read` source plus JSON rule `CONFIG`.
+
 ### CI gating
 
 Use `--fail-on` to control when the tool returns a non-zero exit code:
@@ -337,6 +342,8 @@ Breaking updates introduced in this branch:
 - `Severity` no longer implements `Ord`/`PartialOrd`; use `rank()` or
   `meets_or_exceeds()` for risk-based ordering and thresholds.
 - `Severity::from_str` now returns `SeverityParseError` instead of `()`.
+- `parse_severity` was removed; use `value.parse::<Severity>()` so invalid
+  input preserves `SeverityParseError`.
 - Public IR/report DTO structs are `#[non_exhaustive]`; construct through
   parser lowering or documented constructors such as `Finding::new`.
 - `parse_daml_with_diagnostics` now returns a named `ParseResult` with fields

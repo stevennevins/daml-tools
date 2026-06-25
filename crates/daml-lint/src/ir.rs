@@ -9,6 +9,7 @@
 use daml_parser::ast::Type;
 use daml_syntax::{ByteOffset, CharColumn, LineNumber, SourceFile, TextRange, Utf16Offset};
 use serde::{Serialize, Serializer};
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 fn serialize_line_number<S>(line: &LineNumber, serializer: S) -> Result<S::Ok, S::Error>
@@ -87,7 +88,7 @@ impl SourceSpan {
 }
 
 #[non_exhaustive]
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub enum TypeNode {
     Con {
         qualifier: Option<String>,
@@ -225,7 +226,7 @@ pub enum LiteralKind {
 /// Expression AST exposed to rule scripts. Serialized as tagged unions:
 /// `{ "App": {...} }`, `{ "Lit": {...} }`, ... mirrored by daml-lint.d.ts.
 #[non_exhaustive]
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub enum Expr {
     /// Variable reference: `amount`, `Map.lookup` (qualifier "Map").
     Var {
@@ -312,7 +313,7 @@ pub enum Expr {
     },
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct CaseAlt {
     /// Pattern rendered to source text (`Some x`, `[]`, `_`).
@@ -320,14 +321,14 @@ pub struct CaseAlt {
     pub body: Expr,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct LetBinding {
     pub name: String,
     pub value: Expr,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct RecordField {
     pub name: String,
@@ -335,7 +336,7 @@ pub struct RecordField {
     pub value: Option<Expr>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Field {
     pub name: String,
@@ -343,7 +344,7 @@ pub struct Field {
     pub span: Span,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Template {
     pub name: String,
@@ -361,7 +362,7 @@ pub struct Template {
     pub span: Span,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct InterfaceInstance {
     pub interface_name: String,
@@ -370,14 +371,14 @@ pub struct InterfaceInstance {
     pub span: Span,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct EnsureClause {
     pub expr: Expr,
     pub span: Span,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Choice {
     pub name: String,
@@ -406,6 +407,15 @@ impl Consuming {
     }
 }
 
+impl fmt::Display for Consuming {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Consuming => "consuming",
+            Self::NonConsuming => "non-consuming",
+        })
+    }
+}
+
 /// Do-statement classification.
 ///
 /// Structured payloads (`value`, `condition_expr`, `cid`, `argument`) are the
@@ -413,7 +423,7 @@ impl Consuming {
 /// `Other.raw` is the deliberate raw-source form for statements with no
 /// structured encoding.
 #[non_exhaustive]
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub enum Statement {
     Let {
         name: String,
@@ -480,14 +490,14 @@ pub enum Statement {
 
 /// One arm of a `Statement::Branch`. `pattern` is the rendered case alt pattern
 /// (`x :: _`, `[a]`, `_`); None for the then/else arms of an `if`.
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct BranchArm {
     pub pattern: Option<String>,
     pub body: Vec<Statement>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Function {
     pub name: String,
@@ -497,7 +507,7 @@ pub struct Function {
     pub span: Span,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Import {
     pub module_name: String,
@@ -521,7 +531,16 @@ impl ImportStyle {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+impl fmt::Display for ImportStyle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Qualified => "qualified",
+            Self::Unqualified => "unqualified",
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct InterfaceMethod {
     pub name: String,
@@ -529,7 +548,7 @@ pub struct InterfaceMethod {
     pub span: Span,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Interface {
     pub name: String,
@@ -541,7 +560,7 @@ pub struct Interface {
     pub span: Span,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct DamlModule {
     pub ir_version: u32,

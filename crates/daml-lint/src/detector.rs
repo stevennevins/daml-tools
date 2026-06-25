@@ -260,16 +260,6 @@ impl Finding {
     }
 }
 
-/// Parse a severity string accepted by the CLI.
-///
-/// # Errors
-///
-/// Returns [`SeverityParseError`] when `s` is not one of
-/// `critical`, `high`, `medium`, `low`, or `info`.
-pub fn parse_severity(s: &str) -> Result<Severity, SeverityParseError> {
-    s.parse()
-}
-
 // Scanning is single-threaded; detectors hold per-rule QuickJS state.
 /// Static analysis rule over a lowered Daml module.
 ///

@@ -4,38 +4,49 @@
 #![allow(clippy::unwrap_used)]
 
 use daml_lint::detector::Detector;
-use daml_lint::detectors::script::load_script;
+use daml_lint::detectors::script::{
+    load_script, load_script_reader_with_options, load_script_source,
+};
 use daml_lint::ir::DamlModule;
 use daml_lint::parser::parse_daml_with_diagnostics;
 use daml_syntax::{CharColumn, LineNumber};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-static NEXT_TEMP: AtomicUsize = AtomicUsize::new(0);
 
 fn manifest_path(rel: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(rel)
 }
 
-fn temp_script_file(name: &str, contents: &str) -> PathBuf {
-    let id = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
-    let path = std::env::temp_dir().join(format!(
-        "daml-lint-rule-{}-{}-{}",
-        std::process::id(),
-        id,
-        name
-    ));
-    std::fs::write(&path, contents).unwrap();
-    path
-}
-
 fn load_rule_script(label: &str, source: &str) -> Box<dyn Detector> {
-    let path = temp_script_file(label, source);
-    load_script(&path).unwrap_or_else(|e| panic!("failed to load {label}: {e}"))
+    load_script_source(label, source).unwrap_or_else(|e| panic!("failed to load {label}: {e}"))
 }
 
 fn parse_module(source: &str, file: &str) -> DamlModule {
     parse_daml_with_diagnostics(source, Path::new(file)).module
+}
+
+#[test]
+fn custom_rule_can_load_from_reader_with_options() {
+    let script = r#"
+const NAME = "reader-config-rule";
+const SEVERITY = "low";
+
+function check(module) {
+    if (CONFIG.expectedName !== module.name) {
+        report(1, `expected ${CONFIG.expectedName}, got ${module.name}`);
+    }
+}
+"#;
+    let options = serde_json::json!({ "expectedName": "Test" });
+    let mut reader = std::io::Cursor::new(script.as_bytes());
+
+    let det = load_script_reader_with_options("reader-config-rule.js", &mut reader, &options)
+        .expect("reader script loads");
+    let module = parse_module(TEMPLATE_NO_ENSURE, "Test.daml");
+
+    assert!(
+        det.detect(&module).is_empty(),
+        "reader-based loading should preserve rule source and CONFIG options"
+    );
 }
 
 const TEMPLATE_NO_ENSURE: &str = r#"module Test where
@@ -592,25 +603,22 @@ function check(m) {
 
 #[test]
 fn demo_scripts_load() {
-    assert!(load_script(&manifest_path("examples/dist/template-requires-ensure.js")).is_ok());
-    assert!(load_script(&manifest_path(
+    assert!(load_script(manifest_path("examples/dist/template-requires-ensure.js")).is_ok());
+    assert!(load_script(manifest_path(
         "examples/dist/consuming-choice-signatory-controller.js"
     ))
     .is_ok());
-    assert!(load_script(&manifest_path("examples/dist/no-trace.js")).is_ok());
-    assert!(load_script(&manifest_path("examples/dist/no-create-in-nonconsuming.js")).is_ok());
-    assert!(load_script(&manifest_path("examples/dist/no-bare-contractid-field.js")).is_ok());
-    assert!(load_script(&manifest_path("examples/dist/unqualified-da-import.js")).is_ok());
-    assert!(load_script(&manifest_path("examples/dist/function-ledger-actions.js")).is_ok());
-    assert!(load_script(&manifest_path(
-        "examples/dist/choice-param-shadows-field.js"
-    ))
-    .is_ok());
+    assert!(load_script(manifest_path("examples/dist/no-trace.js")).is_ok());
+    assert!(load_script(manifest_path("examples/dist/no-create-in-nonconsuming.js")).is_ok());
+    assert!(load_script(manifest_path("examples/dist/no-bare-contractid-field.js")).is_ok());
+    assert!(load_script(manifest_path("examples/dist/unqualified-da-import.js")).is_ok());
+    assert!(load_script(manifest_path("examples/dist/function-ledger-actions.js")).is_ok());
+    assert!(load_script(manifest_path("examples/dist/choice-param-shadows-field.js")).is_ok());
 }
 
 #[test]
 fn example_unguarded_division_flags_conditional_assert() {
-    let det = load_script(&manifest_path("examples/dist/unguarded-division-ast.js")).unwrap();
+    let det = load_script(manifest_path("examples/dist/unguarded-division-ast.js")).unwrap();
     let source = r#"module CondFn where
 
 template T
@@ -640,7 +648,7 @@ template T
 
 #[test]
 fn example_unguarded_division_respects_unconditional_assert() {
-    let det = load_script(&manifest_path("examples/dist/unguarded-division-ast.js")).unwrap();
+    let det = load_script(manifest_path("examples/dist/unguarded-division-ast.js")).unwrap();
     let source = r#"module Safe where
 
 template T
@@ -663,7 +671,7 @@ template T
 
 #[test]
 fn example_signatory_controller_flags_lookalike_field() {
-    let det = load_script(&manifest_path(
+    let det = load_script(manifest_path(
         "examples/dist/consuming-choice-signatory-controller.js",
     ))
     .unwrap();
@@ -689,7 +697,7 @@ template Bar
 
 #[test]
 fn example_signatory_controller_allows_signatory_this() {
-    let det = load_script(&manifest_path(
+    let det = load_script(manifest_path(
         "examples/dist/consuming-choice-signatory-controller.js",
     ))
     .unwrap();
@@ -718,7 +726,7 @@ template Baz
 
 #[test]
 fn example_no_create_in_nonconsuming_descends_branch_arms() {
-    let det = load_script(&manifest_path("examples/dist/no-create-in-nonconsuming.js")).unwrap();
+    let det = load_script(manifest_path("examples/dist/no-create-in-nonconsuming.js")).unwrap();
     let source = r#"module BranchCreate where
 
 template T
@@ -745,7 +753,7 @@ template T
 
 #[test]
 fn example_function_ledger_actions_descends_branch_arms() {
-    let det = load_script(&manifest_path("examples/dist/function-ledger-actions.js")).unwrap();
+    let det = load_script(manifest_path("examples/dist/function-ledger-actions.js")).unwrap();
     let source = r#"module BranchLedger where
 
 template T
@@ -769,7 +777,7 @@ branchArchive cid flag = do
 
 #[test]
 fn example_no_trace_ignores_block_comment() {
-    let det = load_script(&manifest_path("examples/dist/no-trace.js")).unwrap();
+    let det = load_script(manifest_path("examples/dist/no-trace.js")).unwrap();
     let source = r#"module BlockComment where
 
 {- This module used to call trace for debugging.
@@ -783,7 +791,7 @@ foo = 1
 
 #[test]
 fn example_no_trace_ignores_string_literal() {
-    let det = load_script(&manifest_path("examples/dist/no-trace.js")).unwrap();
+    let det = load_script(manifest_path("examples/dist/no-trace.js")).unwrap();
     let source = r#"module Trace2 where
 
 msg : Text
@@ -795,7 +803,7 @@ msg = "please trace this transaction"
 
 #[test]
 fn example_no_trace_still_flags_real_call() {
-    let det = load_script(&manifest_path("examples/dist/no-trace.js")).unwrap();
+    let det = load_script(manifest_path("examples/dist/no-trace.js")).unwrap();
     let source = r#"module RealTrace where
 
 foo : Int -> Int

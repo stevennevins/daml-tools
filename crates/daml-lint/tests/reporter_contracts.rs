@@ -39,6 +39,9 @@ fn output_format_parses_known_values_and_reports_unknown_with_display_text() {
         OutputFormat::Markdown
     );
     assert_eq!("JsOn".parse::<OutputFormat>().unwrap(), OutputFormat::Json);
+    assert_eq!(OutputFormat::Sarif.to_string(), "sarif");
+    assert_eq!(OutputFormat::Markdown.to_string(), "markdown");
+    assert_eq!(OutputFormat::Json.to_string(), "json");
 
     let err = "yaml".parse::<OutputFormat>().unwrap_err();
     assert_eq!(err.to_string(), "invalid output format: yaml");

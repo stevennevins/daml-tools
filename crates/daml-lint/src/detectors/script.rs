@@ -5,6 +5,8 @@ use rquickjs::{CatchResultExt, Context, Ctx, Function, Object, Runtime, Value};
 use std::cell::RefCell;
 use std::error::Error;
 #[cfg(feature = "custom-rules")]
+use std::io::Read;
+#[cfg(feature = "custom-rules")]
 use std::path::Path;
 use std::rc::Rc;
 
@@ -293,7 +295,7 @@ fn parse_node<'js>(
 /// Returns [`ScriptLoadError`] when the script cannot be read, initialized, or
 /// validated.
 #[must_use = "handle script load failures instead of ignoring diagnostics"]
-pub fn load_script(path: &Path) -> Result<Box<dyn Detector>, ScriptLoadError> {
+pub fn load_script(path: impl AsRef<Path>) -> Result<Box<dyn Detector>, ScriptLoadError> {
     let options = empty_options();
     load_script_with_options(path, &options)
 }
@@ -310,25 +312,113 @@ pub fn load_script(path: &Path) -> Result<Box<dyn Detector>, ScriptLoadError> {
 /// validated with the supplied `options`.
 #[must_use = "use loaded detector or propagate load errors"]
 pub fn load_script_with_options(
-    path: &Path,
+    path: impl AsRef<Path>,
     options: &serde_json::Value,
 ) -> Result<Box<dyn Detector>, ScriptLoadError> {
+    let path = path.as_ref();
     let source = std::fs::read_to_string(path).map_err(|e| ScriptLoadError::IoRead {
         path: path.display().to_string(),
         source: e,
     })?;
-    load_script_source_with_options(&path.display().to_string(), &source, options)
+    load_script_source_with_options(path.display().to_string(), &source, options)
 }
 
-pub(crate) fn load_script_source(
-    label: &str,
+#[cfg(feature = "custom-rules")]
+/// Load one custom rule script from in-memory JavaScript source.
+///
+/// `label` is used in diagnostics and as the detector's source path.
+///
+/// # Errors
+///
+/// Returns [`ScriptLoadError`] when JavaScript initialization, script
+/// evaluation, or metadata validation fails.
+#[must_use = "handle script load failures instead of ignoring diagnostics"]
+pub fn load_script_source(
+    label: impl Into<String>,
     source: &str,
 ) -> Result<Box<dyn Detector>, ScriptLoadError> {
     let options = empty_options();
     load_script_source_with_options(label, source, &options)
 }
 
-pub(crate) fn load_script_source_with_options(
+#[cfg(not(feature = "custom-rules"))]
+pub(crate) fn load_script_source(
+    label: &str,
+    source: &str,
+) -> Result<Box<dyn Detector>, ScriptLoadError> {
+    let options = empty_options();
+    load_script_source_with_options_impl(label, source, &options)
+}
+
+#[cfg(feature = "custom-rules")]
+/// Load one custom rule script from in-memory JavaScript source with detector
+/// `options`.
+///
+/// `label` is used in diagnostics and as the detector's source path.
+///
+/// # Errors
+///
+/// Returns [`ScriptLoadError`] when JavaScript initialization, script
+/// evaluation, rule config registration, or metadata validation fails.
+#[must_use = "use loaded detector or propagate load errors"]
+pub fn load_script_source_with_options(
+    label: impl Into<String>,
+    source: &str,
+    options: &serde_json::Value,
+) -> Result<Box<dyn Detector>, ScriptLoadError> {
+    let label = label.into();
+    load_script_source_with_options_impl(&label, source, options)
+}
+
+#[cfg(feature = "custom-rules")]
+/// Load one custom rule script from any UTF-8 reader.
+///
+/// `reader` is consumed by value; pass `&mut reader` when the same reader must
+/// be reused after this call.
+///
+/// # Errors
+///
+/// Returns [`ScriptLoadError`] when the reader cannot be read as UTF-8 text or
+/// when JavaScript initialization, script evaluation, or metadata validation
+/// fails.
+#[must_use = "handle script load failures instead of ignoring diagnostics"]
+pub fn load_script_reader<R: Read>(
+    label: impl Into<String>,
+    reader: R,
+) -> Result<Box<dyn Detector>, ScriptLoadError> {
+    let options = empty_options();
+    load_script_reader_with_options(label, reader, &options)
+}
+
+#[cfg(feature = "custom-rules")]
+/// Load one custom rule script from any UTF-8 reader with detector `options`.
+///
+/// `reader` is consumed by value; pass `&mut reader` when the same reader must
+/// be reused after this call.
+///
+/// # Errors
+///
+/// Returns [`ScriptLoadError`] when the reader cannot be read as UTF-8 text or
+/// when JavaScript initialization, script evaluation, rule config registration,
+/// or metadata validation fails.
+#[must_use = "use loaded detector or propagate load errors"]
+pub fn load_script_reader_with_options<R: Read>(
+    label: impl Into<String>,
+    mut reader: R,
+    options: &serde_json::Value,
+) -> Result<Box<dyn Detector>, ScriptLoadError> {
+    let label = label.into();
+    let mut source = String::new();
+    reader
+        .read_to_string(&mut source)
+        .map_err(|source| ScriptLoadError::IoRead {
+            path: label.clone(),
+            source,
+        })?;
+    load_script_source_with_options_impl(&label, &source, options)
+}
+
+pub(crate) fn load_script_source_with_options_impl(
     label: &str,
     source: &str,
     options: &serde_json::Value,

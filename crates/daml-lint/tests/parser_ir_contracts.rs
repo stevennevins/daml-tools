@@ -2,8 +2,9 @@
 
 #![allow(clippy::unwrap_used)]
 
-use daml_lint::ir::{Expr, Statement, TypeNode};
+use daml_lint::ir::{Consuming, DamlModule, Expr, ImportStyle, Statement, TypeNode};
 use daml_lint::parser::{parse_daml_with_diagnostics, ParseDiagnosticCategory};
+use daml_parser::ast::DiagnosticCategory as ParserDiagnosticCategory;
 use std::path::Path;
 
 fn parse_module(source: &str, file: &Path) -> daml_lint::ir::DamlModule {
@@ -323,6 +324,55 @@ fn parse_result_carries_named_fields() {
         result.diagnostics[0].category,
         ParseDiagnosticCategory::LexicalError
     ));
+}
+
+#[test]
+fn diagnostic_category_uses_standard_conversion_and_display_traits() {
+    let category = ParseDiagnosticCategory::from(ParserDiagnosticCategory::UnsupportedSyntax);
+
+    assert_eq!(category, ParseDiagnosticCategory::UnsupportedSyntax);
+    assert_eq!(category.to_string(), "unsupported-syntax");
+    assert_eq!(
+        "lexical-error".parse::<ParseDiagnosticCategory>().unwrap(),
+        ParseDiagnosticCategory::LexicalError
+    );
+    assert_eq!(
+        "not-a-category"
+            .parse::<ParseDiagnosticCategory>()
+            .unwrap_err()
+            .to_string(),
+        "invalid parse diagnostic category: not-a-category"
+    );
+}
+
+#[test]
+fn public_ir_dtos_support_whole_value_equality_and_display_tags() {
+    fn assert_eq_trait<T: Eq>() {}
+    assert_eq_trait::<DamlModule>();
+
+    let source = r#"module Test where
+
+import qualified DA.Map as Map
+
+template T
+  with
+    owner : Party
+  where
+    signatory owner
+
+    nonconsuming choice Peek : ()
+      controller owner
+      do
+        pure ()
+"#;
+    let module = parse_module(source, Path::new("Test.daml"));
+    let cloned = module.clone();
+
+    assert_eq!(module, cloned);
+    assert_eq!(Consuming::NonConsuming.to_string(), "non-consuming");
+    assert_eq!(Consuming::Consuming.to_string(), "consuming");
+    assert_eq!(ImportStyle::Qualified.to_string(), "qualified");
+    assert_eq!(ImportStyle::Unqualified.to_string(), "unqualified");
 }
 
 #[test]

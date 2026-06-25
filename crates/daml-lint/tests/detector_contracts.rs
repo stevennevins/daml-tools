@@ -2,7 +2,7 @@
 
 #![allow(clippy::unwrap_used)]
 
-use daml_lint::detector::{parse_severity, Finding, FindingLocation, Severity};
+use daml_lint::detector::{Finding, FindingLocation, Severity};
 use daml_syntax::{CharColumn, LineNumber};
 use std::path::PathBuf;
 
@@ -48,9 +48,9 @@ fn severity_parse_error_reports_invalid_value_and_allowed_levels() {
 }
 
 #[test]
-fn parse_severity_preserves_meaningful_errors() {
-    assert_eq!(parse_severity("high"), Ok(Severity::High));
-    let err = parse_severity("bogus").unwrap_err();
+fn severity_from_str_preserves_meaningful_errors() {
+    assert_eq!("high".parse::<Severity>(), Ok(Severity::High));
+    let err = "bogus".parse::<Severity>().unwrap_err();
     assert_eq!(err.value(), "bogus");
 }
 

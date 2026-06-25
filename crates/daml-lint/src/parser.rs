@@ -15,6 +15,8 @@ use daml_parser::ast::{
     DoStmt, ImportStyle as ParserImportStyle, TemplateBodyDecl,
 };
 use daml_syntax::{CharColumn, DiagnosticEndColumn, LineNumber, SourceFile};
+use std::error::Error;
+use std::fmt;
 use std::path::Path;
 
 #[cfg(all(test, feature = "js-runtime"))]
@@ -69,9 +71,16 @@ impl ParseDiagnosticCategory {
             Self::Unknown => "unknown",
         }
     }
+}
 
-    #[must_use]
-    pub const fn from_parser_category(category: ParserDiagnosticCategory) -> Self {
+impl fmt::Display for ParseDiagnosticCategory {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl From<ParserDiagnosticCategory> for ParseDiagnosticCategory {
+    fn from(category: ParserDiagnosticCategory) -> Self {
         match category {
             ParserDiagnosticCategory::SkippedDecl => Self::SkippedDeclaration,
             ParserDiagnosticCategory::Malformed => Self::Malformed,
@@ -79,6 +88,44 @@ impl ParseDiagnosticCategory {
             ParserDiagnosticCategory::RecursionLimit => Self::RecursionLimit,
             ParserDiagnosticCategory::Lex => Self::LexicalError,
             _ => Self::Unknown,
+        }
+    }
+}
+
+/// Error returned when parsing an unsupported parse-diagnostic category tag.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseDiagnosticCategoryParseError {
+    value: String,
+}
+
+impl ParseDiagnosticCategoryParseError {
+    fn new(value: impl Into<String>) -> Self {
+        Self {
+            value: value.into(),
+        }
+    }
+}
+
+impl fmt::Display for ParseDiagnosticCategoryParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "invalid parse diagnostic category: {}", self.value)
+    }
+}
+
+impl Error for ParseDiagnosticCategoryParseError {}
+
+impl std::str::FromStr for ParseDiagnosticCategory {
+    type Err = ParseDiagnosticCategoryParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "skipped-declaration" => Ok(Self::SkippedDeclaration),
+            "malformed" => Ok(Self::Malformed),
+            "unsupported-syntax" => Ok(Self::UnsupportedSyntax),
+            "recursion-limit" => Ok(Self::RecursionLimit),
+            "lexical-error" => Ok(Self::LexicalError),
+            "unknown" => Ok(Self::Unknown),
+            _ => Err(ParseDiagnosticCategoryParseError::new(s)),
         }
     }
 }
@@ -159,7 +206,7 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> ParseResult {
                 None
             },
             message: d.message().to_owned(),
-            category: ParseDiagnosticCategory::from_parser_category(d.category()),
+            category: d.category().into(),
         })
         .collect();
     ParseResult {

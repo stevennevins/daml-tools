@@ -36,6 +36,16 @@ impl Display for OutputFormatParseError {
 
 impl Error for OutputFormatParseError {}
 
+impl Display for OutputFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Sarif => "sarif",
+            Self::Markdown => "markdown",
+            Self::Json => "json",
+        })
+    }
+}
+
 impl std::str::FromStr for OutputFormat {
     type Err = OutputFormatParseError;
 
