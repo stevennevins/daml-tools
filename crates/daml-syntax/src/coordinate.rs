@@ -8,6 +8,28 @@ use std::fmt;
 use std::num::NonZeroUsize;
 use text_size::TextSize;
 
+/// Error returned when constructing a 1-based coordinate from zero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidOneBasedCoordinate {
+    value: usize,
+}
+
+impl InvalidOneBasedCoordinate {
+    /// Invalid raw coordinate value.
+    #[must_use]
+    pub const fn value(self) -> usize {
+        self.value
+    }
+}
+
+impl fmt::Display for InvalidOneBasedCoordinate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "1-based coordinate value must be non-zero")
+    }
+}
+
+impl std::error::Error for InvalidOneBasedCoordinate {}
+
 macro_rules! define_zero_based_coordinate {
     ($(#[$meta:meta])* $name:ident) => {
         $(#[$meta])*
@@ -75,6 +97,14 @@ macro_rules! define_one_based_coordinate {
         impl Coordinate for $name {
             fn get(self) -> usize {
                 self.0.get()
+            }
+        }
+
+        impl TryFrom<usize> for $name {
+            type Error = InvalidOneBasedCoordinate;
+
+            fn try_from(value: usize) -> Result<Self, Self::Error> {
+                Self::try_new(value).ok_or(InvalidOneBasedCoordinate { value })
             }
         }
 

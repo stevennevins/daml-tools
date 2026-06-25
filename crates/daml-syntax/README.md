@@ -14,10 +14,13 @@ when upgrading.
 ## Coordinate safety
 
 Line and column APIs use distinct coordinate newtypes: `LineNumber`,
-`ByteColumn`, `CharColumn`, `ByteOffset`, and `Utf16Offset`. UTF-16 slices are
-returned as `Utf16Range` values with named `start()`/`end()` accessors, and
-diagnostic end columns use `DiagnosticEndColumn` so same-line, multi-line, and
-empty spans cannot be collapsed accidentally.
+`ByteColumn`, `CharColumn`, `ByteOffset`, and `Utf16Offset`. One-based
+coordinates reject zero through `try_new` and `TryFrom<usize>`. UTF-16 column
+lookup returns `CoordinateRangeError` instead of clamping lines or columns past
+the source. UTF-16 slices are returned as `Utf16Range` values with named
+`start()`/`end()` accessors, and diagnostic end columns use
+`DiagnosticEndColumn` so same-line, multi-line, and empty spans cannot be
+collapsed accidentally.
 
 ## Quick start
 

@@ -78,7 +78,7 @@ fn try_parser_span_to_text_range_rejects_out_of_bounds_spans() {
     assert_eq!(
         err.to_string(),
         format!(
-            "parser span [0, {}) is invalid for source length {}",
+            "parser span [0, {}) is out of bounds for source length {}",
             source.len() + 1,
             source.len()
         )
@@ -100,7 +100,7 @@ fn try_parser_span_to_text_range_reports_inverted_spans() {
     assert_eq!(err.kind(), ParserSpanToTextRangeErrorKind::InvertedSpan);
     assert_eq!(
         err.to_string(),
-        "parser span [2, 1) is invalid for source length 3"
+        "parser span [2, 1) has start after end for source length 3"
     );
     assert_eq!(err.source_len_bytes(), ByteOffset::new(source.len()));
     assert_eq!(err.span_start(), daml_syntax::ByteOffset::new(2));
@@ -115,7 +115,7 @@ fn try_parser_span_to_text_range_rejects_non_utf8_boundary_spans() {
 
     assert_eq!(
         err.to_string(),
-        "parser span [1, 2) is invalid for source length 6"
+        "parser span [1, 2) is not on a UTF-8 boundary for source length 6"
     );
     assert_eq!(err.source_len_bytes(), ByteOffset::new(source.len()));
     assert_eq!(err.span_start(), daml_syntax::ByteOffset::new(1));

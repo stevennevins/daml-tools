@@ -18,10 +18,11 @@
 //!   ranges and offsets.
 //!
 //! Coordinate newtypes such as [`LineNumber`], [`ByteColumn`], and
-//! [`CharColumn`] are 1-based and reject zero via [`LineNumber::try_new`] and
-//! siblings; 0-based offsets use [`ByteOffset`] and [`Utf16Offset`]. UTF-16
-//! ranges use [`Utf16Range`] so JavaScript string slices cannot be mistaken for
-//! byte ranges.
+//! [`CharColumn`] are 1-based and reject zero via [`LineNumber::try_new`] or
+//! `TryFrom<usize>`; 0-based offsets use [`ByteOffset`] and [`Utf16Offset`].
+//! UTF-16 column lookup returns [`CoordinateRangeError`] for line or column
+//! coordinates outside a source, and UTF-16 ranges use [`Utf16Range`] so
+//! JavaScript string slices cannot be mistaken for byte ranges.
 //!
 //! ```rust
 //! use daml_syntax::{parser_span_to_text_range, SourceFile};
@@ -48,8 +49,8 @@ use std::sync::OnceLock;
 pub mod coordinate;
 
 pub use coordinate::{
-    ByteColumn, ByteLineCol, ByteOffset, CharColumn, CharLineCol, Coordinate, LineNumber,
-    Utf16Offset, Utf16Range,
+    ByteColumn, ByteLineCol, ByteOffset, CharColumn, CharLineCol, Coordinate,
+    InvalidOneBasedCoordinate, LineNumber, Utf16Offset, Utf16Range,
 };
 pub use text_size::{TextRange, TextSize};
 
@@ -238,19 +239,50 @@ impl LineIndex {
 
     /// Returns the UTF-16 code-unit offset from the start of `line` to `byte_col`.
     ///
-    /// Both coordinates must be valid 1-based values; zero cannot be represented
-    /// by [`LineNumber`] or [`ByteColumn`].
-    #[must_use]
-    pub fn utf16_col(&self, line: LineNumber, byte_col: ByteColumn) -> Utf16Offset {
-        let line_start = self
-            .line_start_bytes
-            .get(line.get().saturating_sub(1))
-            .copied()
-            .unwrap_or(self.source_len);
-        let byte = line_start
-            .saturating_add(byte_col.get().saturating_sub(1))
-            .min(self.source_len);
-        Utf16Offset::new(self.utf16_offset_by_byte[byte] - self.utf16_offset_by_byte[line_start])
+    /// Both coordinates must be within this source. Zero cannot be represented
+    /// by [`LineNumber`] or [`ByteColumn`], and this method returns a typed
+    /// error instead of clamping lines or columns past the source.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CoordinateRangeError`] when `line` is past the source line
+    /// count or `byte_col` is past the end column for that line.
+    #[must_use = "handle invalid source coordinates before using the UTF-16 offset"]
+    pub fn utf16_col(
+        &self,
+        line: LineNumber,
+        byte_col: ByteColumn,
+    ) -> Result<Utf16Offset, CoordinateRangeError> {
+        let line_idx = line.get() - 1;
+        let Some(line_start) = self.line_start_bytes.get(line_idx).copied() else {
+            return Err(CoordinateRangeError {
+                line,
+                byte_column: byte_col,
+                source_line_count: LineNumber::new(self.line_start_bytes.len()),
+                max_byte_column: None,
+                kind: CoordinateRangeErrorKind::LineOutOfRange,
+            });
+        };
+
+        let line_end = self.line_end_byte(line_idx);
+        let max_byte_column = ByteColumn::new(line_end - line_start + 1);
+        let byte = byte_col
+            .get()
+            .checked_sub(1)
+            .and_then(|column_offset| line_start.checked_add(column_offset));
+        let Some(byte) = byte.filter(|byte| *byte <= line_end) else {
+            return Err(CoordinateRangeError {
+                line,
+                byte_column: byte_col,
+                source_line_count: LineNumber::new(self.line_start_bytes.len()),
+                max_byte_column: Some(max_byte_column),
+                kind: CoordinateRangeErrorKind::ColumnOutOfRange,
+            });
+        };
+
+        Ok(Utf16Offset::new(
+            self.utf16_offset_by_byte[byte] - self.utf16_offset_by_byte[line_start],
+        ))
     }
 
     /// Maps a byte range to UTF-16 start/end offsets, clamping to source bounds.
@@ -263,7 +295,94 @@ impl LineIndex {
             Utf16Offset::new(self.utf16_offset_by_byte[end]),
         )
     }
+
+    fn line_end_byte(&self, line_idx: usize) -> usize {
+        self.line_start_bytes
+            .get(line_idx + 1)
+            .map_or(self.source_len, |next_line_start| next_line_start - 1)
+    }
 }
+
+/// Failure kind when resolving a line and byte column in a [`LineIndex`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CoordinateRangeErrorKind {
+    /// Requested line is past the source line count.
+    LineOutOfRange,
+    /// Requested byte column is past the end column for its line.
+    ColumnOutOfRange,
+}
+
+/// Error returned when a source coordinate is outside a [`LineIndex`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoordinateRangeError {
+    line: LineNumber,
+    byte_column: ByteColumn,
+    source_line_count: LineNumber,
+    max_byte_column: Option<ByteColumn>,
+    kind: CoordinateRangeErrorKind,
+}
+
+impl CoordinateRangeError {
+    /// Requested 1-based line number.
+    #[must_use]
+    pub const fn line(&self) -> LineNumber {
+        self.line
+    }
+
+    /// Requested 1-based byte column.
+    #[must_use]
+    pub const fn byte_column(&self) -> ByteColumn {
+        self.byte_column
+    }
+
+    /// Number of lines known to the [`LineIndex`].
+    #[must_use]
+    pub const fn source_line_count(&self) -> LineNumber {
+        self.source_line_count
+    }
+
+    /// Last valid 1-based byte column on the requested line, when the line exists.
+    #[must_use]
+    pub const fn max_byte_column(&self) -> Option<ByteColumn> {
+        self.max_byte_column
+    }
+
+    /// Specific reason coordinate resolution failed.
+    #[must_use]
+    pub const fn kind(&self) -> CoordinateRangeErrorKind {
+        self.kind
+    }
+}
+
+impl std::fmt::Display for CoordinateRangeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.kind {
+            CoordinateRangeErrorKind::LineOutOfRange => write!(
+                f,
+                "line {} is outside source line range 1..={}",
+                self.line, self.source_line_count
+            ),
+            CoordinateRangeErrorKind::ColumnOutOfRange => {
+                if let Some(max_byte_column) = self.max_byte_column {
+                    write!(
+                        f,
+                        "byte column {} is outside valid range 1..={} on line {}",
+                        self.byte_column, max_byte_column, self.line
+                    )
+                } else {
+                    write!(
+                        f,
+                        "byte column {} is outside the valid range on line {}",
+                        self.byte_column, self.line
+                    )
+                }
+            }
+        }
+    }
+}
+
+impl std::error::Error for CoordinateRangeError {}
 
 /// Lexer output for a source string without running the full module parser.
 ///
@@ -548,18 +667,32 @@ impl ParserSpanToTextRangeError {
 impl std::fmt::Display for ParserSpanToTextRangeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.kind {
+            ParserSpanToTextRangeErrorKind::OutOfBounds => write!(
+                f,
+                "parser span [{}, {}) is out of bounds for source length {}",
+                self.span_start.get(),
+                self.span_end.get(),
+                self.source_len
+            ),
+            ParserSpanToTextRangeErrorKind::InvertedSpan => write!(
+                f,
+                "parser span [{}, {}) has start after end for source length {}",
+                self.span_start.get(),
+                self.span_end.get(),
+                self.source_len
+            ),
+            ParserSpanToTextRangeErrorKind::NonUtf8Boundary => write!(
+                f,
+                "parser span [{}, {}) is not on a UTF-8 boundary for source length {}",
+                self.span_start.get(),
+                self.span_end.get(),
+                self.source_len
+            ),
             ParserSpanToTextRangeErrorKind::TextSizeOverflow => write!(
                 f,
                 "parser span [{}, {}) cannot be represented as a text-size value",
                 self.span_start.get(),
                 self.span_end.get()
-            ),
-            _ => write!(
-                f,
-                "parser span [{}, {}) is invalid for source length {}",
-                self.span_start.get(),
-                self.span_end.get(),
-                self.source_len
             ),
         }
     }
@@ -682,7 +815,7 @@ mod tests {
         );
         assert_eq!(
             index.utf16_col(LineNumber::new(2), ByteColumn::new(4)),
-            Utf16Offset::new(3)
+            Ok(Utf16Offset::new(3))
         );
     }
 
@@ -697,7 +830,7 @@ mod tests {
         );
         assert_eq!(
             index.utf16_col(LineNumber::new(1), ByteColumn::new(6)),
-            Utf16Offset::new(3)
+            Ok(Utf16Offset::new(3))
         );
         assert_eq!(
             index.char_line_col(5.into()),
@@ -757,6 +890,41 @@ mod tests {
         assert_eq!(
             index.utf16_range(range),
             Utf16Range::new(Utf16Offset::new(1), Utf16Offset::new(3))
+        );
+    }
+
+    #[test]
+    fn utf16_col_reports_line_past_source() {
+        let index = LineIndex::new("abc\n");
+
+        let err = index
+            .utf16_col(LineNumber::new(3), ByteColumn::new(1))
+            .unwrap_err();
+
+        assert_eq!(err.kind(), CoordinateRangeErrorKind::LineOutOfRange);
+        assert_eq!(err.line(), LineNumber::new(3));
+        assert_eq!(err.byte_column(), ByteColumn::new(1));
+        assert_eq!(err.source_line_count(), LineNumber::new(2));
+        assert_eq!(err.max_byte_column(), None);
+        assert_eq!(err.to_string(), "line 3 is outside source line range 1..=2");
+    }
+
+    #[test]
+    fn utf16_col_reports_column_past_line_without_clamping_to_eof() {
+        let index = LineIndex::new("abc\nz");
+
+        let err = index
+            .utf16_col(LineNumber::new(1), ByteColumn::new(5))
+            .unwrap_err();
+
+        assert_eq!(err.kind(), CoordinateRangeErrorKind::ColumnOutOfRange);
+        assert_eq!(err.line(), LineNumber::new(1));
+        assert_eq!(err.byte_column(), ByteColumn::new(5));
+        assert_eq!(err.source_line_count(), LineNumber::new(2));
+        assert_eq!(err.max_byte_column(), Some(ByteColumn::new(4)));
+        assert_eq!(
+            err.to_string(),
+            "byte column 5 is outside valid range 1..=4 on line 1"
         );
     }
 

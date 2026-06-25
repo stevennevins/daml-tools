@@ -21,6 +21,15 @@ fn one_based_coordinates_accept_one() {
 }
 
 #[test]
+fn one_based_coordinates_support_typed_try_from() {
+    assert_eq!(LineNumber::try_from(3), Ok(LineNumber::new(3)));
+
+    let err = ByteColumn::try_from(0).unwrap_err();
+    assert_eq!(err.value(), 0);
+    assert_eq!(err.to_string(), "1-based coordinate value must be non-zero");
+}
+
+#[test]
 fn coordinate_newtypes_expose_distinct_values() {
     let line = LineNumber::new(1);
     let byte_col = ByteColumn::new(4);
