@@ -187,7 +187,8 @@ Rules:
 - Only verified, actionable findings should be implemented.
 - Preserve the report's package/category boundaries.
 - Prefer clean breaks over compatibility shims unless the report explicitly says otherwise.
-- Surface high-risk public API changes as blockers or follow-ups rather than guessing.
+- If extra context records explicit human approval for high-risk API redesigns, plan those clean breaks and update all internal consumers.
+- Without explicit approval, surface high-risk public API changes as blockers or follow-ups rather than guessing.
 - Do not push or open a PR from inside this workflow.
 
 ${extraContext ? `Extra context:\n${extraContext}\n` : ""}
@@ -226,10 +227,12 @@ Execution rules:
 - If dryRun is true, do not edit files; return the exact patch plan and blockers.
 - Touch only files needed for this slice plus immediate tests/docs.
 - Prefer small, surgical, clean-break changes. Do not add compatibility shims unless explicitly justified by the report.
+- If extra context records explicit human approval for high-risk API redesigns, do the breaking redesign cleanly and update all internal packages, tests, docs, and examples that consume the changed API.
+- Do not preserve old public APIs solely for compatibility when high-risk redesign approval is present; this repository has no external consumers beyond its own packages.
 - Add or update tests/docs that encode the intent of the change.
 - Run relevant tests/checks for the slice when practical.
 - If changes are made and the slice reaches a working state, create a small focused git commit following repo Conventional Commit rules. Do not push or open a PR.
-- If uncertain or blocked on a public API compatibility decision, use smithers ask-human rather than guessing.
+- If uncertain about the right new API shape, or blocked on a decision other than compatibility preservation, use smithers ask-human rather than guessing.
 
 ${extraContext ? `Extra context:\n${extraContext}\n` : ""}
 
