@@ -1327,6 +1327,7 @@ impl TokenKind {
     }
 }
 
+// Tokenization, trivia, and lex/lex_with_trivia parity contracts for the lexer phase.
 #[cfg(test)]
 mod tests {
     use super::*;

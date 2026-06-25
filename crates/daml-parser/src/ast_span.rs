@@ -573,6 +573,7 @@ fn collect_dostmt(do_stmt: &DoStmt, spans: &mut Vec<Span>) {
     }
 }
 
+// Tile-oracle interval validation and overlap detection for the ast_span phase.
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
