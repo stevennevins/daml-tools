@@ -3,7 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 use daml_syntax::{
-    ByteColumn, ByteOffset, CharColumn, Coordinate, LineNumber, TextSize, Utf16Offset,
+    ByteColumn, ByteOffset, CharColumn, LineNumber, TextSize, Utf16Offset, Utf16Range,
 };
 
 #[test]
@@ -21,6 +21,18 @@ fn one_based_coordinates_accept_one() {
 }
 
 #[test]
+fn one_based_coordinates_support_typed_try_from() {
+    assert_eq!(LineNumber::try_from(3), Ok(LineNumber::new(3)));
+    assert_eq!(usize::from(LineNumber::new(3)), 3);
+    assert_eq!(usize::from(ByteColumn::new(4)), 4);
+    assert_eq!(usize::from(CharColumn::new(5)), 5);
+
+    let err = ByteColumn::try_from(0).unwrap_err();
+    assert_eq!(err.value(), 0);
+    assert_eq!(err.to_string(), "1-based coordinate value must be non-zero");
+}
+
+#[test]
 fn coordinate_newtypes_expose_distinct_values() {
     let line = LineNumber::new(1);
     let byte_col = ByteColumn::new(4);
@@ -31,11 +43,18 @@ fn coordinate_newtypes_expose_distinct_values() {
     assert_eq!(line.get(), 1);
     assert_eq!(byte_col.get(), char_col.get());
     assert_ne!(byte.get(), line.get());
+    assert_eq!(usize::from(byte), 10);
+    assert_eq!(usize::from(utf16), 10);
+    assert_eq!(ByteOffset::from(10), byte);
+    assert_eq!(Utf16Offset::from(10), utf16);
 
     let _: ByteColumn = byte_col;
     let _: CharColumn = char_col;
     let _: ByteOffset = byte;
     let _: Utf16Offset = utf16;
+    let utf16_range = Utf16Range::new(Utf16Offset::new(1), Utf16Offset::new(3));
+    assert_eq!(utf16_range.start(), Utf16Offset::new(1));
+    assert_eq!(utf16_range.end(), Utf16Offset::new(3));
 }
 
 #[test]

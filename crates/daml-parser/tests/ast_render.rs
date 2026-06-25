@@ -7,7 +7,7 @@ const fn pos() -> Pos {
 }
 
 const fn span(start: usize, end: usize) -> Span {
-    Span::new(start, end)
+    Span::from_usize(start, end)
 }
 
 #[test]
@@ -46,28 +46,26 @@ fn expr_render_keeps_normalized_application_and_projection_shape() {
 }
 
 #[test]
-fn section_render_depends_on_section_side() {
-    let expr_left = Expr::Section {
+fn section_render_depends_on_section_shape() {
+    let expr_left = Expr::LeftSection {
         op: "+".into(),
-        operand: Some(Box::new(Expr::Var {
+        operand: Box::new(Expr::Var {
             qualifier: None,
             name: "x".into(),
             pos: pos(),
             span: span(0, 1),
-        })),
-        side: SectionSide::Left,
+        }),
         pos: pos(),
         span: span(0, 4),
     };
-    let expr_right = Expr::Section {
+    let expr_right = Expr::RightSection {
         op: "+".into(),
-        operand: Some(Box::new(Expr::Lit {
+        operand: Box::new(Expr::Lit {
             kind: LitKind::Int,
             text: "1".to_string(),
             pos: pos(),
             span: span(0, 1),
-        })),
-        side: SectionSide::Right,
+        }),
         pos: pos(),
         span: span(0, 4),
     };

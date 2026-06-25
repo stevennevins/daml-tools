@@ -8,8 +8,8 @@ use daml_parser::ast::Span as ParserSpan;
 use daml_parser::ast_span::render_from_ast;
 use daml_parser::lexer::render_lossless;
 use daml_syntax::{
-    try_parser_span_to_text_range, Coordinate, ParserSpanToTextRangeErrorKind, SourceFile,
-    SourceTokens, TextRange,
+    try_parser_span_to_text_range, ByteOffset, CharColumn, DiagnosticEndColumn,
+    ParserSpanToTextRangeErrorKind, SourceFile, SourceTokens, TextRange,
 };
 
 #[test]
@@ -47,6 +47,28 @@ fn source_tokens_exposes_lex_only_pipeline_facts() {
 }
 
 #[test]
+fn source_tokens_clone_and_equality_ignore_lazy_layout_cache_state() {
+    let source = "module M where\nfoo : Int\nfoo = 1\n";
+    let cached = SourceTokens::lex(source);
+    let uncached = SourceTokens::lex(source);
+
+    assert!(!cached.laid_out_tokens().is_empty());
+    assert_eq!(cached, uncached);
+    assert_eq!(cached.clone(), cached);
+}
+
+#[test]
+fn source_file_clone_and_equality_ignore_lazy_token_cache_state() {
+    let source = "module M where\nfoo : Int\nfoo = 1\n";
+    let cached = SourceFile::parse(source);
+    let uncached = SourceFile::parse(source);
+
+    assert!(!cached.tokens().is_empty());
+    assert_eq!(cached, uncached);
+    assert_eq!(cached.clone(), cached);
+}
+
+#[test]
 fn malformed_source_keeps_source_file_and_diagnostics() {
     let file = SourceFile::parse("module M where\nfoo = \"unterminated\nbar = 1\n");
 
@@ -61,7 +83,7 @@ fn malformed_source_keeps_source_file_and_diagnostics() {
 fn converts_parser_spans_to_text_ranges() {
     let file = SourceFile::parse("module M where\nfoo = 1\n");
     let source_len = file.source().len();
-    let range = file.parser_span_to_text_range(ParserSpan::new(0, source_len));
+    let range = file.parser_span_to_text_range(ParserSpan::from_usize(0, source_len));
 
     assert_eq!(
         range,
@@ -72,37 +94,37 @@ fn converts_parser_spans_to_text_ranges() {
 #[test]
 fn try_parser_span_to_text_range_rejects_out_of_bounds_spans() {
     let source = "module M where\nfoo = 1\n";
-    let err =
-        try_parser_span_to_text_range(source, ParserSpan::new(0, source.len() + 1)).unwrap_err();
+    let err = try_parser_span_to_text_range(source, ParserSpan::from_usize(0, source.len() + 1))
+        .unwrap_err();
     assert_eq!(err.kind(), ParserSpanToTextRangeErrorKind::OutOfBounds);
     assert_eq!(
         err.to_string(),
         format!(
-            "parser span [0, {}) is invalid for source length {}",
+            "parser span [0, {}) is invalid: out of bounds for source length {}",
             source.len() + 1,
             source.len()
         )
     );
-    assert_eq!(err.source_len(), source.len());
+    assert_eq!(err.source_len_bytes(), ByteOffset::new(source.len()));
     assert_eq!(err.span_start(), daml_syntax::ByteOffset::new(0));
     assert_eq!(
         err.span_end(),
         daml_syntax::ByteOffset::new(source.len() + 1)
     );
-    assert_eq!(err.span_start_usize(), 0);
-    assert_eq!(err.span_end_usize(), source.len() + 1);
+    assert_eq!(usize::from(err.span_start()), 0);
+    assert_eq!(usize::from(err.span_end()), source.len() + 1);
 }
 
 #[test]
 fn try_parser_span_to_text_range_reports_inverted_spans() {
     let source = "abc";
-    let err = try_parser_span_to_text_range(source, ParserSpan::new(2, 1)).unwrap_err();
+    let err = try_parser_span_to_text_range(source, ParserSpan::from_usize(2, 1)).unwrap_err();
     assert_eq!(err.kind(), ParserSpanToTextRangeErrorKind::InvertedSpan);
     assert_eq!(
         err.to_string(),
-        "parser span [2, 1) is invalid for source length 3"
+        "parser span [2, 1) is invalid: start after end for source length 3"
     );
-    assert_eq!(err.source_len(), source.len());
+    assert_eq!(err.source_len_bytes(), ByteOffset::new(source.len()));
     assert_eq!(err.span_start(), daml_syntax::ByteOffset::new(2));
     assert_eq!(err.span_end(), daml_syntax::ByteOffset::new(1));
 }
@@ -110,16 +132,36 @@ fn try_parser_span_to_text_range_reports_inverted_spans() {
 #[test]
 fn try_parser_span_to_text_range_rejects_non_utf8_boundary_spans() {
     let source = "a😀b";
-    let err = try_parser_span_to_text_range(source, ParserSpan::new(1, 2)).unwrap_err();
+    let err = try_parser_span_to_text_range(source, ParserSpan::from_usize(1, 2)).unwrap_err();
     assert_eq!(err.kind(), ParserSpanToTextRangeErrorKind::NonUtf8Boundary);
 
     assert_eq!(
         err.to_string(),
-        "parser span [1, 2) is invalid for source length 6"
+        "parser span [1, 2) is invalid: not on a UTF-8 boundary for source length 6"
     );
-    assert_eq!(err.source_len(), source.len());
+    assert_eq!(err.source_len_bytes(), ByteOffset::new(source.len()));
     assert_eq!(err.span_start(), daml_syntax::ByteOffset::new(1));
     assert_eq!(err.span_end(), daml_syntax::ByteOffset::new(2));
+}
+
+#[test]
+fn diagnostics_expose_precise_end_column_shape_through_public_api() {
+    let same_line_file = SourceFile::parse("module M where\n%%% junk\n");
+    let same_line = same_line_file
+        .diagnostics()
+        .first()
+        .expect("junk declaration should surface a diagnostic");
+    assert_eq!(
+        same_line.end_column(),
+        DiagnosticEndColumn::SameLineEnd(CharColumn::new(4))
+    );
+
+    let empty_span_file = SourceFile::parse("module M where\nf = if x then 1\n");
+    let empty_span = empty_span_file
+        .diagnostics()
+        .first()
+        .expect("missing else should surface a zero-width diagnostic");
+    assert_eq!(empty_span.end_column(), DiagnosticEndColumn::EmptySpan);
 }
 
 #[test]
@@ -133,14 +175,40 @@ fn diagnostics_are_read_through_accessors_not_field_literals() {
     assert_eq!(diagnostic.category(), DiagnosticCategory::Lex);
     assert!(!diagnostic.message().is_empty());
     assert!(diagnostic.range().start() <= diagnostic.range().end());
-    assert!(diagnostic.line().get() >= 1);
-    assert!(diagnostic.column().get() >= 1);
+    assert!(usize::from(diagnostic.line()) >= 1);
+    assert!(usize::from(diagnostic.column()) >= 1);
+    assert!(matches!(
+        diagnostic.end_column(),
+        DiagnosticEndColumn::SameLineEnd(_)
+            | DiagnosticEndColumn::Multiline
+            | DiagnosticEndColumn::EmptySpan
+    ));
+}
+
+#[test]
+fn parser_span_error_kind_displays_specific_reason() {
+    assert_eq!(
+        ParserSpanToTextRangeErrorKind::OutOfBounds.to_string(),
+        "out of bounds"
+    );
+    assert_eq!(
+        ParserSpanToTextRangeErrorKind::InvertedSpan.to_string(),
+        "start after end"
+    );
+    assert_eq!(
+        ParserSpanToTextRangeErrorKind::NonUtf8Boundary.to_string(),
+        "not on a UTF-8 boundary"
+    );
+    assert_eq!(
+        ParserSpanToTextRangeErrorKind::TextSizeOverflow.to_string(),
+        "text-size overflow"
+    );
 }
 
 #[test]
 fn try_parser_span_to_text_range_succeeds_for_valid_span() {
     let source = "module M where\nfoo = 1\n";
-    let range =
-        try_parser_span_to_text_range(source, ParserSpan::new(0, 5)).expect("span should be valid");
+    let range = try_parser_span_to_text_range(source, ParserSpan::from_usize(0, 5))
+        .expect("span should be valid");
     assert_eq!(range, TextRange::new(0.into(), 5.into()));
 }

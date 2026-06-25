@@ -1,6 +1,8 @@
 //! Integration tests for malformed-input recovery through public `parse_module`.
 
-use daml_parser::ast::{Decl, DiagnosticCategory, TemplateBodyDecl, Type};
+use daml_parser::ast::{
+    Decl, DiagnosticCategory, ExpectedToken, ParseDiagnosticKind, TemplateBodyDecl, Type,
+};
 use daml_parser::parse::parse_module;
 
 #[test]
@@ -20,7 +22,7 @@ f : HasField "observers" t PartiesMap => ()
         Decl::Function(f) => f,
         other => panic!("expected function, got {other:?}"),
     };
-    let ty = function.ty.as_ref().expect("function signature type");
+    let ty = function.ty.as_type().expect("function signature type");
     assert!(matches!(
         ty,
         Type::Constrained(body, _)
@@ -47,6 +49,10 @@ template Account
         diagnostics.iter().any(|d| {
             d.category == DiagnosticCategory::Malformed
                 && d.message == "interface instance missing template name after 'for'"
+                && d.kind()
+                    == &ParseDiagnosticKind::ExpectedToken(
+                        ExpectedToken::TemplateNameAfterInterfaceInstanceFor,
+                    )
         }),
         "expected malformed diagnostic for missing template after 'for', got {diagnostics:?}"
     );

@@ -1,6 +1,22 @@
 use crate::ir::DamlModule;
-use serde::Serialize;
+use daml_syntax::{CharColumn, LineNumber};
+use serde::{Serialize, Serializer};
+use std::error::Error;
 use std::path::PathBuf;
+
+fn serialize_line_number<S>(line: &LineNumber, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_u64(line.get() as u64)
+}
+
+fn serialize_char_column<S>(column: &CharColumn, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_u64(column.get() as u64)
+}
 
 /// Error returned by fallible detector execution.
 ///
@@ -8,11 +24,12 @@ use std::path::PathBuf;
 /// fail at runtime or be interrupted, and library callers should handle those
 /// failures through [`Detector::try_detect`] instead of letting a rule terminate
 /// the host process.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 #[non_exhaustive]
 pub struct DetectError {
     detector: String,
     message: String,
+    source: Option<Box<dyn Error + Send + Sync + 'static>>,
 }
 
 impl DetectError {
@@ -22,6 +39,25 @@ impl DetectError {
         Self {
             detector: detector.into(),
             message: message.into(),
+            source: None,
+        }
+    }
+
+    /// Build a detector error that preserves the recoverable cause that made
+    /// the detector fail.
+    #[must_use]
+    pub fn with_source<E>(
+        detector: impl Into<String>,
+        message: impl Into<String>,
+        source: E,
+    ) -> Self
+    where
+        E: Error + Send + Sync + 'static,
+    {
+        Self {
+            detector: detector.into(),
+            message: message.into(),
+            source: Some(Box::new(source)),
         }
     }
 
@@ -36,6 +72,13 @@ impl DetectError {
     pub fn message(&self) -> &str {
         &self.message
     }
+
+    /// Recoverable source error that caused detector execution to fail, when
+    /// one is available.
+    #[must_use]
+    pub fn source(&self) -> Option<&(dyn Error + Send + Sync + 'static)> {
+        self.source.as_deref()
+    }
 }
 
 impl std::fmt::Display for DetectError {
@@ -44,7 +87,13 @@ impl std::fmt::Display for DetectError {
     }
 }
 
-impl std::error::Error for DetectError {}
+impl std::error::Error for DetectError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.source
+            .as_deref()
+            .map(|source| source as &(dyn std::error::Error + 'static))
+    }
+}
 
 /// Error returned when parsing an unsupported severity value.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,6 +102,7 @@ pub struct SeverityParseError {
 }
 
 impl SeverityParseError {
+    /// Unsupported severity text that was rejected.
     #[must_use]
     pub fn value(&self) -> &str {
         &self.value
@@ -154,9 +204,11 @@ pub struct Finding {
     /// Source file where the finding was reported.
     pub file: PathBuf,
     /// 1-based source line.
-    pub line: usize,
+    #[serde(serialize_with = "serialize_line_number")]
+    pub line: LineNumber,
     /// 1-based source column.
-    pub column: usize,
+    #[serde(serialize_with = "serialize_char_column")]
+    pub column: CharColumn,
     /// Human-readable finding message.
     pub message: String,
     /// Source excerpt or structural evidence for the finding.
@@ -170,15 +222,15 @@ pub struct FindingLocation {
     /// Source file where the finding was reported.
     pub file: PathBuf,
     /// 1-based source line.
-    pub line: usize,
+    pub line: LineNumber,
     /// 1-based source column.
-    pub column: usize,
+    pub column: CharColumn,
 }
 
 impl FindingLocation {
     /// Construct a finding source location without relying on struct literal syntax.
     #[must_use]
-    pub fn new(file: impl Into<PathBuf>, line: usize, column: usize) -> Self {
+    pub fn new(file: impl Into<PathBuf>, line: LineNumber, column: CharColumn) -> Self {
         Self {
             file: file.into(),
             line,
@@ -209,12 +261,6 @@ impl Finding {
     }
 }
 
-/// Parse a severity string accepted by the CLI.
-#[must_use]
-pub fn parse_severity(s: &str) -> Option<Severity> {
-    s.parse().ok()
-}
-
 // Scanning is single-threaded; detectors hold per-rule QuickJS state.
 /// Static analysis rule over a lowered Daml module.
 ///
@@ -234,6 +280,12 @@ pub trait Detector {
     /// Implementations may continue to implement this directly; for most rules
     /// this adapter provides a panic-first convenience layer over
     /// [`Detector::try_detect`].
+    ///
+    /// # Panics
+    ///
+    /// Panics when [`Detector::try_detect`] returns [`DetectError`]. Use
+    /// [`Detector::try_detect`] directly for custom JavaScript rules or other
+    /// recoverable detector failures that should not terminate the caller.
     fn detect(&self, module: &DamlModule) -> Vec<Finding> {
         self.try_detect(module)
             .unwrap_or_else(|e| panic!("detector '{}' failed: {}", self.name(), e))
@@ -254,8 +306,7 @@ pub struct ConfiguredDetector {
 }
 
 impl ConfiguredDetector {
-    #[must_use]
-    pub fn new(
+    fn new(
         inner: Box<dyn Detector>,
         name_override: Option<String>,
         severity_override: Option<Severity>,
@@ -315,7 +366,14 @@ impl Detector for ConfiguredDetector {
         self.inner
             .try_detect(module)
             .map(|findings| self.apply_overrides(findings))
-            .map_err(|e| DetectError::new(self.name(), e.message().to_string()))
+            .map_err(|e| {
+                let wrapped_detector = e.detector().to_string();
+                let message = format!(
+                    "wrapped detector '{wrapped_detector}' failed: {}",
+                    e.message()
+                );
+                DetectError::with_source(self.name(), message, e)
+            })
     }
 }
 
@@ -362,7 +420,7 @@ mod configured_detector_tests {
                 Ok(vec![Finding::new(
                     self.name(),
                     self.severity(),
-                    FindingLocation::new("named.daml", 9, 11),
+                    FindingLocation::new("named.daml", LineNumber::new(9), CharColumn::new(11)),
                     "rewritable finding",
                     "x",
                 )])
@@ -387,7 +445,7 @@ mod configured_detector_tests {
         let findings = detector.try_detect(&module).unwrap();
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].detector, "rewrite");
-        assert_eq!(findings[0].line, 9);
+        assert_eq!(findings[0].line, LineNumber::new(9));
     }
 
     #[test]
@@ -415,7 +473,7 @@ mod configured_detector_tests {
                 Ok(vec![Finding::new(
                     self.name(),
                     self.severity(),
-                    FindingLocation::new("severity.daml", 3, 7),
+                    FindingLocation::new("severity.daml", LineNumber::new(3), CharColumn::new(7)),
                     "high-severity finding",
                     "y",
                 )])
@@ -440,5 +498,61 @@ mod configured_detector_tests {
         let findings = detector.try_detect(&module).unwrap();
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].severity, Severity::Info);
+    }
+
+    #[test]
+    fn configured_detector_preserves_wrapped_error_source_chain() {
+        struct FailingDetector;
+
+        impl Detector for FailingDetector {
+            fn name(&self) -> &str {
+                "failing-base"
+            }
+
+            fn severity(&self) -> Severity {
+                Severity::High
+            }
+
+            fn description(&self) -> &str {
+                "base description"
+            }
+
+            fn try_detect(
+                &self,
+                module: &crate::ir::DamlModule,
+            ) -> Result<Vec<Finding>, DetectError> {
+                let _ = module;
+                Err(DetectError::with_source(
+                    self.name(),
+                    "could not run visitor",
+                    std::io::Error::new(std::io::ErrorKind::Interrupted, "runtime stopped"),
+                ))
+            }
+        }
+
+        let detector: Box<dyn Detector> = Box::new(ConfiguredDetector::with_name(
+            Box::new(FailingDetector),
+            "configured-name",
+        ));
+        let module = crate::ir::DamlModule {
+            ir_version: 4,
+            name: String::from("Main"),
+            file: PathBuf::from("failing.daml"),
+            source: String::new(),
+            imports: Vec::new(),
+            templates: Vec::new(),
+            interfaces: Vec::new(),
+            functions: Vec::new(),
+        };
+
+        let err = detector.try_detect(&module).unwrap_err();
+        assert_eq!(err.detector(), "configured-name");
+        assert!(err.message().contains("failing-base"));
+        let wrapped = std::error::Error::source(&err)
+            .and_then(|source| source.downcast_ref::<DetectError>())
+            .expect("configured detector should preserve the inner DetectError");
+        assert_eq!(wrapped.detector(), "failing-base");
+        assert!(std::error::Error::source(wrapped)
+            .is_some_and(|source| source.to_string() == "runtime stopped"));
     }
 }

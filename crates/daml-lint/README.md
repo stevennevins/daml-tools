@@ -92,6 +92,12 @@ avoid the CLI parser and QuickJS runtime:
 daml-lint = { version = "0.8", default-features = false }
 ```
 
+Rust-facing finding locations, parser diagnostics, and IR spans use the
+coordinate newtypes from `daml-syntax` (`LineNumber`, `CharColumn`,
+`Utf16Offset`, and `ByteOffset`) so byte, UTF-16, line, and column coordinates
+cannot be mixed accidentally. JSON, SARIF, and custom-rule JavaScript output
+still serialize those coordinates as numbers.
+
 The `js-runtime` feature enables the QuickJS-backed runtime used by shipped
 built-ins. The `custom-rules` feature implies `js-runtime` and enables loading
 user-provided rule files through `--rules` and configured plugin packages.
@@ -248,8 +254,11 @@ escape hatches for constructs with no structured form (e.g.
 Heads up: visitors must be `function` declarations — arrow functions assigned
 to `const` are not discovered. If a script fails at runtime, the CLI exits 2;
 library callers can use `Detector::try_detect` to receive the rule error
-without terminating the host process. Rule errors are never swallowed. A runaway
-loop is interrupted so a broken rule can't hang CI. The engine runs JavaScript
+without terminating the host process. `DetectError` preserves the underlying
+`ScriptLoadError` through `std::error::Error::source()` when one is available,
+so library callers can inspect the typed failure chain instead of parsing
+strings. Rule errors are never swallowed. A runaway loop is interrupted so a
+broken rule can't hang CI. The engine runs JavaScript
 (ES2023) — no Node APIs, no `require`/`import`, no filesystem or network.
 Each rule's script is evaluated once and its visitors are then called for
 every module — visitors should be stateless; don't accumulate findings in
@@ -274,6 +283,11 @@ Each example is authored in TypeScript and ships with its compiled `.js` under
 `npm run build:examples` from this crate to refresh those generated files.
 
 To check that a rule script parses without running a scan, point the tool at a nonexistent path — rule errors are reported before file discovery. (A valid script then prints `No .daml files found.`, which also exits 2 — go by the message, not the exit code.)
+
+Library callers can load custom rules without writing temporary files:
+`detectors::script::load_script_source(label, source)` accepts in-memory
+JavaScript, and `load_script_reader_with_options(label, reader, options)`
+accepts any `std::io::Read` source plus JSON rule `CONFIG`.
 
 ### CI gating
 
@@ -316,8 +330,9 @@ provenance and licensing.
 ## Public API Stability
 
 `daml-lint` is pre-1.0. The CLI exit codes and documented feature flags are the
-stable user contract for 0.7.x. The rule-facing IR is intentionally public for
-custom rules and library users, but it may gain structure in 0.x minor releases;
+stable user contract for the current 0.8 line. The rule-facing IR is
+intentionally public for custom rules and library users, but it may gain
+structure in 0.x minor releases;
 custom rules should check `ir_version` and match typed nodes rather than raw
 source substrings. Detector result types such as `Finding`, `Severity`, and
 `DetectError` are non-exhaustive; use their documented fields/accessors and keep
@@ -328,6 +343,8 @@ Breaking updates introduced in this branch:
 - `Severity` no longer implements `Ord`/`PartialOrd`; use `rank()` or
   `meets_or_exceeds()` for risk-based ordering and thresholds.
 - `Severity::from_str` now returns `SeverityParseError` instead of `()`.
+- `parse_severity` was removed; use `value.parse::<Severity>()` so invalid
+  input preserves `SeverityParseError`.
 - Public IR/report DTO structs are `#[non_exhaustive]`; construct through
   parser lowering or documented constructors such as `Finding::new`.
 - `parse_daml_with_diagnostics` now returns a named `ParseResult` with fields

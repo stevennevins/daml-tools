@@ -5,7 +5,76 @@
 //! here, so no later stage can ever mistake `-- exercise the option` for a
 //! ledger action.
 
-/// A small domain type for identifier-like text.
+/// Parser byte offset into the original UTF-8 source.
+///
+/// This is intentionally distinct from line, column, token-index, and UTF-16
+/// coordinate spaces. Convert to `usize` explicitly at source-slicing or wire
+/// format boundaries with [`ByteOffset::get`] or `usize::from(offset)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct ByteOffset(usize);
+
+impl ByteOffset {
+    #[must_use]
+    pub const fn new(value: usize) -> Self {
+        Self(value)
+    }
+
+    #[must_use]
+    pub const fn get(self) -> usize {
+        self.0
+    }
+
+    #[must_use]
+    pub const fn saturating_sub(self, rhs: usize) -> Self {
+        Self(self.0.saturating_sub(rhs))
+    }
+}
+
+impl From<ByteOffset> for usize {
+    fn from(value: ByteOffset) -> Self {
+        value.get()
+    }
+}
+
+/// Byte span into the original UTF-8 source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct ByteSpan {
+    /// Inclusive byte offset at which the span starts.
+    pub start: ByteOffset,
+    /// Exclusive byte offset at which the span ends.
+    pub end: ByteOffset,
+}
+
+impl ByteSpan {
+    #[must_use]
+    pub const fn new(start: ByteOffset, end: ByteOffset) -> Self {
+        Self { start, end }
+    }
+
+    #[must_use]
+    pub const fn from_usize(start: usize, end: usize) -> Self {
+        Self {
+            start: ByteOffset::new(start),
+            end: ByteOffset::new(end),
+        }
+    }
+
+    #[must_use]
+    pub const fn start_usize(self) -> usize {
+        self.start.get()
+    }
+
+    #[must_use]
+    pub const fn end_usize(self) -> usize {
+        self.end.get()
+    }
+}
+
+/// A small, deliberately unchecked domain type for parser identifier-like text.
+///
+/// The parser also uses this wrapper for a few source-level labels such as the
+/// unit constructor `()`; callers should not treat construction as lexical
+/// validation. Values produced by the lexer are lexically valid for their token.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Identifier(String);
 
@@ -83,7 +152,10 @@ impl PartialEq<Identifier> for String {
     }
 }
 
-/// A small domain type for symbolic operator text.
+/// A small, deliberately unchecked domain type for symbolic operator text.
+///
+/// Values produced by the lexer are Daml operator tokens; public construction is
+/// intentionally a lightweight source-label wrapper, not validation.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Operator(String);
 
@@ -161,7 +233,12 @@ impl PartialEq<Operator> for String {
     }
 }
 
-/// A small domain type for module-style qualified names (`DA.Map`, `Daml.Foo`).
+/// A small, deliberately unchecked domain type for module-style qualified names
+/// (`DA.Map`, `Daml.Foo`).
+///
+/// Values produced by the lexer are Daml module/name tokens; public
+/// construction is intentionally a lightweight source-label wrapper, not
+/// validation.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct ModuleName(String);
 
@@ -248,10 +325,20 @@ impl PartialEq<ModuleName> for String {
 /// 1-based source position of a token's first character.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Pos {
+    /// 1-based source line.
     pub line: usize,
+    /// 1-based visual character column. Tabs advance to the next 8-column tab
+    /// stop, matching the lexer's layout calculations.
     pub column: usize,
 }
 
+/// Token category plus normalized token payload.
+///
+/// [`std::fmt::Display`] prints a normalized spelling for diagnostics, logs,
+/// and compact test output. It is not a lossless source renderer: trivia,
+/// original literal escapes, and the distinction between real and virtual
+/// layout punctuation are intentionally not preserved. Use
+/// [`render_lossless`] when source-exact reconstruction matters.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum TokenKind {
@@ -267,18 +354,33 @@ pub enum TokenKind {
     },
     /// Symbolic operator: `+`, `<-`, `->`, `=`, `=>`, `::`, `.`, `\`, ...
     Op(Operator),
+    /// Integer literal payload as normalized token text.
     IntLit(String),
+    /// Decimal literal payload as normalized token text.
     DecimalLit(String),
+    /// String literal value after escape decoding. Use the token span to
+    /// recover original quotes and escape spelling.
     StringLit(String),
+    /// Character literal value after escape decoding. Use the token span to
+    /// recover original quotes and escape spelling.
     CharLit(String),
+    /// `(`.
     LParen,
+    /// `)`.
     RParen,
+    /// `[`.
     LBracket,
+    /// `]`.
     RBracket,
+    /// Explicit `{` from source.
     LBrace,
+    /// Explicit `}` from source.
     RBrace,
+    /// `,`.
     Comma,
+    /// Explicit `;` from source.
     Semi,
+    /// `` ` ``.
     Backtick,
     /// Layout-inserted virtual open brace (block start).
     VLBrace,
@@ -286,6 +388,33 @@ pub enum TokenKind {
     VRBrace,
     /// Layout-inserted virtual semicolon (new item at block indentation).
     VSemi,
+}
+
+impl std::fmt::Display for TokenKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LowerId { qualifier, name } | Self::UpperId { qualifier, name } => {
+                if let Some(qualifier) = qualifier {
+                    write!(f, "{qualifier}.{name}")
+                } else {
+                    name.fmt(f)
+                }
+            }
+            Self::Op(operator) => operator.fmt(f),
+            Self::IntLit(value) | Self::DecimalLit(value) => value.fmt(f),
+            Self::StringLit(value) => write!(f, "{value:?}"),
+            Self::CharLit(value) => write!(f, "'{}'", value.escape_debug()),
+            Self::LParen => f.write_str("("),
+            Self::RParen => f.write_str(")"),
+            Self::LBracket => f.write_str("["),
+            Self::RBracket => f.write_str("]"),
+            Self::LBrace | Self::VLBrace => f.write_str("{"),
+            Self::RBrace | Self::VRBrace => f.write_str("}"),
+            Self::Comma => f.write_str(","),
+            Self::Semi | Self::VSemi => f.write_str(";"),
+            Self::Backtick => f.write_str("`"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -311,13 +440,18 @@ impl Token {
     }
 
     #[must_use]
-    pub const fn start(&self) -> usize {
-        self.start
+    pub const fn start(&self) -> ByteOffset {
+        ByteOffset::new(self.start)
     }
 
     #[must_use]
-    pub const fn end(&self) -> usize {
-        self.end
+    pub const fn end(&self) -> ByteOffset {
+        ByteOffset::new(self.end)
+    }
+
+    #[must_use]
+    pub const fn span(&self) -> ByteSpan {
+        ByteSpan::from_usize(self.start, self.end)
     }
 
     /// Layout-inserted tokens carry no source bytes (they are zero-width);
@@ -375,13 +509,18 @@ impl Trivia {
     }
 
     #[must_use]
-    pub const fn start(&self) -> usize {
-        self.start
+    pub const fn start(&self) -> ByteOffset {
+        ByteOffset::new(self.start)
     }
 
     #[must_use]
-    pub const fn end(&self) -> usize {
-        self.end
+    pub const fn end(&self) -> ByteOffset {
+        ByteOffset::new(self.end)
+    }
+
+    #[must_use]
+    pub const fn span(&self) -> ByteSpan {
+        ByteSpan::from_usize(self.start, self.end)
     }
 }
 
@@ -563,14 +702,23 @@ fn byte_of_pos(source: &str, pos: Pos) -> usize {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum LexErrorKind {
+    /// A character could not begin or continue any token.
     UnexpectedCharacter(char),
+    /// A nested block comment reached EOF before `-}`.
     UnterminatedBlockComment,
+    /// A string literal reached EOF or newline before its closing quote.
     UnterminatedStringLiteral,
+    /// A string gap was opened but not closed correctly.
     UnterminatedStringGap,
+    /// A string or character escape used an unsupported escape code.
     InvalidEscapeSequence(char),
+    /// A single quote did not form a valid character literal.
     StraySingleQuote,
+    /// A character literal decoded to zero or multiple Unicode scalar values.
     CharacterLiteralWrongLength,
+    /// A `0x`/`0X` literal prefix was not followed by a hexadecimal digit.
     HexLiteralMissingDigits,
+    /// A decimal exponent marker was not followed by exponent digits.
     DecimalExponentMissingDigits,
 }
 
@@ -596,7 +744,10 @@ impl std::fmt::Display for LexErrorKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LexOutput {
+    /// Non-trivia tokens in source order. Layout virtual tokens are not present
+    /// until [`crate::layout::resolve_layout`] is run.
     pub tokens: Vec<Token>,
+    /// Recoverable lexical errors in source order.
     pub errors: Vec<LexError>,
 }
 
@@ -609,8 +760,11 @@ impl LexOutput {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LexWithTriviaOutput {
+    /// Non-trivia tokens in source order.
     pub tokens: Vec<Token>,
+    /// Comments, CPP directives, and blank-line markers in source order.
     pub trivia: Vec<Trivia>,
+    /// Recoverable lexical errors in source order.
     pub errors: Vec<LexError>,
 }
 
@@ -624,16 +778,26 @@ impl LexWithTriviaOutput {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RenderLosslessError {
+    /// A token/trivia span starts before the previous interval ended; `start`
+    /// is the overlapping byte offset.
     OverlappingSpans {
+        /// Byte offset where the overlap was detected.
         start: usize,
     },
+    /// A non-empty source byte interval was not covered by any token/trivia.
     UncoveredBytes {
+        /// Inclusive start byte offset of the uncovered interval.
         start: usize,
+        /// Exclusive end byte offset of the uncovered interval.
         end: usize,
+        /// Source text from the uncovered interval.
         text: String,
     },
+    /// Source bytes after the final token/trivia interval were not covered.
     UncoveredTail {
+        /// Inclusive start byte offset of the uncovered tail.
         start: usize,
+        /// Source text from the uncovered tail.
         text: String,
     },
 }
@@ -1366,6 +1530,31 @@ mod tests {
         assert_eq!(identifier.as_ref(), "value");
         assert_eq!(operator.as_ref(), "+");
         assert_eq!(module.as_ref(), "DA.Map");
+    }
+
+    #[test]
+    fn token_kind_display_is_normalized_not_lossless_source() {
+        // Display is for diagnostics/logging. It intentionally does not
+        // preserve whether punctuation came from source bytes or layout.
+        assert_eq!(TokenKind::LBrace.to_string(), "{");
+        assert_eq!(TokenKind::VLBrace.to_string(), "{");
+        assert_eq!(TokenKind::Semi.to_string(), ";");
+        assert_eq!(TokenKind::VSemi.to_string(), ";");
+
+        assert_eq!(
+            TokenKind::UpperId {
+                qualifier: Some("DA.Map".into()),
+                name: "Map".into(),
+            }
+            .to_string(),
+            "DA.Map.Map"
+        );
+        assert_eq!(TokenKind::Op("->".into()).to_string(), "->");
+        assert_eq!(
+            TokenKind::StringLit("line\n".into()).to_string(),
+            "\"line\\n\""
+        );
+        assert_eq!(TokenKind::CharLit("'".into()).to_string(), "'\\''");
     }
 
     #[test]

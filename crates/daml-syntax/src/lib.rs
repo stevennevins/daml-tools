@@ -18,8 +18,12 @@
 //!   ranges and offsets.
 //!
 //! Coordinate newtypes such as [`LineNumber`], [`ByteColumn`], and
-//! [`CharColumn`] are 1-based and reject zero via [`LineNumber::try_new`] and
-//! siblings; 0-based offsets use [`ByteOffset`] and [`Utf16Offset`].
+//! [`CharColumn`] are 1-based and reject zero via [`LineNumber::try_new`] or
+//! `TryFrom<usize>`; 0-based offsets use [`ByteOffset`] and [`Utf16Offset`].
+//! Use `usize::from(coordinate)` for explicit raw extraction.
+//! UTF-16 column lookup returns [`CoordinateRangeError`] for line or column
+//! coordinates outside a source, and UTF-16 ranges use [`Utf16Range`] so
+//! JavaScript string slices cannot be mistaken for byte ranges.
 //!
 //! ```rust
 //! use daml_syntax::{parser_span_to_text_range, SourceFile};
@@ -46,8 +50,8 @@ use std::sync::OnceLock;
 pub mod coordinate;
 
 pub use coordinate::{
-    ByteColumn, ByteLineCol, ByteOffset, CharColumn, CharLineCol, Coordinate, LineNumber,
-    Utf16Offset,
+    ByteColumn, ByteLineCol, ByteOffset, CharColumn, CharLineCol, InvalidOneBasedCoordinate,
+    LineNumber, Utf16Offset, Utf16Range,
 };
 pub use text_size::{TextRange, TextSize};
 
@@ -55,15 +59,33 @@ pub use text_size::{TextRange, TextSize};
 ///
 /// Constructed by [`SourceFile::parse`]; read fields through accessors so future
 /// metadata (severity, codes, notes) can be added without breaking callers.
+/// Diagnostic positions are 1-based Unicode scalar columns; byte ranges remain
+/// available through [`Diagnostic::range`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Diagnostic {
     range: TextRange,
     line: LineNumber,
     column: CharColumn,
-    end_column: Option<CharColumn>,
+    end_column: DiagnosticEndColumn,
     message: String,
     category: DiagnosticCategory,
+}
+
+/// End-column shape for a diagnostic span.
+///
+/// The end column is an exclusive 1-based Unicode-scalar column only when a
+/// diagnostic covers non-empty text on one line. Multi-line and empty spans are
+/// separate variants so callers cannot silently treat both cases as `None`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DiagnosticEndColumn {
+    /// Non-empty single-line diagnostic ending at this exclusive column.
+    SameLineEnd(CharColumn),
+    /// Diagnostic span crosses at least one newline.
+    Multiline,
+    /// Diagnostic span is zero-width.
+    EmptySpan,
 }
 
 impl Diagnostic {
@@ -85,9 +107,13 @@ impl Diagnostic {
         self.column
     }
 
-    /// 1-based character column of the diagnostic end when the span is single-line.
+    /// End-column shape for the diagnostic span.
+    ///
+    /// [`DiagnosticEndColumn::SameLineEnd`] contains the exclusive 1-based
+    /// Unicode-scalar column for non-empty same-line spans. Empty and multi-line
+    /// spans are reported as distinct variants instead of a nullable column.
     #[must_use]
-    pub const fn end_column(&self) -> Option<CharColumn> {
+    pub const fn end_column(&self) -> DiagnosticEndColumn {
         self.end_column
     }
 
@@ -106,8 +132,11 @@ impl Diagnostic {
 
 /// Precomputed line, character, and UTF-16 offset tables for a source string.
 ///
-/// Offsets passed to lookup methods are clamped to the source length. Returned
-/// line and column coordinates are always valid 1-based values.
+/// Byte offsets passed to [`LineIndex::line_col`] and
+/// [`LineIndex::char_line_col`] are clamped to the source length, and
+/// [`LineIndex::utf16_range`] clamps ranges to source bounds.
+/// [`LineIndex::utf16_col`] is deliberately fallible for line/column pairs and
+/// returns [`CoordinateRangeError`] when the pair is outside this source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LineIndex {
     source_len: usize,
@@ -179,6 +208,12 @@ impl LineIndex {
         }
     }
 
+    /// Source length in bytes, represented as the EOF byte offset.
+    #[must_use]
+    pub const fn source_len_bytes(&self) -> ByteOffset {
+        ByteOffset::new(self.source_len)
+    }
+
     /// Maps a byte offset to a 1-based line and byte column, clamping past EOF.
     #[must_use]
     pub fn line_col(&self, offset: TextSize) -> ByteLineCol {
@@ -214,32 +249,150 @@ impl LineIndex {
 
     /// Returns the UTF-16 code-unit offset from the start of `line` to `byte_col`.
     ///
-    /// Both coordinates must be valid 1-based values; zero cannot be represented
-    /// by [`LineNumber`] or [`ByteColumn`].
-    #[must_use]
-    pub fn utf16_col(&self, line: LineNumber, byte_col: ByteColumn) -> Utf16Offset {
-        let line_start = self
-            .line_start_bytes
-            .get(line.get().saturating_sub(1))
-            .copied()
-            .unwrap_or(self.source_len);
-        let byte = line_start
-            .saturating_add(byte_col.get().saturating_sub(1))
-            .min(self.source_len);
-        Utf16Offset::new(self.utf16_offset_by_byte[byte] - self.utf16_offset_by_byte[line_start])
+    /// Both coordinates must be within this source. Zero cannot be represented
+    /// by [`LineNumber`] or [`ByteColumn`], and this method returns a typed
+    /// error instead of clamping lines or columns past the source.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CoordinateRangeError`] when `line` is past the source line
+    /// count or `byte_col` is past the end column for that line.
+    #[must_use = "handle invalid source coordinates before using the UTF-16 offset"]
+    pub fn utf16_col(
+        &self,
+        line: LineNumber,
+        byte_col: ByteColumn,
+    ) -> Result<Utf16Offset, CoordinateRangeError> {
+        let line_idx = line.get() - 1;
+        let Some(line_start) = self.line_start_bytes.get(line_idx).copied() else {
+            return Err(CoordinateRangeError {
+                line,
+                byte_column: byte_col,
+                source_line_count: LineNumber::new(self.line_start_bytes.len()),
+                max_byte_column: None,
+                kind: CoordinateRangeErrorKind::LineOutOfRange,
+            });
+        };
+
+        let line_end = self.line_end_byte(line_idx);
+        let max_byte_column = ByteColumn::new(line_end - line_start + 1);
+        let byte = byte_col
+            .get()
+            .checked_sub(1)
+            .and_then(|column_offset| line_start.checked_add(column_offset));
+        let Some(byte) = byte.filter(|byte| *byte <= line_end) else {
+            return Err(CoordinateRangeError {
+                line,
+                byte_column: byte_col,
+                source_line_count: LineNumber::new(self.line_start_bytes.len()),
+                max_byte_column: Some(max_byte_column),
+                kind: CoordinateRangeErrorKind::ColumnOutOfRange,
+            });
+        };
+
+        Ok(Utf16Offset::new(
+            self.utf16_offset_by_byte[byte] - self.utf16_offset_by_byte[line_start],
+        ))
     }
 
     /// Maps a byte range to UTF-16 start/end offsets, clamping to source bounds.
     #[must_use]
-    pub fn utf16_range(&self, range: TextRange) -> (Utf16Offset, Utf16Offset) {
+    pub fn utf16_range(&self, range: TextRange) -> Utf16Range {
         let start = usize::from(range.start()).min(self.source_len);
         let end = usize::from(range.end()).min(self.source_len).max(start);
-        (
+        Utf16Range::new(
             Utf16Offset::new(self.utf16_offset_by_byte[start]),
             Utf16Offset::new(self.utf16_offset_by_byte[end]),
         )
     }
+
+    fn line_end_byte(&self, line_idx: usize) -> usize {
+        self.line_start_bytes
+            .get(line_idx + 1)
+            .map_or(self.source_len, |next_line_start| next_line_start - 1)
+    }
 }
+
+/// Failure kind when resolving a line and byte column in a [`LineIndex`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CoordinateRangeErrorKind {
+    /// Requested line is past the source line count.
+    LineOutOfRange,
+    /// Requested byte column is past the end column for its line.
+    ColumnOutOfRange,
+}
+
+/// Error returned when a source coordinate is outside a [`LineIndex`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoordinateRangeError {
+    line: LineNumber,
+    byte_column: ByteColumn,
+    source_line_count: LineNumber,
+    max_byte_column: Option<ByteColumn>,
+    kind: CoordinateRangeErrorKind,
+}
+
+impl CoordinateRangeError {
+    /// Requested 1-based line number.
+    #[must_use]
+    pub const fn line(&self) -> LineNumber {
+        self.line
+    }
+
+    /// Requested 1-based byte column.
+    #[must_use]
+    pub const fn byte_column(&self) -> ByteColumn {
+        self.byte_column
+    }
+
+    /// Number of lines known to the [`LineIndex`].
+    #[must_use]
+    pub const fn source_line_count(&self) -> LineNumber {
+        self.source_line_count
+    }
+
+    /// Last valid 1-based byte column on the requested line, when the line exists.
+    #[must_use]
+    pub const fn max_byte_column(&self) -> Option<ByteColumn> {
+        self.max_byte_column
+    }
+
+    /// Specific reason coordinate resolution failed.
+    #[must_use]
+    pub const fn kind(&self) -> CoordinateRangeErrorKind {
+        self.kind
+    }
+}
+
+impl std::fmt::Display for CoordinateRangeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.kind {
+            CoordinateRangeErrorKind::LineOutOfRange => write!(
+                f,
+                "line {} is outside source line range 1..={}",
+                self.line, self.source_line_count
+            ),
+            CoordinateRangeErrorKind::ColumnOutOfRange => {
+                if let Some(max_byte_column) = self.max_byte_column {
+                    write!(
+                        f,
+                        "byte column {} is outside valid range 1..={} on line {}",
+                        self.byte_column, max_byte_column, self.line
+                    )
+                } else {
+                    write!(
+                        f,
+                        "byte column {} is outside the valid range on line {}",
+                        self.byte_column, self.line
+                    )
+                }
+            }
+        }
+    }
+}
+
+impl std::error::Error for CoordinateRangeError {}
 
 /// Lexer output for a source string without running the full module parser.
 ///
@@ -251,6 +404,31 @@ pub struct SourceTokens {
     lex_errors: Vec<LexError>,
     laid_out_tokens: OnceLock<Vec<Token>>,
 }
+
+impl Clone for SourceTokens {
+    fn clone(&self) -> Self {
+        let cloned = Self {
+            tokens: self.tokens.clone(),
+            trivia: self.trivia.clone(),
+            lex_errors: self.lex_errors.clone(),
+            laid_out_tokens: OnceLock::new(),
+        };
+        if let Some(laid_out_tokens) = self.laid_out_tokens.get() {
+            let _ = cloned.laid_out_tokens.set(laid_out_tokens.clone());
+        }
+        cloned
+    }
+}
+
+impl PartialEq for SourceTokens {
+    fn eq(&self, other: &Self) -> bool {
+        self.tokens == other.tokens
+            && self.trivia == other.trivia
+            && self.lex_errors == other.lex_errors
+    }
+}
+
+impl Eq for SourceTokens {}
 
 impl SourceTokens {
     /// Lexes `source` and records trivia and lexer errors.
@@ -301,6 +479,33 @@ pub struct SourceFile {
     tokens: OnceLock<SourceTokens>,
 }
 
+impl Clone for SourceFile {
+    fn clone(&self) -> Self {
+        let cloned = Self {
+            source: self.source.clone(),
+            module: self.module.clone(),
+            diagnostics: self.diagnostics.clone(),
+            line_index: self.line_index.clone(),
+            tokens: OnceLock::new(),
+        };
+        if let Some(tokens) = self.tokens.get() {
+            let _ = cloned.tokens.set(tokens.clone());
+        }
+        cloned
+    }
+}
+
+impl PartialEq for SourceFile {
+    fn eq(&self, other: &Self) -> bool {
+        self.source == other.source
+            && self.module == other.module
+            && self.diagnostics == other.diagnostics
+            && self.line_index == other.line_index
+    }
+}
+
+impl Eq for SourceFile {}
+
 impl SourceFile {
     /// Parses `source` into a module AST and source-facing presentation data.
     ///
@@ -322,15 +527,12 @@ impl SourceFile {
                 let range = try_parser_span_to_text_range(source, diagnostic.span)
                     .expect("parser span in diagnostic must map to source bytes");
                 let start = range.start();
-                let end_column = source
-                    .get(usize::from(range.start())..usize::from(range.end()))
-                    .filter(|s| !s.is_empty() && !s.contains('\n'))
-                    .map(|s| CharColumn::new(diagnostic.pos.column + s.chars().count()));
                 let start_pos = line_index.char_line_col(start);
+                let end_column = diagnostic_end_column(source, range, start_pos.column);
                 Diagnostic {
                     range,
                     line: start_pos.line,
-                    column: CharColumn::new(diagnostic.pos.column),
+                    column: start_pos.column,
                     end_column,
                     message: diagnostic.message,
                     category: diagnostic.category,
@@ -429,6 +631,25 @@ impl SourceFile {
     }
 }
 
+fn diagnostic_end_column(
+    source: &str,
+    range: TextRange,
+    start_column: CharColumn,
+) -> DiagnosticEndColumn {
+    let span_text = source
+        .get(usize::from(range.start())..usize::from(range.end()))
+        .expect("validated parser span should slice source");
+    if span_text.is_empty() {
+        DiagnosticEndColumn::EmptySpan
+    } else if span_text.contains('\n') {
+        DiagnosticEndColumn::Multiline
+    } else {
+        DiagnosticEndColumn::SameLineEnd(CharColumn::new(
+            start_column.get() + span_text.chars().count(),
+        ))
+    }
+}
+
 /// Convert a parser span into a `text-size` byte range for an arbitrary source
 /// string.
 ///
@@ -458,6 +679,17 @@ pub enum ParserSpanToTextRangeErrorKind {
     TextSizeOverflow,
 }
 
+impl std::fmt::Display for ParserSpanToTextRangeErrorKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::OutOfBounds => f.write_str("out of bounds"),
+            Self::InvertedSpan => f.write_str("start after end"),
+            Self::NonUtf8Boundary => f.write_str("not on a UTF-8 boundary"),
+            Self::TextSizeOverflow => f.write_str("text-size overflow"),
+        }
+    }
+}
+
 /// Error returned when a parser span cannot be converted to a [`TextRange`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParserSpanToTextRangeError {
@@ -470,8 +702,8 @@ pub struct ParserSpanToTextRangeError {
 impl ParserSpanToTextRangeError {
     /// Length of the source string the span was checked against.
     #[must_use]
-    pub const fn source_len(&self) -> usize {
-        self.source_len
+    pub const fn source_len_bytes(&self) -> ByteOffset {
+        ByteOffset::new(self.source_len)
     }
 
     /// Inclusive start byte offset from the parser span.
@@ -486,18 +718,6 @@ impl ParserSpanToTextRangeError {
         self.span_end
     }
 
-    /// Inclusive start byte offset as a raw `usize`.
-    #[must_use]
-    pub fn span_start_usize(&self) -> usize {
-        self.span_start.get()
-    }
-
-    /// Exclusive end byte offset as a raw `usize`.
-    #[must_use]
-    pub fn span_end_usize(&self) -> usize {
-        self.span_end.get()
-    }
-
     /// Specific reason the conversion failed.
     #[must_use]
     pub const fn kind(&self) -> ParserSpanToTextRangeErrorKind {
@@ -508,18 +728,22 @@ impl ParserSpanToTextRangeError {
 impl std::fmt::Display for ParserSpanToTextRangeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.kind {
-            ParserSpanToTextRangeErrorKind::TextSizeOverflow => write!(
+            ParserSpanToTextRangeErrorKind::OutOfBounds
+            | ParserSpanToTextRangeErrorKind::InvertedSpan
+            | ParserSpanToTextRangeErrorKind::NonUtf8Boundary => write!(
                 f,
-                "parser span [{}, {}) cannot be represented as a text-size value",
-                self.span_start.get(),
-                self.span_end.get()
-            ),
-            _ => write!(
-                f,
-                "parser span [{}, {}) is invalid for source length {}",
+                "parser span [{}, {}) is invalid: {} for source length {}",
                 self.span_start.get(),
                 self.span_end.get(),
+                self.kind,
                 self.source_len
+            ),
+            ParserSpanToTextRangeErrorKind::TextSizeOverflow => write!(
+                f,
+                "parser span [{}, {}) is invalid: {}; endpoints cannot be represented as text-size values",
+                self.span_start.get(),
+                self.span_end.get(),
+                self.kind
             ),
         }
     }
@@ -543,65 +767,50 @@ pub fn try_parser_span_to_text_range(
     span: ParserSpan,
 ) -> Result<TextRange, ParserSpanToTextRangeError> {
     let source_len = source.len();
-    if span.start > source_len || span.end > source_len {
+    if span.start_usize() > source_len || span.end_usize() > source_len {
         return Err(ParserSpanToTextRangeError {
             source_len,
-            span_start: ByteOffset::new(span.start),
-            span_end: ByteOffset::new(span.end),
+            span_start: ByteOffset::new(span.start_usize()),
+            span_end: ByteOffset::new(span.end_usize()),
             kind: ParserSpanToTextRangeErrorKind::OutOfBounds,
         });
     }
     if span.start > span.end {
         return Err(ParserSpanToTextRangeError {
             source_len,
-            span_start: ByteOffset::new(span.start),
-            span_end: ByteOffset::new(span.end),
+            span_start: ByteOffset::new(span.start_usize()),
+            span_end: ByteOffset::new(span.end_usize()),
             kind: ParserSpanToTextRangeErrorKind::InvertedSpan,
         });
     }
-    if !source.is_char_boundary(span.start) || !source.is_char_boundary(span.end) {
+    if !source.is_char_boundary(span.start_usize()) || !source.is_char_boundary(span.end_usize()) {
         return Err(ParserSpanToTextRangeError {
             source_len,
-            span_start: ByteOffset::new(span.start),
-            span_end: ByteOffset::new(span.end),
+            span_start: ByteOffset::new(span.start_usize()),
+            span_end: ByteOffset::new(span.end_usize()),
             kind: ParserSpanToTextRangeErrorKind::NonUtf8Boundary,
         });
     }
     Ok(TextRange::new(
-        TextSize::try_from(span.start).map_err(|_| ParserSpanToTextRangeError {
+        TextSize::try_from(span.start_usize()).map_err(|_| ParserSpanToTextRangeError {
             source_len,
-            span_start: ByteOffset::new(span.start),
-            span_end: ByteOffset::new(span.end),
+            span_start: ByteOffset::new(span.start_usize()),
+            span_end: ByteOffset::new(span.end_usize()),
             kind: ParserSpanToTextRangeErrorKind::TextSizeOverflow,
         })?,
-        TextSize::try_from(span.end).map_err(|_| ParserSpanToTextRangeError {
+        TextSize::try_from(span.end_usize()).map_err(|_| ParserSpanToTextRangeError {
             source_len,
-            span_start: ByteOffset::new(span.start),
-            span_end: ByteOffset::new(span.end),
+            span_start: ByteOffset::new(span.start_usize()),
+            span_end: ByteOffset::new(span.end_usize()),
             kind: ParserSpanToTextRangeErrorKind::TextSizeOverflow,
         })?,
     ))
 }
 
-// README examples are compile-tested by `cargo test -p daml-syntax --doc`.
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
 #[doc(hidden)]
-mod readme_examples {
-    //! ```rust
-    //! use daml_syntax::{LineNumber, SourceFile, SourceTokens};
-    //!
-    //! let source = "module M where\nfoo : Int\nfoo = 1\n";
-    //! let file = SourceFile::parse(source);
-    //!
-    //! assert!(file.diagnostics().is_empty());
-    //! assert_eq!(file.module().name, "M");
-    //! assert_eq!(file.line_index().line_col(0.into()).line, LineNumber::new(1));
-    //!
-    //! let tokens = SourceTokens::lex(source);
-    //!
-    //! assert!(tokens.lex_errors().is_empty());
-    //! assert!(!tokens.laid_out_tokens().is_empty());
-    //! ```
-}
+pub struct ReadmeDoctests;
 
 // Unit tests for [`LineIndex`] mapping internals stay here; [`SourceFile`],
 // [`SourceTokens`], diagnostics, and span-conversion behavior live in integration tests.
@@ -613,6 +822,7 @@ mod tests {
     #[test]
     fn maps_empty_source_to_first_line() {
         let index = LineIndex::new("");
+        assert_eq!(index.source_len_bytes(), ByteOffset::new(0));
 
         assert_eq!(
             index.line_col(0.into()),
@@ -623,7 +833,7 @@ mod tests {
         );
         assert_eq!(
             index.utf16_range(TextRange::empty(0.into())),
-            (Utf16Offset::new(0), Utf16Offset::new(0))
+            Utf16Range::new(Utf16Offset::new(0), Utf16Offset::new(0))
         );
     }
 
@@ -641,7 +851,7 @@ mod tests {
         );
         assert_eq!(
             index.utf16_col(LineNumber::new(2), ByteColumn::new(4)),
-            Utf16Offset::new(3)
+            Ok(Utf16Offset::new(3))
         );
     }
 
@@ -652,11 +862,11 @@ mod tests {
 
         assert_eq!(
             index.utf16_range(TextRange::new(0.into(), 6.into())),
-            (Utf16Offset::new(0), Utf16Offset::new(4))
+            Utf16Range::new(Utf16Offset::new(0), Utf16Offset::new(4))
         );
         assert_eq!(
             index.utf16_col(LineNumber::new(1), ByteColumn::new(6)),
-            Utf16Offset::new(3)
+            Ok(Utf16Offset::new(3))
         );
         assert_eq!(
             index.char_line_col(5.into()),
@@ -715,7 +925,68 @@ mod tests {
 
         assert_eq!(
             index.utf16_range(range),
-            (Utf16Offset::new(1), Utf16Offset::new(3))
+            Utf16Range::new(Utf16Offset::new(1), Utf16Offset::new(3))
+        );
+    }
+
+    #[test]
+    fn utf16_col_reports_line_past_source() {
+        let index = LineIndex::new("abc\n");
+
+        let err = index
+            .utf16_col(LineNumber::new(3), ByteColumn::new(1))
+            .unwrap_err();
+
+        assert_eq!(err.kind(), CoordinateRangeErrorKind::LineOutOfRange);
+        assert_eq!(err.line(), LineNumber::new(3));
+        assert_eq!(err.byte_column(), ByteColumn::new(1));
+        assert_eq!(err.source_line_count(), LineNumber::new(2));
+        assert_eq!(err.max_byte_column(), None);
+        assert_eq!(err.to_string(), "line 3 is outside source line range 1..=2");
+    }
+
+    #[test]
+    fn utf16_col_reports_column_past_line_without_clamping_to_eof() {
+        let index = LineIndex::new("abc\nz");
+
+        let err = index
+            .utf16_col(LineNumber::new(1), ByteColumn::new(5))
+            .unwrap_err();
+
+        assert_eq!(err.kind(), CoordinateRangeErrorKind::ColumnOutOfRange);
+        assert_eq!(err.line(), LineNumber::new(1));
+        assert_eq!(err.byte_column(), ByteColumn::new(5));
+        assert_eq!(err.source_line_count(), LineNumber::new(2));
+        assert_eq!(err.max_byte_column(), Some(ByteColumn::new(4)));
+        assert_eq!(
+            err.to_string(),
+            "byte column 5 is outside valid range 1..=4 on line 1"
+        );
+    }
+
+    #[test]
+    fn diagnostic_end_column_names_same_line_multiline_and_empty_spans() {
+        let source = "abc\ndef";
+
+        assert_eq!(
+            diagnostic_end_column(
+                source,
+                TextRange::new(1.into(), 3.into()),
+                CharColumn::new(2)
+            ),
+            DiagnosticEndColumn::SameLineEnd(CharColumn::new(4))
+        );
+        assert_eq!(
+            diagnostic_end_column(
+                source,
+                TextRange::new(1.into(), 5.into()),
+                CharColumn::new(2)
+            ),
+            DiagnosticEndColumn::Multiline
+        );
+        assert_eq!(
+            diagnostic_end_column(source, TextRange::empty(1.into()), CharColumn::new(2)),
+            DiagnosticEndColumn::EmptySpan
         );
     }
 
@@ -732,5 +1003,25 @@ mod tests {
         assert_ne!(byte_pos.column.get(), char_pos.column.get());
         assert_eq!(byte_pos.column, ByteColumn::new(5));
         assert_eq!(char_pos.column, CharColumn::new(2));
+    }
+
+    #[test]
+    fn parser_span_text_size_overflow_display_includes_kind() {
+        let text_size_overflow_start = usize::try_from(u32::MAX).unwrap() + 1;
+        let text_size_overflow_end = usize::try_from(u32::MAX).unwrap() + 2;
+        let err = ParserSpanToTextRangeError {
+            source_len: usize::MAX,
+            span_start: ByteOffset::new(text_size_overflow_start),
+            span_end: ByteOffset::new(text_size_overflow_end),
+            kind: ParserSpanToTextRangeErrorKind::TextSizeOverflow,
+        };
+
+        assert_eq!(err.kind().to_string(), "text-size overflow");
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "parser span [{text_size_overflow_start}, {text_size_overflow_end}) is invalid: text-size overflow; endpoints cannot be represented as text-size values"
+            )
+        );
     }
 }

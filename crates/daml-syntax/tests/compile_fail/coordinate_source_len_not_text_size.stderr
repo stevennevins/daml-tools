@@ -1,0 +1,7 @@
+error[E0308]: mismatched types
+ --> tests/compile_fail/coordinate_source_len_not_text_size.rs:5:23
+  |
+5 |     let _: TextSize = index.source_len_bytes();
+  |            --------   ^^^^^^^^^^^^^^^^^^^^^^^^ expected `TextSize`, found `ByteOffset`
+  |            |
+  |            expected due to this

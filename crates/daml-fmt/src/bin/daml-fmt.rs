@@ -99,8 +99,8 @@ fn main() {
             exit(2);
         }
         let mut text = String::new();
-        if std::io::stdin().read_to_string(&mut text).is_err() {
-            eprintln!("daml-fmt: failed to read stdin");
+        if let Err(e) = std::io::stdin().read_to_string(&mut text) {
+            eprintln!("daml-fmt: failed to read stdin: {e}");
             exit(2);
         }
         let malformed = report_diagnostics("<stdin>", &text);

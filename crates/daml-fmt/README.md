@@ -115,7 +115,10 @@ let checked = try_format_source("module M where\nfoo: Int\nfoo = 1\n").expect("v
 assert_eq!(checked, formatted);
 ```
 
-`ImportOrder` is `#[non_exhaustive]` for forward-compatible `match` arms.
+`ImportOrder` implements `Default` (`Organize`) and `Display` (`organize` /
+`preserve`), and is `#[non_exhaustive]` for forward-compatible `match` arms.
+`FormatError` exposes its typed diagnostic slice through both `diagnostics()`
+and `AsRef<[FormatDiagnostic]>`.
 `FormatOptions` uses private fields: construct options with `Default`/`new()` and
 `with_*` helpers so new switches can ship with defaults without breaking callers.
 

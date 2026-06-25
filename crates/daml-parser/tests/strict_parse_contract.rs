@@ -1,6 +1,6 @@
 //! Integration tests for strict vs tolerant `parse_module` contract.
 
-use daml_parser::ast::{Decl, DiagnosticCategory};
+use daml_parser::ast::{Decl, DiagnosticCategory, ExpectedToken, ParseDiagnosticKind};
 use daml_parser::parse::{parse_module, parse_module_strict};
 
 #[test]
@@ -25,6 +25,11 @@ fn strict_parse_rejects_malformed_source_while_tolerant_parse_keeps_diagnostics(
     let err = parse_module_strict(src).expect_err("malformed guard must fail strict parse");
     assert_eq!(err.diagnostics(), &tolerant.diagnostics);
     assert!(
+        err.diagnostics().iter().any(|diagnostic| diagnostic.kind()
+            == &ParseDiagnosticKind::ExpectedToken(ExpectedToken::EqualsAfterGuard)),
+        "strict errors must preserve typed diagnostic reasons"
+    );
+    assert!(
         err.module()
             .decls
             .iter()
@@ -44,4 +49,16 @@ fn into_result_matches_parse_module_strict() {
         .into_result()
         .expect_err("same diagnostics via into_result");
     assert_eq!(strict.diagnostics(), converted.diagnostics());
+}
+
+#[test]
+fn tolerant_parse_result_supports_equality_assertions() {
+    let src = "module M where\nfoo : Int\nfoo = 1\n";
+    let first = parse_module(src);
+    let second = parse_module(src);
+
+    assert_eq!(
+        first, second,
+        "public ParseModuleResult equality should let downstream tests assert the whole tolerant parse contract"
+    );
 }

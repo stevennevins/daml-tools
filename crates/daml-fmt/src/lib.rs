@@ -49,7 +49,9 @@
 //! ## API posture
 //!
 //! This crate is pre-1.0. [`ImportOrder`] is `#[non_exhaustive]` so downstream
-//! `match` arms stay forward-compatible when new import strategies appear.
+//! `match` arms stay forward-compatible when new import strategies appear; use
+//! [`Default`] for the standard strategy and [`std::fmt::Display`] for stable
+//! user-facing labels.
 //! [`FormatOptions`] uses private fields and `with_*` helpers so new switches can
 //! ship with defaults without breaking downstream struct literals.
 
@@ -106,16 +108,17 @@ impl fmt::Display for FormatDiagnostic {
             write!(
                 f,
                 "{}:{}: [{}] {}",
-                self.line,
-                self.column,
-                self.category.as_str(),
-                self.message
+                self.line, self.column, self.category, self.message
             )
         }
     }
 }
 
 /// Formatting failed because the source has lexical or parser diagnostics.
+///
+/// Use [`FormatError::diagnostics`] for readable call sites or
+/// [`AsRef`]<[`FormatDiagnostic`]> when passing the diagnostic slice to generic
+/// APIs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FormatError {
     diagnostics: Vec<FormatDiagnostic>,
@@ -126,6 +129,12 @@ impl FormatError {
     #[must_use]
     pub fn diagnostics(&self) -> &[FormatDiagnostic] {
         &self.diagnostics
+    }
+}
+
+impl AsRef<[FormatDiagnostic]> for FormatError {
+    fn as_ref(&self) -> &[FormatDiagnostic] {
+        self.diagnostics()
     }
 }
 
@@ -199,13 +208,27 @@ fn has_cpp_conditionals(src: &str) -> bool {
 }
 
 /// Import ordering strategy for formatter output.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// The default strategy is [`ImportOrder::Organize`]. Its [`fmt::Display`]
+/// implementation returns stable lowercase labels (`organize`, `preserve`) for
+/// logs, configuration summaries, and CLI messages.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ImportOrder {
     /// Sort import declarations into formatter-defined groups.
+    #[default]
     Organize,
     /// Preserve declaration order exactly as written by the source.
     Preserve,
+}
+
+impl fmt::Display for ImportOrder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Organize => f.write_str("organize"),
+            Self::Preserve => f.write_str("preserve"),
+        }
+    }
 }
 
 /// Formatter behavior switches.
@@ -225,20 +248,16 @@ pub enum ImportOrder {
 /// assert_eq!(preserved.import_order(), ImportOrder::Preserve);
 /// assert_ne!(from_default.import_order(), preserved.import_order());
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct FormatOptions {
     import_order: ImportOrder,
 }
 
-impl Default for FormatOptions {
-    fn default() -> Self {
-        Self {
-            import_order: ImportOrder::Organize,
-        }
-    }
-}
-
 impl FormatOptions {
+    /// Create formatter options with the default organizing configuration.
+    ///
+    /// This is equivalent to [`Default::default`] and currently uses
+    /// [`ImportOrder::Organize`].
     #[must_use]
     pub const fn new() -> Self {
         Self {
@@ -259,6 +278,10 @@ impl FormatOptions {
         self.import_order
     }
 
+    /// Set the import ordering strategy.
+    ///
+    /// See [`FormatOptions::import_order`] for the package-identity warning
+    /// when imports are reordered.
     #[must_use]
     pub const fn with_import_order(mut self, import_order: ImportOrder) -> Self {
         self.import_order = import_order;
@@ -288,29 +311,29 @@ pub fn format_source_with_options(src: &str, options: FormatOptions) -> String {
 
 /// Format Daml source with explicit formatter options, rejecting malformed input.
 ///
-/// Returns [`FormatError`] with typed [`FormatDiagnostic`] entries when lexical or
-/// parser diagnostics are present.
+/// Returns [`FormatError`] with typed [`FormatDiagnostic`] entries when
+/// [`source_diagnostics`] reports lexical or parser diagnostics. CPP-conditional
+/// parser recovery diagnostics are ignored by [`source_diagnostics`], while
+/// lexical diagnostics are still rejected.
 ///
 /// # Errors
 ///
-/// Returns [`FormatError`] when `src` produces lexical or parser diagnostics.
+/// Returns [`FormatError`] when `src` produces diagnostics reported by
+/// [`source_diagnostics`].
 pub fn try_format_source_with_options(
     src: &str,
     options: FormatOptions,
 ) -> Result<String, FormatError> {
-    let diagnostics = source_diagnostics(src);
-    if diagnostics.is_empty() {
-        Ok(layout_ast::format_ast(src, options))
-    } else {
-        Err(FormatError { diagnostics })
-    }
+    reject_source_diagnostics(src)?;
+    Ok(layout_ast::format_ast(src, options))
 }
 
 /// Format Daml source with default formatter options, rejecting malformed input.
 ///
 /// # Errors
 ///
-/// Returns [`FormatError`] when `src` produces lexical or parser diagnostics.
+/// Returns [`FormatError`] when `src` produces diagnostics reported by
+/// [`source_diagnostics`].
 pub fn try_format_source(src: &str) -> Result<String, FormatError> {
     try_format_source_with_options(src, FormatOptions::default())
 }
@@ -341,9 +364,23 @@ impl FormatCoverage {
 }
 
 /// Count AST formatter structural edit candidates over modeled constructs.
-#[must_use]
-pub fn coverage(src: &str) -> FormatCoverage {
-    layout_ast::coverage(src)
+///
+/// # Errors
+///
+/// Returns [`FormatError`] when `src` produces diagnostics reported by
+/// [`source_diagnostics`].
+pub fn coverage(src: &str) -> Result<FormatCoverage, FormatError> {
+    reject_source_diagnostics(src)?;
+    Ok(layout_ast::coverage(src))
+}
+
+fn reject_source_diagnostics(src: &str) -> Result<(), FormatError> {
+    let diagnostics = source_diagnostics(src);
+    if diagnostics.is_empty() {
+        Ok(())
+    } else {
+        Err(FormatError { diagnostics })
+    }
 }
 
 /// Reconstruct `src`, normalizing gap whitespace. With `colon`, also drop
@@ -390,8 +427,8 @@ fn rewrite(src: &str, mode: ColonSpacingMode) -> String {
             )
         })
         .map(|t| GapTokenSpan {
-            start: t.start(),
-            end: t.end(),
+            start: t.start().get(),
+            end: t.end().get(),
             brace_depth_delta: brace_delta(t.kind()),
             is_lone_colon: is_lone_colon(t.kind()),
             is_rparen: matches!(t.kind(), TokenKind::RParen),
@@ -403,8 +440,8 @@ fn rewrite(src: &str, mode: ColonSpacingMode) -> String {
                 .iter()
                 .filter(|t| !matches!(t.kind(), TriviaKind::BlankLines(_)))
                 .map(|t| GapTokenSpan {
-                    start: t.start(),
-                    end: t.end(),
+                    start: t.start().get(),
+                    end: t.end().get(),
                     brace_depth_delta: 0,
                     is_lone_colon: false,
                     is_rparen: false,

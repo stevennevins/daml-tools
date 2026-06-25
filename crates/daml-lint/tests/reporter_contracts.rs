@@ -5,13 +5,14 @@
 use daml_lint::detector::{Finding, FindingLocation, Severity};
 use daml_lint::parser::ParseDiagnosticCategory;
 use daml_lint::reporter::{self, OutputFormat, ParseError};
+use daml_syntax::{CharColumn, LineNumber};
 
 fn parse_err() -> ParseError {
     ParseError::new(
         "Bad.daml",
-        3,
-        5,
-        Some(11),
+        LineNumber::new(3),
+        CharColumn::new(5),
+        Some(CharColumn::new(11)),
         "unterminated string literal",
         ParseDiagnosticCategory::LexicalError,
     )
@@ -21,7 +22,7 @@ fn finding(column: usize, severity: Severity) -> Finding {
     Finding::new(
         "test-rule",
         severity,
-        FindingLocation::new("Test.daml", 3, column),
+        FindingLocation::new("Test.daml", LineNumber::new(3), CharColumn::new(column)),
         "finding message",
         "evidence",
     )
@@ -38,6 +39,9 @@ fn output_format_parses_known_values_and_reports_unknown_with_display_text() {
         OutputFormat::Markdown
     );
     assert_eq!("JsOn".parse::<OutputFormat>().unwrap(), OutputFormat::Json);
+    assert_eq!(OutputFormat::Sarif.to_string(), "sarif");
+    assert_eq!(OutputFormat::Markdown.to_string(), "markdown");
+    assert_eq!(OutputFormat::Json.to_string(), "json");
 
     let err = "yaml".parse::<OutputFormat>().unwrap_err();
     assert_eq!(err.to_string(), "invalid output format: yaml");

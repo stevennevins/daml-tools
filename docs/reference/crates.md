@@ -47,10 +47,10 @@ stay aligned.
 
 | Crate | Version | Kind | Package description |
 |-------|---------|------|---------------------|
-| [`daml-parser`](../../crates/daml-parser) | `0.7.0` | library | Lossless lexer, layout resolver, and parser for the Daml smart-contract language. |
-| [`daml-syntax`](../../crates/daml-syntax) | `0.6.0` | library | Shared parsed-source surface for Daml tools. |
-| [`daml-lint`](../../crates/daml-lint) | `0.8.0` | library and CLI | Static analysis scanner for Daml smart contracts. |
-| [`daml-fmt`](../../crates/daml-fmt) | `0.5.0` | library and CLI | Canonical code formatter for the Daml smart-contract language, built on shared syntax. |
+| [`daml-parser`](../../crates/daml-parser) | `0.9.0` | library | Lossless lexer, layout resolver, and parser for the Daml smart-contract language. |
+| [`daml-syntax`](../../crates/daml-syntax) | `0.8.0` | library | Shared parsed-source surface for Daml tools. |
+| [`daml-lint`](../../crates/daml-lint) | `0.9.0` | library and CLI | Static analysis scanner for Daml smart contracts. |
+| [`daml-fmt`](../../crates/daml-fmt) | `0.7.0` | library and CLI | Canonical code formatter for the Daml smart-contract language, built on shared syntax. |
 
 ### Per-crate docs.rs URLs
 
@@ -100,11 +100,16 @@ README: [`crates/daml-syntax/README.md`](../../crates/daml-syntax/README.md)
 
 | Item | Description |
 |------|-------------|
-| `SourceFile` | Parsed source plus diagnostics, line index, tokens, trivia, laid-out tokens, and parser-span conversion. |
-| `SourceTokens` | Tokenized source for callers that need tokens, trivia, lex errors, or laid-out tokens without a full parse. |
-| `LineIndex` | Byte, line/column, and UTF-16 offset mapping over one source string. |
-| `Diagnostic` | Parser diagnostic with source range, line/column, message, and category. Read through accessors; constructed by `SourceFile::parse`. |
+| `SourceFile` | Parsed source plus diagnostics, line index, tokens, trivia, laid-out tokens, and parser-span conversion; implements clone/equality independent of lazy token-cache state. |
+| `SourceTokens` | Tokenized source for callers that need tokens, trivia, lex errors, or laid-out tokens without a full parse; implements clone/equality independent of lazy layout-cache state. |
+| `LineIndex` | Byte, line/column, and fallible UTF-16 column mapping over one source string. |
+| `Diagnostic` | Parser diagnostic with source range, line/column, named end-column shape, message, and category. Read through accessors; constructed by `SourceFile::parse`. |
 | `ByteLineCol`, `CharLineCol` | 1-based line/column pairs that distinguish byte columns from Unicode scalar columns. |
+| Coordinate newtypes | `LineNumber`, `ByteColumn`, `CharColumn`, `ByteOffset`, and `Utf16Offset` support standard conversion traits where valid; use `usize::from(coordinate)` for raw extraction. |
+| `CoordinateRangeError` | Typed error for line or byte-column coordinates outside a `LineIndex`. |
+| `InvalidOneBasedCoordinate` | Typed error returned by `TryFrom<usize>` for zero one-based coordinates. |
+| `DiagnosticEndColumn` | Same-line, multi-line, or empty-span end-column shape for diagnostics. |
+| `Utf16Range` | Named start/end range in UTF-16 code units for JavaScript-style string offsets. |
 | `TextRange`, `TextSize` | Re-exported `text-size` range and offset types used by public range APIs. |
 
 ## `daml-lint`
@@ -185,17 +190,29 @@ README: [`crates/daml-fmt/README.md`](../../crates/daml-fmt/README.md)
 |------|------------|-------------|
 | `format_source(src: &str) -> String` | Public | Formats Daml source with the AST-driven formatter. |
 | `format_source_with_options(src: &str, options: FormatOptions) -> String` | Public | Formats Daml source with explicit formatter options. |
+| `try_format_source(src: &str) -> Result<String, FormatError>` | Public | Formats Daml source with default options, rejecting diagnostics reported by `source_diagnostics`. |
+| `try_format_source_with_options(src: &str, options: FormatOptions) -> Result<String, FormatError>` | Public | Formats Daml source with explicit options, rejecting diagnostics reported by `source_diagnostics`. |
 | `FormatOptions` | Public | Formatter switches. Prefer `Default`/`new()`/`with_*` for forward-compatible construction. |
-| `ImportOrder` | Public | Import ordering strategy (`Organize` default, `Preserve` via CLI `--preserve-import-order`). `#[non_exhaustive]`. |
-| `lex_diagnostics(src: &str) -> Vec<String>` | Public | Returns lexer diagnostic strings for malformed source. |
+| `ImportOrder` | Public | Import ordering strategy (`Organize` default, `Preserve` via CLI `--preserve-import-order`). Implements `Default` and `Display`; `#[non_exhaustive]`. |
+| `FormatDiagnostic` | Public | Typed formatter diagnostic. Access line, column, category, and message through accessors. |
+| `FormatError` | Public | Formatting or coverage rejection error. Implements `Display`, `std::error::Error`, and `AsRef<[FormatDiagnostic]>`; access typed diagnostics through `diagnostics()`. |
+| `lex_diagnostics(src: &str) -> Vec<FormatDiagnostic>` | Public | Returns typed lexer diagnostics for malformed source. |
+| `source_diagnostics(src: &str) -> Vec<FormatDiagnostic>` | Public | Returns typed lexer and parser diagnostics for malformed source. |
 | `FormatCoverage` | Public | Structural edit-candidate and modeled-construct counts from `coverage`. Read through `edit_candidates()` and `modeled_constructs()`. |
-| `coverage(src: &str) -> FormatCoverage` | Public | Counts formatter structural edit candidates over modeled constructs. |
+| `coverage(src: &str) -> Result<FormatCoverage, FormatError>` | Public | Counts formatter structural edit candidates over modeled constructs, rejecting diagnostics reported by `source_diagnostics`. |
 
 The formatter backend is implemented in the private `layout_ast` module.
 
-`ImportOrder` is `#[non_exhaustive]` so new strategies can be added without
-breaking downstream `match` arms. `FormatOptions` keeps fields private and adds
-new switches through `Default`/`new()` plus `with_*` helpers.
+`ImportOrder::default()` is `Organize`; `ImportOrder` displays as stable
+lowercase labels (`organize` or `preserve`) and is `#[non_exhaustive]` so new
+strategies can be added without breaking downstream `match` arms.
+`FormatOptions` keeps fields private and adds new switches through
+`Default`/`new()` plus `with_*` helpers.
+
+`source_diagnostics` intentionally suppresses parser recovery diagnostics for
+CPP-conditional sources because inactive `#if`/`#else` module branches are not
+preprocessed before parsing. Lexical diagnostics are still returned and still
+cause `try_format_source*` and `coverage` to fail.
 
 ### Binaries
 

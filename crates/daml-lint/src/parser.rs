@@ -14,7 +14,9 @@ use daml_parser::ast::{
     self, Consuming as ParserConsuming, Decl, DiagnosticCategory as ParserDiagnosticCategory,
     DoStmt, ImportStyle as ParserImportStyle, TemplateBodyDecl,
 };
-use daml_syntax::{Coordinate, SourceFile};
+use daml_syntax::{CharColumn, DiagnosticEndColumn, LineNumber, SourceFile};
+use std::error::Error;
+use std::fmt;
 use std::path::Path;
 
 #[cfg(all(test, feature = "js-runtime"))]
@@ -29,10 +31,16 @@ pub(crate) fn parse_daml(source: &str, file: &Path) -> DamlModule {
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct ParseDiagnostic {
-    pub line: usize,
-    pub column: usize,
-    pub end_column: Option<usize>,
+    /// 1-based diagnostic start line.
+    pub line: LineNumber,
+    /// 1-based Unicode-scalar diagnostic start column.
+    pub column: CharColumn,
+    /// Exclusive 1-based Unicode-scalar end column for non-empty single-line
+    /// diagnostics; `None` for multi-line or zero-width diagnostics.
+    pub end_column: Option<CharColumn>,
+    /// Human-readable diagnostic message from the parser.
     pub message: String,
+    /// Stable recovery category for machine-readable reporting.
     pub category: ParseDiagnosticCategory,
 }
 
@@ -58,6 +66,7 @@ pub enum ParseDiagnosticCategory {
 }
 
 impl ParseDiagnosticCategory {
+    /// Stable kebab-case tag used by JSON/SARIF output and external tooling.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -69,9 +78,16 @@ impl ParseDiagnosticCategory {
             Self::Unknown => "unknown",
         }
     }
+}
 
-    #[must_use]
-    pub const fn from_parser_category(category: ParserDiagnosticCategory) -> Self {
+impl fmt::Display for ParseDiagnosticCategory {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl From<ParserDiagnosticCategory> for ParseDiagnosticCategory {
+    fn from(category: ParserDiagnosticCategory) -> Self {
         match category {
             ParserDiagnosticCategory::SkippedDecl => Self::SkippedDeclaration,
             ParserDiagnosticCategory::Malformed => Self::Malformed,
@@ -83,10 +99,55 @@ impl ParseDiagnosticCategory {
     }
 }
 
+/// Error returned when parsing an unsupported parse-diagnostic category tag.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseDiagnosticCategoryParseError {
+    value: String,
+}
+
+impl ParseDiagnosticCategoryParseError {
+    fn new(value: impl Into<String>) -> Self {
+        Self {
+            value: value.into(),
+        }
+    }
+}
+
+impl fmt::Display for ParseDiagnosticCategoryParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "invalid parse diagnostic category: {}", self.value)
+    }
+}
+
+impl Error for ParseDiagnosticCategoryParseError {}
+
+impl std::str::FromStr for ParseDiagnosticCategory {
+    type Err = ParseDiagnosticCategoryParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "skipped-declaration" => Ok(Self::SkippedDeclaration),
+            "malformed" => Ok(Self::Malformed),
+            "unsupported-syntax" => Ok(Self::UnsupportedSyntax),
+            "recursion-limit" => Ok(Self::RecursionLimit),
+            "lexical-error" => Ok(Self::LexicalError),
+            "unknown" => Ok(Self::Unknown),
+            _ => Err(ParseDiagnosticCategoryParseError::new(s)),
+        }
+    }
+}
+
+/// Result of loss-tolerant parser lowering.
+///
+/// `module` is always returned and may be partial when `diagnostics` is
+/// non-empty. Callers that require authoritative scans should reject results
+/// with diagnostics before running or accepting detector output.
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct ParseResult {
+    /// Lowered rule-facing module, possibly partial if parse recovery occurred.
     pub module: DamlModule,
+    /// Recoverable parse and lexical diagnostics in source order.
     pub diagnostics: Vec<ParseDiagnostic>,
 }
 
@@ -151,11 +212,15 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> ParseResult {
         .diagnostics()
         .iter()
         .map(|d| ParseDiagnostic {
-            line: d.line().get(),
-            column: d.column().get(),
-            end_column: d.end_column().map(Coordinate::get),
+            line: d.line(),
+            column: d.column(),
+            end_column: if let DiagnosticEndColumn::SameLineEnd(end_column) = d.end_column() {
+                Some(end_column)
+            } else {
+                None
+            },
             message: d.message().to_owned(),
-            category: ParseDiagnosticCategory::from_parser_category(d.category()),
+            category: d.category().into(),
         })
         .collect();
     ParseResult {
@@ -167,15 +232,15 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> ParseResult {
 fn span_at(file: &Path, pos: ast::Pos) -> Span {
     Span {
         file: file.to_path_buf(),
-        line: pos.line,
-        column: pos.column,
+        line: LineNumber::new(pos.line),
+        column: CharColumn::new(pos.column),
     }
 }
 
 const fn src_pos(pos: ast::Pos) -> SrcPos {
     SrcPos {
-        line: pos.line,
-        column: pos.column,
+        line: LineNumber::new(pos.line),
+        column: CharColumn::new(pos.column),
     }
 }
 
@@ -271,9 +336,23 @@ fn lower_expr(e: &ast::Expr) -> Expr {
             base: Box::new(lower_expr(base)),
             fields: fields
                 .iter()
-                .map(|f| RecordField {
-                    name: f.name.to_string(),
-                    value: f.value.as_ref().map(lower_expr),
+                .map(|f| match f {
+                    ast::FieldAssign::Assign { name, value, .. } => RecordField {
+                        name: name.to_string(),
+                        value: Some(lower_expr(value)),
+                    },
+                    ast::FieldAssign::Pun { name, .. } => RecordField {
+                        name: name.to_string(),
+                        value: None,
+                    },
+                    ast::FieldAssign::Wildcard { .. } => RecordField {
+                        name: "..".to_string(),
+                        value: None,
+                    },
+                    _ => RecordField {
+                        name: String::new(),
+                        value: None,
+                    },
                 })
                 .collect(),
             span,
@@ -288,12 +367,6 @@ fn lower_expr(e: &ast::Expr) -> Expr {
         },
         // No structured rule-facing encoding (yet): sections, try-in-
         // expression-position, recovered parse errors.
-        ast::Expr::Try { .. } | ast::Expr::Section { .. } | ast::Expr::Error { .. } => {
-            Expr::Unknown {
-                raw: e.render(),
-                span,
-            }
-        }
         _ => Expr::Unknown {
             raw: e.render(),
             span,
@@ -320,7 +393,7 @@ fn lower_template(t: &ast::TemplateDecl, file: &Path, source_file: &SourceFile) 
             name: f.name.to_string(),
             type_: f
                 .ty
-                .as_ref()
+                .as_type()
                 .map(|ty| TypeNode::from_type(ty, file, source_file)),
             span: span_at(file, f.pos),
         })
@@ -352,7 +425,7 @@ fn lower_template(t: &ast::TemplateDecl, file: &Path, source_file: &SourceFile) 
             TemplateBodyDecl::Key { expr, ty, .. } => {
                 key_expr = Some(lower_expr(expr));
                 key_type = ty
-                    .as_ref()
+                    .as_type()
                     .map(|ty| TypeNode::from_type(ty, file, source_file));
             }
             TemplateBodyDecl::Maintainer { expr, .. } => {
@@ -397,7 +470,7 @@ fn lower_interface(i: &ast::InterfaceDecl, file: &Path, source_file: &SourceFile
                 name: m.name.to_string(),
                 type_: m
                     .ty
-                    .as_ref()
+                    .as_type()
                     .map(|ty| TypeNode::from_type(ty, file, source_file)),
                 span: span_at(file, m.pos),
             })
@@ -419,7 +492,7 @@ fn lower_choice(c: &ast::ChoiceDecl, file: &Path, source_file: &SourceFile) -> C
             name: f.name.to_string(),
             type_: f
                 .ty
-                .as_ref()
+                .as_type()
                 .map(|ty| TypeNode::from_type(ty, file, source_file)),
             span: span_at(file, f.pos),
         })
@@ -441,7 +514,7 @@ fn lower_choice(c: &ast::ChoiceDecl, file: &Path, source_file: &SourceFile) -> C
         parameters,
         return_type: c
             .return_ty
-            .as_ref()
+            .as_type()
             .map(|ty| TypeNode::from_type(ty, file, source_file)),
         body,
         span: span_at(file, c.pos),
@@ -471,7 +544,7 @@ fn lower_function(f: &ast::FunctionDecl, file: &Path, source_file: &SourceFile) 
         name: f.name.to_string(),
         type_signature: f
             .ty
-            .as_ref()
+            .as_type()
             .map(|ty| TypeNode::from_type(ty, file, source_file)),
         body,
         span: span_at(file, f.pos),
@@ -689,9 +762,28 @@ fn subst_expr(
             base: Box::new(subst_expr(base, subst, call_pos)),
             fields: fields
                 .iter()
-                .map(|f| ast::FieldAssign {
-                    value: f.value.as_ref().map(|v| subst_expr(v, subst, call_pos)),
-                    ..f.clone()
+                .map(|f| match f {
+                    ast::FieldAssign::Assign {
+                        name,
+                        value,
+                        pos,
+                        span,
+                    } => ast::FieldAssign::Assign {
+                        name: name.clone(),
+                        value: subst_expr(value, subst, call_pos),
+                        pos: *pos,
+                        span: *span,
+                    },
+                    ast::FieldAssign::Pun { name, pos, span } => ast::FieldAssign::Pun {
+                        name: name.clone(),
+                        pos: *pos,
+                        span: *span,
+                    },
+                    ast::FieldAssign::Wildcard { pos, span } => ast::FieldAssign::Wildcard {
+                        pos: *pos,
+                        span: *span,
+                    },
+                    _ => f.clone(),
                 })
                 .collect(),
             pos: call_pos,
@@ -742,7 +834,9 @@ fn repoint(expr: &ast::Expr, call_pos: ast::Pos) -> ast::Expr {
         | E::Tuple { pos, .. }
         | E::List { pos, .. }
         | E::Try { pos, .. }
-        | E::Section { pos, .. }
+        | E::OperatorRef { pos, .. }
+        | E::LeftSection { pos, .. }
+        | E::RightSection { pos, .. }
         | E::Error { pos, .. } => *pos = call_pos,
         _ => {}
     }

@@ -2,6 +2,7 @@ use clap::Parser;
 use daml_lint::detector::{self, Severity};
 use daml_lint::reporter::{self, OutputFormat};
 use daml_lint::{detectors, parser};
+use daml_syntax::{CharColumn, LineNumber};
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -201,8 +202,8 @@ fn input_error_to_parse_error(error: &InputDiscoveryError) -> reporter::ParseErr
             | InputDiscoveryError::ReadDir { path, .. }
             | InputDiscoveryError::ReadFailure { path, .. } => path.display().to_string(),
         },
-        1,
-        1,
+        LineNumber::new(1),
+        CharColumn::new(1),
         None,
         error.to_string(),
         parser::ParseDiagnosticCategory::UnsupportedSyntax,

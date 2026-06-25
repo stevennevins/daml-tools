@@ -47,7 +47,7 @@ parser, one lossless tree, many consumers.
 
 ```toml
 [dependencies]
-daml-parser = "0.7"
+daml-parser = "0.8.0"
 ```
 
 ```rust
@@ -79,7 +79,10 @@ let tolerant = parse_module("module M where\n%%% junk\n");
 assert!(!tolerant.diagnostics.is_empty());
 
 let strict = parse_module_strict("module M where\n%%% junk\n");
-assert!(strict.is_err());
+assert!(matches!(
+    strict.as_ref(),
+    Err(err) if !err.diagnostics().is_empty()
+));
 ```
 
 ## Choosing a parser layer
@@ -142,27 +145,39 @@ let templates: Vec<_> = module
     .collect();
 
 assert!(!has_lex_errors);
-let (template_name, template_span) = templates
-    .first()
-    .expect("example source defines an Account template");
+let Some((template_name, template_span)) = templates.first() else {
+    panic!("example source defines an Account template");
+};
 
 assert_eq!(template_name.as_str(), "Account");
 ```
 
-Every AST node that represents source text carries a 1-based `Pos` and a byte
-`Span`. Use spans when you need an exact source slice:
+Declarations, expressions, patterns, and most parser DTOs carry a 1-based
+`Pos` for their first token and a byte `Span` for their full source extent.
+Structured `Type` nodes carry `Span` only; map their spans back to line/column
+coordinates when a type-fragment diagnostic needs a position. Use spans when
+you need an exact source slice:
 
 ```rust
-let snippet = source
-    .get(template_span.start..template_span.end)
-    .expect("parser spans are UTF-8 boundaries");
+fn render_template_snippet(
+    source: &str,
+    template_span: daml_parser::ast::Span,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let snippet = template_span
+        .get(source)
+        .ok_or("parser span was not a valid UTF-8 source slice")?;
 
-assert!(snippet.starts_with("template Account"));
+    assert!(snippet.starts_with("template Account"));
+    Ok(())
+}
 ```
 
 ## Diagnostics and partial structure
 
-`ParseDiagnostic::category` separates different kinds of recovery:
+Use `ParseDiagnostic::kind()` for machine-readable handling and
+`ParseDiagnostic::message()` for presentation. The stable
+`ParseDiagnostic::category()`/`DiagnosticCategory` value remains the coarse
+JSON/SARIF grouping:
 
 | Category | Meaning |
 |----------|---------|
@@ -171,6 +186,13 @@ assert!(snippet.starts_with("template Account"));
 | `SkippedDecl` | a top-level declaration could not be parsed and was skipped to the next item |
 | `UnsupportedSyntax` | the source used syntax this parser intentionally does not model yet |
 | `RecursionLimit` | deeply nested input exceeded the parser recursion bound and was degraded to raw text |
+
+Typed kinds preserve details that callers should not scrape from messages: for
+example `ParseDiagnosticKind::Lex(LexErrorKind::InvalidEscapeSequence('q'))`,
+`ParseDiagnosticKind::ExpectedToken(ExpectedToken::ElseKeyword)`,
+`ParseDiagnosticKind::MalformedTypeAnnotation(TypeAnnotationContext::Field)`,
+`ParseDiagnosticKind::UnsupportedSyntax(UnsupportedSyntaxKind::LegacyControllerCan)`,
+and `ParseDiagnosticKind::RecursionLimit { .. }`.
 
 Partial structure is explicit in the AST. For example:
 
@@ -184,7 +206,9 @@ use. The parser itself does not treat diagnostics as a process-level failure.
 
 ## Source positions, spans, and trivia
 
-`Span` values are byte offsets into the original source: `[start, end)`.
+`Span` values are typed byte offsets into the original source: `[start, end)`.
+Use `Span::range()`, `start_usize()`, or `end_usize()` only where raw byte
+offsets are required for slicing or external interop.
 Virtual layout tokens have zero-width spans and are skipped when AST node spans
 are computed. Comments and whitespace live in lexer trivia rather than AST
 nodes.
@@ -195,12 +219,17 @@ the source:
 ```rust
 use daml_parser::lexer::{lex_with_trivia, render_lossless};
 
-let lexed = lex_with_trivia(source);
-let tokens = lexed.tokens;
-let trivia = lexed.trivia;
-let errors = lexed.errors;
-assert!(errors.is_empty());
-assert_eq!(render_lossless(source, &tokens, &trivia).unwrap(), source);
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let source = "module M where\nfoo : Int\nfoo = 1\n";
+    let lexed = lex_with_trivia(source);
+    let tokens = lexed.tokens;
+    let trivia = lexed.trivia;
+    let errors = lexed.errors;
+    assert!(errors.is_empty());
+    let rendered = render_lossless(source, &tokens, &trivia)?;
+    assert_eq!(rendered, source);
+    Ok(())
+}
 ```
 
 Use the AST-level oracle when you need to prove parsed node spans and trivia can
@@ -211,11 +240,16 @@ use daml_parser::ast_span::render_from_ast;
 use daml_parser::lexer::lex_with_trivia;
 use daml_parser::parse::parse_module;
 
-let lexed = lex_with_trivia(source);
-let trivia = lexed.trivia;
-let parsed = parse_module(source);
-let module = parsed.module;
-assert_eq!(render_from_ast(source, &module, &trivia).unwrap(), source);
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let source = "module M where\nfoo : Int\nfoo = 1\n";
+    let lexed = lex_with_trivia(source);
+    let trivia = lexed.trivia;
+    let parsed = parse_module(source);
+    let module = parsed.module;
+    let rendered = render_from_ast(source, &module, &trivia)?;
+    assert_eq!(rendered, source);
+    Ok(())
+}
 ```
 
 ## Layout-aware tokens

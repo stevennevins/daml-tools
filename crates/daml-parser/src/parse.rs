@@ -5,10 +5,11 @@
 //! virtual semicolon. The parser never panics and never aborts the file.
 
 use crate::ast::{
-    Alt, Binding, ChoiceDecl, Consuming, Decl, DiagnosticCategory, DoStmt, Equation, Expr,
-    FieldAssign, FieldDecl, FunctionDecl, Identifier, ImportDecl, ImportStyle, InterfaceDecl,
-    InterfaceInstanceDecl, LitKind, Module, ModuleName, Operator, ParseDiagnostic, Pat,
-    SectionSide, Span, TemplateBodyDecl, TemplateDecl, Type,
+    Alt, Binding, ChoiceDecl, Consuming, Decl, DoStmt, Equation, ExpectedToken, Expr, FieldAssign,
+    FieldDecl, FunctionDecl, Identifier, ImportDecl, ImportStyle, InterfaceDecl,
+    InterfaceInstanceDecl, LitKind, MalformedSyntaxKind, Module, ModuleName, Operator,
+    ParseDiagnostic, ParseDiagnosticKind, Pat, SkippedDeclarationReason, Span, TemplateBodyDecl,
+    TemplateDecl, Type, TypeAnnotation, TypeAnnotationContext, UnsupportedSyntaxKind,
 };
 use crate::layout::resolve_layout;
 use crate::lexer::{lex, Pos, Token, TokenKind};
@@ -16,9 +17,19 @@ use std::collections::HashMap;
 
 pub const MAX_RECURSION_DEPTH: u32 = 128;
 
-#[derive(Debug, Clone)]
+/// Result of tolerant module parsing.
+///
+/// The parser always returns a [`Module`], even when it had to recover from
+/// lexical errors, malformed syntax, unsupported syntax, or skipped
+/// declarations. Inspect [`Self::diagnostics`] (or use [`Self::has_errors`]) to
+/// decide whether the partial tree is acceptable. Use [`Self::into_result`] for
+/// callers that require a diagnostic-free parse.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseModuleResult {
+    /// Parsed module tree. This is always present and may be partial when
+    /// diagnostics were recorded.
     pub module: Module,
+    /// Recoverable parse and lex issues in source order.
     pub diagnostics: Vec<ParseDiagnostic>,
 }
 
@@ -80,11 +91,13 @@ impl DoExpressionMode {
 }
 
 impl ParseModuleResult {
+    /// True when tolerant parsing recorded any recoverable diagnostic.
     #[must_use]
     pub const fn has_errors(&self) -> bool {
         !self.diagnostics.is_empty()
     }
 
+    /// Split the partial module tree from its source-ordered diagnostics.
     #[must_use]
     pub fn into_parts(self) -> (Module, Vec<ParseDiagnostic>) {
         (self.module, self.diagnostics)
@@ -140,17 +153,17 @@ pub fn parse_module(source: &str) -> ParseModuleResult {
             .into_iter()
             .map(|e| {
                 let range = e.byte_range_in(source);
-                ParseDiagnostic {
-                    message: e.to_string(),
-                    pos: e.pos,
-                    span: crate::ast::Span::new(range.start, range.end),
-                    category: DiagnosticCategory::Lex,
-                }
+                ParseDiagnostic::new(
+                    ParseDiagnosticKind::Lex(e.kind.clone()),
+                    e.to_string(),
+                    e.pos,
+                    crate::ast::Span::from_usize(range.start, range.end),
+                )
             })
             .collect(),
     };
     let mut module = p.module();
-    module.span = crate::ast::Span::new(0, source.len());
+    module.span = crate::ast::Span::from_usize(0, source.len());
     ParseModuleResult {
         module,
         diagnostics: p.diags,
@@ -168,11 +181,17 @@ pub fn parse_module(source: &str) -> ParseModuleResult {
 /// ```
 /// use daml_parser::parse::parse_module_strict;
 ///
-/// let module = parse_module_strict("module M where\nfoo : Int\nfoo = 1\n").unwrap();
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let module = parse_module_strict("module M where\nfoo : Int\nfoo = 1\n")?;
 /// assert_eq!(module.name, "M");
 ///
-/// let err = parse_module_strict("module M where\n%%% junk\n").unwrap_err();
-/// assert!(!err.diagnostics().is_empty());
+/// let strict = parse_module_strict("module M where\n%%% junk\n");
+/// assert!(matches!(
+///     strict.as_ref(),
+///     Err(err) if !err.diagnostics().is_empty()
+/// ));
+/// # Ok(())
+/// # }
 /// ```
 ///
 /// # Errors
@@ -214,9 +233,9 @@ impl Parser {
             // parent. Use `a` (past any leading virtual tokens) — `from` itself
             // may be a virtual token whose byte offset is a meaningless 0.
             let p = self.byte_at(a);
-            return crate::ast::Span::new(p, p);
+            return crate::ast::Span::from_usize(p, p);
         }
-        crate::ast::Span::new(self.toks[a].start, self.toks[b - 1].end)
+        crate::ast::Span::from_usize(self.toks[a].start, self.toks[b - 1].end)
     }
 
     /// Byte offset where token `i` begins, or the source end past the last one.
@@ -305,31 +324,32 @@ impl Parser {
         }
     }
 
-    /// Emit a `Malformed` diagnostic at the current token (the common case).
-    fn diag(&mut self, message: impl Into<String>) {
-        self.diag_cat(DiagnosticCategory::Malformed, message);
+    /// Emit an expected-token diagnostic at the current token.
+    fn diag_expected(&mut self, expected: ExpectedToken, message: impl Into<String>) {
+        self.diag_kind(ParseDiagnosticKind::ExpectedToken(expected), message);
     }
 
-    /// Emit a diagnostic with an explicit recovery category. The span is the
-    /// current token's byte extent (the offending token), so consumers get an
-    /// end position, not just a start.
-    fn diag_cat(&mut self, category: DiagnosticCategory, message: impl Into<String>) {
+    /// Emit a malformed-syntax diagnostic at the current token.
+    fn diag_malformed(&mut self, kind: MalformedSyntaxKind, message: impl Into<String>) {
+        self.diag_kind(ParseDiagnosticKind::MalformedSyntax(kind), message);
+    }
+
+    /// Emit a diagnostic with an explicit typed recovery reason. The span is
+    /// the current token's byte extent (the offending token), so consumers get
+    /// an end position, not just a start.
+    fn diag_kind(&mut self, kind: ParseDiagnosticKind, message: impl Into<String>) {
         let pos = self.pos();
         let span = self.cur_span();
-        self.diags.push(ParseDiagnostic {
-            message: message.into(),
-            pos,
-            span,
-            category,
-        });
+        self.diags
+            .push(ParseDiagnostic::new(kind, message, pos, span));
     }
 
     fn parse_type_annotation(
         &mut self,
         type_start: usize,
         type_end: usize,
-        context: &'static str,
-    ) -> Option<Type> {
+        context: TypeAnnotationContext,
+    ) -> TypeAnnotation {
         let type_start = type_start.min(self.toks.len());
         let type_end = type_end.min(self.toks.len());
         let tokens = &self.toks[type_start..type_end];
@@ -341,15 +361,19 @@ impl Parser {
                 None
             }
         });
-        if ty.is_none() {
-            self.diags.push(ParseDiagnostic {
-                message: format!("malformed {context} type annotation"),
-                pos: self.pos_of_token(type_start),
-                span: self.span_of_token_range(type_start, type_end),
-                category: DiagnosticCategory::Malformed,
-            });
+        match ty {
+            Some(ty) => TypeAnnotation::Present(ty),
+            None => {
+                let span = self.span_of_token_range(type_start, type_end);
+                self.diags.push(ParseDiagnostic::new(
+                    ParseDiagnosticKind::MalformedTypeAnnotation(context),
+                    format!("malformed {} type annotation", context.as_str()),
+                    self.pos_of_token(type_start),
+                    span,
+                ));
+                TypeAnnotation::Malformed { span }
+            }
         }
-        ty
     }
 
     /// Trim trailing tokens that belong to declaration tails (for example `= expr`
@@ -421,7 +445,7 @@ impl Parser {
         let end = end.min(self.toks.len());
         let span_start = self.byte_at(start);
         if end <= start {
-            return Span::new(span_start, span_start);
+            return Span::from_usize(span_start, span_start);
         }
 
         let mut cursor = end;
@@ -429,11 +453,11 @@ impl Parser {
             cursor -= 1;
             let token = &self.toks[cursor];
             if !token.is_virtual() {
-                return Span::new(span_start, token.end);
+                return Span::from_usize(span_start, token.end);
             }
         }
 
-        Span::new(span_start, span_start)
+        Span::from_usize(span_start, span_start)
     }
 
     /// Byte span of the next real (non-virtual) token, or a zero-width span at
@@ -444,8 +468,8 @@ impl Parser {
             j += 1;
         }
         self.toks.get(j).map_or_else(
-            || crate::ast::Span::new(self.src_len, self.src_len),
-            |t| crate::ast::Span::new(t.start, t.end),
+            || crate::ast::Span::from_usize(self.src_len, self.src_len),
+            |t| crate::ast::Span::from_usize(t.start, t.end),
         )
     }
 
@@ -489,7 +513,7 @@ impl Parser {
     fn module(&mut self) -> Module {
         let pos = self.pos();
         let header_start = self.i;
-        let mut header = crate::ast::Span::new(0, 0);
+        let mut header = crate::ast::Span::from_usize(0, 0);
         let mut name = ModuleName::from("Unknown");
 
         if self.eat_keyword("module") {
@@ -505,7 +529,10 @@ impl Parser {
                 self.skip_balanced_parens();
             }
             if !self.eat_keyword("where") {
-                self.diag("expected 'where' after module header");
+                self.diag_expected(
+                    ExpectedToken::WhereAfterModuleHeader,
+                    "expected 'where' after module header",
+                );
             }
             header = self.node_span(header_start);
         }
@@ -558,7 +585,7 @@ impl Parser {
             header,
             imports,
             decls,
-            span: crate::ast::Span::new(0, self.src_len),
+            span: crate::ast::Span::from_usize(0, self.src_len),
         }
     }
 
@@ -731,8 +758,10 @@ impl Parser {
             // Top-level pattern binding: `[a, b, c] = ...`, `(x, y) = ...`.
             Some(TokenKind::LParen | TokenKind::LBracket) => {
                 if self.binding().is_none() {
-                    self.diag_cat(
-                        DiagnosticCategory::SkippedDecl,
+                    self.diag_kind(
+                        ParseDiagnosticKind::SkippedDeclaration(
+                            SkippedDeclarationReason::TopLevelPatternBinding,
+                        ),
                         "unparseable top-level pattern binding",
                     );
                 }
@@ -744,8 +773,10 @@ impl Parser {
                 });
             }
             _ => {
-                self.diag_cat(
-                    DiagnosticCategory::SkippedDecl,
+                self.diag_kind(
+                    ParseDiagnosticKind::SkippedDeclaration(
+                        SkippedDeclarationReason::UnrecognizedDeclaration,
+                    ),
                     format!("unrecognized declaration: {:?}", self.peek()),
                 );
                 self.skip_to_item_end();
@@ -782,7 +813,10 @@ impl Parser {
                 }
             }
             _ => {
-                self.diag("expected module name after 'import'");
+                self.diag_expected(
+                    ExpectedToken::ModuleNameAfterImport,
+                    "expected module name after 'import'",
+                );
                 return None;
             }
         };
@@ -922,7 +956,7 @@ impl Parser {
             }) = self.peek().cloned()
             {
                 let p = self.pos();
-                let nspan = Span::new(self.toks[self.i].start, self.toks[self.i].end);
+                let nspan = Span::from_usize(self.toks[self.i].start, self.toks[self.i].end);
                 self.bump();
                 names.push((name, p, nspan));
                 if !self.eat(&TokenKind::Comma) {
@@ -930,13 +964,16 @@ impl Parser {
                 }
             }
             if names.is_empty() || !self.eat_op(":") {
-                self.diag("expected 'name : Type' field");
+                self.diag_expected(
+                    ExpectedToken::FieldNameTypePair,
+                    "expected 'name : Type' field",
+                );
                 self.skip_to_item_end();
                 continue;
             }
             let ty_start = self.i;
             self.skip_to_item_end();
-            let ty = self.parse_type_annotation(ty_start, self.i, "field");
+            let ty = self.parse_type_annotation(ty_start, self.i, TypeAnnotationContext::Field);
             // The type is shared by all names but sits after the last one, so
             // only the last field can span `name : Type` without overlapping a
             // sibling; earlier names of `x, y : T` stay name-only. daml-fmt
@@ -945,7 +982,7 @@ impl Parser {
             let last = names.len() - 1;
             for (idx, (name, p, nspan)) in names.into_iter().enumerate() {
                 let span = if idx == last {
-                    Span::new(nspan.start, type_end.max(nspan.end))
+                    Span::from_usize(nspan.start_usize(), type_end.max(nspan.end_usize()))
                 } else {
                     nspan
                 };
@@ -1035,7 +1072,7 @@ impl Parser {
                 let ty = if self.eat_op(":") {
                     let ty_start = self.i;
                     self.skip_to_item_end();
-                    self.parse_type_annotation(ty_start, self.i, "key")
+                    self.parse_type_annotation(ty_start, self.i, TypeAnnotationContext::Key)
                 } else {
                     // The expression parser consumes `: Type` annotations;
                     // recover the key type from the last top-level colon.
@@ -1049,7 +1086,9 @@ impl Parser {
                             _ => {}
                         }
                     }
-                    let ty = colon.and_then(|j| self.parse_type_annotation(j + 1, self.i, "key"));
+                    let ty = colon.map_or(TypeAnnotation::Absent, |j| {
+                        self.parse_type_annotation(j + 1, self.i, TypeAnnotationContext::Key)
+                    });
                     self.skip_to_item_end();
                     ty
                 };
@@ -1098,8 +1137,10 @@ impl Parser {
                 // Legacy Daml 1.x `controller <party> can` choice blocks are
                 // not analyzed — fail loud instead of silently dropping the
                 // choices inside.
-                self.diag_cat(
-                    DiagnosticCategory::UnsupportedSyntax,
+                self.diag_kind(
+                    ParseDiagnosticKind::UnsupportedSyntax(
+                        UnsupportedSyntaxKind::LegacyControllerCan,
+                    ),
                     "legacy 'controller ... can' syntax is not supported; \
                      choices inside this block are not analyzed",
                 );
@@ -1146,9 +1187,9 @@ impl Parser {
         let return_ty = if self.eat_op(":") {
             let ty_start = self.i;
             self.skip_type_tokens();
-            self.parse_type_annotation(ty_start, self.i, "choice")
+            self.parse_type_annotation(ty_start, self.i, TypeAnnotationContext::Choice)
         } else {
-            None
+            TypeAnnotation::Absent
         };
         let (params, dangling) = if self.eat_keyword("with") {
             let parsed = self.field_block();
@@ -1325,10 +1366,10 @@ impl Parser {
                                 ty: self.parse_type_annotation(
                                     ty_start,
                                     self.i,
-                                    "interface method",
+                                    TypeAnnotationContext::InterfaceMethod,
                                 ),
                                 pos: mpos,
-                                span: Span::new(mstart, self.end_byte().max(mstart)),
+                                span: Span::from_usize(mstart, self.end_byte().max(mstart)),
                             });
                             continue;
                         }
@@ -1360,7 +1401,10 @@ impl Parser {
         let for_template = if self.eat_keyword("for") {
             self.upper_name().map_or_else(
                 || {
-                    self.diag("interface instance missing template name after 'for'");
+                    self.diag_expected(
+                        ExpectedToken::TemplateNameAfterInterfaceInstanceFor,
+                        "interface instance missing template name after 'for'",
+                    );
                     None
                 },
                 Some,
@@ -1453,7 +1497,7 @@ impl Parser {
             self.eat_op(":");
             let ty_start = self.i;
             self.skip_to_item_end();
-            let ty = self.parse_type_annotation(ty_start, self.i, "function");
+            let ty = self.parse_type_annotation(ty_start, self.i, TypeAnnotationContext::Function);
             return Some(Decl::Function(FunctionDecl {
                 name,
                 ty,
@@ -1501,7 +1545,10 @@ impl Parser {
                 | Some(
                     TokenKind::VSemi | TokenKind::VRBrace | TokenKind::Semi | TokenKind::RBrace,
                 ) => {
-                    self.diag(format!("could not parse equation for '{name}'"));
+                    self.diag_malformed(
+                        MalformedSyntaxKind::FunctionEquation,
+                        format!("could not parse equation for '{name}'"),
+                    );
                     return None;
                 }
                 _ => {}
@@ -1509,7 +1556,10 @@ impl Parser {
             match self.pattern_atom() {
                 Some(p) => params.push(p),
                 None => {
-                    self.diag(format!("bad parameter pattern in '{name}'"));
+                    self.diag_malformed(
+                        MalformedSyntaxKind::FunctionParameterPattern,
+                        format!("bad parameter pattern in '{name}'"),
+                    );
                     return None;
                 }
             }
@@ -1523,7 +1573,7 @@ impl Parser {
         self.skip_to_item_end();
         Some(Decl::Function(FunctionDecl {
             name,
-            ty: None,
+            ty: TypeAnnotation::Absent,
             equations: vec![Equation {
                 params,
                 body,
@@ -1557,14 +1607,17 @@ impl Parser {
                 }
             };
             if !self.eat_op("=") {
-                self.diag("expected '=' after guard");
+                self.diag_expected(ExpectedToken::EqualsAfterGuard, "expected '=' after guard");
                 return None;
             }
             let e = self.expr();
             guards.push((g, e));
         }
         if guards.is_empty() {
-            self.diag("expected '=' or guarded right-hand side in equation");
+            self.diag_expected(
+                ExpectedToken::EqualsOrGuardedRightHandSide,
+                "expected '=' or guarded right-hand side in equation",
+            );
             None
         } else {
             let first = guards[0].1.clone();
@@ -2037,8 +2090,10 @@ impl Parser {
             // report it so the degraded region is not silently mistaken for
             // unsupported syntax. `skip_to_item_end` below consumes the rest of
             // the item, so this trips about once per affected declaration.
-            self.diag_cat(
-                DiagnosticCategory::RecursionLimit,
+            self.diag_kind(
+                ParseDiagnosticKind::RecursionLimit {
+                    limit: MAX_RECURSION_DEPTH,
+                },
                 "expression nesting too deep; truncated to raw text",
             );
             let start = self.i;
@@ -2171,7 +2226,7 @@ impl Parser {
                 self.bump(); // with
                 let fields = self.record_fields();
                 let tpos = target.pos();
-                let sp = Span::new(target.span().start, self.end_byte());
+                let sp = Span::from_usize(target.span().start_usize(), self.end_byte());
                 let rec = Expr::Record {
                     base: Box::new(target),
                     fields,
@@ -2270,9 +2325,7 @@ impl Parser {
             let start_i = self.i;
             if self.at_op("..") {
                 self.bump();
-                fields.push(FieldAssign {
-                    name: "..".into(),
-                    value: None,
+                fields.push(FieldAssign::Wildcard {
                     pos,
                     span: self.node_span(start_i),
                 });
@@ -2293,17 +2346,16 @@ impl Parser {
             };
             if self.eat_op("=") {
                 let value = self.expr_prec(1, DoExpressionMode::Allow);
-                fields.push(FieldAssign {
+                fields.push(FieldAssign::Assign {
                     name,
-                    value: Some(value),
+                    value,
                     pos,
                     span: self.node_span(start_i),
                 });
             } else {
                 // Pun: `Foo with owner`.
-                fields.push(FieldAssign {
+                fields.push(FieldAssign::Pun {
                     name,
-                    value: None,
                     pos,
                     span: self.node_span(start_i),
                 });
@@ -2351,29 +2403,35 @@ impl Parser {
     /// (`Map.lookup`) are already a single token and never reach here.
     fn projection_tail(&mut self, mut base: Expr) -> Expr {
         while self.at_tight_projection() {
-            let start = base.span().start;
+            let start = base.span().start_usize();
             let pos = base.pos();
             self.bump(); // '.'
             let Some(field_tok) = self.bump() else {
-                self.diag("expected projection field after '.'");
+                self.diag_expected(
+                    ExpectedToken::ProjectionFieldAfterDot,
+                    "expected projection field after '.'",
+                );
                 return base;
             };
             let TokenKind::LowerId { qualifier, name } = field_tok.kind else {
-                self.diag("expected projection field after '.'");
+                self.diag_expected(
+                    ExpectedToken::ProjectionFieldAfterDot,
+                    "expected projection field after '.'",
+                );
                 return base;
             };
             let field = Expr::Var {
                 qualifier,
                 name,
                 pos: field_tok.pos,
-                span: Span::new(field_tok.start, field_tok.end),
+                span: Span::from_usize(field_tok.start, field_tok.end),
             };
             base = Expr::BinOp {
                 op: ".".into(),
                 lhs: Box::new(base),
                 rhs: Box::new(field),
                 pos,
-                span: Span::new(start, self.end_byte()),
+                span: Span::from_usize(start, self.end_byte()),
             };
         }
         base
@@ -2507,7 +2565,7 @@ impl Parser {
         let cond = self.expr();
         self.eat(&TokenKind::VSemi); // DoAndIfThenElse style
         if !self.eat_keyword("then") {
-            self.diag("expected 'then'");
+            self.diag_expected(ExpectedToken::ThenKeyword, "expected 'then'");
             return Some(Expr::Error {
                 raw: format!("if {}", cond.render()),
                 pos,
@@ -2517,7 +2575,7 @@ impl Parser {
         let then_branch = self.expr();
         self.eat(&TokenKind::VSemi);
         if !self.eat_keyword("else") {
-            self.diag("expected 'else'");
+            self.diag_expected(ExpectedToken::ElseKeyword, "expected 'else'");
             return Some(Expr::Error {
                 raw: format!("if {} then {}", cond.render(), then_branch.render()),
                 pos,
@@ -2540,7 +2598,10 @@ impl Parser {
         self.bump(); // case
         let scrutinee = self.expr_no_do();
         if !self.eat_keyword("of") {
-            self.diag("expected 'of' in case expression");
+            self.diag_expected(
+                ExpectedToken::OfKeywordInCaseExpression,
+                "expected 'of' in case expression",
+            );
             return Some(Expr::Error {
                 raw: format!("case {}", scrutinee.render()),
                 pos,
@@ -2603,7 +2664,10 @@ impl Parser {
                     }
                 }
                 if !self.eat_op("->") {
-                    self.diag("expected '->' in guarded case alternative");
+                    self.diag_expected(
+                        ExpectedToken::ArrowInGuardedCaseAlternative,
+                        "expected '->' in guarded case alternative",
+                    );
                     return None;
                 }
                 let body = self.expr();
@@ -2619,7 +2683,10 @@ impl Parser {
             });
         }
         if !self.eat_op("->") {
-            self.diag("expected '->' in case alternative");
+            self.diag_expected(
+                ExpectedToken::ArrowInCaseAlternative,
+                "expected '->' in case alternative",
+            );
             return None;
         }
         let body = self.expr();
@@ -2818,14 +2885,14 @@ impl Parser {
                 params: vec![Pat::Var {
                     name: "_".into(),
                     pos,
-                    span: Span::new(self.byte_at(start_i), self.byte_at(start_i)),
+                    span: Span::from_usize(self.byte_at(start_i), self.byte_at(start_i)),
                 }],
                 body: Box::new(Expr::Case {
                     scrutinee: Box::new(Expr::Var {
                         qualifier: None,
                         name: "_".into(),
                         pos,
-                        span: Span::new(self.byte_at(start_i), self.byte_at(start_i)),
+                        span: Span::from_usize(self.byte_at(start_i), self.byte_at(start_i)),
                     }),
                     alts,
                     pos,
@@ -2840,7 +2907,10 @@ impl Parser {
             match self.pattern_atom() {
                 Some(p) => params.push(p),
                 None => {
-                    self.diag("bad lambda parameter");
+                    self.diag_malformed(
+                        MalformedSyntaxKind::LambdaParameter,
+                        "bad lambda parameter",
+                    );
                     let start = self.i;
                     self.skip_to_item_end();
                     return Some(Expr::Error {
@@ -2878,20 +2948,17 @@ impl Parser {
             if !is_reserved_op(&o) && o != "\\" && o != "-" {
                 self.bump();
                 if self.eat(&TokenKind::RParen) {
-                    return Some(Expr::Section {
+                    return Some(Expr::OperatorRef {
                         op: o,
-                        operand: None,
-                        side: SectionSide::Right,
                         pos,
                         span: self.node_span(start_i),
                     });
                 }
                 let operand = self.expr();
                 self.eat(&TokenKind::RParen);
-                return Some(Expr::Section {
+                return Some(Expr::RightSection {
                     op: o,
-                    operand: Some(Box::new(operand)),
-                    side: SectionSide::Right,
+                    operand: Box::new(operand),
                     pos,
                     span: self.node_span(start_i),
                 });
@@ -2915,10 +2982,9 @@ impl Parser {
             if !is_reserved_op(&o) && self.peek_at(1) == Some(&TokenKind::RParen) {
                 self.bump();
                 self.bump();
-                return Some(Expr::Section {
+                return Some(Expr::LeftSection {
                     op: o,
-                    operand: Some(Box::new(first)),
-                    side: SectionSide::Left,
+                    operand: Box::new(first),
                     pos,
                     span: self.node_span(start_i),
                 });
@@ -3058,7 +3124,7 @@ fn merge_functions(decls: &mut Vec<Decl>) {
                         out.push(Decl::Function(f));
                         continue;
                     };
-                    if g.ty.is_none() {
+                    if g.ty.is_absent() {
                         g.ty = f.ty.clone();
                     }
                     if g.sig_span.is_none() {
@@ -3162,12 +3228,12 @@ impl<'a> TypeTokenParser<'a> {
         if self.eat_op("=>") {
             // `lhs` was the constraint context; drop it, keep the body.
             let body = self.parse_type()?;
-            let span = Span::new(lhs.span().start, body.span().end);
+            let span = Span::from_usize(lhs.span().start_usize(), body.span().end_usize());
             return Some(Type::Constrained(Box::new(body), span));
         }
         if self.eat_op("->") {
             let rhs = self.parse_type()?;
-            let span = Span::new(lhs.span().start, rhs.span().end);
+            let span = Span::from_usize(lhs.span().start_usize(), rhs.span().end_usize());
             return Some(Type::Fun(Box::new(lhs), Box::new(rhs), span));
         }
         Some(lhs)
@@ -3181,8 +3247,8 @@ impl<'a> TypeTokenParser<'a> {
             TypeAtom::DroppedLiteral(_) => return None,
         };
         let mut args = Vec::new();
-        let start = head.span().start;
-        let mut end = head.span().end;
+        let start = head.span().start_usize();
+        let mut end = head.span().end_usize();
         loop {
             // Only continue the spine if the next token can START an atom; an
             // operator (`->`, `=>`) or closer ends it.
@@ -3191,17 +3257,17 @@ impl<'a> TypeTokenParser<'a> {
             }
             match self.parse_atom()? {
                 TypeAtom::ParsedType(t) => {
-                    end = t.span().end;
+                    end = t.span().end_usize();
                     args.push(t);
                 }
                 TypeAtom::DroppedLiteral(span) => {
                     // `Numeric 10` — drop the `10` as structure but keep it in
                     // the enclosing type span.
-                    end = span.end;
+                    end = span.end_usize();
                 }
             }
         }
-        let span = Span::new(start, end);
+        let span = Span::from_usize(start, end);
         if args.is_empty() {
             Some(head.with_span(span))
         } else {
@@ -3234,7 +3300,7 @@ impl<'a> TypeTokenParser<'a> {
                 let con = Type::Con {
                     qualifier: qualifier.clone(),
                     name: name.clone(),
-                    span: Span::new(tok.start, tok.end),
+                    span: Span::from_usize(tok.start, tok.end),
                 };
                 self.cursor += 1;
                 Some(TypeAtom::ParsedType(con))
@@ -3242,21 +3308,23 @@ impl<'a> TypeTokenParser<'a> {
             TokenKind::LowerId { name, .. } => {
                 // Type variable (`a`, `n`). Qualified lowercase never appears in
                 // a real type position; treat the name as the variable.
-                let var = Type::Var(name.clone(), Span::new(tok.start, tok.end));
+                let var = Type::Var(name.clone(), Span::from_usize(tok.start, tok.end));
                 self.cursor += 1;
                 Some(TypeAtom::ParsedType(var))
             }
             TokenKind::IntLit(_) | TokenKind::DecimalLit(_) => {
                 // Type-level nat literal (`Numeric 10`): consumed, but dropped.
                 self.cursor += 1;
-                Some(TypeAtom::DroppedLiteral(Span::new(tok.start, tok.end)))
+                Some(TypeAtom::DroppedLiteral(Span::from_usize(
+                    tok.start, tok.end,
+                )))
             }
             TokenKind::StringLit(text) => {
                 self.cursor += 1;
                 Some(TypeAtom::ParsedType(Type::Lit {
                     kind: LitKind::Text,
                     text: text.clone(),
-                    span: Span::new(tok.start, tok.end),
+                    span: Span::from_usize(tok.start, tok.end),
                 }))
             }
             TokenKind::CharLit(text) => {
@@ -3264,7 +3332,7 @@ impl<'a> TypeTokenParser<'a> {
                 Some(TypeAtom::ParsedType(Type::Lit {
                     kind: LitKind::Char,
                     text: text.clone(),
-                    span: Span::new(tok.start, tok.end),
+                    span: Span::from_usize(tok.start, tok.end),
                 }))
             }
             TokenKind::LBracket => {
@@ -3272,7 +3340,10 @@ impl<'a> TypeTokenParser<'a> {
                 self.cursor += 1;
                 let inner = self.parse_type()?;
                 self.eat_token(&TokenKind::RBracket).map(|end| {
-                    TypeAtom::ParsedType(Type::List(Box::new(inner), Span::new(start, end.end)))
+                    TypeAtom::ParsedType(Type::List(
+                        Box::new(inner),
+                        Span::from_usize(start, end.end),
+                    ))
                 })
             }
             TokenKind::LParen => {
@@ -3299,7 +3370,7 @@ impl<'a> TypeTokenParser<'a> {
                         return Some(TypeAtom::ParsedType(Type::Con {
                             qualifier: None,
                             name: name.into(),
-                            span: Span::new(start, end.end),
+                            span: Span::from_usize(start, end.end),
                         }));
                     }
                     return None;
@@ -3327,14 +3398,16 @@ impl<'a> TypeTokenParser<'a> {
                         return Some(TypeAtom::ParsedType(Type::Con {
                             qualifier: None,
                             name: name.into(),
-                            span: Span::new(start, end.end),
+                            span: Span::from_usize(start, end.end),
                         }));
                     }
                     return None;
                 }
                 if let Some(end) = self.eat_token(&TokenKind::RParen) {
                     // ()
-                    return Some(TypeAtom::ParsedType(Type::Unit(Span::new(start, end.end))));
+                    return Some(TypeAtom::ParsedType(Type::Unit(Span::from_usize(
+                        start, end.end,
+                    ))));
                 }
                 let first = self.parse_type()?;
                 if self.peek().map(|t| &t.kind) == Some(&TokenKind::Comma) {
@@ -3343,12 +3416,12 @@ impl<'a> TypeTokenParser<'a> {
                         items.push(self.parse_type()?);
                     }
                     self.eat_token(&TokenKind::RParen).map(|end| {
-                        TypeAtom::ParsedType(Type::Tuple(items, Span::new(start, end.end)))
+                        TypeAtom::ParsedType(Type::Tuple(items, Span::from_usize(start, end.end)))
                     })
                 } else {
                     self.eat_token(&TokenKind::RParen).map(|end| {
                         // Grouping parens.
-                        TypeAtom::ParsedType(first.with_span(Span::new(start, end.end)))
+                        TypeAtom::ParsedType(first.with_span(Span::from_usize(start, end.end)))
                     })
                 }
             }
@@ -3376,7 +3449,7 @@ impl<'a> TypeTokenParser<'a> {
                 self.cursor += 1;
                 let body = self.parse_type()?;
                 let body_span = body.span();
-                return Some(body.with_span(Span::new(start, body_span.end)));
+                return Some(body.with_span(Span::from_usize(start, body_span.end_usize())));
             }
             self.cursor += 1;
         }

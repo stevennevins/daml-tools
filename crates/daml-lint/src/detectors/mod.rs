@@ -1,3 +1,4 @@
+/// JavaScript custom-rule runtime and loader APIs.
 #[cfg(feature = "js-runtime")]
 pub mod script;
 

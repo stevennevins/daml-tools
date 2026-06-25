@@ -20,9 +20,7 @@
 //! SemVer-relevant and should be treated as breaking contract changes.
 //! Prefer adding helpers only when they can be used without changing these
 //! shapes, and use `#[non_exhaustive]` enums/variants for forward-safe
-//! extension. New enums introduced here should be documented as `non_exhaustive`
-//! when future variants are expected (for example
-//! [`SectionSide`](crate::ast::SectionSide)).
+//! extension when future variants are expected.
 //!
 //! Parser-created trees are the supported construction path.
 //!

@@ -5,15 +5,26 @@
 #![allow(clippy::unwrap_used)]
 
 use daml_fmt::{
-    coverage, format_source, lex_diagnostics, source_diagnostics, try_format_source, FormatOptions,
-    ImportOrder,
+    coverage, format_source, lex_diagnostics, source_diagnostics, try_format_source,
+    FormatDiagnostic, FormatError, FormatOptions, ImportOrder,
 };
 use daml_parser::ast::DiagnosticCategory;
-use daml_syntax::Coordinate;
 
 #[test]
 fn format_options_default_matches_new() {
     assert_eq!(FormatOptions::default(), FormatOptions::new());
+}
+
+#[test]
+fn import_order_default_and_display_are_stable_api_contracts() {
+    fn assert_default<T: Default>() {}
+    fn assert_display<T: std::fmt::Display>() {}
+
+    assert_default::<ImportOrder>();
+    assert_display::<ImportOrder>();
+    assert_eq!(ImportOrder::default(), ImportOrder::Organize);
+    assert_eq!(ImportOrder::Organize.to_string(), "organize");
+    assert_eq!(ImportOrder::Preserve.to_string(), "preserve");
 }
 
 #[test]
@@ -26,19 +37,32 @@ fn format_options_can_be_created_and_built() {
 #[test]
 fn format_coverage_counts_modeled_constructs_independently_of_edit_candidates() {
     let canonical = "module M where\nmain = do\n  pass\n";
-    let canonical_coverage = coverage(canonical);
+    let canonical_coverage = coverage(canonical).expect("canonical source coverage");
     assert!(
         canonical_coverage.modeled_constructs() >= 1,
         "do expressions are counted as modeled constructs"
     );
 
     let messy = "module M where\nmain = do\n    pass\n";
-    let messy_coverage = coverage(messy);
+    let messy_coverage = coverage(messy).expect("messy source coverage");
     assert!(
         messy_coverage.edit_candidates() > 0,
         "over-indented do body should surface structural edit candidates"
     );
     assert!(messy_coverage.modeled_constructs() >= 1);
+}
+
+#[test]
+fn coverage_rejects_malformed_input_with_typed_diagnostics() {
+    let malformed = "module M where\nfoo = if x then 1\n";
+    let err = coverage(malformed).expect_err("coverage must reject malformed input");
+    let diagnostic = err
+        .diagnostics()
+        .first()
+        .expect("malformed source must include a diagnostic");
+
+    assert_ne!(diagnostic.category(), DiagnosticCategory::Lex);
+    assert!(!diagnostic.message().is_empty());
 }
 
 #[test]
@@ -98,6 +122,21 @@ fn try_format_rejects_malformed_input_and_accepts_valid_source() {
     let valid = "module M where\nfoo: Int\nfoo = 1\n";
     let formatted = try_format_source(valid).expect("valid source must format");
     assert_eq!(formatted, "module M where\nfoo: Int\nfoo = 1\n");
+}
+
+#[test]
+fn format_error_exposes_diagnostics_through_as_ref() {
+    fn diagnostics_slice(error: &impl AsRef<[FormatDiagnostic]>) -> &[FormatDiagnostic] {
+        error.as_ref()
+    }
+    fn assert_as_ref<T: AsRef<[FormatDiagnostic]>>() {}
+
+    assert_as_ref::<FormatError>();
+
+    let malformed = "module M where\nfoo = if x then 1\n";
+    let err = try_format_source(malformed).expect_err("malformed input must fail");
+    assert_eq!(diagnostics_slice(&err), err.diagnostics());
+    assert!(!diagnostics_slice(&err).is_empty());
 }
 
 #[test]

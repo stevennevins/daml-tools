@@ -36,12 +36,101 @@
 //! (`crate::normalize_gaps`).
 
 use crate::ImportOrder;
-use daml_parser::ast::{ChoiceDecl, Decl, DoStmt, Expr, Module, Span, TemplateBodyDecl};
+use daml_parser::ast::{
+    ChoiceDecl, Decl, DoStmt, Expr, FieldAssign, Module, Span, TemplateBodyDecl, TypeAnnotation,
+};
 use daml_parser::lexer::TriviaKind;
 use daml_syntax::{SourceFile, SourceTokens};
+use std::ops::{Add, AddAssign, Index};
 
 const INDENT: i64 = 2;
 const INDENT_WIDTH: usize = 2;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct ByteOffset(usize);
+
+impl ByteOffset {
+    const fn new(value: usize) -> Self {
+        Self(value)
+    }
+
+    const fn get(self) -> usize {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct LineIndex(usize);
+
+impl LineIndex {
+    const fn new(value: usize) -> Self {
+        Self(value)
+    }
+
+    const fn get(self) -> usize {
+        self.0
+    }
+}
+
+impl Add<usize> for LineIndex {
+    type Output = Self;
+
+    fn add(self, rhs: usize) -> Self::Output {
+        Self(self.0 + rhs)
+    }
+}
+
+impl AddAssign<usize> for LineIndex {
+    fn add_assign(&mut self, rhs: usize) {
+        self.0 += rhs;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct IndentDelta(i64);
+
+impl IndentDelta {
+    const fn new(value: i64) -> Self {
+        Self(value)
+    }
+
+    const fn get(self) -> i64 {
+        self.0
+    }
+
+    const fn is_zero(self) -> bool {
+        self.0 == 0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LineStarts(Vec<usize>);
+
+impl LineStarts {
+    fn get(&self, line: LineIndex) -> Option<&usize> {
+        self.0.get(line.get())
+    }
+
+    const fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (LineIndex, usize)> + '_ {
+        self.0
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(line, start)| (LineIndex::new(line), start))
+    }
+}
+
+impl Index<LineIndex> for LineStarts {
+    type Output = usize;
+
+    fn index(&self, index: LineIndex) -> &Self::Output {
+        &self.0[index.get()]
+    }
+}
 
 /// Upper bound on structural-reindent iterations. The do-pass and if-pass can
 /// unblock one another (the if-pass's `else` shift can remove a collision that
@@ -606,7 +695,7 @@ fn collect_inline_expression_rewrites(
         };
         for eq in &fun.equations {
             let line_starts = line_start_table(src);
-            let eq_line = line_of(&line_starts, eq.span.start);
+            let eq_line = line_of(&line_starts, ByteOffset::new(eq.span.start_usize()));
             if leading_has_tab(src, line_starts[eq_line]) {
                 continue;
             }
@@ -656,18 +745,18 @@ fn collect_expr_rewrite(
                 text.push_str(&ind);
             }
             text.push_str("if ");
-            text.push_str(src[cond.span().start..cond.span().end].trim());
+            text.push_str(src[cond.span().range()].trim());
             text.push('\n');
             text.push_str(&nested);
             text.push_str("then ");
-            text.push_str(src[then_branch.span().start..then_branch.span().end].trim());
+            text.push_str(src[then_branch.span().range()].trim());
             text.push('\n');
             text.push_str(&nested);
             text.push_str("else ");
-            text.push_str(src[else_branch.span().start..else_branch.span().end].trim());
+            text.push_str(src[else_branch.span().range()].trim());
             replacements.push(Replacement {
-                start: span.start,
-                end: span.end,
+                start: span.start_usize(),
+                end: span.end_usize(),
                 text,
             });
         }
@@ -679,18 +768,18 @@ fn collect_expr_rewrite(
         {
             let ind = " ".repeat(indent);
             let mut text = String::from("case ");
-            text.push_str(src[scrutinee.span().start..scrutinee.span().end].trim());
+            text.push_str(src[scrutinee.span().range()].trim());
             text.push_str(" of");
             for alt in alts {
                 text.push('\n');
                 text.push_str(&ind);
-                text.push_str(src[alt.pat.span().start..alt.pat.span().end].trim());
+                text.push_str(src[alt.pat.span().range()].trim());
                 text.push_str(" -> ");
-                text.push_str(src[alt.body.span().start..alt.body.span().end].trim());
+                text.push_str(src[alt.body.span().range()].trim());
             }
             replacements.push(Replacement {
-                start: span.start,
-                end: span.end,
+                start: span.start_usize(),
+                end: span.end_usize(),
                 text,
             });
         }
@@ -710,37 +799,37 @@ fn collect_expr_rewrite(
             for binding in bindings {
                 text.push('\n');
                 text.push_str(&nested);
-                text.push_str(src[binding.span.start..binding.span.end].trim());
+                text.push_str(src[binding.span.range()].trim());
             }
             text.push('\n');
             text.push_str(&ind);
             text.push_str("in ");
-            text.push_str(src[body.span().start..body.span().end].trim());
+            text.push_str(src[body.span().range()].trim());
             replacements.push(Replacement {
-                start: span.start,
-                end: span.end,
+                start: span.start_usize(),
+                end: span.end_usize(),
                 text,
             });
         }
         Expr::Record { base, fields, .. }
             if rewrite_mode == RewriteLeadMode::LeadCandidate
                 && same_line_span(src, span)
-                && src[span.start..span.end].contains(';')
+                && src[span.range()].contains(';')
                 && matches!(base.as_ref(), Expr::Con { .. })
                 && fields.len() > 1 =>
         {
             let ind = " ".repeat(indent);
             let mut text = String::new();
-            text.push_str(src[base.span().start..base.span().end].trim());
+            text.push_str(src[base.span().range()].trim());
             text.push_str(" with");
             for field in fields {
                 text.push('\n');
                 text.push_str(&ind);
-                text.push_str(src[field.span.start..field.span.end].trim());
+                text.push_str(src[field.span().range()].trim());
             }
             replacements.push(Replacement {
-                start: span.start,
-                end: span.end,
+                start: span.start_usize(),
+                end: span.end_usize(),
                 text,
             });
         }
@@ -758,21 +847,21 @@ fn collect_expr_rewrite(
                 text.push('\n');
                 text.push_str(&ind);
             }
-            text.push_str(src[func.span().start..func.span().end].trim());
+            text.push_str(src[func.span().range()].trim());
             for arg in args {
                 text.push('\n');
                 text.push_str(&nested);
-                text.push_str(src[arg.span().start..arg.span().end].trim());
+                text.push_str(src[arg.span().range()].trim());
             }
             replacements.push(Replacement {
-                start: span.start,
-                end: span.end,
+                start: span.start_usize(),
+                end: span.end_usize(),
                 text,
             });
         }
         _ => {
-            let expr_line = line_of(&line_starts, span.start);
-            let child_indent = if expr_line < line_starts.len() {
+            let expr_line = line_of(&line_starts, ByteOffset::new(span.start_usize()));
+            let child_indent = if expr_line.get() < line_starts.len() {
                 indent_of_usize(src, &line_starts, expr_line).saturating_add(INDENT_WIDTH)
             } else {
                 indent.saturating_add(INDENT_WIDTH)
@@ -887,7 +976,7 @@ fn collect_expr_rewrite(
                         replacements,
                     );
                     for field in fields {
-                        if let Some(value) = &field.value {
+                        if let FieldAssign::Assign { value, .. } = field {
                             collect_expr_rewrite(
                                 src,
                                 value,
@@ -925,7 +1014,7 @@ fn inline_if_parts_are_simple(
 ) -> bool {
     [cond.span(), then_branch.span(), else_branch.span()]
         .into_iter()
-        .map(|span| src[span.start..span.end].trim())
+        .map(|span| src[span.range()].trim())
         .all(is_simple_inline_piece)
 }
 
@@ -939,7 +1028,7 @@ fn is_simple_inline_piece(text: &str) -> bool {
 
 fn app_args_are_simple(src: &str, args: &[Expr]) -> bool {
     args.iter()
-        .map(|arg| src[arg.span().start..arg.span().end].trim())
+        .map(|arg| src[arg.span().range()].trim())
         .all(is_simple_app_arg)
 }
 
@@ -952,7 +1041,7 @@ fn is_simple_app_arg(text: &str) -> bool {
 }
 
 fn same_line_span(src: &str, span: Span) -> bool {
-    !src[span.start..span.end].contains('\n')
+    !src[span.range()].contains('\n')
 }
 
 fn has_trailing_with_comment(src: &str) -> bool {
@@ -968,9 +1057,16 @@ fn has_trailing_with_comment(src: &str) -> bool {
 
 #[derive(Clone, Copy)]
 struct BorrowedImport<'a> {
-    group: u8,
+    group: ImportGroup,
     module_name: &'a str,
     text: &'a str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum ImportGroup {
+    DamlStdlib,
+    DaLibrary,
+    LocalOrExternal,
 }
 
 fn organize_imports(src: &str) -> String {
@@ -987,8 +1083,11 @@ fn organize_imports(src: &str) -> String {
     };
 
     let line_starts = line_start_table(src);
-    let start_line = line_of(&line_starts, first.span.start);
-    let end_line = line_of(&line_starts, last.span.end.saturating_sub(1));
+    let start_line = line_of(&line_starts, ByteOffset::new(first.span.start_usize()));
+    let end_line = line_of(
+        &line_starts,
+        ByteOffset::new(last.span.end_usize().saturating_sub(1)),
+    );
     let block_start = line_starts[start_line];
     let block_end = *line_starts.get(end_line + 1).unwrap_or(&src.len());
     if src[block_start..block_end].contains("--")
@@ -1006,7 +1105,7 @@ fn organize_imports(src: &str) -> String {
         .map(|imp| BorrowedImport {
             group: import_group(&imp.module_name),
             module_name: &imp.module_name,
-            text: src[imp.span.start..imp.span.end].trim(),
+            text: src[imp.span.range()].trim(),
         })
         .collect();
     imports.sort_by(|a, b| {
@@ -1020,7 +1119,7 @@ fn organize_imports(src: &str) -> String {
         .imports
         .iter()
         .zip(&imports)
-        .all(|(imp, sorted)| sorted.text == src[imp.span.start..imp.span.end].trim());
+        .all(|(imp, sorted)| sorted.text == src[imp.span.range()].trim());
     if order_unchanged {
         return src.to_string();
     }
@@ -1043,13 +1142,13 @@ fn organize_imports(src: &str) -> String {
     out
 }
 
-fn import_group(module_name: &str) -> u8 {
+fn import_group(module_name: &str) -> ImportGroup {
     if module_name.starts_with("Daml.") {
-        0
+        ImportGroup::DamlStdlib
     } else if module_name.starts_with("DA.") {
-        1
+        ImportGroup::DaLibrary
     } else {
-        2
+        ImportGroup::LocalOrExternal
     }
 }
 
@@ -1062,8 +1161,8 @@ fn rewrite_lambda_bodies(src: &str) -> String {
         let Expr::Lambda { span, body, .. } = expr else {
             return;
         };
-        let lambda_line = line_of(&line_starts, span.start);
-        let body_line = line_of(&line_starts, body.span().start);
+        let lambda_line = line_of(&line_starts, ByteOffset::new(span.start_usize()));
+        let body_line = line_of(&line_starts, ByteOffset::new(body.span().start_usize()));
         if body_line <= lambda_line || leading_has_tab(src, line_starts[body_line]) {
             return;
         }
@@ -1071,9 +1170,9 @@ fn rewrite_lambda_bodies(src: &str) -> String {
         let delta = target - indent_of(src, &line_starts, body_line);
         if delta != 0 {
             edits.push(Edit {
-                child_start: line_starts[body_line],
-                block_end: body.span().end,
-                delta,
+                child_start: ByteOffset::new(line_starts[body_line]),
+                block_end: ByteOffset::new(body.span().end_usize()),
+                delta: IndentDelta::new(delta),
             });
         }
     });
@@ -1100,10 +1199,10 @@ fn rewrite_infix_continuations(src: &str) -> String {
         };
         for eq in &fun.equations {
             let body_span = eq.body.span();
-            let first_line = line_of(&line_starts, body_span.start);
+            let first_line = line_of(&line_starts, ByteOffset::new(body_span.start_usize()));
             let target = indent_of(src, &line_starts, first_line) + INDENT;
             let mut line = first_line + 1;
-            while line < line_starts.len() && line_starts[line] < body_span.end {
+            while line.get() < line_starts.len() && line_starts[line] < body_span.end_usize() {
                 let Some(trimmed) = code_line_trimmed(src, &line_starts, &comments, line) else {
                     line += 1;
                     continue;
@@ -1144,9 +1243,9 @@ fn starts_with_infix_operator(trimmed: &str) -> bool {
 /// One reindent: shift every child line in `[child_start, block_end)` by `delta`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Edit {
-    child_start: usize,
-    block_end: usize,
-    delta: i64,
+    child_start: ByteOffset,
+    block_end: ByteOffset,
+    delta: IndentDelta,
 }
 
 /// Apply every do-block edit: shift child-line indentation so each accepted
@@ -1174,17 +1273,18 @@ fn do_block_edits(src: &str, module: &Module) -> Vec<Edit> {
     let mut accepted: Vec<Span> = Vec::new();
     for do_span in do_block_spans {
         // Skip a do-block nested in one we already accepted (it rides along).
-        if accepted
-            .iter()
-            .any(|a| a.start <= do_span.start && do_span.end <= a.end && *a != do_span)
-        {
+        if accepted.iter().any(|a| {
+            a.start_usize() <= do_span.start_usize()
+                && do_span.end_usize() <= a.end_usize()
+                && *a != do_span
+        }) {
             continue;
         }
-        let do_line = line_of(&line_starts, do_span.start);
+        let do_line = line_of(&line_starts, ByteOffset::new(do_span.start_usize()));
         let do_indent = indent_of(src, &line_starts, do_line);
         // First real (non-blank, non-comment) statement line after the do line.
         let Some(first_stmt_line) =
-            first_code_line_after(src, &line_starts, &comments, do_line, do_span.end)
+            first_code_line_after(src, &line_starts, &comments, do_line, do_span.end_usize())
         else {
             continue; // inline `do stmt` — nothing on its own line; leave it
         };
@@ -1198,9 +1298,9 @@ fn do_block_edits(src: &str, module: &Module) -> Vec<Edit> {
         let delta = (do_indent + INDENT) - cur;
         if delta != 0 {
             edits.push(Edit {
-                child_start: line_starts[first_stmt_line],
-                block_end: do_span.end,
-                delta,
+                child_start: ByteOffset::new(line_starts[first_stmt_line]),
+                block_end: ByteOffset::new(do_span.end_usize()),
+                delta: IndentDelta::new(delta),
             });
         }
     }
@@ -1215,28 +1315,28 @@ fn apply_shifts(src: &str, edits: &[Edit]) -> String {
     let line_starts = line_start_table(src);
     let comments = comment_spans(src);
     let mut out = String::with_capacity(src.len());
-    for (li, &ls) in line_starts.iter().enumerate() {
+    for (li, ls) in line_starts.iter() {
         let le = *line_starts.get(li + 1).unwrap_or(&src.len());
         let line = &src[ls..le];
         let trimmed = line.trim_start_matches(' ');
         let cur = line.len() - trimmed.len();
-        let content_byte = ls + cur;
+        let content_byte = ByteOffset::new(ls + cur);
 
         let delta = edits
             .iter()
             .find(|e| e.child_start <= content_byte && content_byte < e.block_end)
             .map(|e| e.delta)
-            .unwrap_or(0);
+            .unwrap_or(IndentDelta::new(0));
 
-        if delta == 0
+        if delta.is_zero()
             || line.trim().is_empty()
-            || is_comment_line(&comments, content_byte)
+            || is_comment_line(&comments, content_byte.get())
             || leading_has_tab(src, ls)
         {
             out.push_str(line);
             continue;
         }
-        let new = add_signed_to_usize_saturating(cur, delta);
+        let new = add_signed_to_usize_saturating(cur, delta.get());
         out.push_str(&" ".repeat(new));
         out.push_str(&line[cur..]);
     }
@@ -1252,7 +1352,7 @@ fn comment_spans(src: &str) -> Vec<(usize, usize)> {
         .trivia()
         .iter()
         .filter(|t| matches!(t.kind(), TriviaKind::LineComment | TriviaKind::BlockComment))
-        .map(|t| (t.start(), t.end()))
+        .map(|t| (t.start().get(), t.end().get()))
         .collect();
     v.sort_by_key(|&(s, _)| s);
     v
@@ -1267,24 +1367,26 @@ fn is_comment_line(comments: &[(usize, usize)], content_byte: usize) -> bool {
 
 // ---- line-table helpers ----------------------------------------------------
 
-fn line_start_table(src: &str) -> Vec<usize> {
-    std::iter::once(0)
-        .chain(src.match_indices('\n').map(|(i, _)| i + 1))
-        .collect()
+fn line_start_table(src: &str) -> LineStarts {
+    LineStarts(
+        std::iter::once(0)
+            .chain(src.match_indices('\n').map(|(i, _)| i + 1))
+            .collect(),
+    )
 }
-fn line_of(line_starts: &[usize], byte: usize) -> usize {
-    match line_starts.binary_search(&byte) {
-        Ok(i) => i,
-        Err(i) => i - 1,
+fn line_of(line_starts: &LineStarts, byte: ByteOffset) -> LineIndex {
+    match line_starts.0.binary_search(&byte.get()) {
+        Ok(i) => LineIndex::new(i),
+        Err(i) => LineIndex::new(i - 1),
     }
 }
-fn indent_of_usize(src: &str, line_starts: &[usize], line: usize) -> usize {
+fn indent_of_usize(src: &str, line_starts: &LineStarts, line: LineIndex) -> usize {
     src[line_starts[line]..]
         .chars()
         .take_while(|&c| c == ' ')
         .count()
 }
-fn indent_of(src: &str, line_starts: &[usize], line: usize) -> i64 {
+fn indent_of(src: &str, line_starts: &LineStarts, line: LineIndex) -> i64 {
     usize_to_i64_saturating(indent_of_usize(src, line_starts, line))
 }
 fn usize_to_i64_saturating(value: usize) -> i64 {
@@ -1310,13 +1412,13 @@ fn leading_has_tab(src: &str, line_start: usize) -> bool {
 /// blank nor a comment line — i.e. the first real statement.
 fn first_code_line_after(
     src: &str,
-    line_starts: &[usize],
+    line_starts: &LineStarts,
     comments: &[(usize, usize)],
-    do_line: usize,
+    do_line: LineIndex,
     block_end: usize,
-) -> Option<usize> {
+) -> Option<LineIndex> {
     let mut l = do_line + 1;
-    while l < line_starts.len() && line_starts[l] < block_end {
+    while l.get() < line_starts.len() && line_starts[l] < block_end {
         let ls = line_starts[l];
         let le = *line_starts.get(l + 1).unwrap_or(&src.len());
         let line = &src[ls..le];
@@ -1331,13 +1433,13 @@ fn first_code_line_after(
 
 fn next_code_line_starts_with_keyword(
     src: &str,
-    line_starts: &[usize],
+    line_starts: &LineStarts,
     comments: &[(usize, usize)],
-    after_line: usize,
+    after_line: LineIndex,
     keyword: &str,
-) -> Option<usize> {
+) -> Option<LineIndex> {
     let mut l = after_line + 1;
-    while l < line_starts.len() {
+    while l.get() < line_starts.len() {
         let ls = line_starts[l];
         let le = *line_starts.get(l + 1).unwrap_or(&src.len());
         let line = &src[ls..le];
@@ -1456,8 +1558,8 @@ fn walk_expression(expr: &Expr, f: &mut impl FnMut(&Expr)) {
         Expr::Record { base, fields, .. } => {
             walk_expression(base, f);
             for fa in fields {
-                if let Some(v) = &fa.value {
-                    walk_expression(v, f);
+                if let FieldAssign::Assign { value, .. } = fa {
+                    walk_expression(value, f);
                 }
             }
         }
@@ -1470,9 +1572,9 @@ fn walk_expression(expr: &Expr, f: &mut impl FnMut(&Expr)) {
                 .iter()
                 .for_each(|handler| walk_expression(&handler.body, f));
         }
-        Expr::Section {
-            operand: Some(o), ..
-        } => walk_expression(o, f),
+        Expr::LeftSection { operand, .. } | Expr::RightSection { operand, .. } => {
+            walk_expression(operand, f);
+        }
         _ => {}
     }
 }
@@ -1526,8 +1628,8 @@ fn if_edits(src: &str, module: &Module) -> Vec<Edit> {
         {
             ifs.push((
                 *span,
-                span.start,
-                cond.span().end,
+                span.start_usize(),
+                cond.span().end_usize(),
                 then_branch.span(),
                 else_branch.span(),
             ));
@@ -1539,15 +1641,16 @@ fn if_edits(src: &str, module: &Module) -> Vec<Edit> {
     let mut accepted: Vec<Span> = Vec::new();
     for (if_span, if_byte, cond_end, then_span, else_span) in ifs {
         // Skip an if nested in one we already claimed (it rides the outer shift).
-        if accepted
-            .iter()
-            .any(|a| a.start <= if_span.start && if_span.end <= a.end && *a != if_span)
-        {
+        if accepted.iter().any(|a| {
+            a.start_usize() <= if_span.start_usize()
+                && if_span.end_usize() <= a.end_usize()
+                && *a != if_span
+        }) {
             continue;
         }
         accepted.push(if_span);
 
-        let if_line = line_of(&line_starts, if_byte);
+        let if_line = line_of(&line_starts, ByteOffset::new(if_byte));
         if leading_has_tab(src, line_starts[if_line]) {
             continue;
         }
@@ -1557,12 +1660,21 @@ fn if_edits(src: &str, module: &Module) -> Vec<Edit> {
         let if_col = usize_to_i64_saturating(src[line_starts[if_line]..if_byte].chars().count());
         let target = if_col + INDENT;
 
-        let then_byte = find_keyword(src, cond_end, then_span.start, "then", &comments);
-        let else_byte = find_keyword(src, then_span.end, else_span.start, "else", &comments);
+        let then_byte = find_keyword(src, cond_end, then_span.start_usize(), "then", &comments);
+        let else_byte = find_keyword(
+            src,
+            then_span.end_usize(),
+            else_span.start_usize(),
+            "else",
+            &comments,
+        );
 
-        for (kw_byte, branch_end) in [(then_byte, then_span.end), (else_byte, else_span.end)] {
+        for (kw_byte, branch_end) in [
+            (then_byte, then_span.end_usize()),
+            (else_byte, else_span.end_usize()),
+        ] {
             let Some(kw_byte) = kw_byte else { continue };
-            let kw_line = line_of(&line_starts, kw_byte);
+            let kw_line = line_of(&line_starts, ByteOffset::new(kw_byte));
             let ls = line_starts[kw_line];
             // Only move a clause whose keyword STARTS its line (leading spaces
             // only). An inline `if c then x else y` is left alone.
@@ -1576,9 +1688,9 @@ fn if_edits(src: &str, module: &Module) -> Vec<Edit> {
             let delta = target - cur;
             if delta != 0 {
                 edits.push(Edit {
-                    child_start: ls,
-                    block_end: branch_end,
-                    delta,
+                    child_start: ByteOffset::new(ls),
+                    block_end: ByteOffset::new(branch_end),
+                    delta: IndentDelta::new(delta),
                 });
             }
         }
@@ -1609,7 +1721,7 @@ fn case_edits(src: &str, module: &Module) -> Vec<Edit> {
     walk_module_expressions(module, &mut |e| {
         if let Expr::Case { span, alts, .. } = e {
             if let (Some(first), Some(last)) = (alts.first(), alts.last()) {
-                cases.push((*span, first.span.start, last.span.end));
+                cases.push((*span, first.span.start_usize(), last.span.end_usize()));
             }
         }
     });
@@ -1619,16 +1731,17 @@ fn case_edits(src: &str, module: &Module) -> Vec<Edit> {
     let mut accepted: Vec<Span> = Vec::new();
     for (case_span, first_alt, last_alt_end) in cases {
         // Skip a case nested in one we already claimed (it rides the outer shift).
-        if accepted
-            .iter()
-            .any(|a| a.start <= case_span.start && case_span.end <= a.end && *a != case_span)
-        {
+        if accepted.iter().any(|a| {
+            a.start_usize() <= case_span.start_usize()
+                && case_span.end_usize() <= a.end_usize()
+                && *a != case_span
+        }) {
             continue;
         }
         accepted.push(case_span);
 
-        let case_line = line_of(&line_starts, case_span.start);
-        let alt_line = line_of(&line_starts, first_alt);
+        let case_line = line_of(&line_starts, ByteOffset::new(case_span.start_usize()));
+        let alt_line = line_of(&line_starts, ByteOffset::new(first_alt));
         // Inline `case x of A -> …` (alts share the case line): leave verbatim.
         if alt_line <= case_line {
             continue;
@@ -1643,9 +1756,9 @@ fn case_edits(src: &str, module: &Module) -> Vec<Edit> {
         let delta = (case_indent + INDENT) - cur;
         if delta != 0 {
             edits.push(Edit {
-                child_start: line_starts[alt_line],
-                block_end: last_alt_end,
-                delta,
+                child_start: ByteOffset::new(line_starts[alt_line]),
+                block_end: ByteOffset::new(last_alt_end),
+                delta: IndentDelta::new(delta),
             });
         }
     }
@@ -1675,7 +1788,7 @@ fn letin_edits(src: &str, module: &Module) -> Vec<Edit> {
     walk_module_expressions(module, &mut |e| {
         if let Expr::LetIn { span, bindings, .. } = e {
             if let (Some(first), Some(last)) = (bindings.first(), bindings.last()) {
-                lets.push((*span, first.span.start, last.span.end));
+                lets.push((*span, first.span.start_usize(), last.span.end_usize()));
             }
         }
     });
@@ -1684,16 +1797,17 @@ fn letin_edits(src: &str, module: &Module) -> Vec<Edit> {
     let mut edits: Vec<Edit> = Vec::new();
     let mut accepted: Vec<Span> = Vec::new();
     for (let_span, first_bind, last_bind_end) in lets {
-        if accepted
-            .iter()
-            .any(|a| a.start <= let_span.start && let_span.end <= a.end && *a != let_span)
-        {
+        if accepted.iter().any(|a| {
+            a.start_usize() <= let_span.start_usize()
+                && let_span.end_usize() <= a.end_usize()
+                && *a != let_span
+        }) {
             continue;
         }
         accepted.push(let_span);
 
-        let let_line = line_of(&line_starts, let_span.start);
-        let bind_line = line_of(&line_starts, first_bind);
+        let let_line = line_of(&line_starts, ByteOffset::new(let_span.start_usize()));
+        let bind_line = line_of(&line_starts, ByteOffset::new(first_bind));
         // Inline `let x = … in …` (binding shares the let line): leave verbatim.
         if bind_line <= let_line {
             continue;
@@ -1704,7 +1818,7 @@ fn letin_edits(src: &str, module: &Module) -> Vec<Edit> {
         // a mismatch. Unlike do/case (whose `name = do`/`= case` line-indent
         // convention is idiomatic), let-in needs `let` at line start for the
         // `bindings = let_indent + 2`, `in = let_indent` shape to line up.
-        if src[line_starts[let_line]..let_span.start]
+        if src[line_starts[let_line]..let_span.start_usize()]
             .chars()
             .any(|c| c != ' ')
         {
@@ -1720,9 +1834,9 @@ fn letin_edits(src: &str, module: &Module) -> Vec<Edit> {
         let delta = (let_indent + INDENT) - cur;
         if delta != 0 {
             edits.push(Edit {
-                child_start: line_starts[bind_line],
-                block_end: last_bind_end,
-                delta,
+                child_start: ByteOffset::new(line_starts[bind_line]),
+                block_end: ByteOffset::new(last_bind_end),
+                delta: IndentDelta::new(delta),
             });
         }
     }
@@ -1759,7 +1873,12 @@ fn con_with_edits(src: &str, module: &Module) -> Vec<Edit> {
                 return;
             }
             if let (Some(first), Some(last)) = (fields.first(), fields.last()) {
-                recs.push((*span, base.span().end, first.span.start, last.span.end));
+                recs.push((
+                    *span,
+                    base.span().end_usize(),
+                    first.span().start_usize(),
+                    last.span().end_usize(),
+                ));
             }
         }
     });
@@ -1768,16 +1887,17 @@ fn con_with_edits(src: &str, module: &Module) -> Vec<Edit> {
     let mut edits: Vec<Edit> = Vec::new();
     let mut accepted: Vec<Span> = Vec::new();
     for (rec_span, base_end, first_field, last_field_end) in recs {
-        if accepted
-            .iter()
-            .any(|a| a.start <= rec_span.start && rec_span.end <= a.end && *a != rec_span)
-        {
+        if accepted.iter().any(|a| {
+            a.start_usize() <= rec_span.start_usize()
+                && rec_span.end_usize() <= a.end_usize()
+                && *a != rec_span
+        }) {
             continue;
         }
         accepted.push(rec_span);
 
-        let rec_line = line_of(&line_starts, rec_span.start);
-        let field_line = line_of(&line_starts, first_field);
+        let rec_line = line_of(&line_starts, ByteOffset::new(rec_span.start_usize()));
+        let field_line = line_of(&line_starts, ByteOffset::new(first_field));
         // Inline `Con with a = 1` (first field shares the line): leave verbatim.
         if field_line <= rec_line {
             continue;
@@ -1787,7 +1907,7 @@ fn con_with_edits(src: &str, module: &Module) -> Vec<Edit> {
         // A split `Con\n  with\n    fields` (with on its own line) would put the
         // fields left of `with`, so leave it verbatim.
         match find_keyword(src, base_end, first_field, "with", &comments) {
-            Some(w) if line_of(&line_starts, w) == rec_line => {}
+            Some(w) if line_of(&line_starts, ByteOffset::new(w)) == rec_line => {}
             _ => continue,
         }
         if leading_has_tab(src, line_starts[rec_line])
@@ -1802,7 +1922,10 @@ fn con_with_edits(src: &str, module: &Module) -> Vec<Edit> {
             src,
             &line_starts,
             &comments,
-            line_of(&line_starts, last_field_end.saturating_sub(1)),
+            line_of(
+                &line_starts,
+                ByteOffset::new(last_field_end.saturating_sub(1)),
+            ),
             "where",
         )
         .is_some_and(|next_line| indent_of(src, &line_starts, next_line) <= target)
@@ -1812,9 +1935,9 @@ fn con_with_edits(src: &str, module: &Module) -> Vec<Edit> {
         let delta = target - cur;
         if delta != 0 {
             edits.push(Edit {
-                child_start: line_starts[field_line],
-                block_end: last_field_end,
-                delta,
+                child_start: ByteOffset::new(line_starts[field_line]),
+                block_end: ByteOffset::new(last_field_end),
+                delta: IndentDelta::new(delta),
             });
         }
     }
@@ -1830,7 +1953,7 @@ fn reindent_con_with(src: &str, module: &Module) -> String {
 }
 
 /// Shift a SINGLE line to `target` indent (for a `with`/`where` keyword line).
-fn push_line_edit(edits: &mut Vec<Edit>, ls: &[usize], src: &str, line: usize, target: i64) {
+fn push_line_edit(edits: &mut Vec<Edit>, ls: &LineStarts, src: &str, line: LineIndex, target: i64) {
     if leading_has_tab(src, ls[line]) {
         return;
     }
@@ -1838,9 +1961,9 @@ fn push_line_edit(edits: &mut Vec<Edit>, ls: &[usize], src: &str, line: usize, t
     if delta != 0 {
         let end = *ls.get(line + 1).unwrap_or(&src.len());
         edits.push(Edit {
-            child_start: ls[line],
-            block_end: end,
-            delta,
+            child_start: ByteOffset::new(ls[line]),
+            block_end: ByteOffset::new(end),
+            delta: IndentDelta::new(delta),
         });
     }
 }
@@ -1850,14 +1973,14 @@ fn push_line_edit(edits: &mut Vec<Edit>, ls: &[usize], src: &str, line: usize, t
 /// `head_line`), so an inline `with f : T` / `template X with` is left alone.
 fn push_block_edit(
     edits: &mut Vec<Edit>,
-    ls: &[usize],
+    ls: &LineStarts,
     src: &str,
     first_byte: usize,
     end_byte: usize,
     target: i64,
-    head_line: usize,
+    head_line: LineIndex,
 ) {
-    let first_line = line_of(ls, first_byte);
+    let first_line = line_of(ls, ByteOffset::new(first_byte));
     if first_line <= head_line {
         return;
     }
@@ -1871,9 +1994,9 @@ fn push_block_edit(
     let delta = target - indent_of(src, ls, first_line);
     if delta != 0 {
         edits.push(Edit {
-            child_start: ls[first_line],
-            block_end: end_byte,
-            delta,
+            child_start: ByteOffset::new(ls[first_line]),
+            block_end: ByteOffset::new(end_byte),
+            delta: IndentDelta::new(delta),
         });
     }
 }
@@ -1890,7 +2013,7 @@ const fn body_decl_span(d: &TemplateBodyDecl) -> Span {
         | TemplateBodyDecl::Other { span, .. } => *span,
         TemplateBodyDecl::Choice(c) => c.span,
         TemplateBodyDecl::InterfaceInstance(i) => i.span,
-        _ => Span::new(0, 0),
+        _ => Span::from_usize(0, 0),
     }
 }
 
@@ -1910,10 +2033,10 @@ const fn body_decl_span(d: &TemplateBodyDecl) -> Span {
 #[allow(clippy::too_many_arguments)]
 fn reindent_keyword_block(
     edits: &mut Vec<Edit>,
-    ls: &[usize],
+    ls: &LineStarts,
     src: &str,
     comments: &[(usize, usize)],
-    head_line: usize,
+    head_line: LineIndex,
     kw_target: i64,
     body_target: i64,
     kw: &str,
@@ -1922,8 +2045,8 @@ fn reindent_keyword_block(
     block_last_end: usize,
 ) {
     if let Some(w) = find_keyword(src, kw_from, block_first, kw, comments) {
-        if line_of(ls, w) > head_line {
-            push_line_edit(edits, ls, src, line_of(ls, w), kw_target);
+        if line_of(ls, ByteOffset::new(w)) > head_line {
+            push_line_edit(edits, ls, src, line_of(ls, ByteOffset::new(w)), kw_target);
         }
     }
     push_block_edit(
@@ -1943,11 +2066,11 @@ fn template_edits(src: &str, module: &Module) -> Vec<Edit> {
     let mut edits = Vec::new();
     for d in &module.decls {
         let head_byte = match d {
-            Decl::Template(t) => t.span.start,
-            Decl::Interface(i) => i.span.start,
+            Decl::Template(t) => t.span.start_usize(),
+            Decl::Interface(i) => i.span.start_usize(),
             _ => continue,
         };
-        let head_line = line_of(&line_starts, head_byte);
+        let head_line = line_of(&line_starts, ByteOffset::new(head_byte));
         if leading_has_tab(src, line_starts[head_line]) {
             continue;
         }
@@ -1971,16 +2094,20 @@ fn template_edits(src: &str, module: &Module) -> Vec<Edit> {
                         kw_target,
                         body_target,
                         "with",
-                        t.span.start,
-                        f0.span.start,
-                        fl.span.end,
+                        t.span.start_usize(),
+                        f0.span.start_usize(),
+                        fl.span.end_usize(),
                     );
                 }
                 // where-block: signatory/choice decls, anchored on `where`.
                 if let (Some(b0), Some(bl)) = (t.body.first(), t.body.last()) {
                     let b0_start = body_decl_span(b0).start;
                     let bl_end = body_decl_span(bl).end;
-                    let where_from = t.fields.last().map(|f| f.span.end).unwrap_or(t.span.start);
+                    let where_from = t
+                        .fields
+                        .last()
+                        .map(|f| f.span.end_usize())
+                        .unwrap_or_else(|| t.span.start_usize());
                     reindent_keyword_block(
                         &mut edits,
                         &line_starts,
@@ -1991,8 +2118,8 @@ fn template_edits(src: &str, module: &Module) -> Vec<Edit> {
                         body_target,
                         "where",
                         where_from,
-                        b0_start,
-                        bl_end,
+                        b0_start.get(),
+                        bl_end.get(),
                     );
                 }
             }
@@ -2009,7 +2136,9 @@ fn template_edits(src: &str, module: &Module) -> Vec<Edit> {
                     .map(|m| m.span)
                     .chain(i.choices.iter().map(|c| c.span))
                 {
-                    last_end = Some(last_end.map_or(s.end, |e: usize| e.max(s.end)));
+                    last_end = Some(
+                        last_end.map_or_else(|| s.end_usize(), |e: usize| e.max(s.end_usize())),
+                    );
                 }
                 if let Some(last_end) = last_end {
                     if let Some(fbl) =
@@ -2026,7 +2155,7 @@ fn template_edits(src: &str, module: &Module) -> Vec<Edit> {
                             kw_target,
                             head_indent + INDENT,
                             "where",
-                            i.span.start,
+                            i.span.start_usize(),
                             line_starts[fbl],
                             last_end,
                         );
@@ -2081,15 +2210,15 @@ fn reindent_modules_and_imports(src: &str, module: &Module) -> String {
 fn push_continuation_lines(
     edits: &mut Vec<Edit>,
     src: &str,
-    ls: &[usize],
+    ls: &LineStarts,
     comments: &[(usize, usize)],
     span: Span,
     offset: i64,
 ) {
-    let head_line = line_of(ls, span.start);
+    let head_line = line_of(ls, ByteOffset::new(span.start_usize()));
     let target = indent_of(src, ls, head_line) + offset;
     let mut line = head_line + 1;
-    while line < ls.len() && ls[line] < span.end {
+    while line.get() < ls.len() && ls[line] < span.end_usize() {
         push_code_line_edit(edits, src, ls, comments, line, target);
         line += 1;
     }
@@ -2115,7 +2244,7 @@ fn collect_choices<'a>(module: &'a Module, choices: &mut Vec<&'a ChoiceDecl>) {
         a.span
             .start
             .cmp(&b.span.start)
-            .then(b.span.end.cmp(&a.span.end))
+            .then(b.span.end_usize().cmp(&a.span.end_usize()))
     });
 }
 
@@ -2127,7 +2256,7 @@ fn choice_edits(src: &str, module: &Module) -> Vec<Edit> {
 
     let mut edits = Vec::new();
     for c in choices {
-        let choice_line = line_of(&line_starts, c.span.start);
+        let choice_line = line_of(&line_starts, ByteOffset::new(c.span.start_usize()));
         if leading_has_tab(src, line_starts[choice_line]) {
             continue;
         }
@@ -2135,31 +2264,42 @@ fn choice_edits(src: &str, module: &Module) -> Vec<Edit> {
         let clause_target = choice_indent + INDENT;
         let nested_target = choice_indent + 2 * INDENT;
 
-        if let Some(ty) = &c.return_ty {
-            if let Some(colon) = find_symbol(src, c.span.start, ty.span().start, ":", &comments) {
+        if let TypeAnnotation::Present(ty) = &c.return_ty {
+            if let Some(colon) = find_symbol(
+                src,
+                c.span.start_usize(),
+                ty.span().start_usize(),
+                ":",
+                &comments,
+            ) {
                 push_span_block_edit(
                     &mut edits,
                     &line_starts,
                     src,
                     colon,
-                    ty.span().end,
+                    ty.span().end_usize(),
                     clause_target,
                 );
             }
         }
 
         if let (Some(first), Some(last)) = (c.params.first(), c.params.last()) {
-            let kw_from = c.return_ty.as_ref().map_or(c.span.start, |t| t.span().end);
-            if let Some(w) = find_keyword(src, kw_from, first.span.start, "with", &comments) {
-                let with_line = line_of(&line_starts, w);
-                let first_param_line = line_of(&line_starts, first.span.start);
+            let kw_from = c
+                .return_ty
+                .as_type()
+                .map_or_else(|| c.span.start_usize(), |t| t.span().end_usize());
+            if let Some(w) = find_keyword(src, kw_from, first.span.start_usize(), "with", &comments)
+            {
+                let with_line = line_of(&line_starts, ByteOffset::new(w));
+                let first_param_line =
+                    line_of(&line_starts, ByteOffset::new(first.span.start_usize()));
                 if first_param_line == with_line {
                     push_span_block_edit(
                         &mut edits,
                         &line_starts,
                         src,
                         w,
-                        last.span.end,
+                        last.span.end_usize(),
                         clause_target,
                     );
                 } else {
@@ -2168,8 +2308,8 @@ fn choice_edits(src: &str, module: &Module) -> Vec<Edit> {
                         &mut edits,
                         &line_starts,
                         src,
-                        first.span.start,
-                        last.span.end,
+                        first.span.start_usize(),
+                        last.span.end_usize(),
                         nested_target,
                         choice_line,
                     );
@@ -2178,15 +2318,19 @@ fn choice_edits(src: &str, module: &Module) -> Vec<Edit> {
         }
 
         if let (Some(first), Some(last)) = (c.observers.first(), c.observers.last()) {
-            if let Some(k) =
-                find_keyword(src, c.span.start, first.span().start, "observer", &comments)
-            {
+            if let Some(k) = find_keyword(
+                src,
+                c.span.start_usize(),
+                first.span().start_usize(),
+                "observer",
+                &comments,
+            ) {
                 push_span_block_edit(
                     &mut edits,
                     &line_starts,
                     src,
                     k,
-                    last.span().end,
+                    last.span().end_usize(),
                     clause_target,
                 );
             }
@@ -2194,8 +2338,8 @@ fn choice_edits(src: &str, module: &Module) -> Vec<Edit> {
         if let (Some(first), Some(last)) = (c.controllers.first(), c.controllers.last()) {
             if let Some(k) = find_keyword(
                 src,
-                c.span.start,
-                first.span().start,
+                c.span.start_usize(),
+                first.span().start_usize(),
                 "controller",
                 &comments,
             ) {
@@ -2204,7 +2348,7 @@ fn choice_edits(src: &str, module: &Module) -> Vec<Edit> {
                     &line_starts,
                     src,
                     k,
-                    last.span().end,
+                    last.span().end_usize(),
                     clause_target,
                 );
             }
@@ -2215,8 +2359,8 @@ fn choice_edits(src: &str, module: &Module) -> Vec<Edit> {
                 &mut edits,
                 &line_starts,
                 src,
-                body.span().start,
-                body.span().end,
+                body.span().start_usize(),
+                body.span().end_usize(),
                 clause_target,
             );
         }
@@ -2242,7 +2386,7 @@ fn type_def_edits(src: &str, module: &Module) -> Vec<Edit> {
         let Decl::TypeDef { span, .. } = decl else {
             continue;
         };
-        let head_line = line_of(&line_starts, span.start);
+        let head_line = line_of(&line_starts, ByteOffset::new(span.start_usize()));
         if leading_has_tab(src, line_starts[head_line]) {
             continue;
         }
@@ -2250,16 +2394,28 @@ fn type_def_edits(src: &str, module: &Module) -> Vec<Edit> {
         let head_has_with = line_contains_word(src, &line_starts, head_line, "with");
         let mut in_with = head_has_with;
         let mut with_body_target = if head_has_with {
-            first_body_anchor_indent_after(src, &line_starts, &comments, head_line, span.end)
-                .unwrap_or(head_indent + INDENT)
+            first_body_anchor_indent_after(
+                src,
+                &line_starts,
+                &comments,
+                head_line,
+                span.end_usize(),
+            )
+            .unwrap_or(head_indent + INDENT)
         } else {
             head_indent + 2 * INDENT
         };
         let head_has_where = line_contains_word(src, &line_starts, head_line, "where");
         let mut in_where = head_has_where;
         let mut where_body_target = if head_has_where {
-            first_body_anchor_indent_after(src, &line_starts, &comments, head_line, span.end)
-                .unwrap_or(head_indent + INDENT)
+            first_body_anchor_indent_after(
+                src,
+                &line_starts,
+                &comments,
+                head_line,
+                span.end_usize(),
+            )
+            .unwrap_or(head_indent + INDENT)
         } else {
             head_indent + INDENT
         };
@@ -2267,7 +2423,7 @@ fn type_def_edits(src: &str, module: &Module) -> Vec<Edit> {
         let mut after_bar_variant = false;
 
         let mut line = head_line + 1;
-        while line < line_starts.len() && line_starts[line] < span.end {
+        while line.get() < line_starts.len() && line_starts[line] < span.end_usize() {
             let Some(trimmed) = code_line_trimmed(src, &line_starts, &comments, line) else {
                 line += 1;
                 continue;
@@ -2322,13 +2478,13 @@ fn type_def_edits(src: &str, module: &Module) -> Vec<Edit> {
 
 fn first_body_anchor_indent_after(
     src: &str,
-    ls: &[usize],
+    ls: &LineStarts,
     comments: &[(usize, usize)],
-    after_line: usize,
+    after_line: LineIndex,
     block_end: usize,
 ) -> Option<i64> {
     let mut line = after_line + 1;
-    while line < ls.len() && ls[line] < block_end {
+    while line.get() < ls.len() && ls[line] < block_end {
         if leading_has_tab(src, ls[line]) {
             return None;
         }
@@ -2368,28 +2524,32 @@ fn guard_edits(src: &str, module: &Module) -> Vec<Edit> {
             continue;
         };
         for eq in &fun.equations {
-            let eq_line = line_of(&line_starts, eq.span.start);
+            let eq_line = line_of(&line_starts, ByteOffset::new(eq.span.start_usize()));
             if leading_has_tab(src, line_starts[eq_line]) {
                 continue;
             }
             let guard_target = indent_of(src, &line_starts, eq_line) + INDENT;
-            let mut cursor = eq.span.start;
+            let mut cursor = eq.span.start_usize();
             for (guard, body) in &eq.guards {
-                if let Some(pipe) = find_symbol(src, cursor, guard.span().start, "|", &comments) {
+                if let Some(pipe) =
+                    find_symbol(src, cursor, guard.span().start_usize(), "|", &comments)
+                {
                     push_span_block_edit(
                         &mut edits,
                         &line_starts,
                         src,
                         pipe,
-                        body.span().end,
+                        body.span().end_usize(),
                         guard_target,
                     );
                 }
-                cursor = body.span().end;
+                cursor = body.span().end_usize();
             }
             if let (Some(first), Some(last)) = (eq.where_bindings.first(), eq.where_bindings.last())
             {
-                if let Some(w) = find_keyword(src, cursor, first.span.start, "where", &comments) {
+                if let Some(w) =
+                    find_keyword(src, cursor, first.span.start_usize(), "where", &comments)
+                {
                     push_span_block_edit(
                         &mut edits,
                         &line_starts,
@@ -2402,8 +2562,8 @@ fn guard_edits(src: &str, module: &Module) -> Vec<Edit> {
                         &mut edits,
                         &line_starts,
                         src,
-                        first.span.start,
-                        last.span.end,
+                        first.span.start_usize(),
+                        last.span.end_usize(),
                         guard_target + INDENT,
                         eq_line,
                     );
@@ -2437,7 +2597,12 @@ fn record_update_edits(src: &str, module: &Module) -> Vec<Edit> {
                 return;
             }
             if let (Some(first), Some(last)) = (fields.first(), fields.last()) {
-                recs.push((*span, base.span().end, first.span.start, last.span.end));
+                recs.push((
+                    *span,
+                    base.span().end_usize(),
+                    first.span().start_usize(),
+                    last.span().end_usize(),
+                ));
             }
         }
     });
@@ -2445,15 +2610,15 @@ fn record_update_edits(src: &str, module: &Module) -> Vec<Edit> {
 
     let mut edits = Vec::new();
     for (rec_span, base_end, first_field, last_field_end) in recs {
-        let rec_line = line_of(&line_starts, rec_span.start);
-        let field_line = line_of(&line_starts, first_field);
+        let rec_line = line_of(&line_starts, ByteOffset::new(rec_span.start_usize()));
+        let field_line = line_of(&line_starts, ByteOffset::new(first_field));
         if field_line <= rec_line || leading_has_tab(src, line_starts[rec_line]) {
             continue;
         }
         let Some(w) = find_keyword(src, base_end, first_field, "with", &comments) else {
             continue;
         };
-        let with_line = line_of(&line_starts, w);
+        let with_line = line_of(&line_starts, ByteOffset::new(w));
         let rec_indent = indent_of(src, &line_starts, rec_line);
         let field_target = if with_line > rec_line {
             push_line_edit(
@@ -2513,26 +2678,33 @@ fn try_edits(src: &str, module: &Module) -> Vec<Edit> {
 
     let mut edits = Vec::new();
     for (try_span, body_span, handlers) in tries {
-        let try_line = line_of(&line_starts, try_span.start);
+        let try_line = line_of(&line_starts, ByteOffset::new(try_span.start_usize()));
         if leading_has_tab(src, line_starts[try_line]) {
             continue;
         }
-        let try_col =
-            usize_to_i64_saturating(src[line_starts[try_line]..try_span.start].chars().count());
+        let try_col = usize_to_i64_saturating(
+            src[line_starts[try_line]..try_span.start_usize()]
+                .chars()
+                .count(),
+        );
         let nested_target = try_col + INDENT;
         push_block_edit(
             &mut edits,
             &line_starts,
             src,
-            body_span.start,
-            body_span.end,
+            body_span.start_usize(),
+            body_span.end_usize(),
             nested_target,
             try_line,
         );
         if let Some(first_handler) = handlers.first() {
-            if let Some(catch) =
-                find_keyword(src, body_span.end, first_handler.start, "catch", &comments)
-            {
+            if let Some(catch) = find_keyword(
+                src,
+                body_span.end_usize(),
+                first_handler.start_usize(),
+                "catch",
+                &comments,
+            ) {
                 push_span_block_edit(
                     &mut edits,
                     &line_starts,
@@ -2548,8 +2720,8 @@ fn try_edits(src: &str, module: &Module) -> Vec<Edit> {
                 &mut edits,
                 &line_starts,
                 src,
-                first.start,
-                last.end,
+                first.start_usize(),
+                last.end_usize(),
                 nested_target,
                 try_line,
             );
@@ -2591,27 +2763,27 @@ fn continuation_edits(src: &str, module: &Module) -> Vec<Edit> {
 fn push_item_continuations(
     edits: &mut Vec<Edit>,
     src: &str,
-    ls: &[usize],
+    ls: &LineStarts,
     comments: &[(usize, usize)],
     span: Span,
     items: impl Iterator<Item = Span>,
 ) {
-    let head_line = line_of(ls, span.start);
+    let head_line = line_of(ls, ByteOffset::new(span.start_usize()));
     let target = indent_of(src, ls, head_line) + INDENT;
     for item in items {
-        let item_line = line_of(ls, item.start);
+        let item_line = line_of(ls, ByteOffset::new(item.start_usize()));
         if item_line <= head_line {
             continue;
         }
-        let mut first = item.start;
+        let mut first = item.start_usize();
         let line_start = ls[item_line];
-        if let Some(comma) = src[line_start..item.start].rfind(',') {
+        if let Some(comma) = src[line_start..item.start_usize()].rfind(',') {
             first = line_start + comma;
         }
         if is_comment_line(comments, first) {
             continue;
         }
-        push_span_block_edit(edits, ls, src, first, item.end, target);
+        push_span_block_edit(edits, ls, src, first, item.end_usize(), target);
     }
 }
 
@@ -2627,13 +2799,13 @@ fn reindent_continuations(src: &str, module: &Module) -> String {
 
 fn push_span_block_edit(
     edits: &mut Vec<Edit>,
-    ls: &[usize],
+    ls: &LineStarts,
     src: &str,
     first_byte: usize,
     end_byte: usize,
     target: i64,
 ) {
-    let first_line = line_of(ls, first_byte);
+    let first_line = line_of(ls, ByteOffset::new(first_byte));
     if src[ls[first_line]..first_byte].chars().any(|c| c != ' ') {
         return;
     }
@@ -2643,9 +2815,9 @@ fn push_span_block_edit(
     let delta = target - indent_of(src, ls, first_line);
     if delta != 0 {
         edits.push(Edit {
-            child_start: ls[first_line],
-            block_end: end_byte,
-            delta,
+            child_start: ByteOffset::new(ls[first_line]),
+            block_end: ByteOffset::new(end_byte),
+            delta: IndentDelta::new(delta),
         });
     }
 }
@@ -2653,9 +2825,9 @@ fn push_span_block_edit(
 fn push_code_line_edit(
     edits: &mut Vec<Edit>,
     src: &str,
-    ls: &[usize],
+    ls: &LineStarts,
     comments: &[(usize, usize)],
-    line: usize,
+    line: LineIndex,
     target: i64,
 ) {
     if code_line_trimmed(src, ls, comments, line).is_none() || leading_has_tab(src, ls[line]) {
@@ -2666,9 +2838,9 @@ fn push_code_line_edit(
 
 fn code_line_trimmed<'a>(
     src: &'a str,
-    ls: &[usize],
+    ls: &LineStarts,
     comments: &[(usize, usize)],
-    line: usize,
+    line: LineIndex,
 ) -> Option<&'a str> {
     let start = *ls.get(line)?;
     let end = *ls.get(line + 1).unwrap_or(&src.len());
@@ -2692,7 +2864,7 @@ fn starts_with_word(s: &str, word: &str) -> bool {
     })
 }
 
-fn line_contains_word(src: &str, ls: &[usize], line: usize, word: &str) -> bool {
+fn line_contains_word(src: &str, ls: &LineStarts, line: LineIndex, word: &str) -> bool {
     let end = *ls.get(line + 1).unwrap_or(&src.len());
     let line_text = &src[ls[line]..end];
     let mut i = 0;
@@ -2713,7 +2885,7 @@ const fn is_ident_byte(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_' || b == b'\''
 }
 
-fn line_contains_symbol(src: &str, ls: &[usize], line: usize, symbol: &str) -> bool {
+fn line_contains_symbol(src: &str, ls: &LineStarts, line: LineIndex, symbol: &str) -> bool {
     let end = *ls.get(line + 1).unwrap_or(&src.len());
     src[ls[line]..end].contains(symbol)
 }
@@ -2755,9 +2927,30 @@ mod line_helpers {
     fn indent_and_line_helpers() {
         let src = "a\n    b\n";
         let ls = line_start_table(src);
-        assert_eq!(indent_of(src, &ls, 0), 0);
-        assert_eq!(indent_of(src, &ls, 1), 4);
-        assert_eq!(line_of(&ls, 0), 0);
-        assert_eq!(line_of(&ls, 6), 1);
+        assert_eq!(indent_of(src, &ls, LineIndex::new(0)), 0);
+        assert_eq!(indent_of(src, &ls, LineIndex::new(1)), 4);
+        assert_eq!(line_of(&ls, ByteOffset::new(0)), LineIndex::new(0));
+        assert_eq!(line_of(&ls, ByteOffset::new(6)), LineIndex::new(1));
+    }
+
+    #[test]
+    fn formatter_coordinate_domains_are_distinct_types() {
+        use std::any::TypeId;
+
+        // The structural reindent helpers must not collapse byte offsets, line
+        // indexes, and signed indentation deltas back into interchangeable
+        // primitive coordinates.
+        assert_ne!(TypeId::of::<ByteOffset>(), TypeId::of::<LineIndex>());
+        assert_ne!(TypeId::of::<ByteOffset>(), TypeId::of::<IndentDelta>());
+        assert_ne!(TypeId::of::<LineIndex>(), TypeId::of::<IndentDelta>());
+    }
+
+    #[test]
+    fn import_groups_are_named_domains_with_expected_order() {
+        assert_eq!(import_group("Daml.Script"), ImportGroup::DamlStdlib);
+        assert_eq!(import_group("DA.List"), ImportGroup::DaLibrary);
+        assert_eq!(import_group("My.App"), ImportGroup::LocalOrExternal);
+        assert!(ImportGroup::DamlStdlib < ImportGroup::DaLibrary);
+        assert!(ImportGroup::DaLibrary < ImportGroup::LocalOrExternal);
     }
 }

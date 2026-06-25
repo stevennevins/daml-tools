@@ -2,11 +2,33 @@
 //!
 //! Byte offsets, line numbers, and column positions use distinct newtypes so
 //! they cannot be passed to the wrong API by accident. Conversions to raw
-//! `usize` are explicit via [`Coordinate::get`].
+//! `usize` are explicit via inherent `get` methods or `usize::from`.
 
 use std::fmt;
 use std::num::NonZeroUsize;
 use text_size::TextSize;
+
+/// Error returned when constructing a 1-based coordinate from zero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidOneBasedCoordinate {
+    value: usize,
+}
+
+impl InvalidOneBasedCoordinate {
+    /// Invalid raw coordinate value.
+    #[must_use]
+    pub const fn value(self) -> usize {
+        self.value
+    }
+}
+
+impl fmt::Display for InvalidOneBasedCoordinate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "1-based coordinate value must be non-zero")
+    }
+}
+
+impl std::error::Error for InvalidOneBasedCoordinate {}
 
 macro_rules! define_zero_based_coordinate {
     ($(#[$meta:meta])* $name:ident) => {
@@ -20,11 +42,23 @@ macro_rules! define_zero_based_coordinate {
             pub const fn new(value: usize) -> Self {
                 Self(value)
             }
+
+            /// Returns the underlying numeric value for this coordinate.
+            #[must_use]
+            pub const fn get(self) -> usize {
+                self.0
+            }
         }
 
-        impl Coordinate for $name {
-            fn get(self) -> usize {
-                self.0
+        impl From<$name> for usize {
+            fn from(value: $name) -> Self {
+                value.get()
+            }
+        }
+
+        impl From<usize> for $name {
+            fn from(value: usize) -> Self {
+                Self::new(value)
             }
         }
 
@@ -70,11 +104,25 @@ macro_rules! define_one_based_coordinate {
                     None => panic!("1-based coordinates must be non-zero"),
                 }
             }
+
+            /// Returns the underlying numeric value for this coordinate.
+            #[must_use]
+            pub const fn get(self) -> usize {
+                self.0.get()
+            }
         }
 
-        impl Coordinate for $name {
-            fn get(self) -> usize {
-                self.0.get()
+        impl From<$name> for usize {
+            fn from(value: $name) -> Self {
+                value.get()
+            }
+        }
+
+        impl TryFrom<usize> for $name {
+            type Error = InvalidOneBasedCoordinate;
+
+            fn try_from(value: usize) -> Result<Self, Self::Error> {
+                Self::try_new(value).ok_or(InvalidOneBasedCoordinate { value })
             }
         }
 
@@ -90,12 +138,6 @@ macro_rules! define_one_based_coordinate {
             }
         }
     };
-}
-
-/// Explicit conversion from a typed coordinate to a raw `usize`.
-pub trait Coordinate {
-    /// Returns the underlying numeric value for this coordinate.
-    fn get(self) -> usize;
 }
 
 define_one_based_coordinate!(
@@ -127,6 +169,37 @@ define_zero_based_coordinate!(
     /// 0-based UTF-16 code-unit offset into source text.
     Utf16Offset
 );
+
+/// 0-based half-open range in UTF-16 code units.
+///
+/// Use this when interoperating with JavaScript-style string ranges. The named
+/// endpoints avoid confusing UTF-16 offsets with byte ranges or line/column
+/// pairs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Utf16Range {
+    start: Utf16Offset,
+    end: Utf16Offset,
+}
+
+impl Utf16Range {
+    /// Creates a UTF-16 range from inclusive start and exclusive end offsets.
+    #[must_use]
+    pub const fn new(start: Utf16Offset, end: Utf16Offset) -> Self {
+        Self { start, end }
+    }
+
+    /// Inclusive 0-based start offset in UTF-16 code units.
+    #[must_use]
+    pub const fn start(self) -> Utf16Offset {
+        self.start
+    }
+
+    /// Exclusive 0-based end offset in UTF-16 code units.
+    #[must_use]
+    pub const fn end(self) -> Utf16Offset {
+        self.end
+    }
+}
 
 impl From<TextSize> for ByteOffset {
     fn from(offset: TextSize) -> Self {

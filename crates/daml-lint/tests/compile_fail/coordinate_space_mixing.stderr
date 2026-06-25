@@ -1,0 +1,80 @@
+error[E0308]: mismatched types
+  --> tests/compile_fail/coordinate_space_mixing.rs:10:16
+   |
+10 |     takes_line(CharColumn::new(3));
+   |     ---------- ^^^^^^^^^^^^^^^^^^ expected `LineNumber`, found `CharColumn`
+   |     |
+   |     arguments to this function are incorrect
+   |
+note: function defined here
+  --> tests/compile_fail/coordinate_space_mixing.rs:4:4
+   |
+ 4 | fn takes_line(_: LineNumber) {}
+   |    ^^^^^^^^^^ -------------
+
+error[E0308]: mismatched types
+  --> tests/compile_fail/coordinate_space_mixing.rs:11:18
+   |
+11 |     takes_column(LineNumber::new(3));
+   |     ------------ ^^^^^^^^^^^^^^^^^^ expected `CharColumn`, found `LineNumber`
+   |     |
+   |     arguments to this function are incorrect
+   |
+note: function defined here
+  --> tests/compile_fail/coordinate_space_mixing.rs:5:4
+   |
+ 5 | fn takes_column(_: CharColumn) {}
+   |    ^^^^^^^^^^^^ -------------
+
+error[E0308]: mismatched types
+  --> tests/compile_fail/coordinate_space_mixing.rs:12:24
+   |
+12 |     takes_utf16_offset(ByteOffset::new(12));
+   |     ------------------ ^^^^^^^^^^^^^^^^^^^ expected `Utf16Offset`, found `ByteOffset`
+   |     |
+   |     arguments to this function are incorrect
+   |
+note: function defined here
+  --> tests/compile_fail/coordinate_space_mixing.rs:6:4
+   |
+ 6 | fn takes_utf16_offset(_: Utf16Offset) {}
+   |    ^^^^^^^^^^^^^^^^^^ --------------
+
+error[E0308]: mismatched types
+  --> tests/compile_fail/coordinate_space_mixing.rs:13:23
+   |
+13 |     takes_byte_offset(Utf16Offset::new(12));
+   |     ----------------- ^^^^^^^^^^^^^^^^^^^^ expected `ByteOffset`, found `Utf16Offset`
+   |     |
+   |     arguments to this function are incorrect
+   |
+note: function defined here
+  --> tests/compile_fail/coordinate_space_mixing.rs:7:4
+   |
+ 7 | fn takes_byte_offset(_: ByteOffset) {}
+   |    ^^^^^^^^^^^^^^^^^ -------------
+
+error[E0308]: arguments to this function are incorrect
+  --> tests/compile_fail/coordinate_space_mixing.rs:15:25
+   |
+15 |     let _bad_location = FindingLocation::new(
+   |                         ^^^^^^^^^^^^^^^^^^^^
+16 |         "Test.daml",
+17 |         CharColumn::new(7),
+   |         ------------------ expected `LineNumber`, found `CharColumn`
+18 |         LineNumber::new(4),
+   |         ------------------ expected `CharColumn`, found `LineNumber`
+   |
+note: associated function defined here
+  --> src/detector.rs
+   |
+   |     pub fn new(file: impl Into<PathBuf>, line: LineNumber, column: CharColumn) -> Self {
+   |            ^^^
+help: swap these arguments
+   |
+15 ~     let _bad_location = FindingLocation::new(
+16 +         "Test.daml",
+17 +         LineNumber::new(4),
+18 +         CharColumn::new(7),
+19 ~     );
+   |

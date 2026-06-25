@@ -1,58 +1,118 @@
-use crate::detector::{parse_severity, DetectError, Detector, Finding, FindingLocation, Severity};
+use crate::detector::{DetectError, Detector, Finding, FindingLocation, Severity};
 use crate::ir::DamlModule;
+use daml_syntax::{CharColumn, LineNumber};
 use rquickjs::{CatchResultExt, Context, Ctx, Function, Object, Runtime, Value};
 use std::cell::RefCell;
 use std::error::Error;
 #[cfg(feature = "custom-rules")]
+use std::io::Read;
+#[cfg(feature = "custom-rules")]
 use std::path::Path;
 use std::rc::Rc;
 
+/// Error returned while loading, validating, or invoking a JavaScript rule.
+///
+/// Load-time variants cover file I/O, `QuickJS` initialization, script
+/// evaluation, metadata validation, and rule config registration. Invocation
+/// variants (`Invoke` and `ParseNode`) are reported through
+/// [`Detector::try_detect`] when a visitor fails while analyzing a module.
+/// JavaScript exceptions are represented as captured detail strings because
+/// they are not Rust [`Error`] sources.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ScriptLoadError {
+    /// The `QuickJS` runtime or context could not be created.
     RuntimeInit {
+        /// Underlying `QuickJS` runtime/context error.
         source: rquickjs::Error,
     },
+    /// The script file could not be read from disk.
     IoRead {
+        /// Script path that was read.
         path: String,
+        /// Underlying filesystem error.
         source: std::io::Error,
     },
+    /// The script did not define `const NAME = "..."`.
     MissingName {
+        /// Script label or path.
         label: String,
     },
+    /// The script did not define `const SEVERITY = "..."`.
     MissingSeverity {
+        /// Script label or path.
         label: String,
     },
+    /// The script declared a severity outside the supported set.
     UnknownSeverity {
+        /// Rule name read from `NAME`.
         name: String,
-        source: String,
+        /// Typed severity parse failure.
+        source: crate::detector::SeverityParseError,
     },
+    /// The script did not define any supported visitor function.
     MissingVisitor {
+        /// Rule name read from `NAME`.
         rule: String,
+        /// Comma-separated list of supported visitor names.
         visitors: &'static str,
     },
+    /// The loaded rule name did not match the configured plugin rule name.
     RuleNameMismatch {
+        /// Human-readable mismatch detail.
         name: String,
     },
+    /// Rule `CONFIG` could not be serialized from Rust JSON.
+    RegisterConfigSerialize {
+        /// Registration stage label.
+        path: String,
+        /// Underlying JSON serialization error.
+        source: serde_json::Error,
+    },
+    /// Rule `CONFIG` could not be installed into the JavaScript runtime.
     RegisterConfig {
+        /// Registration stage label.
         path: String,
-        source: String,
+        /// Underlying `QuickJS` runtime error.
+        source: rquickjs::Error,
     },
+    /// Rule `CONFIG` raised a JavaScript exception while being parsed.
+    RegisterConfigException {
+        /// Registration stage label.
+        path: String,
+        /// JavaScript exception detail captured from `QuickJS`.
+        detail: String,
+    },
+    /// The Rust `report()` helper could not be installed into JavaScript.
     RegisterReport {
+        /// Registration stage label.
         path: String,
-        source: String,
+        /// Underlying `QuickJS` runtime error.
+        source: rquickjs::Error,
     },
+    /// A visitor function failed while analyzing a module.
     Invoke {
+        /// Rule name.
         rule: String,
+        /// Visitor function name.
         visitor: String,
-        source: String,
+        /// JavaScript exception detail captured from `QuickJS`.
+        detail: String,
     },
+    /// A Rust IR node could not be converted into the JavaScript value passed
+    /// to a visitor.
     ParseNode {
+        /// Rule name.
         rule: String,
-        source: String,
+        /// JavaScript exception detail captured from `QuickJS`.
+        detail: String,
     },
+    /// The script failed while being evaluated at load time.
     EvalError {
+        /// Script label or path.
         path: String,
-        source: String,
+        /// JavaScript exception detail captured from `QuickJS`.
+        detail: String,
     },
 }
 
@@ -82,8 +142,14 @@ impl std::fmt::Display for ScriptLoadError {
             Self::RuleNameMismatch { name } => {
                 write!(f, "{name}")
             }
+            Self::RegisterConfigSerialize { path, source } => {
+                write!(f, "{path}: could not serialize rule CONFIG: {source}")
+            }
             Self::RegisterConfig { path, source } => {
                 write!(f, "{path}: could not parse rule CONFIG: {source}")
+            }
+            Self::RegisterConfigException { path, detail } => {
+                write!(f, "{path}: could not parse rule CONFIG: {detail}")
             }
             Self::RegisterReport { path, source } => {
                 write!(f, "{path}: could not install report() helper: {source}")
@@ -91,21 +157,40 @@ impl std::fmt::Display for ScriptLoadError {
             Self::Invoke {
                 rule,
                 visitor,
-                source,
+                detail,
             } => {
-                write!(f, "rule '{rule}': {visitor} failed: {source}")
+                write!(f, "rule '{rule}': {visitor} failed: {detail}")
             }
-            Self::ParseNode { rule, source } => {
-                write!(f, "rule '{rule}': {source}")
+            Self::ParseNode { rule, detail } => {
+                write!(f, "rule '{rule}': {detail}")
             }
-            Self::EvalError { path, source } => {
-                write!(f, "invalid rules script {path}: {source}")
+            Self::EvalError { path, detail } => {
+                write!(f, "invalid rules script {path}: {detail}")
             }
         }
     }
 }
 
-impl Error for ScriptLoadError {}
+impl Error for ScriptLoadError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::RuntimeInit { source }
+            | Self::RegisterConfig { source, .. }
+            | Self::RegisterReport { source, .. } => Some(source),
+            Self::IoRead { source, .. } => Some(source),
+            Self::UnknownSeverity { source, .. } => Some(source),
+            Self::RegisterConfigSerialize { source, .. } => Some(source),
+            Self::MissingName { .. }
+            | Self::MissingSeverity { .. }
+            | Self::MissingVisitor { .. }
+            | Self::RuleNameMismatch { .. }
+            | Self::RegisterConfigException { .. }
+            | Self::Invoke { .. }
+            | Self::ParseNode { .. }
+            | Self::EvalError { .. } => None,
+        }
+    }
+}
 
 /// AST-based custom detector: a JavaScript rule loaded via `--rules`.
 ///
@@ -143,6 +228,12 @@ const VISITORS: &[&str] = &[
 /// handler periodically during execution; a runaway loop must not hang CI.
 const MAX_INTERRUPT_CHECKS: u64 = 100_000;
 
+/// Loaded JavaScript detector with one reusable `QuickJS` runtime/context.
+///
+/// Construct values with [`load_script`], [`load_script_with_options`],
+/// [`load_script_source`], or [`load_script_reader`]. The fields are private so
+/// callers interact through the [`Detector`] trait and the loader functions'
+/// [`ScriptLoadError`] contracts.
 pub struct ScriptDetector {
     name: String,
     severity: Severity,
@@ -150,7 +241,7 @@ pub struct ScriptDetector {
     path: String,
     /// One runtime+context per rule, with the script evaluated once at load
     /// time and reused across modules (a fresh `QuickJS` runtime + re-eval per
-    /// file made large scans QuickJS-bound, not parser-bound). Visitor
+    /// file made large scans `QuickJS`-bound, not parser-bound). Visitor
     /// functions are stateless by contract; the per-module `report` sink is
     /// swapped in before each run.
     _runtime: Runtime,
@@ -190,7 +281,7 @@ fn invoke<'js, A: rquickjs::function::IntoArgs<'js>>(
         .map_err(move |e| ScriptLoadError::Invoke {
             rule: rule.to_string(),
             visitor: visitor.to_string(),
-            source: e.to_string(),
+            detail: e.to_string(),
         })
 }
 
@@ -203,7 +294,7 @@ fn parse_node<'js>(
         .catch(ctx)
         .map_err(|e| ScriptLoadError::ParseNode {
             rule: rule.to_string(),
-            source: e.to_string(),
+            detail: e.to_string(),
         })
 }
 
@@ -218,7 +309,7 @@ fn parse_node<'js>(
 /// Returns [`ScriptLoadError`] when the script cannot be read, initialized, or
 /// validated.
 #[must_use = "handle script load failures instead of ignoring diagnostics"]
-pub fn load_script(path: &Path) -> Result<Box<dyn Detector>, ScriptLoadError> {
+pub fn load_script(path: impl AsRef<Path>) -> Result<Box<dyn Detector>, ScriptLoadError> {
     let options = empty_options();
     load_script_with_options(path, &options)
 }
@@ -235,25 +326,113 @@ pub fn load_script(path: &Path) -> Result<Box<dyn Detector>, ScriptLoadError> {
 /// validated with the supplied `options`.
 #[must_use = "use loaded detector or propagate load errors"]
 pub fn load_script_with_options(
-    path: &Path,
+    path: impl AsRef<Path>,
     options: &serde_json::Value,
 ) -> Result<Box<dyn Detector>, ScriptLoadError> {
+    let path = path.as_ref();
     let source = std::fs::read_to_string(path).map_err(|e| ScriptLoadError::IoRead {
         path: path.display().to_string(),
         source: e,
     })?;
-    load_script_source_with_options(&path.display().to_string(), &source, options)
+    load_script_source_with_options(path.display().to_string(), &source, options)
 }
 
-pub(crate) fn load_script_source(
-    label: &str,
+#[cfg(feature = "custom-rules")]
+/// Load one custom rule script from in-memory JavaScript source.
+///
+/// `label` is used in diagnostics and as the detector's source path.
+///
+/// # Errors
+///
+/// Returns [`ScriptLoadError`] when JavaScript initialization, script
+/// evaluation, or metadata validation fails.
+#[must_use = "handle script load failures instead of ignoring diagnostics"]
+pub fn load_script_source(
+    label: impl Into<String>,
     source: &str,
 ) -> Result<Box<dyn Detector>, ScriptLoadError> {
     let options = empty_options();
     load_script_source_with_options(label, source, &options)
 }
 
-pub(crate) fn load_script_source_with_options(
+#[cfg(not(feature = "custom-rules"))]
+pub(crate) fn load_script_source(
+    label: &str,
+    source: &str,
+) -> Result<Box<dyn Detector>, ScriptLoadError> {
+    let options = empty_options();
+    load_script_source_with_options_impl(label, source, &options)
+}
+
+#[cfg(feature = "custom-rules")]
+/// Load one custom rule script from in-memory JavaScript source with detector
+/// `options`.
+///
+/// `label` is used in diagnostics and as the detector's source path.
+///
+/// # Errors
+///
+/// Returns [`ScriptLoadError`] when JavaScript initialization, script
+/// evaluation, rule config registration, or metadata validation fails.
+#[must_use = "use loaded detector or propagate load errors"]
+pub fn load_script_source_with_options(
+    label: impl Into<String>,
+    source: &str,
+    options: &serde_json::Value,
+) -> Result<Box<dyn Detector>, ScriptLoadError> {
+    let label = label.into();
+    load_script_source_with_options_impl(&label, source, options)
+}
+
+#[cfg(feature = "custom-rules")]
+/// Load one custom rule script from any UTF-8 reader.
+///
+/// `reader` is consumed by value; pass `&mut reader` when the same reader must
+/// be reused after this call.
+///
+/// # Errors
+///
+/// Returns [`ScriptLoadError`] when the reader cannot be read as UTF-8 text or
+/// when JavaScript initialization, script evaluation, or metadata validation
+/// fails.
+#[must_use = "handle script load failures instead of ignoring diagnostics"]
+pub fn load_script_reader<R: Read>(
+    label: impl Into<String>,
+    reader: R,
+) -> Result<Box<dyn Detector>, ScriptLoadError> {
+    let options = empty_options();
+    load_script_reader_with_options(label, reader, &options)
+}
+
+#[cfg(feature = "custom-rules")]
+/// Load one custom rule script from any UTF-8 reader with detector `options`.
+///
+/// `reader` is consumed by value; pass `&mut reader` when the same reader must
+/// be reused after this call.
+///
+/// # Errors
+///
+/// Returns [`ScriptLoadError`] when the reader cannot be read as UTF-8 text or
+/// when JavaScript initialization, script evaluation, rule config registration,
+/// or metadata validation fails.
+#[must_use = "use loaded detector or propagate load errors"]
+pub fn load_script_reader_with_options<R: Read>(
+    label: impl Into<String>,
+    mut reader: R,
+    options: &serde_json::Value,
+) -> Result<Box<dyn Detector>, ScriptLoadError> {
+    let label = label.into();
+    let mut source = String::new();
+    reader
+        .read_to_string(&mut source)
+        .map_err(|source| ScriptLoadError::IoRead {
+            path: label.clone(),
+            source,
+        })?;
+    load_script_source_with_options_impl(&label, &source, options)
+}
+
+pub(crate) fn load_script_source_with_options_impl(
     label: &str,
     source: &str,
     options: &serde_json::Value,
@@ -268,7 +447,7 @@ pub(crate) fn load_script_source_with_options(
             .catch(&ctx)
             .map_err(|e| ScriptLoadError::EvalError {
                 path: label.to_string(),
-                source: e.to_string(),
+                detail: e.to_string(),
             })?;
 
         let name = read_const(&ctx, "NAME").ok_or_else(|| ScriptLoadError::MissingName {
@@ -279,12 +458,12 @@ pub(crate) fn load_script_source_with_options(
                 label: label.to_string(),
             })?;
         let severity =
-            parse_severity(&severity_str).ok_or_else(|| ScriptLoadError::UnknownSeverity {
-                name: name.to_string(),
-                source: format!(
-                    "unknown severity '{severity_str}'. Use critical, high, medium, low, or info."
-                ),
-            })?;
+            severity_str
+                .parse::<Severity>()
+                .map_err(|err| ScriptLoadError::UnknownSeverity {
+                    name: name.to_string(),
+                    source: err,
+                })?;
         let description = read_const(&ctx, "DESCRIPTION").unwrap_or_default();
 
         let globals = ctx.globals();
@@ -342,27 +521,26 @@ fn positive_i64_to_usize(value: i64) -> usize {
 
 fn register_config(ctx: &Ctx<'_>, options: &serde_json::Value) -> Result<(), ScriptLoadError> {
     let config_json =
-        serde_json::to_string(options).map_err(|e| ScriptLoadError::RegisterConfig {
+        serde_json::to_string(options).map_err(|e| ScriptLoadError::RegisterConfigSerialize {
             path: "rule config".to_string(),
-            source: e.to_string(),
+            source: e,
         })?;
-    let config =
-        ctx.json_parse(config_json)
-            .catch(ctx)
-            .map_err(|e| ScriptLoadError::RegisterConfig {
-                path: "rule config".to_string(),
-                source: e.to_string(),
-            })?;
+    let config = ctx.json_parse(config_json).catch(ctx).map_err(|e| {
+        ScriptLoadError::RegisterConfigException {
+            path: "rule config".to_string(),
+            detail: e.to_string(),
+        }
+    })?;
     ctx.globals()
         .set("__daml_lint_config", config)
         .map_err(|e| ScriptLoadError::RegisterConfig {
             path: "rule config".to_string(),
-            source: e.to_string(),
+            source: e,
         })?;
     ctx.eval::<(), _>(br#"globalThis.CONFIG = globalThis.__daml_lint_config;"#)
         .map_err(|e| ScriptLoadError::RegisterConfig {
             path: "rule config".to_string(),
-            source: e.to_string(),
+            source: e,
         })
 }
 
@@ -376,13 +554,13 @@ fn register_report(ctx: &Ctx<'_>, sink: Reported) -> Result<(), ScriptLoadError>
     )
     .map_err(|e| ScriptLoadError::RegisterReport {
         path: "report".to_string(),
-        source: e.to_string(),
+        source: e,
     })?;
     ctx.globals()
         .set("__daml_lint_report", report_impl)
         .map_err(|e| ScriptLoadError::RegisterReport {
             path: "report".to_string(),
-            source: e.to_string(),
+            source: e,
         })?;
     ctx.eval::<(), _>(
         br#"
@@ -396,7 +574,7 @@ globalThis.report = function(arg, message, evidence) {
     )
     .map_err(|e| ScriptLoadError::RegisterReport {
         path: "report".to_string(),
-        source: e.to_string(),
+        source: e,
     })
 }
 
@@ -485,7 +663,11 @@ impl ScriptDetector {
                 Finding::new(
                     self.name.clone(),
                     self.severity,
-                    FindingLocation::new(module.file.clone(), *line, *column),
+                    FindingLocation::new(
+                        module.file.clone(),
+                        LineNumber::new(*line),
+                        CharColumn::new(*column),
+                    ),
                     message,
                     evidence.clone().unwrap_or_else(|| {
                         module
@@ -518,7 +700,7 @@ impl Detector for ScriptDetector {
 
     fn try_detect(&self, module: &DamlModule) -> Result<Vec<Finding>, DetectError> {
         self.collect_script_findings(module)
-            .map_err(|e| DetectError::new(self.name(), format!("{}: {e}", self.path)))
+            .map_err(|e| DetectError::with_source(self.name(), format!("{}: {e}", self.path), e))
     }
 }
 
@@ -588,7 +770,13 @@ function on_template(t) {}
 "#,
         );
         match result {
-            Err(e) => assert!(e.to_string().contains("banana")),
+            Err(e) => {
+                assert!(e.to_string().contains("banana"));
+                let source = std::error::Error::source(&e)
+                    .and_then(|source| source.downcast_ref::<crate::detector::SeverityParseError>())
+                    .expect("unknown severity should preserve SeverityParseError");
+                assert_eq!(source.value(), "banana");
+            }
             Ok(_) => panic!("bad severity should be rejected"),
         }
     }
@@ -634,6 +822,10 @@ function on_template(t) {}
         let err = script.try_detect(&module).unwrap_err();
         assert_eq!(err.detector(), "boom");
         assert!(err.message().contains("on_template"));
+        let source = std::error::Error::source(&err)
+            .and_then(|source| source.downcast_ref::<ScriptLoadError>())
+            .expect("custom rule runtime failures should preserve ScriptLoadError");
+        assert!(matches!(source, ScriptLoadError::Invoke { .. }));
     }
 
     #[test]

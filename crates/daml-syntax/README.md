@@ -11,6 +11,19 @@ lexer, and layout types plus `TextRange`/`TextSize` appear in this crate's publi
 API. SemVer for `daml-syntax` includes compatible major versions of those crates
 when upgrading.
 
+## Coordinate safety
+
+Line and column APIs use distinct coordinate newtypes: `LineNumber`,
+`ByteColumn`, `CharColumn`, `ByteOffset`, and `Utf16Offset`. One-based
+coordinates reject zero through `try_new` and `TryFrom<usize>`, while raw
+coordinate extraction uses `usize::from(coordinate)`. UTF-16 column lookup
+returns `CoordinateRangeError` instead of clamping lines or columns past the
+source. UTF-16 slices are returned as `Utf16Range` values with named
+`start()`/`end()` accessors. Diagnostic end columns use `DiagnosticEndColumn`:
+non-empty same-line diagnostic spans carry an exclusive 1-based Unicode-scalar
+end column, while multi-line and empty spans are named separately so callers
+cannot collapse them accidentally.
+
 ## Quick start
 
 ```rust
@@ -37,4 +50,5 @@ assert!(tokens.lex_errors().is_empty());
 assert!(!tokens.laid_out_tokens().is_empty());
 ```
 
-README examples are also compile-tested via `cargo test -p daml-syntax --doc`.
+README examples are included in hidden rustdoc items and compile-tested via
+`cargo test -p daml-syntax --doc`.
