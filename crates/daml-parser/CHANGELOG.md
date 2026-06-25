@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1](https://github.com/stevennevins/daml-tools/compare/daml-parser-v0.9.0...daml-parser-v0.9.1) - 2026-06-25
+
+### Added
+
+- *(parser)* model top-level fixity and operator declarations
+
+### Other
+
+- *(changelog)* record api redesign releases
+
 ### Added
 
 - *(api)* [**breaking**] model top-level fixity declarations as `Decl::Fixity`, operator signatures/equations as `Decl::Function`, and pattern synonyms as `Decl::UnsupportedSyntax` with `UnsupportedSyntaxKind::PatternSynonym`.
