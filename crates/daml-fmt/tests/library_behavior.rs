@@ -5,14 +5,26 @@
 #![allow(clippy::unwrap_used)]
 
 use daml_fmt::{
-    coverage, format_source, lex_diagnostics, source_diagnostics, try_format_source, FormatOptions,
-    ImportOrder,
+    coverage, format_source, lex_diagnostics, source_diagnostics, try_format_source,
+    FormatDiagnostic, FormatError, FormatOptions, ImportOrder,
 };
 use daml_parser::ast::DiagnosticCategory;
 
 #[test]
 fn format_options_default_matches_new() {
     assert_eq!(FormatOptions::default(), FormatOptions::new());
+}
+
+#[test]
+fn import_order_default_and_display_are_stable_api_contracts() {
+    fn assert_default<T: Default>() {}
+    fn assert_display<T: std::fmt::Display>() {}
+
+    assert_default::<ImportOrder>();
+    assert_display::<ImportOrder>();
+    assert_eq!(ImportOrder::default(), ImportOrder::Organize);
+    assert_eq!(ImportOrder::Organize.to_string(), "organize");
+    assert_eq!(ImportOrder::Preserve.to_string(), "preserve");
 }
 
 #[test]
@@ -110,6 +122,21 @@ fn try_format_rejects_malformed_input_and_accepts_valid_source() {
     let valid = "module M where\nfoo: Int\nfoo = 1\n";
     let formatted = try_format_source(valid).expect("valid source must format");
     assert_eq!(formatted, "module M where\nfoo: Int\nfoo = 1\n");
+}
+
+#[test]
+fn format_error_exposes_diagnostics_through_as_ref() {
+    fn diagnostics_slice(error: &impl AsRef<[FormatDiagnostic]>) -> &[FormatDiagnostic] {
+        error.as_ref()
+    }
+    fn assert_as_ref<T: AsRef<[FormatDiagnostic]>>() {}
+
+    assert_as_ref::<FormatError>();
+
+    let malformed = "module M where\nfoo = if x then 1\n";
+    let err = try_format_source(malformed).expect_err("malformed input must fail");
+    assert_eq!(diagnostics_slice(&err), err.diagnostics());
+    assert!(!diagnostics_slice(&err).is_empty());
 }
 
 #[test]

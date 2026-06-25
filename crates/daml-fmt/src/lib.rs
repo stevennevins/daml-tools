@@ -49,7 +49,9 @@
 //! ## API posture
 //!
 //! This crate is pre-1.0. [`ImportOrder`] is `#[non_exhaustive]` so downstream
-//! `match` arms stay forward-compatible when new import strategies appear.
+//! `match` arms stay forward-compatible when new import strategies appear; use
+//! [`Default`] for the standard strategy and [`std::fmt::Display`] for stable
+//! user-facing labels.
 //! [`FormatOptions`] uses private fields and `with_*` helpers so new switches can
 //! ship with defaults without breaking downstream struct literals.
 
@@ -113,6 +115,10 @@ impl fmt::Display for FormatDiagnostic {
 }
 
 /// Formatting failed because the source has lexical or parser diagnostics.
+///
+/// Use [`FormatError::diagnostics`] for readable call sites or
+/// [`AsRef`]<[`FormatDiagnostic`]> when passing the diagnostic slice to generic
+/// APIs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FormatError {
     diagnostics: Vec<FormatDiagnostic>,
@@ -123,6 +129,12 @@ impl FormatError {
     #[must_use]
     pub fn diagnostics(&self) -> &[FormatDiagnostic] {
         &self.diagnostics
+    }
+}
+
+impl AsRef<[FormatDiagnostic]> for FormatError {
+    fn as_ref(&self) -> &[FormatDiagnostic] {
+        self.diagnostics()
     }
 }
 
@@ -196,13 +208,27 @@ fn has_cpp_conditionals(src: &str) -> bool {
 }
 
 /// Import ordering strategy for formatter output.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// The default strategy is [`ImportOrder::Organize`]. Its [`fmt::Display`]
+/// implementation returns stable lowercase labels (`organize`, `preserve`) for
+/// logs, configuration summaries, and CLI messages.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ImportOrder {
     /// Sort import declarations into formatter-defined groups.
+    #[default]
     Organize,
     /// Preserve declaration order exactly as written by the source.
     Preserve,
+}
+
+impl fmt::Display for ImportOrder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Organize => f.write_str("organize"),
+            Self::Preserve => f.write_str("preserve"),
+        }
+    }
 }
 
 /// Formatter behavior switches.
@@ -222,17 +248,9 @@ pub enum ImportOrder {
 /// assert_eq!(preserved.import_order(), ImportOrder::Preserve);
 /// assert_ne!(from_default.import_order(), preserved.import_order());
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct FormatOptions {
     import_order: ImportOrder,
-}
-
-impl Default for FormatOptions {
-    fn default() -> Self {
-        Self {
-            import_order: ImportOrder::Organize,
-        }
-    }
 }
 
 impl FormatOptions {
