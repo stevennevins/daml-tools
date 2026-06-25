@@ -10,6 +10,7 @@ import { agents } from "../agents";
 
 const packageIds = ["daml-parser", "daml-syntax", "daml-lint", "daml-fmt"] as const;
 const categoryIds = ["type-safety", "error-handling", "interoperability", "documentation"] as const;
+const implementationTimeoutMs = 7_200_000;
 
 type PackageId = typeof packageIds[number];
 type CategoryId = typeof categoryIds[number];
@@ -304,11 +305,11 @@ export default smithers((ctx) => {
             key={slug(item)}
             id={nodeId(item)}
             output={outputs.implementation}
-            agent={agents.smartTool}
+            agent={agents.smart}
             needs={{ prior: priorNodeId(index) }}
             deps={priorDeps(index)}
-            timeoutMs={3_600_000}
-            heartbeatTimeoutMs={900_000}
+            timeoutMs={implementationTimeoutMs}
+            heartbeatTimeoutMs={implementationTimeoutMs}
             continueOnFail
           >
             {(deps: { prior: unknown }) => implementationPrompt(
