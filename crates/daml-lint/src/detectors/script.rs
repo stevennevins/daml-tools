@@ -10,6 +10,14 @@ use std::io::Read;
 use std::path::Path;
 use std::rc::Rc;
 
+/// Error returned while loading, validating, or invoking a JavaScript rule.
+///
+/// Load-time variants cover file I/O, `QuickJS` initialization, script
+/// evaluation, metadata validation, and rule config registration. Invocation
+/// variants (`Invoke` and `ParseNode`) are reported through
+/// [`Detector::try_detect`] when a visitor fails while analyzing a module.
+/// JavaScript exceptions are represented as captured detail strings because
+/// they are not Rust [`Error`] sources.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum ScriptLoadError {
@@ -220,6 +228,12 @@ const VISITORS: &[&str] = &[
 /// handler periodically during execution; a runaway loop must not hang CI.
 const MAX_INTERRUPT_CHECKS: u64 = 100_000;
 
+/// Loaded JavaScript detector with one reusable `QuickJS` runtime/context.
+///
+/// Construct values with [`load_script`], [`load_script_with_options`],
+/// [`load_script_source`], or [`load_script_reader`]. The fields are private so
+/// callers interact through the [`Detector`] trait and the loader functions'
+/// [`ScriptLoadError`] contracts.
 pub struct ScriptDetector {
     name: String,
     severity: Severity,

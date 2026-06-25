@@ -330,8 +330,9 @@ provenance and licensing.
 ## Public API Stability
 
 `daml-lint` is pre-1.0. The CLI exit codes and documented feature flags are the
-stable user contract for 0.7.x. The rule-facing IR is intentionally public for
-custom rules and library users, but it may gain structure in 0.x minor releases;
+stable user contract for the current 0.8 line. The rule-facing IR is
+intentionally public for custom rules and library users, but it may gain
+structure in 0.x minor releases;
 custom rules should check `ir_version` and match typed nodes rather than raw
 source substrings. Detector result types such as `Finding`, `Severity`, and
 `DetectError` are non-exhaustive; use their documented fields/accessors and keep

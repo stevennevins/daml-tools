@@ -102,6 +102,7 @@ pub struct SeverityParseError {
 }
 
 impl SeverityParseError {
+    /// Unsupported severity text that was rejected.
     #[must_use]
     pub fn value(&self) -> &str {
         &self.value

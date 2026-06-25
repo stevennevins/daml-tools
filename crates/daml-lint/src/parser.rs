@@ -31,10 +31,16 @@ pub(crate) fn parse_daml(source: &str, file: &Path) -> DamlModule {
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct ParseDiagnostic {
+    /// 1-based diagnostic start line.
     pub line: LineNumber,
+    /// 1-based Unicode-scalar diagnostic start column.
     pub column: CharColumn,
+    /// Exclusive 1-based Unicode-scalar end column for non-empty single-line
+    /// diagnostics; `None` for multi-line or zero-width diagnostics.
     pub end_column: Option<CharColumn>,
+    /// Human-readable diagnostic message from the parser.
     pub message: String,
+    /// Stable recovery category for machine-readable reporting.
     pub category: ParseDiagnosticCategory,
 }
 
@@ -60,6 +66,7 @@ pub enum ParseDiagnosticCategory {
 }
 
 impl ParseDiagnosticCategory {
+    /// Stable kebab-case tag used by JSON/SARIF output and external tooling.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -130,10 +137,17 @@ impl std::str::FromStr for ParseDiagnosticCategory {
     }
 }
 
+/// Result of loss-tolerant parser lowering.
+///
+/// `module` is always returned and may be partial when `diagnostics` is
+/// non-empty. Callers that require authoritative scans should reject results
+/// with diagnostics before running or accepting detector output.
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct ParseResult {
+    /// Lowered rule-facing module, possibly partial if parse recovery occurred.
     pub module: DamlModule,
+    /// Recoverable parse and lexical diagnostics in source order.
     pub diagnostics: Vec<ParseDiagnostic>,
 }
 

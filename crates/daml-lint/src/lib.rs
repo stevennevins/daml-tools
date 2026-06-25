@@ -61,9 +61,14 @@
 //! assert_eq!(module.templates.len(), 1);
 //! ```
 
+#![warn(missing_docs)]
+
+/// Detector traits, finding DTOs, severity values, and configured-detector wrappers.
 pub mod detector;
+/// Built-in and JavaScript-backed detector implementations.
 pub mod detectors;
 pub mod ir;
 /// Lowering: `daml-parser`'s typed AST → rule-facing IR ([`ir`]).
 pub mod parser;
+/// Report formatting and scan exit-code helpers.
 pub mod reporter;

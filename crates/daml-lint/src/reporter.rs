@@ -7,10 +7,14 @@ use std::error::Error;
 use std::fmt::Write as _;
 use std::fmt::{self, Display};
 
+/// Output format for `daml-lint` reports.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
+    /// SARIF JSON suitable for GitHub code scanning and IDE integrations.
     Sarif,
+    /// Human-readable Markdown report.
     Markdown,
+    /// Machine-readable JSON report.
     Json,
 }
 
@@ -64,11 +68,15 @@ impl std::str::FromStr for OutputFormat {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct ParseError {
+    /// Source file path or display name.
     pub file: String,
+    /// 1-based diagnostic start line.
     pub line: LineNumber,
+    /// 1-based Unicode-scalar diagnostic start column.
     pub column: CharColumn,
     /// End column when the diagnostic span sits on one line; `None` otherwise.
     pub end_column: Option<CharColumn>,
+    /// Human-readable parser diagnostic message.
     pub message: String,
     /// Recovery category tag (e.g. `skipped-declaration`, `unsupported-syntax`).
     pub category: ParseDiagnosticCategory,
