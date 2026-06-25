@@ -106,10 +106,7 @@ impl fmt::Display for FormatDiagnostic {
             write!(
                 f,
                 "{}:{}: [{}] {}",
-                self.line,
-                self.column,
-                self.category.as_str(),
-                self.message
+                self.line, self.column, self.category, self.message
             )
         }
     }

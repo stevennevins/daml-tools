@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 pub const MAX_RECURSION_DEPTH: u32 = 128;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseModuleResult {
     pub module: Module,
     pub diagnostics: Vec<ParseDiagnostic>,

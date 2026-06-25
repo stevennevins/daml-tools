@@ -50,3 +50,15 @@ fn into_result_matches_parse_module_strict() {
         .expect_err("same diagnostics via into_result");
     assert_eq!(strict.diagnostics(), converted.diagnostics());
 }
+
+#[test]
+fn tolerant_parse_result_supports_equality_assertions() {
+    let src = "module M where\nfoo : Int\nfoo = 1\n";
+    let first = parse_module(src);
+    let second = parse_module(src);
+
+    assert_eq!(
+        first, second,
+        "public ParseModuleResult equality should let downstream tests assert the whole tolerant parse contract"
+    );
+}

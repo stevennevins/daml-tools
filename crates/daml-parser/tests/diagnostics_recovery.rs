@@ -369,6 +369,29 @@ fn category_tags_are_stable_kebab_case() {
         "recursion-limit"
     );
     assert_eq!(DiagnosticCategory::Lex.as_str(), "lexical-error");
+
+    // Display is the user-facing formatting path and must stay aligned with
+    // the stable machine-readable tags.
+    assert_eq!(
+        DiagnosticCategory::SkippedDecl.to_string(),
+        DiagnosticCategory::SkippedDecl.as_str()
+    );
+    assert_eq!(
+        DiagnosticCategory::Malformed.to_string(),
+        DiagnosticCategory::Malformed.as_str()
+    );
+    assert_eq!(
+        DiagnosticCategory::UnsupportedSyntax.to_string(),
+        DiagnosticCategory::UnsupportedSyntax.as_str()
+    );
+    assert_eq!(
+        DiagnosticCategory::RecursionLimit.to_string(),
+        DiagnosticCategory::RecursionLimit.as_str()
+    );
+    assert_eq!(
+        DiagnosticCategory::Lex.to_string(),
+        DiagnosticCategory::Lex.as_str()
+    );
 }
 
 #[test]

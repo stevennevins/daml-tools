@@ -744,6 +744,12 @@ impl DiagnosticCategory {
     }
 }
 
+impl std::fmt::Display for DiagnosticCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// Machine-readable reason a [`ParseDiagnostic`] fired.
 ///
 /// Keep [`ParseDiagnostic::message`] for presentation. Match on this enum when

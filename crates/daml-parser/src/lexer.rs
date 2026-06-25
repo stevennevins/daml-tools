@@ -327,6 +327,13 @@ pub struct Pos {
     pub column: usize,
 }
 
+/// Token category plus normalized token payload.
+///
+/// [`std::fmt::Display`] prints a normalized spelling for diagnostics, logs,
+/// and compact test output. It is not a lossless source renderer: trivia,
+/// original literal escapes, and the distinction between real and virtual
+/// layout punctuation are intentionally not preserved. Use
+/// [`render_lossless`] when source-exact reconstruction matters.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum TokenKind {
@@ -361,6 +368,33 @@ pub enum TokenKind {
     VRBrace,
     /// Layout-inserted virtual semicolon (new item at block indentation).
     VSemi,
+}
+
+impl std::fmt::Display for TokenKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LowerId { qualifier, name } | Self::UpperId { qualifier, name } => {
+                if let Some(qualifier) = qualifier {
+                    write!(f, "{qualifier}.{name}")
+                } else {
+                    name.fmt(f)
+                }
+            }
+            Self::Op(operator) => operator.fmt(f),
+            Self::IntLit(value) | Self::DecimalLit(value) => value.fmt(f),
+            Self::StringLit(value) => write!(f, "{value:?}"),
+            Self::CharLit(value) => write!(f, "'{}'", value.escape_debug()),
+            Self::LParen => f.write_str("("),
+            Self::RParen => f.write_str(")"),
+            Self::LBracket => f.write_str("["),
+            Self::RBracket => f.write_str("]"),
+            Self::LBrace | Self::VLBrace => f.write_str("{"),
+            Self::RBrace | Self::VRBrace => f.write_str("}"),
+            Self::Comma => f.write_str(","),
+            Self::Semi | Self::VSemi => f.write_str(";"),
+            Self::Backtick => f.write_str("`"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1451,6 +1485,31 @@ mod tests {
         assert_eq!(identifier.as_ref(), "value");
         assert_eq!(operator.as_ref(), "+");
         assert_eq!(module.as_ref(), "DA.Map");
+    }
+
+    #[test]
+    fn token_kind_display_is_normalized_not_lossless_source() {
+        // Display is for diagnostics/logging. It intentionally does not
+        // preserve whether punctuation came from source bytes or layout.
+        assert_eq!(TokenKind::LBrace.to_string(), "{");
+        assert_eq!(TokenKind::VLBrace.to_string(), "{");
+        assert_eq!(TokenKind::Semi.to_string(), ";");
+        assert_eq!(TokenKind::VSemi.to_string(), ";");
+
+        assert_eq!(
+            TokenKind::UpperId {
+                qualifier: Some("DA.Map".into()),
+                name: "Map".into(),
+            }
+            .to_string(),
+            "DA.Map.Map"
+        );
+        assert_eq!(TokenKind::Op("->".into()).to_string(), "->");
+        assert_eq!(
+            TokenKind::StringLit("line\n".into()).to_string(),
+            "\"line\\n\""
+        );
+        assert_eq!(TokenKind::CharLit("'".into()).to_string(), "'\\''");
     }
 
     #[test]
