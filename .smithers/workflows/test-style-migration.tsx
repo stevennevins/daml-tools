@@ -1,7 +1,7 @@
 // smithers-source: local
 // smithers-metadata-version: 1
 // smithers-display-name: Test Style Migration
-// smithers-description: Migrate tests toward integration-style coverage with src unit tests reserved for internal contracts.
+// smithers-description: Finish migrating tests toward integration-style coverage with src unit tests reserved for internal contracts.
 // smithers-tags: daml, rust, testing, migration
 /** @jsxImportSource smithers-orchestrator */
 import { createSmithers } from "smithers-orchestrator";
@@ -9,25 +9,22 @@ import { z } from "zod/v4";
 import { agents } from "../agents";
 
 const workItemIds = [
-  "daml-parser-diagnostics-recovery",
-  "daml-parser-spans-projection",
   "daml-parser-internal-unit-boundary",
-  "daml-syntax-source-api",
-  "daml-syntax-coordinate-contracts",
-  "daml-lint-parser-ir-contracts",
-  "daml-lint-corpus-adversarial",
-  "daml-lint-custom-rule-runtime-contracts",
-  "daml-lint-internal-unit-boundary",
-  "daml-fmt-library-behavior",
-  "daml-fmt-layout-fixtures",
-  "daml-fmt-internal-unit-boundary",
+  "daml-syntax-line-index-unit-boundary",
+  "daml-lint-builtin-rule-integration",
+  "daml-lint-script-runtime-unit-boundary",
+  "daml-lint-core-internal-unit-boundary",
+  "daml-fmt-layout-helper-unit-boundary",
+  "daml-fmt-public-fixture-integration-boundary",
 ] as const;
 
 type WorkItemId = typeof workItemIds[number];
 
+type PackageName = "daml-parser" | "daml-syntax" | "daml-lint" | "daml-fmt";
+
 type WorkItem = {
   id: WorkItemId;
-  packageName: "daml-parser" | "daml-syntax" | "daml-lint" | "daml-fmt";
+  packageName: PackageName;
   category: string;
   title: string;
   objective: string;
@@ -40,87 +37,29 @@ type WorkItem = {
 
 const workItems: WorkItem[] = [
   {
-    id: "daml-parser-diagnostics-recovery",
-    packageName: "daml-parser",
-    category: "diagnostics-and-recovery",
-    title: "Move parser diagnostic and recovery behavior tests out of src",
-    objective:
-      "Migrate diagnostic/recovery behavior tests that use public parse_module APIs from src-only modules into daml-parser integration tests.",
-    primaryFiles: [
-      "crates/daml-parser/src/diag_tests.rs",
-      "crates/daml-parser/src/parse.rs",
-      "crates/daml-parser/src/lib.rs",
-      "crates/daml-parser/tests/",
-    ],
-    targetShape: [
-      "Create focused integration test files under crates/daml-parser/tests/ for public diagnostic/recovery behavior.",
-      "Keep src-local tests only when they require private parser helpers or intentionally pin private parser internals.",
-      "Remove migrated src test module wiring from src/lib.rs when no longer needed.",
-    ],
-    constraints: [
-      "Do not expose private parser functions only to make tests move.",
-      "Preserve diagnostic category/message intent; avoid broad parser behavior changes.",
-      "If a test cannot move through public APIs, leave it in src and record why in the task output.",
-    ],
-    validationCommands: [
-      "cargo fmt --all -- --check",
-      "cargo test -p daml-parser --locked",
-    ],
-    riskLevel: "medium",
-  },
-  {
-    id: "daml-parser-spans-projection",
-    packageName: "daml-parser",
-    category: "span-losslessness-and-projection",
-    title: "Move parser span/losslessness/projection behavior tests to integration tests",
-    objective:
-      "Migrate span oracle, projection precedence, and AST public-shape behavior tests that operate through public parser APIs into daml-parser integration tests.",
-    primaryFiles: [
-      "crates/daml-parser/src/span_tests.rs",
-      "crates/daml-parser/src/projection_tests.rs",
-      "crates/daml-parser/src/ast_span.rs",
-      "crates/daml-parser/src/ast.rs",
-      "crates/daml-parser/tests/",
-    ],
-    targetShape: [
-      "Add integration tests for render_from_ast, span tightness, and projection precedence where public APIs suffice.",
-      "Keep only true ast_span/private-helper unit tests in src.",
-      "Preserve corpus guards and fail-loud CI behavior when corpus files are expected.",
-    ],
-    constraints: [
-      "Do not weaken span exactness assertions to make migration easy.",
-      "Do not relocate vendored corpus data.",
-      "Keep parser and formatter crate ownership boundaries intact.",
-    ],
-    validationCommands: [
-      "cargo fmt --all -- --check",
-      "cargo test -p daml-parser --locked",
-    ],
-    riskLevel: "medium",
-  },
-  {
     id: "daml-parser-internal-unit-boundary",
     packageName: "daml-parser",
     category: "internal-unit-contracts",
-    title: "Prune daml-parser src tests to explicit internal contracts",
+    title: "Verify daml-parser src tests are only private parser-phase contracts",
     objective:
-      "Review remaining lexer/layout/parse src tests and leave only narrow tests for private phase contracts or low-level token/layout invariants.",
+      "Review remaining lexer/layout/parse/ast/ast_span src tests and move any externally observable parser behavior to integration tests; leave true private phase contracts in src.",
     primaryFiles: [
       "crates/daml-parser/src/lexer.rs",
       "crates/daml-parser/src/layout.rs",
       "crates/daml-parser/src/parse.rs",
       "crates/daml-parser/src/ast.rs",
       "crates/daml-parser/src/ast_span.rs",
+      "crates/daml-parser/tests/",
     ],
     targetShape: [
-      "Keep lexer tokenization/trivia and layout virtual-token tests in src when they pin implementation phase contracts.",
-      "Move any remaining externally observable parse behavior to integration tests.",
-      "Add comments only where needed to explain why a src test remains unit-style.",
+      "Lexer token/trivia, layout virtual-token, and private parser-helper contracts may remain as src unit tests.",
+      "Externally observable module parsing, diagnostics, recovery, projection precedence, and span behavior stays under crates/daml-parser/tests/.",
+      "If no movement is needed, report the src tests that remain and why they are internal contracts.",
     ],
     constraints: [
-      "Do not churn working low-level tests just for file location purity.",
-      "Avoid broad renames or fixture rewrites.",
-      "Keep comments surgical; do not annotate every test mechanically.",
+      "Do not expose private parser functions only to move tests.",
+      "Do not churn already-migrated integration tests.",
+      "Do not weaken exact span, diagnostic, or parser-shape assertions.",
     ],
     validationCommands: [
       "cargo fmt --all -- --check",
@@ -129,84 +68,122 @@ const workItems: WorkItem[] = [
     riskLevel: "low",
   },
   {
-    id: "daml-syntax-source-api",
+    id: "daml-syntax-line-index-unit-boundary",
     packageName: "daml-syntax",
-    category: "public-source-api",
-    title: "Move daml-syntax SourceFile/SourceTokens public API tests to integration tests",
+    category: "line-index-internal-contracts",
+    title: "Verify daml-syntax src tests only cover LineIndex internals",
     objective:
-      "Migrate daml-syntax tests for SourceFile, SourceTokens, diagnostics, and parser span conversion into integration tests that exercise the public crate API.",
+      "Keep SourceFile/SourceTokens/diagnostic/span-conversion behavior under integration tests and leave only LineIndex mapping internals in src/lib.rs.",
     primaryFiles: [
       "crates/daml-syntax/src/lib.rs",
-      "crates/daml-syntax/tests/",
       "crates/daml-syntax/src/coordinate.rs",
+      "crates/daml-syntax/tests/source_api.rs",
+      "crates/daml-syntax/tests/coordinate_contracts.rs",
+      "crates/daml-syntax/tests/compile_fail/",
     ],
     targetShape: [
-      "Add crates/daml-syntax/tests/source_api.rs or similarly focused integration tests.",
-      "Leave src tests only for private LineIndex implementation details that cannot be observed publicly.",
-      "Keep rustdoc examples aligned with moved public API coverage.",
+      "Source API and coordinate public contracts stay under crates/daml-syntax/tests/.",
+      "src/lib.rs unit tests are limited to private LineIndex offset/line/column invariants.",
+      "Any public behavior duplicated in src is moved or removed after confirming integration coverage.",
     ],
     constraints: [
-      "Do not change public SourceFile behavior while moving tests.",
-      "Do not add compatibility shims for old test paths.",
-      "Keep assertions on diagnostics accessors and range errors intact.",
+      "Do not change SourceFile, SourceTokens, coordinate, or diagnostic behavior.",
+      "Do not add compile-fail infrastructure beyond the existing crate-local pattern unless it is already present and minimal.",
+      "Keep comments surgical; avoid annotating every test mechanically.",
     ],
     validationCommands: [
       "cargo fmt --all -- --check",
       "cargo test -p daml-syntax --locked",
       "cargo test --doc -p daml-syntax --locked",
     ],
-    riskLevel: "medium",
+    riskLevel: "low",
   },
   {
-    id: "daml-syntax-coordinate-contracts",
-    packageName: "daml-syntax",
-    category: "coordinate-contracts",
-    title: "Move coordinate public-contract checks to integration/compile-style tests",
+    id: "daml-lint-builtin-rule-integration",
+    packageName: "daml-lint",
+    category: "builtin-rule-integration",
+    title: "Move daml-lint built-in rule behavior tests out of src",
     objective:
-      "Convert coordinate newtype public API checks into integration tests, and use compile-style coverage for non-interchangeability if practical.",
+      "Relocate broad built-in JavaScript detector behavior cases from src/detectors/builtin_script_tests.rs to integration tests that exercise the crate's public built-in detector surface where practical.",
     primaryFiles: [
-      "crates/daml-syntax/src/coordinate.rs",
-      "crates/daml-syntax/src/lib.rs",
-      "crates/daml-syntax/Cargo.toml",
-      "crates/daml-syntax/tests/",
+      "crates/daml-lint/src/detectors/mod.rs",
+      "crates/daml-lint/src/detectors/builtin_script_tests.rs",
+      "crates/daml-lint/src/detectors/script.rs",
+      "crates/daml-lint/src/lib.rs",
+      "crates/daml-lint/tests/",
+      "crates/daml-lint/rules/",
     ],
     targetShape: [
-      "Integration tests cover one-based coordinate constructors and TextSize conversions through public exports.",
-      "If compile-fail infrastructure is added, keep it minimal and crate-local.",
-      "If compile-fail is too much churn, record that the runtime public tests are the completed slice and leave type-safety compile coverage as follow-up.",
+      "Built-in rule input/output behavior lives in crates/daml-lint/tests/ as integration-style tests.",
+      "src/detectors/mod.rs no longer wires a broad #[cfg(test)] behavior module if integration coverage replaces it.",
+      "Only private script runtime contracts remain in src/detectors/script.rs.",
     ],
     constraints: [
-      "Do not add a new dev dependency unless the compile-fail value justifies it.",
-      "Do not alter coordinate semantics.",
-      "Keep public API construction clean and explicit.",
+      "Do not broaden the JS runtime or detector public API only for tests.",
+      "Preserve feature gates for js-runtime/custom-rule-related tests.",
+      "Do not weaken expected finding counts, severity, evidence, or message assertions.",
     ],
     validationCommands: [
       "cargo fmt --all -- --check",
-      "cargo test -p daml-syntax --locked",
+      "cargo test -p daml-lint --all-features --locked",
+      "cargo test -p daml-lint --no-default-features --features cli,js-runtime,custom-rules --locked",
+    ],
+    riskLevel: "high",
+  },
+  {
+    id: "daml-lint-script-runtime-unit-boundary",
+    packageName: "daml-lint",
+    category: "script-runtime-internal-contracts",
+    title: "Verify daml-lint script runtime src tests are private runtime contracts",
+    objective:
+      "Review src/detectors/script.rs tests and keep only private load/runtime/error/interrupt contracts in src; move any public detector behavior to integration tests.",
+    primaryFiles: [
+      "crates/daml-lint/src/detectors/script.rs",
+      "crates/daml-lint/tests/custom_rule_runtime_contracts.rs",
+      "crates/daml-lint/examples/",
+      "crates/daml-lint/lint-plugin/",
+    ],
+    targetShape: [
+      "Private load_script_source validation, runtime error attribution, and interrupt counter behavior may remain source-local.",
+      "Script-visible node kinds, generated rule type contracts, and example rule behavior remain integration-style.",
+      "Any src test retained must have a private-contract reason in the task output.",
+    ],
+    constraints: [
+      "Do not expose private runtime hooks just to move tests.",
+      "Respect no-default-feature and JS feature combinations.",
+      "Do not regenerate npm artifacts unless a test move actually requires it.",
+    ],
+    validationCommands: [
+      "cargo fmt --all -- --check",
+      "cargo test -p daml-lint --all-features --locked",
+      "cd crates/daml-lint && npm ci && npm run check:rules",
     ],
     riskLevel: "medium",
   },
   {
-    id: "daml-lint-parser-ir-contracts",
+    id: "daml-lint-core-internal-unit-boundary",
     packageName: "daml-lint",
-    category: "parser-ir-contracts",
-    title: "Move daml-lint parser lowering and IR contract tests to integration tests",
+    category: "core-internal-contracts",
+    title: "Verify daml-lint config/detector/IR src tests are narrow internal contracts",
     objective:
-      "Migrate tests that parse Daml source and assert rule-facing IR shape from src/parser.rs into daml-lint integration tests using public parse_daml_with_diagnostics.",
+      "Review remaining config.rs, detector.rs, and ir.rs unit tests so src contains only private constructor/default/wrapper invariants while public parser/reporter/detector behavior is integration-style.",
     primaryFiles: [
-      "crates/daml-lint/src/parser.rs",
+      "crates/daml-lint/src/config.rs",
+      "crates/daml-lint/src/detector.rs",
       "crates/daml-lint/src/ir.rs",
-      "crates/daml-lint/src/lib.rs",
-      "crates/daml-lint/tests/",
+      "crates/daml-lint/tests/detector_contracts.rs",
+      "crates/daml-lint/tests/parser_ir_contracts.rs",
+      "crates/daml-lint/tests/reporter_contracts.rs",
+      "crates/daml-lint/tests/cli.rs",
     ],
     targetShape: [
-      "Public IR contract behavior lives under crates/daml-lint/tests/.",
-      "src/parser.rs keeps only private lower_* unit tests if any are truly needed.",
-      "Test helper construction uses parse_daml_with_diagnostics rather than cfg(test)-only parse_daml when possible.",
+      "Public parser lowering, detector, reporter, and CLI behavior remains under crates/daml-lint/tests/.",
+      "src tests stay narrow when they protect private defaults, wrappers, or construction invariants.",
+      "Duplicate assertions are removed only after confirming equivalent integration coverage.",
     ],
     constraints: [
-      "Do not make parse_daml public just for tests; use existing public ParseResult API.",
-      "Do not weaken structured TypeNode/Expr assertions.",
+      "Do not move private helper tests if doing so requires public escape hatches.",
+      "Do not bundle detector behavior changes with test relocation.",
       "Preserve no-default-feature behavior where relevant.",
     ],
     validationCommands: [
@@ -214,200 +191,87 @@ const workItems: WorkItem[] = [
       "cargo test -p daml-lint --all-features --locked",
       "cargo test -p daml-lint --no-default-features --lib --locked",
     ],
-    riskLevel: "medium",
-  },
-  {
-    id: "daml-lint-corpus-adversarial",
-    packageName: "daml-lint",
-    category: "corpus-and-adversarial-integration",
-    title: "Move daml-lint corpus and adversarial behavior tests out of src",
-    objective:
-      "Relocate corpus-backed and hostile-input parser/lowering behavior tests from src modules to integration tests.",
-    primaryFiles: [
-      "crates/daml-lint/src/adversarial_tests.rs",
-      "crates/daml-lint/src/corpus_tests.rs",
-      "crates/daml-lint/src/lib.rs",
-      "crates/daml-lint/tests/",
-      "corpus/daml-finance/",
-    ],
-    targetShape: [
-      "Integration tests retain the existing corpus-present guard and CI fail-loud behavior.",
-      "Hostile-input tests remain end-to-end through public parsing/lowering APIs.",
-      "src/lib.rs no longer wires these broad integration-style modules once moved.",
-    ],
-    constraints: [
-      "Do not delete or reshape corpus facts during relocation.",
-      "Do not hide skipped corpus tests under CI.",
-      "Keep performance guard intent, but avoid introducing flaky timing thresholds beyond current behavior.",
-    ],
-    validationCommands: [
-      "cargo fmt --all -- --check",
-      "cargo test -p daml-lint --all-features --locked",
-    ],
-    riskLevel: "medium",
-  },
-  {
-    id: "daml-lint-custom-rule-runtime-contracts",
-    packageName: "daml-lint",
-    category: "custom-rule-runtime-contracts",
-    title: "Split custom rule runtime tests between integration behavior and private runtime unit tests",
-    objective:
-      "Move JS rule visitor/runtime-surface behavior tests to integration tests while keeping private runtime safety tests in src/detectors/script.rs.",
-    primaryFiles: [
-      "crates/daml-lint/src/detectors/script.rs",
-      "crates/daml-lint/tests/",
-      "crates/daml-lint/examples/",
-      "crates/daml-lint/lint-plugin/",
-      "crates/daml-lint/package.json",
-    ],
-    targetShape: [
-      "Integration tests cover script-visible node kinds, generated .d.ts contract, and shipped example rule behavior through public/CLI surfaces where practical.",
-      "src/detectors/script.rs keeps tests for private load_script_source, interrupt counters, and low-level runtime error attribution.",
-      "Generated rule artifacts stay in sync if tests require npm generation.",
-    ],
-    constraints: [
-      "Respect feature gates: custom-rule tests must compile under the intended feature combinations.",
-      "Do not broaden the JS runtime public API to enable test relocation.",
-      "If a test must remain source-local because it uses private runtime hooks, document that in the task output rather than forcing a public escape hatch.",
-    ],
-    validationCommands: [
-      "cargo fmt --all -- --check",
-      "cargo test -p daml-lint --all-features --locked",
-      "cd crates/daml-lint && npm ci && npm run check:rules",
-      "cargo test -p daml-lint --no-default-features --features cli,js-runtime,custom-rules --locked",
-    ],
-    riskLevel: "high",
-  },
-  {
-    id: "daml-lint-internal-unit-boundary",
-    packageName: "daml-lint",
-    category: "internal-unit-contracts",
-    title: "Prune daml-lint src tests to explicit detector/config/reporter contracts",
-    objective:
-      "Review remaining daml-lint src tests and keep only focused internal contracts for config parsing, reporter formatting internals, detector wrappers, and private runtime hooks.",
-    primaryFiles: [
-      "crates/daml-lint/src/config.rs",
-      "crates/daml-lint/src/reporter.rs",
-      "crates/daml-lint/src/detector.rs",
-      "crates/daml-lint/src/detectors/script.rs",
-      "crates/daml-lint/tests/cli.rs",
-    ],
-    targetShape: [
-      "src tests are narrow and clearly tied to private/internal contracts.",
-      "Externally observable CLI/reporting behavior remains covered by tests under crates/daml-lint/tests/.",
-      "No broad formatting or detector rewrites are bundled into this cleanup.",
-    ],
-    constraints: [
-      "Do not move private formatter function tests if doing so would require making private helpers public.",
-      "Do not duplicate the same assertion in both src and integration tests unless it guards different failure modes.",
-      "Preserve existing feature-gated test behavior.",
-    ],
-    validationCommands: [
-      "cargo fmt --all -- --check",
-      "cargo test -p daml-lint --all-features --locked",
-      "cargo test -p daml-lint --no-default-features --lib --locked",
-    ],
     riskLevel: "low",
   },
   {
-    id: "daml-fmt-library-behavior",
+    id: "daml-fmt-layout-helper-unit-boundary",
     packageName: "daml-fmt",
-    category: "library-api-behavior",
-    title: "Move daml-fmt public library behavior tests to integration tests",
+    category: "layout-helper-internal-contracts",
+    title: "Verify daml-fmt layout_ast src tests only cover private helpers",
     objective:
-      "Migrate format_source, try_format_source, diagnostics, FormatOptions, and coverage public behavior tests from src/lib.rs into daml-fmt integration tests.",
+      "Review remaining layout_ast.rs src tests and keep only helper-specific line/comment/indent contracts in src; move any formatter output behavior to integration fixture tests.",
     primaryFiles: [
-      "crates/daml-fmt/src/lib.rs",
-      "crates/daml-fmt/tests/",
       "crates/daml-fmt/src/layout_ast.rs",
+      "crates/daml-fmt/src/lib.rs",
+      "crates/daml-fmt/tests/layout_fixtures.rs",
+      "crates/daml-fmt/tests/library_behavior.rs",
     ],
     targetShape: [
-      "Public formatter API behavior is asserted from crates/daml-fmt/tests/.",
-      "src/lib.rs keeps only private helper tests such as normalize_final_newline if still needed.",
-      "Corpus/span-oracle tests live where ownership is clearest and remain fail-loud under CI.",
+      "Private line/comment/indent helpers may remain source-local.",
+      "Given-input/expected-output formatting behavior remains under crates/daml-fmt/tests/.",
+      "No duplicate black-box formatter assertions remain in src.",
     ],
     constraints: [
       "Do not intentionally change formatter output.",
-      "Do not remove malformed-input passthrough/rejection coverage.",
-      "Avoid broad fixture churn; move tests before improving them.",
+      "Do not weaken idempotence or exact-output assertions.",
+      "Do not expose private layout helpers for tests.",
     ],
     validationCommands: [
       "cargo fmt --all -- --check",
       "cargo test -p daml-fmt --all-features --locked",
     ],
-    riskLevel: "medium",
+    riskLevel: "low",
   },
   {
-    id: "daml-fmt-layout-fixtures",
+    id: "daml-fmt-public-fixture-integration-boundary",
     packageName: "daml-fmt",
-    category: "layout-formatting-fixtures",
-    title: "Move formatter layout examples into integration-style fixture tests",
+    category: "public-formatting-fixtures",
+    title: "Verify daml-fmt public formatting behavior is integration-style",
     objective:
-      "Relocate broad layout_ast formatting examples from implementation-local tests to black-box integration tests driven by public formatter APIs or fixture tables.",
+      "Confirm format_source/try_format_source/options/coverage and broad layout examples are covered from crates/daml-fmt/tests, not src unit tests.",
     primaryFiles: [
-      "crates/daml-fmt/src/layout_ast.rs",
       "crates/daml-fmt/src/lib.rs",
-      "crates/daml-fmt/tests/",
-      "crates/daml-fmt/corpus/",
+      "crates/daml-fmt/tests/library_behavior.rs",
+      "crates/daml-fmt/tests/layout_fixtures.rs",
+      "crates/daml-fmt/tests/coverage.rs",
+      "crates/daml-fmt/tests/cli.rs",
       "crates/daml-fmt/test/diff.js",
     ],
     targetShape: [
-      "Given-input/expected-output formatter behavior is exercised under crates/daml-fmt/tests/ or fixtures, not inside layout_ast.rs.",
-      "Private helper tests remain in layout_ast.rs only for helper-specific behavior.",
-      "Idempotence expectations stay explicit in integration tests for cases where that is the business rule.",
+      "Public library and CLI behavior remains integration-style under tests/.",
+      "Coverage and npm differential gates stay fail-loud when required inputs are expected.",
+      "Any discovered public behavior test in src is moved before this item completes.",
     ],
     constraints: [
-      "Do not rewrite the formatter backend as part of test relocation.",
-      "Do not weaken idempotence or exact-output assertions.",
-      "Keep npm differential coverage as a separate external corpus gate.",
+      "Do not rewrite fixtures or formatter internals for style only.",
+      "Do not alter malformed-input passthrough/rejection behavior.",
+      "Keep npm differential coverage separate from Rust unit/helper tests.",
     ],
     validationCommands: [
       "cargo fmt --all -- --check",
       "cargo test -p daml-fmt --all-features --locked",
       "cd crates/daml-fmt && npm test",
     ],
-    riskLevel: "high",
-  },
-  {
-    id: "daml-fmt-internal-unit-boundary",
-    packageName: "daml-fmt",
-    category: "internal-unit-contracts",
-    title: "Prune daml-fmt src tests to private helper contracts",
-    objective:
-      "Review remaining daml-fmt src tests and leave only tests for private helpers such as line/comment detection, indentation helpers, import organization internals, and newline normalization.",
-    primaryFiles: [
-      "crates/daml-fmt/src/lib.rs",
-      "crates/daml-fmt/src/layout_ast.rs",
-      "crates/daml-fmt/tests/",
-    ],
-    targetShape: [
-      "src tests are small, helper-specific, and not duplicate black-box formatter tests.",
-      "Public API behavior is covered from tests/.",
-      "Any retained src test has a clear private-contract reason in the task output.",
-    ],
-    constraints: [
-      "Do not expose private layout helpers for tests.",
-      "Do not change formatter output intentionally.",
-      "Keep cleanup surgical after the larger fixture migration.",
-    ],
-    validationCommands: [
-      "cargo fmt --all -- --check",
-      "cargo test -p daml-fmt --all-features --locked",
-    ],
-    riskLevel: "low",
+    riskLevel: "medium",
   },
 ];
 
 const scopeOutputSchema = z.looseObject({
   summary: z.string().default("Test style migration scoped."),
   assumptions: z.array(z.string()).default([]),
+  plannedChanges: z.array(z.object({
+    id: z.enum(workItemIds),
+    packageName: z.string(),
+    category: z.string(),
+    expectedChange: z.string(),
+  })).default([]),
   risks: z.array(z.string()).default([]),
   executionNotes: z.array(z.string()).default([]),
-  workingStateDefinition: z.string().default("Each item validates before the next item starts."),
+  workingStateDefinition: z.string().default("Each package/category item validates before the next item starts."),
 });
 
 const itemResultSchema = z.looseObject({
-  id: z.enum(workItemIds).default("daml-parser-diagnostics-recovery"),
+  id: z.enum(workItemIds).default("daml-parser-internal-unit-boundary"),
   packageName: z.string().default("daml-parser"),
   category: z.string().default("category"),
   status: z.enum(["completed", "partial", "blocked"]).default("partial"),
@@ -425,7 +289,7 @@ const itemResultSchema = z.looseObject({
 });
 
 const itemValidationSchema = z.looseObject({
-  id: z.enum(workItemIds).default("daml-parser-diagnostics-recovery"),
+  id: z.enum(workItemIds).default("daml-parser-internal-unit-boundary"),
   packageName: z.string().default("daml-parser"),
   category: z.string().default("category"),
   allPassed: z.boolean().default(false),
@@ -545,13 +409,19 @@ function allItemValidationsPassed(ctx: any): boolean {
 }
 
 function scopePrompt(extraContext: string): string {
-  return `Plan and prepare the daml-tools test style migration.
+  return `Plan and prepare the daml-tools test style migration from the current repository state.
 
 Goal:
-Move broad externally observable behavior tests toward integration-style tests under crate tests/ directories. Keep unit-style tests in src only for specific private/internal contracts.
+Prefer integration-style tests for externally observable behavior. Keep unit-style tests in src only for specific private/internal contracts.
+
+Current inventory summary:
+- daml-parser broad diagnostics/recovery/span/projection behavior is already under crates/daml-parser/tests; remaining src tests need internal-contract verification only.
+- daml-syntax public SourceFile/SourceTokens/coordinate behavior is already under crates/daml-syntax/tests; remaining src tests should be LineIndex internals only.
+- daml-lint parser/IR, corpus, adversarial, detector, reporter, and custom runtime contracts are mostly integration-style; the likely current lapse is built-in rule behavior in src/detectors/builtin_script_tests.rs.
+- daml-fmt public library/layout behavior is already under crates/daml-fmt/tests; remaining src tests should be private helper contracts only.
 
 Behavior contract:
-- Read AGENTS.md and this repo's test/contribution docs before changing files in later tasks.
+- Read AGENTS.md and relevant crate docs before changing files in later tasks.
 - Each package/category work item must be completed as its own focused update.
 - After each implementation task, a separate validation task must run before the next implementation task starts.
 - Each implementation and validation task should leave the repository in a working state and commit a focused increment when it reaches one.
@@ -572,7 +442,7 @@ Final validation baseline:
 
 ${extraContext ? `Extra user context:\n${extraContext}\n` : ""}
 
-Return scope assumptions, risks, execution notes, and the definition of a working state that later tasks must preserve.`;
+Return assumptions, plannedChanges, risks, execution notes, and the working-state definition that later tasks must preserve.`;
 }
 
 function implementationPrompt(item: WorkItem, index: number, prior: unknown, extraContext: string): string {
@@ -610,8 +480,9 @@ Execution rules:
 - Preserve existing behavior; this workflow is about test placement and contract clarity, not feature changes.
 - Run quick focused checks as needed before handing off, but do not perform the separate validation task's role here.
 - If you leave any tests in src, record the exact file and why they are specific internal contracts.
+- If the current repo already satisfies this item, make no code change, report the evidence, and still leave the repo clean.
 - If blocked or uncertain, stop and report blockers; do not guess.
-- Commit the focused update if the repo is in a working state, following Conventional Commit rules.
+- Commit the focused update if the repo is in a working state and files changed, following Conventional Commit rules.
 - Do not push or open a PR.
 
 ${extraContext ? `Extra user context:\n${extraContext}\n` : ""}

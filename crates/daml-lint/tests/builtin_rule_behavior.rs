@@ -1,14 +1,23 @@
-use super::script;
-use crate::detector::{Detector, Severity};
-use crate::parser::parse_daml;
+//! Integration tests for shipped built-in JavaScript rule detector behavior.
+
+#![cfg(feature = "js-runtime")]
+#![allow(clippy::unwrap_used)]
+
+use daml_lint::detector::{Detector, Severity};
+use daml_lint::detectors::create_builtin_detectors;
+use daml_lint::parser::parse_daml_with_diagnostics;
 use std::path::Path;
 
-fn load_rule(name: &str) -> Box<dyn Detector> {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("rules")
-        .join(name);
-    let source = std::fs::read_to_string(&path).unwrap();
-    script::load_script_source(&path.display().to_string(), &source).unwrap()
+fn builtin_detector(rule_stem: &str) -> Box<dyn Detector> {
+    create_builtin_detectors()
+        .into_iter()
+        .find(|detector| detector.name() == rule_stem)
+        .unwrap_or_else(|| panic!("missing built-in detector {rule_stem}"))
+}
+
+fn load_rule(file_name: &str) -> Box<dyn Detector> {
+    let rule_stem = file_name.strip_suffix(".js").unwrap_or(file_name);
+    builtin_detector(rule_stem)
 }
 
 fn assert_rule_findings(
@@ -17,7 +26,7 @@ fn assert_rule_findings(
     file: &Path,
     script_detector: &dyn Detector,
 ) {
-    let module = parse_daml(source, file);
+    let module = parse_daml_with_diagnostics(source, file).module;
     let findings = script_detector.detect(&module);
     let expected_count = expected_count(script_detector.name(), case_name);
     assert_eq!(

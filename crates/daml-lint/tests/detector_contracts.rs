@@ -97,3 +97,26 @@ fn findings_are_sorted_by_explicit_severity_ranking() {
     assert_eq!(findings[1].severity, Severity::High);
     assert_eq!(findings[2].severity, Severity::Medium);
 }
+
+#[cfg(feature = "js-runtime")]
+#[test]
+fn returns_none_when_builtin_detector_names_are_unique() {
+    use daml_lint::detector::find_duplicate_detector_name;
+    use daml_lint::detectors::create_builtin_detectors;
+
+    assert_eq!(
+        find_duplicate_detector_name(&create_builtin_detectors()),
+        None
+    );
+}
+
+#[cfg(feature = "js-runtime")]
+#[test]
+fn returns_duplicate_builtin_detector_name() {
+    use daml_lint::detector::find_duplicate_detector_name;
+    use daml_lint::detectors::create_builtin_detectors;
+
+    let mut doubled = create_builtin_detectors();
+    doubled.extend(create_builtin_detectors());
+    assert!(find_duplicate_detector_name(&doubled).is_some());
+}
