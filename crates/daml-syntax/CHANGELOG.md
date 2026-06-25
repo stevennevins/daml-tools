@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0](https://github.com/stevennevins/daml-tools/compare/daml-syntax-v0.7.0...daml-syntax-v0.8.0) - 2026-06-25
+
+### Added
+
+- *(api)* [**breaking**] add typed coordinate error reporting with `CoordinateRangeError`, `CoordinateRangeErrorKind`, and `InvalidOneBasedCoordinate`.
+- *(api)* add `Utf16Range` so JavaScript-style UTF-16 ranges are not represented as ambiguous offset pairs.
+- *(api)* add explicit `From`/`TryFrom` conversions and inherent `get` methods for coordinate newtypes.
+
+### Changed
+
+- *(api)* [**breaking**] remove the shared `Coordinate` trait; use each coordinate type's inherent `get` method or `usize::from(...)`.
+- *(api)* [**breaking**] `LineIndex::utf16_col` now returns `Result<Utf16Offset, CoordinateRangeError>` instead of clamping out-of-range line/column inputs.
+- *(api)* [**breaking**] `LineIndex::utf16_range` now returns `Utf16Range` instead of an unnamed offset tuple.
+- *(api)* [**breaking**] diagnostics now report end-column state with typed variants instead of a nullable end column.
+
 ## [0.7.0](https://github.com/stevennevins/daml-tools/compare/daml-syntax-v0.6.0...daml-syntax-v0.7.0) - 2026-06-24
 
 ### Added
