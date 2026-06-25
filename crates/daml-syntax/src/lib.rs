@@ -603,12 +603,12 @@ mod readme_examples {
     //! ```
 }
 
+// Unit tests for [`LineIndex`] mapping internals stay here; [`SourceFile`],
+// [`SourceTokens`], diagnostics, and span-conversion behavior live in integration tests.
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use daml_parser::ast_span::render_from_ast;
-    use daml_parser::lexer::render_lossless;
 
     #[test]
     fn maps_empty_source_to_first_line() {
@@ -732,141 +732,5 @@ mod tests {
         assert_ne!(byte_pos.column.get(), char_pos.column.get());
         assert_eq!(byte_pos.column, ByteColumn::new(5));
         assert_eq!(char_pos.column, CharColumn::new(2));
-    }
-
-    #[test]
-    fn source_file_exposes_parser_pipeline_facts() {
-        let source = "module M where\nfoo : Int\nfoo = 1\n";
-        let file = SourceFile::parse(source);
-
-        assert_eq!(file.source(), source);
-        assert_eq!(file.module().name, "M");
-        assert!(file.diagnostics().is_empty());
-        assert!(!file.tokens().is_empty());
-        assert!(!file.laid_out_tokens().is_empty());
-        assert_eq!(
-            render_lossless(source, file.tokens(), file.trivia()).as_deref(),
-            Ok(source)
-        );
-        assert_eq!(
-            render_from_ast(source, file.module(), file.trivia()).as_deref(),
-            Ok(source)
-        );
-    }
-
-    #[test]
-    fn source_tokens_exposes_lex_only_pipeline_facts() {
-        let source = "module M where\nfoo : Int\nfoo = 1\n";
-        let tokens = SourceTokens::lex(source);
-
-        assert!(tokens.lex_errors().is_empty());
-        assert!(!tokens.tokens().is_empty());
-        assert!(!tokens.laid_out_tokens().is_empty());
-        assert_eq!(
-            render_lossless(source, tokens.tokens(), tokens.trivia()).as_deref(),
-            Ok(source)
-        );
-    }
-
-    #[test]
-    fn malformed_source_keeps_source_file_and_diagnostics() {
-        let file = SourceFile::parse("module M where\nfoo = \"unterminated\nbar = 1\n");
-
-        assert_eq!(file.module().name, "M");
-        assert!(file
-            .diagnostics()
-            .iter()
-            .any(|diagnostic| diagnostic.category() == DiagnosticCategory::Lex));
-    }
-
-    #[test]
-    fn converts_parser_spans_to_text_ranges() {
-        let file = SourceFile::parse("module M where\nfoo = 1\n");
-        let source_len = file.source().len();
-        let range = file.parser_span_to_text_range(ParserSpan::new(0, source_len));
-
-        assert_eq!(
-            range,
-            TextRange::new(0.into(), source_len.try_into().unwrap())
-        );
-    }
-
-    #[test]
-    fn try_parser_span_to_text_range_rejects_out_of_bounds_spans() {
-        let source = "module M where\nfoo = 1\n";
-        let err = try_parser_span_to_text_range(source, ParserSpan::new(0, source.len() + 1))
-            .unwrap_err();
-        assert_eq!(err.kind(), ParserSpanToTextRangeErrorKind::OutOfBounds);
-        assert_eq!(
-            err.to_string(),
-            format!(
-                "parser span [0, {}) is invalid for source length {}",
-                source.len() + 1,
-                source.len()
-            )
-        );
-        assert_eq!(err.source_len(), source.len());
-        assert_eq!(err.span_start(), ByteOffset::new(0));
-        assert_eq!(err.span_end(), ByteOffset::new(source.len() + 1));
-        assert_eq!(err.span_start_usize(), 0);
-        assert_eq!(err.span_end_usize(), source.len() + 1);
-    }
-
-    #[test]
-    fn try_parser_span_to_text_range_reports_inverted_spans() {
-        let source = "abc";
-        let err = try_parser_span_to_text_range(source, ParserSpan::new(2, 1)).unwrap_err();
-        assert_eq!(err.kind(), ParserSpanToTextRangeErrorKind::InvertedSpan);
-        assert_eq!(
-            err.to_string(),
-            "parser span [2, 1) is invalid for source length 3"
-        );
-        assert_eq!(err.source_len(), source.len());
-        assert_eq!(err.span_start(), ByteOffset::new(2));
-        assert_eq!(err.span_end(), ByteOffset::new(1));
-    }
-
-    #[test]
-    fn try_parser_span_to_text_range_rejects_non_utf8_boundary_spans() {
-        let source = "a😀b";
-        let err = try_parser_span_to_text_range(source, ParserSpan::new(1, 2)).unwrap_err();
-        assert_eq!(err.kind(), ParserSpanToTextRangeErrorKind::NonUtf8Boundary);
-
-        assert_eq!(
-            err.to_string(),
-            "parser span [1, 2) is invalid for source length 6"
-        );
-        assert_eq!(err.source_len(), source.len());
-        assert_eq!(err.span_start(), ByteOffset::new(1));
-        assert_eq!(err.span_end(), ByteOffset::new(2));
-    }
-
-    #[test]
-    fn diagnostics_are_read_through_accessors_not_field_literals() {
-        let file = SourceFile::parse("module M where\nfoo = \"unterminated\n");
-
-        let diagnostic = file
-            .diagnostics()
-            .first()
-            .expect("malformed source should surface diagnostics");
-        assert_eq!(diagnostic.category(), DiagnosticCategory::Lex);
-        assert!(!diagnostic.message().is_empty());
-        assert!(diagnostic.range().start() <= diagnostic.range().end());
-        assert!(diagnostic.line().get() >= 1);
-        assert!(diagnostic.column().get() >= 1);
-    }
-
-    #[test]
-    fn utf16_col_requires_non_zero_line_and_column() {
-        assert!(LineNumber::try_new(0).is_none());
-        assert!(ByteColumn::try_new(0).is_none());
-    }
-
-    #[test]
-    fn try_parser_span_to_text_range_succeeds_for_valid_span() {
-        let source = "module M where\nfoo = 1\n";
-        let range = try_parser_span_to_text_range(source, ParserSpan::new(0, 5))
-            .expect("span should be valid");
-        assert_eq!(range, TextRange::new(0.into(), 5.into()));
     }
 }
