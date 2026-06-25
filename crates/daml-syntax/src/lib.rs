@@ -733,4 +733,10 @@ mod tests {
         assert_eq!(byte_pos.column, ByteColumn::new(5));
         assert_eq!(char_pos.column, CharColumn::new(2));
     }
+
+    #[test]
+    fn utf16_col_requires_non_zero_line_and_column() {
+        assert!(LineNumber::try_new(0).is_none());
+        assert!(ByteColumn::try_new(0).is_none());
+    }
 }

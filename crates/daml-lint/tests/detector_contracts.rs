@@ -5,6 +5,21 @@
 use daml_lint::detector::{Finding, FindingLocation, Severity};
 use std::path::PathBuf;
 
+fn finding() -> Finding {
+    Finding::new(
+        "unused-foo",
+        Severity::High,
+        FindingLocation::new("foo.daml", 10, 4),
+        "consider removing",
+        "foo",
+    )
+}
+
+#[test]
+fn finding_is_comparable() {
+    assert_eq!(finding(), finding());
+}
+
 #[test]
 fn finding_new_populates_public_fields_from_named_location() {
     let finding = Finding::new(
@@ -42,4 +57,43 @@ fn severity_rank_is_explicitly_risk_ordered() {
     assert!(!Severity::Medium.meets_or_exceeds(Severity::High));
     assert!(!Severity::Low.meets_or_exceeds(Severity::High));
     assert!(!Severity::Info.meets_or_exceeds(Severity::High));
+}
+
+#[test]
+fn findings_are_sorted_by_explicit_severity_ranking() {
+    let mut findings = [
+        Finding::new(
+            "rule-medium",
+            Severity::Medium,
+            FindingLocation::new("b.daml", 10, 4),
+            "medium finding",
+            "evidence",
+        ),
+        Finding::new(
+            "rule-critical",
+            Severity::Critical,
+            FindingLocation::new("a.daml", 3, 1),
+            "critical finding",
+            "evidence",
+        ),
+        Finding::new(
+            "rule-high",
+            Severity::High,
+            FindingLocation::new("a.daml", 5, 2),
+            "high finding",
+            "evidence",
+        ),
+    ];
+
+    findings.sort_by(|a, b| {
+        b.severity
+            .rank()
+            .cmp(&a.severity.rank())
+            .then_with(|| a.file.cmp(&b.file))
+            .then_with(|| a.line.cmp(&b.line))
+    });
+
+    assert_eq!(findings[0].severity, Severity::Critical);
+    assert_eq!(findings[1].severity, Severity::High);
+    assert_eq!(findings[2].severity, Severity::Medium);
 }

@@ -45,6 +45,8 @@ fn output_format_parses_known_values_and_reports_unknown_with_display_text() {
 
 #[test]
 fn json_and_sarif_clean_output_has_no_parse_errors() {
+    assert!(reporter::format_findings(&[], &[], OutputFormat::Markdown).contains("No findings."));
+
     let json: serde_json::Value =
         serde_json::from_str(&reporter::format_findings(&[], &[], OutputFormat::Json)).unwrap();
     assert_eq!(json["parseErrors"].as_array().unwrap().len(), 0);
@@ -56,6 +58,14 @@ fn json_and_sarif_clean_output_has_no_parse_errors() {
         sarif["runs"][0]["invocations"][0]["executionSuccessful"],
         true
     );
+}
+
+#[test]
+fn markdown_exposes_parse_errors() {
+    let out = reporter::format_findings(&[], &[parse_err()], OutputFormat::Markdown);
+    assert!(out.contains("Parse Errors (1)"));
+    assert!(out.contains("unterminated string literal"));
+    assert!(!out.contains("\nNo findings.\n"));
 }
 
 #[test]
