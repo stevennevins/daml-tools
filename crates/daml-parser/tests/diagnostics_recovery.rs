@@ -2,7 +2,10 @@
 //! positions, and the guarantee that a malformed item does not abort later
 //! declarations.
 
-use daml_parser::ast::{Decl, DiagnosticCategory, TypeAnnotation};
+use daml_parser::ast::{
+    Decl, DiagnosticCategory, ExpectedToken, ParseDiagnosticKind, TypeAnnotation,
+    TypeAnnotationContext,
+};
 use daml_parser::parse::{parse_module, MAX_RECURSION_DEPTH};
 
 const TEST_RECURSION_DEPTH: usize = MAX_RECURSION_DEPTH as usize + 172;
@@ -23,8 +26,10 @@ fn skipped_declaration_does_not_abort_later_template() {
                where\n    signatory o\n";
     let (module, ds) = parse_module(src).into_parts();
     assert!(
-        ds.iter()
-            .any(|d| d.category == DiagnosticCategory::SkippedDecl),
+        ds.iter().any(
+            |d| matches!(d.kind(), ParseDiagnosticKind::SkippedDeclaration(_))
+                && d.category == DiagnosticCategory::SkippedDecl
+        ),
         "expected a skipped-declaration diagnostic, got {:?}",
         ds.iter()
             .map(|d| (d.category, &d.message))
@@ -49,8 +54,10 @@ fn legacy_controller_can_syntax_is_unsupported() {
                Foo : ()\n        do pure ()\n";
     let ds = diags(src);
     assert!(
-        ds.iter()
-            .any(|d| d.category == DiagnosticCategory::UnsupportedSyntax),
+        ds.iter().any(
+            |d| matches!(d.kind(), ParseDiagnosticKind::UnsupportedSyntax(_))
+                && d.category == DiagnosticCategory::UnsupportedSyntax
+        ),
         "legacy controller-can must be flagged unsupported, got {:?}",
         ds.iter()
             .map(|d| (d.category, &d.message))
@@ -99,6 +106,8 @@ template T
         .find(|d| {
             d.message == "malformed field type annotation"
                 && d.category == DiagnosticCategory::Malformed
+                && d.kind()
+                    == &ParseDiagnosticKind::MalformedTypeAnnotation(TypeAnnotationContext::Field)
         })
         .or_else(|| {
             ds.iter().find(|d| {
@@ -224,8 +233,10 @@ fn deep_nesting_emits_recursion_limit_and_does_not_panic() {
     );
     let ds = diags(&src);
     assert!(
-        ds.iter()
-            .any(|d| d.category == DiagnosticCategory::RecursionLimit),
+        ds.iter().any(
+            |d| matches!(d.kind(), ParseDiagnosticKind::RecursionLimit { .. })
+                && d.category == DiagnosticCategory::RecursionLimit
+        ),
         "deep nesting must report recursion-limit, got categories {:?}",
         ds.iter().map(|d| d.category).collect::<Vec<_>>()
     );
@@ -270,7 +281,7 @@ fn lex_error_span_is_tab_correct() {
     let ds = diags(src);
     let lex = ds
         .iter()
-        .find(|d| d.category == DiagnosticCategory::Lex)
+        .find(|d| matches!(d.kind(), ParseDiagnosticKind::Lex(_)))
         .expect("lexical-error diagnostic");
     assert_eq!(
         &src[lex.span.start_usize()..lex.span.start_usize() + 1],
@@ -287,7 +298,7 @@ fn diagnostic_span_pins_the_offending_token() {
     let ds = diags(src);
     let skipped = ds
         .iter()
-        .find(|d| d.category == DiagnosticCategory::SkippedDecl)
+        .find(|d| matches!(d.kind(), ParseDiagnosticKind::SkippedDeclaration(_)))
         .expect("skipped-declaration diagnostic");
     assert!(
         skipped.span.end > skipped.span.start,
@@ -358,4 +369,30 @@ fn category_tags_are_stable_kebab_case() {
         "recursion-limit"
     );
     assert_eq!(DiagnosticCategory::Lex.as_str(), "lexical-error");
+}
+
+#[test]
+fn expected_token_diagnostics_have_typed_reasons() {
+    let src = "module M where\nf = if x then 1\n";
+    let ds = diags(src);
+    let missing_else = ds
+        .iter()
+        .find(|d| d.kind() == &ParseDiagnosticKind::ExpectedToken(ExpectedToken::ElseKeyword))
+        .expect("missing else diagnostic");
+    assert_eq!(missing_else.category(), DiagnosticCategory::Malformed);
+    assert_eq!(missing_else.message(), "expected 'else'");
+}
+
+#[test]
+fn lexical_diagnostic_preserves_lex_error_kind() {
+    let src = "module M where\nf = \"bad \\q\"\n";
+    let ds = diags(src);
+    let diagnostic = ds
+        .iter()
+        .find(|d| matches!(d.kind(), ParseDiagnosticKind::Lex(_)))
+        .expect("typed lexical diagnostic");
+    assert!(matches!(
+        diagnostic.kind(),
+        ParseDiagnosticKind::Lex(daml_parser::lexer::LexErrorKind::InvalidEscapeSequence('q'))
+    ));
 }

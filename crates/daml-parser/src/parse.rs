@@ -5,10 +5,11 @@
 //! virtual semicolon. The parser never panics and never aborts the file.
 
 use crate::ast::{
-    Alt, Binding, ChoiceDecl, Consuming, Decl, DiagnosticCategory, DoStmt, Equation, Expr,
-    FieldAssign, FieldDecl, FunctionDecl, Identifier, ImportDecl, ImportStyle, InterfaceDecl,
-    InterfaceInstanceDecl, LitKind, Module, ModuleName, Operator, ParseDiagnostic, Pat, Span,
-    TemplateBodyDecl, TemplateDecl, Type, TypeAnnotation,
+    Alt, Binding, ChoiceDecl, Consuming, Decl, DoStmt, Equation, ExpectedToken, Expr, FieldAssign,
+    FieldDecl, FunctionDecl, Identifier, ImportDecl, ImportStyle, InterfaceDecl,
+    InterfaceInstanceDecl, LitKind, MalformedSyntaxKind, Module, ModuleName, Operator,
+    ParseDiagnostic, ParseDiagnosticKind, Pat, SkippedDeclarationReason, Span, TemplateBodyDecl,
+    TemplateDecl, Type, TypeAnnotation, TypeAnnotationContext, UnsupportedSyntaxKind,
 };
 use crate::layout::resolve_layout;
 use crate::lexer::{lex, Pos, Token, TokenKind};
@@ -140,12 +141,12 @@ pub fn parse_module(source: &str) -> ParseModuleResult {
             .into_iter()
             .map(|e| {
                 let range = e.byte_range_in(source);
-                ParseDiagnostic {
-                    message: e.to_string(),
-                    pos: e.pos,
-                    span: crate::ast::Span::from_usize(range.start, range.end),
-                    category: DiagnosticCategory::Lex,
-                }
+                ParseDiagnostic::new(
+                    ParseDiagnosticKind::Lex(e.kind.clone()),
+                    e.to_string(),
+                    e.pos,
+                    crate::ast::Span::from_usize(range.start, range.end),
+                )
             })
             .collect(),
     };
@@ -168,11 +169,16 @@ pub fn parse_module(source: &str) -> ParseModuleResult {
 /// ```
 /// use daml_parser::parse::parse_module_strict;
 ///
-/// let module = parse_module_strict("module M where\nfoo : Int\nfoo = 1\n").unwrap();
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let module = parse_module_strict("module M where\nfoo : Int\nfoo = 1\n")?;
 /// assert_eq!(module.name, "M");
 ///
-/// let err = parse_module_strict("module M where\n%%% junk\n").unwrap_err();
-/// assert!(!err.diagnostics().is_empty());
+/// match parse_module_strict("module M where\n%%% junk\n") {
+///     Ok(_) => panic!("junk declaration should fail strict parsing"),
+///     Err(err) => assert!(!err.diagnostics().is_empty()),
+/// }
+/// # Ok(())
+/// # }
 /// ```
 ///
 /// # Errors
@@ -305,30 +311,31 @@ impl Parser {
         }
     }
 
-    /// Emit a `Malformed` diagnostic at the current token (the common case).
-    fn diag(&mut self, message: impl Into<String>) {
-        self.diag_cat(DiagnosticCategory::Malformed, message);
+    /// Emit an expected-token diagnostic at the current token.
+    fn diag_expected(&mut self, expected: ExpectedToken, message: impl Into<String>) {
+        self.diag_kind(ParseDiagnosticKind::ExpectedToken(expected), message);
     }
 
-    /// Emit a diagnostic with an explicit recovery category. The span is the
-    /// current token's byte extent (the offending token), so consumers get an
-    /// end position, not just a start.
-    fn diag_cat(&mut self, category: DiagnosticCategory, message: impl Into<String>) {
+    /// Emit a malformed-syntax diagnostic at the current token.
+    fn diag_malformed(&mut self, kind: MalformedSyntaxKind, message: impl Into<String>) {
+        self.diag_kind(ParseDiagnosticKind::MalformedSyntax(kind), message);
+    }
+
+    /// Emit a diagnostic with an explicit typed recovery reason. The span is
+    /// the current token's byte extent (the offending token), so consumers get
+    /// an end position, not just a start.
+    fn diag_kind(&mut self, kind: ParseDiagnosticKind, message: impl Into<String>) {
         let pos = self.pos();
         let span = self.cur_span();
-        self.diags.push(ParseDiagnostic {
-            message: message.into(),
-            pos,
-            span,
-            category,
-        });
+        self.diags
+            .push(ParseDiagnostic::new(kind, message, pos, span));
     }
 
     fn parse_type_annotation(
         &mut self,
         type_start: usize,
         type_end: usize,
-        context: &'static str,
+        context: TypeAnnotationContext,
     ) -> TypeAnnotation {
         let type_start = type_start.min(self.toks.len());
         let type_end = type_end.min(self.toks.len());
@@ -345,12 +352,12 @@ impl Parser {
             Some(ty) => TypeAnnotation::Present(ty),
             None => {
                 let span = self.span_of_token_range(type_start, type_end);
-                self.diags.push(ParseDiagnostic {
-                    message: format!("malformed {context} type annotation"),
-                    pos: self.pos_of_token(type_start),
+                self.diags.push(ParseDiagnostic::new(
+                    ParseDiagnosticKind::MalformedTypeAnnotation(context),
+                    format!("malformed {} type annotation", context.as_str()),
+                    self.pos_of_token(type_start),
                     span,
-                    category: DiagnosticCategory::Malformed,
-                });
+                ));
                 TypeAnnotation::Malformed { span }
             }
         }
@@ -509,7 +516,10 @@ impl Parser {
                 self.skip_balanced_parens();
             }
             if !self.eat_keyword("where") {
-                self.diag("expected 'where' after module header");
+                self.diag_expected(
+                    ExpectedToken::WhereAfterModuleHeader,
+                    "expected 'where' after module header",
+                );
             }
             header = self.node_span(header_start);
         }
@@ -735,8 +745,10 @@ impl Parser {
             // Top-level pattern binding: `[a, b, c] = ...`, `(x, y) = ...`.
             Some(TokenKind::LParen | TokenKind::LBracket) => {
                 if self.binding().is_none() {
-                    self.diag_cat(
-                        DiagnosticCategory::SkippedDecl,
+                    self.diag_kind(
+                        ParseDiagnosticKind::SkippedDeclaration(
+                            SkippedDeclarationReason::TopLevelPatternBinding,
+                        ),
                         "unparseable top-level pattern binding",
                     );
                 }
@@ -748,8 +760,10 @@ impl Parser {
                 });
             }
             _ => {
-                self.diag_cat(
-                    DiagnosticCategory::SkippedDecl,
+                self.diag_kind(
+                    ParseDiagnosticKind::SkippedDeclaration(
+                        SkippedDeclarationReason::UnrecognizedDeclaration,
+                    ),
                     format!("unrecognized declaration: {:?}", self.peek()),
                 );
                 self.skip_to_item_end();
@@ -786,7 +800,10 @@ impl Parser {
                 }
             }
             _ => {
-                self.diag("expected module name after 'import'");
+                self.diag_expected(
+                    ExpectedToken::ModuleNameAfterImport,
+                    "expected module name after 'import'",
+                );
                 return None;
             }
         };
@@ -934,13 +951,16 @@ impl Parser {
                 }
             }
             if names.is_empty() || !self.eat_op(":") {
-                self.diag("expected 'name : Type' field");
+                self.diag_expected(
+                    ExpectedToken::FieldNameTypePair,
+                    "expected 'name : Type' field",
+                );
                 self.skip_to_item_end();
                 continue;
             }
             let ty_start = self.i;
             self.skip_to_item_end();
-            let ty = self.parse_type_annotation(ty_start, self.i, "field");
+            let ty = self.parse_type_annotation(ty_start, self.i, TypeAnnotationContext::Field);
             // The type is shared by all names but sits after the last one, so
             // only the last field can span `name : Type` without overlapping a
             // sibling; earlier names of `x, y : T` stay name-only. daml-fmt
@@ -1039,7 +1059,7 @@ impl Parser {
                 let ty = if self.eat_op(":") {
                     let ty_start = self.i;
                     self.skip_to_item_end();
-                    self.parse_type_annotation(ty_start, self.i, "key")
+                    self.parse_type_annotation(ty_start, self.i, TypeAnnotationContext::Key)
                 } else {
                     // The expression parser consumes `: Type` annotations;
                     // recover the key type from the last top-level colon.
@@ -1054,7 +1074,7 @@ impl Parser {
                         }
                     }
                     let ty = colon.map_or(TypeAnnotation::Absent, |j| {
-                        self.parse_type_annotation(j + 1, self.i, "key")
+                        self.parse_type_annotation(j + 1, self.i, TypeAnnotationContext::Key)
                     });
                     self.skip_to_item_end();
                     ty
@@ -1104,8 +1124,10 @@ impl Parser {
                 // Legacy Daml 1.x `controller <party> can` choice blocks are
                 // not analyzed — fail loud instead of silently dropping the
                 // choices inside.
-                self.diag_cat(
-                    DiagnosticCategory::UnsupportedSyntax,
+                self.diag_kind(
+                    ParseDiagnosticKind::UnsupportedSyntax(
+                        UnsupportedSyntaxKind::LegacyControllerCan,
+                    ),
                     "legacy 'controller ... can' syntax is not supported; \
                      choices inside this block are not analyzed",
                 );
@@ -1152,7 +1174,7 @@ impl Parser {
         let return_ty = if self.eat_op(":") {
             let ty_start = self.i;
             self.skip_type_tokens();
-            self.parse_type_annotation(ty_start, self.i, "choice")
+            self.parse_type_annotation(ty_start, self.i, TypeAnnotationContext::Choice)
         } else {
             TypeAnnotation::Absent
         };
@@ -1331,7 +1353,7 @@ impl Parser {
                                 ty: self.parse_type_annotation(
                                     ty_start,
                                     self.i,
-                                    "interface method",
+                                    TypeAnnotationContext::InterfaceMethod,
                                 ),
                                 pos: mpos,
                                 span: Span::from_usize(mstart, self.end_byte().max(mstart)),
@@ -1366,7 +1388,10 @@ impl Parser {
         let for_template = if self.eat_keyword("for") {
             self.upper_name().map_or_else(
                 || {
-                    self.diag("interface instance missing template name after 'for'");
+                    self.diag_expected(
+                        ExpectedToken::TemplateNameAfterInterfaceInstanceFor,
+                        "interface instance missing template name after 'for'",
+                    );
                     None
                 },
                 Some,
@@ -1459,7 +1484,7 @@ impl Parser {
             self.eat_op(":");
             let ty_start = self.i;
             self.skip_to_item_end();
-            let ty = self.parse_type_annotation(ty_start, self.i, "function");
+            let ty = self.parse_type_annotation(ty_start, self.i, TypeAnnotationContext::Function);
             return Some(Decl::Function(FunctionDecl {
                 name,
                 ty,
@@ -1507,7 +1532,10 @@ impl Parser {
                 | Some(
                     TokenKind::VSemi | TokenKind::VRBrace | TokenKind::Semi | TokenKind::RBrace,
                 ) => {
-                    self.diag(format!("could not parse equation for '{name}'"));
+                    self.diag_malformed(
+                        MalformedSyntaxKind::FunctionEquation,
+                        format!("could not parse equation for '{name}'"),
+                    );
                     return None;
                 }
                 _ => {}
@@ -1515,7 +1543,10 @@ impl Parser {
             match self.pattern_atom() {
                 Some(p) => params.push(p),
                 None => {
-                    self.diag(format!("bad parameter pattern in '{name}'"));
+                    self.diag_malformed(
+                        MalformedSyntaxKind::FunctionParameterPattern,
+                        format!("bad parameter pattern in '{name}'"),
+                    );
                     return None;
                 }
             }
@@ -1563,14 +1594,17 @@ impl Parser {
                 }
             };
             if !self.eat_op("=") {
-                self.diag("expected '=' after guard");
+                self.diag_expected(ExpectedToken::EqualsAfterGuard, "expected '=' after guard");
                 return None;
             }
             let e = self.expr();
             guards.push((g, e));
         }
         if guards.is_empty() {
-            self.diag("expected '=' or guarded right-hand side in equation");
+            self.diag_expected(
+                ExpectedToken::EqualsOrGuardedRightHandSide,
+                "expected '=' or guarded right-hand side in equation",
+            );
             None
         } else {
             let first = guards[0].1.clone();
@@ -2043,8 +2077,10 @@ impl Parser {
             // report it so the degraded region is not silently mistaken for
             // unsupported syntax. `skip_to_item_end` below consumes the rest of
             // the item, so this trips about once per affected declaration.
-            self.diag_cat(
-                DiagnosticCategory::RecursionLimit,
+            self.diag_kind(
+                ParseDiagnosticKind::RecursionLimit {
+                    limit: MAX_RECURSION_DEPTH,
+                },
                 "expression nesting too deep; truncated to raw text",
             );
             let start = self.i;
@@ -2358,11 +2394,17 @@ impl Parser {
             let pos = base.pos();
             self.bump(); // '.'
             let Some(field_tok) = self.bump() else {
-                self.diag("expected projection field after '.'");
+                self.diag_expected(
+                    ExpectedToken::ProjectionFieldAfterDot,
+                    "expected projection field after '.'",
+                );
                 return base;
             };
             let TokenKind::LowerId { qualifier, name } = field_tok.kind else {
-                self.diag("expected projection field after '.'");
+                self.diag_expected(
+                    ExpectedToken::ProjectionFieldAfterDot,
+                    "expected projection field after '.'",
+                );
                 return base;
             };
             let field = Expr::Var {
@@ -2510,7 +2552,7 @@ impl Parser {
         let cond = self.expr();
         self.eat(&TokenKind::VSemi); // DoAndIfThenElse style
         if !self.eat_keyword("then") {
-            self.diag("expected 'then'");
+            self.diag_expected(ExpectedToken::ThenKeyword, "expected 'then'");
             return Some(Expr::Error {
                 raw: format!("if {}", cond.render()),
                 pos,
@@ -2520,7 +2562,7 @@ impl Parser {
         let then_branch = self.expr();
         self.eat(&TokenKind::VSemi);
         if !self.eat_keyword("else") {
-            self.diag("expected 'else'");
+            self.diag_expected(ExpectedToken::ElseKeyword, "expected 'else'");
             return Some(Expr::Error {
                 raw: format!("if {} then {}", cond.render(), then_branch.render()),
                 pos,
@@ -2543,7 +2585,10 @@ impl Parser {
         self.bump(); // case
         let scrutinee = self.expr_no_do();
         if !self.eat_keyword("of") {
-            self.diag("expected 'of' in case expression");
+            self.diag_expected(
+                ExpectedToken::OfKeywordInCaseExpression,
+                "expected 'of' in case expression",
+            );
             return Some(Expr::Error {
                 raw: format!("case {}", scrutinee.render()),
                 pos,
@@ -2606,7 +2651,10 @@ impl Parser {
                     }
                 }
                 if !self.eat_op("->") {
-                    self.diag("expected '->' in guarded case alternative");
+                    self.diag_expected(
+                        ExpectedToken::ArrowInGuardedCaseAlternative,
+                        "expected '->' in guarded case alternative",
+                    );
                     return None;
                 }
                 let body = self.expr();
@@ -2622,7 +2670,10 @@ impl Parser {
             });
         }
         if !self.eat_op("->") {
-            self.diag("expected '->' in case alternative");
+            self.diag_expected(
+                ExpectedToken::ArrowInCaseAlternative,
+                "expected '->' in case alternative",
+            );
             return None;
         }
         let body = self.expr();
@@ -2843,7 +2894,10 @@ impl Parser {
             match self.pattern_atom() {
                 Some(p) => params.push(p),
                 None => {
-                    self.diag("bad lambda parameter");
+                    self.diag_malformed(
+                        MalformedSyntaxKind::LambdaParameter,
+                        "bad lambda parameter",
+                    );
                     let start = self.i;
                     self.skip_to_item_end();
                     return Some(Expr::Error {

@@ -78,8 +78,10 @@ use daml_parser::parse::{parse_module, parse_module_strict};
 let tolerant = parse_module("module M where\n%%% junk\n");
 assert!(!tolerant.diagnostics.is_empty());
 
-let strict = parse_module_strict("module M where\n%%% junk\n");
-assert!(strict.is_err());
+match parse_module_strict("module M where\n%%% junk\n") {
+    Ok(_) => panic!("junk declaration should fail strict parsing"),
+    Err(err) => assert!(!err.diagnostics().is_empty()),
+}
 ```
 
 ## Choosing a parser layer
@@ -142,9 +144,9 @@ let templates: Vec<_> = module
     .collect();
 
 assert!(!has_lex_errors);
-let (template_name, template_span) = templates
-    .first()
-    .expect("example source defines an Account template");
+let Some((template_name, template_span)) = templates.first() else {
+    panic!("example source defines an Account template");
+};
 
 assert_eq!(template_name.as_str(), "Account");
 ```
@@ -153,16 +155,19 @@ Every AST node that represents source text carries a 1-based `Pos` and a byte
 `Span`. Use spans when you need an exact source slice:
 
 ```rust
-let snippet = source
-    .get(template_span.range())
-    .expect("parser spans are UTF-8 boundaries");
+let Some(snippet) = source.get(template_span.range()) else {
+    panic!("parser spans are UTF-8 boundaries");
+};
 
 assert!(snippet.starts_with("template Account"));
 ```
 
 ## Diagnostics and partial structure
 
-`ParseDiagnostic::category` separates different kinds of recovery:
+Use `ParseDiagnostic::kind()` for machine-readable handling and
+`ParseDiagnostic::message()` for presentation. The stable
+`ParseDiagnostic::category()`/`DiagnosticCategory` value remains the coarse
+JSON/SARIF grouping:
 
 | Category | Meaning |
 |----------|---------|
@@ -171,6 +176,13 @@ assert!(snippet.starts_with("template Account"));
 | `SkippedDecl` | a top-level declaration could not be parsed and was skipped to the next item |
 | `UnsupportedSyntax` | the source used syntax this parser intentionally does not model yet |
 | `RecursionLimit` | deeply nested input exceeded the parser recursion bound and was degraded to raw text |
+
+Typed kinds preserve details that callers should not scrape from messages: for
+example `ParseDiagnosticKind::Lex(LexErrorKind::InvalidEscapeSequence('q'))`,
+`ParseDiagnosticKind::ExpectedToken(ExpectedToken::ElseKeyword)`,
+`ParseDiagnosticKind::MalformedTypeAnnotation(TypeAnnotationContext::Field)`,
+`ParseDiagnosticKind::UnsupportedSyntax(UnsupportedSyntaxKind::LegacyControllerCan)`,
+and `ParseDiagnosticKind::RecursionLimit { .. }`.
 
 Partial structure is explicit in the AST. For example:
 
@@ -197,12 +209,17 @@ the source:
 ```rust
 use daml_parser::lexer::{lex_with_trivia, render_lossless};
 
-let lexed = lex_with_trivia(source);
-let tokens = lexed.tokens;
-let trivia = lexed.trivia;
-let errors = lexed.errors;
-assert!(errors.is_empty());
-assert_eq!(render_lossless(source, &tokens, &trivia).unwrap(), source);
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let source = "module M where\nfoo : Int\nfoo = 1\n";
+    let lexed = lex_with_trivia(source);
+    let tokens = lexed.tokens;
+    let trivia = lexed.trivia;
+    let errors = lexed.errors;
+    assert!(errors.is_empty());
+    let rendered = render_lossless(source, &tokens, &trivia)?;
+    assert_eq!(rendered, source);
+    Ok(())
+}
 ```
 
 Use the AST-level oracle when you need to prove parsed node spans and trivia can
@@ -213,11 +230,16 @@ use daml_parser::ast_span::render_from_ast;
 use daml_parser::lexer::lex_with_trivia;
 use daml_parser::parse::parse_module;
 
-let lexed = lex_with_trivia(source);
-let trivia = lexed.trivia;
-let parsed = parse_module(source);
-let module = parsed.module;
-assert_eq!(render_from_ast(source, &module, &trivia).unwrap(), source);
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let source = "module M where\nfoo : Int\nfoo = 1\n";
+    let lexed = lex_with_trivia(source);
+    let trivia = lexed.trivia;
+    let parsed = parse_module(source);
+    let module = parsed.module;
+    let rendered = render_from_ast(source, &module, &trivia)?;
+    assert_eq!(rendered, source);
+    Ok(())
+}
 ```
 
 ## Layout-aware tokens

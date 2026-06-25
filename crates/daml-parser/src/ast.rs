@@ -744,6 +744,113 @@ impl DiagnosticCategory {
     }
 }
 
+/// Machine-readable reason a [`ParseDiagnostic`] fired.
+///
+/// Keep [`ParseDiagnostic::message`] for presentation. Match on this enum when
+/// downstream code needs stable behavior for recoverable parser failures.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ParseDiagnosticKind {
+    /// The lexer reported malformed source; the original lexical kind is
+    /// preserved so callers do not need to parse the human message.
+    Lex(crate::lexer::LexErrorKind),
+    /// The parser expected a specific token or token class and recovered.
+    ExpectedToken(ExpectedToken),
+    /// A type annotation was present but could not be parsed as a `Type`.
+    MalformedTypeAnnotation(TypeAnnotationContext),
+    /// A recognized construct was malformed in a way that is not only an
+    /// expected-token miss.
+    MalformedSyntax(MalformedSyntaxKind),
+    /// A whole declaration could not be parsed and was skipped.
+    SkippedDeclaration(SkippedDeclarationReason),
+    /// The source used syntax this parser intentionally does not model.
+    UnsupportedSyntax(UnsupportedSyntaxKind),
+    /// Expression or pattern nesting exceeded the parser recursion bound.
+    RecursionLimit { limit: u32 },
+}
+
+impl ParseDiagnosticKind {
+    /// Coarse diagnostic class retained for stable JSON/SARIF tags.
+    #[must_use]
+    pub const fn category(&self) -> DiagnosticCategory {
+        match self {
+            Self::Lex(_) => DiagnosticCategory::Lex,
+            Self::ExpectedToken(_)
+            | Self::MalformedTypeAnnotation(_)
+            | Self::MalformedSyntax(_) => DiagnosticCategory::Malformed,
+            Self::SkippedDeclaration(_) => DiagnosticCategory::SkippedDecl,
+            Self::UnsupportedSyntax(_) => DiagnosticCategory::UnsupportedSyntax,
+            Self::RecursionLimit { .. } => DiagnosticCategory::RecursionLimit,
+        }
+    }
+}
+
+/// Expected token or token class for a recoverable parser diagnostic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ExpectedToken {
+    WhereAfterModuleHeader,
+    ModuleNameAfterImport,
+    TemplateNameAfterInterfaceInstanceFor,
+    FieldNameTypePair,
+    EqualsAfterGuard,
+    EqualsOrGuardedRightHandSide,
+    ProjectionFieldAfterDot,
+    ThenKeyword,
+    ElseKeyword,
+    OfKeywordInCaseExpression,
+    ArrowInGuardedCaseAlternative,
+    ArrowInCaseAlternative,
+}
+
+/// The declaration context whose type annotation was malformed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TypeAnnotationContext {
+    Field,
+    Key,
+    Choice,
+    InterfaceMethod,
+    Function,
+}
+
+impl TypeAnnotationContext {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Field => "field",
+            Self::Key => "key",
+            Self::Choice => "choice",
+            Self::InterfaceMethod => "interface method",
+            Self::Function => "function",
+        }
+    }
+}
+
+/// Recoverable malformed syntax cases that are not just missing one token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum MalformedSyntaxKind {
+    FunctionEquation,
+    FunctionParameterPattern,
+    LambdaParameter,
+}
+
+/// Why a whole declaration was skipped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SkippedDeclarationReason {
+    TopLevelPatternBinding,
+    UnrecognizedDeclaration,
+}
+
+/// Unsupported syntax families surfaced by the parser.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum UnsupportedSyntaxKind {
+    LegacyControllerCan,
+}
+
 /// Parse diagnostic — never fatal under tolerant parsing.
 ///
 /// Under [`crate::parse::parse_module`] the scan continues. Strict callers that
@@ -752,6 +859,9 @@ impl DiagnosticCategory {
 /// [`crate::parse::ParseModuleError`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseDiagnostic {
+    /// Machine-readable reason for the diagnostic.
+    pub kind: ParseDiagnosticKind,
+    /// Human-readable presentation message. Use [`Self::kind`] for logic.
     pub message: String,
     pub pos: Pos,
     /// Byte span of the offending region. The end is the actionable addition
@@ -760,6 +870,51 @@ pub struct ParseDiagnostic {
     pub span: Span,
     pub category: DiagnosticCategory,
 }
+
+impl ParseDiagnostic {
+    #[must_use]
+    pub fn new(
+        kind: ParseDiagnosticKind,
+        message: impl Into<String>,
+        pos: Pos,
+        span: Span,
+    ) -> Self {
+        let category = kind.category();
+        Self {
+            kind,
+            message: message.into(),
+            pos,
+            span,
+            category,
+        }
+    }
+
+    /// Human-readable presentation message.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    /// Machine-readable diagnostic reason.
+    #[must_use]
+    pub const fn kind(&self) -> &ParseDiagnosticKind {
+        &self.kind
+    }
+
+    /// Coarse recovery category.
+    #[must_use]
+    pub const fn category(&self) -> DiagnosticCategory {
+        self.category
+    }
+}
+
+impl std::fmt::Display for ParseDiagnostic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.message.fmt(f)
+    }
+}
+
+impl std::error::Error for ParseDiagnostic {}
 
 impl Expr {
     #[must_use]
