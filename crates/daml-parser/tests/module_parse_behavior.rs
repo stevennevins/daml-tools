@@ -125,3 +125,121 @@ f = case do 1 of
         Expr::Error { .. }
     ));
 }
+
+fn get_function<'a>(module: &'a Module, name: &str) -> &'a FunctionDecl {
+    module
+        .decls
+        .iter()
+        .find_map(|d| match d {
+            Decl::Function(f) if f.name == name => Some(f),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("missing function declaration {name}"))
+}
+
+#[test]
+fn fixity_declarations_are_structured_not_unknown() {
+    let (module, diagnostics) = parse(
+        "module M where
+infixr 1 <=<, >=>
+infix 4 ===
+infixr 5 `Pair`
+",
+    );
+
+    assert!(diagnostics.is_empty());
+    assert_eq!(module.decls.len(), 3);
+    let Decl::Fixity(first) = &module.decls[0] else {
+        panic!("expected fixity declaration");
+    };
+    assert_eq!(first.assoc, FixityAssoc::InfixR);
+    assert_eq!(first.precedence, 1);
+    assert_eq!(first.operators.len(), 2);
+    assert!(matches!(
+        &first.operators[0],
+        FixityTarget::Operator(op) if op.as_str() == "<=<"
+    ));
+    assert!(matches!(
+        &first.operators[1],
+        FixityTarget::Operator(op) if op.as_str() == ">=>"
+    ));
+
+    let Decl::Fixity(second) = &module.decls[1] else {
+        panic!("expected fixity declaration");
+    };
+    assert_eq!(second.assoc, FixityAssoc::Infix);
+    assert_eq!(second.precedence, 4);
+
+    let Decl::Fixity(third) = &module.decls[2] else {
+        panic!("expected fixity declaration");
+    };
+    assert!(matches!(
+        &third.operators[0],
+        FixityTarget::Backtick(name) if name.as_str() == "Pair"
+    ));
+    assert!(
+        !module
+            .decls
+            .iter()
+            .any(|d| matches!(d, Decl::Unknown { .. })),
+        "stdlib-style fixity metadata must not degrade to Decl::Unknown"
+    );
+}
+
+#[test]
+fn operator_signatures_and_equations_are_function_decls() {
+    let (module, diagnostics) = parse(
+        "module M where
+(>=>) : Action m => (a -> m b) -> (b -> m c) -> (a -> m c)
+f >=> g = \\x -> f x >>= g
+(<=<) = flip (>=>)
+",
+    );
+
+    assert!(diagnostics.is_empty());
+    let ge = get_function(&module, ">=>");
+    assert!(ge.ty.as_type().is_some());
+    assert_eq!(ge.equations.len(), 1);
+    assert_eq!(ge.equations[0].params.len(), 2);
+    assert!(matches!(
+        &ge.equations[0].params[0],
+        Pat::Var { name, .. } if name.as_str() == "f"
+    ));
+    assert!(matches!(
+        &ge.equations[0].params[1],
+        Pat::Var { name, .. } if name.as_str() == "g"
+    ));
+
+    let le = get_function(&module, "<=<");
+    assert_eq!(le.equations.len(), 1);
+    assert!(le.equations[0].params.is_empty());
+    assert!(
+        !module
+            .decls
+            .iter()
+            .any(|d| matches!(d, Decl::Unknown { .. })),
+        "operator declarations must not degrade to Decl::Unknown"
+    );
+}
+
+#[test]
+fn pattern_synonyms_are_explicit_unsupported_syntax() {
+    let (module, diagnostics) = parse(
+        "module M where
+pattern Nil = []
+",
+    );
+
+    assert_eq!(module.decls.len(), 1);
+    let Decl::UnsupportedSyntax {
+        kind: UnsupportedSyntaxKind::PatternSynonym,
+        ..
+    } = &module.decls[0]
+    else {
+        panic!("pattern synonyms must surface as explicit unsupported syntax");
+    };
+    assert!(
+        diagnostics.is_empty(),
+        "explicit unsupported AST nodes should not make lossless corpus files diagnostically invalid"
+    );
+}

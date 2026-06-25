@@ -6,10 +6,11 @@
 
 use crate::ast::{
     Alt, Binding, ChoiceDecl, Consuming, Decl, DoStmt, Equation, ExpectedToken, Expr, FieldAssign,
-    FieldDecl, FunctionDecl, Identifier, ImportDecl, ImportStyle, InterfaceDecl,
-    InterfaceInstanceDecl, LitKind, MalformedSyntaxKind, Module, ModuleName, Operator,
-    ParseDiagnostic, ParseDiagnosticKind, Pat, SkippedDeclarationReason, Span, TemplateBodyDecl,
-    TemplateDecl, Type, TypeAnnotation, TypeAnnotationContext, UnsupportedSyntaxKind,
+    FieldDecl, FixityAssoc, FixityDecl, FixityTarget, FunctionDecl, Identifier, ImportDecl,
+    ImportStyle, InterfaceDecl, InterfaceInstanceDecl, LitKind, MalformedSyntaxKind, Module,
+    ModuleName, Operator, ParseDiagnostic, ParseDiagnosticKind, Pat, SkippedDeclarationReason,
+    Span, TemplateBodyDecl, TemplateDecl, Type, TypeAnnotation, TypeAnnotationContext,
+    UnsupportedSyntaxKind,
 };
 use crate::layout::resolve_layout;
 use crate::lexer::{lex, Pos, Token, TokenKind};
@@ -680,14 +681,28 @@ impl Parser {
                     });
                 }
             },
-            Some(t)
-                if matches!(
-                    t.keyword(),
-                    // Fixity declarations, class-default declarations, and
-                    // pattern synonyms have no IR surface.
-                    Some("infix" | "infixl" | "infixr" | "default" | "pattern")
-                ) =>
-            {
+            Some(t) if matches!(t.keyword(), Some("infix" | "infixl" | "infixr")) => {
+                if let Some(fixity) = self.fixity_decl() {
+                    decls.push(Decl::Fixity(fixity));
+                } else {
+                    self.skip_to_item_end();
+                    decls.push(Decl::Unknown {
+                        raw: self.slice_text(start),
+                        pos,
+                        span: self.node_span(start),
+                    });
+                }
+            }
+            Some(t) if t.is_keyword("pattern") => {
+                self.skip_to_item_end();
+                decls.push(Decl::UnsupportedSyntax {
+                    kind: UnsupportedSyntaxKind::PatternSynonym,
+                    raw: self.slice_text(start),
+                    pos,
+                    span: self.node_span(start),
+                });
+            }
+            Some(t) if t.is_keyword("default") => {
                 self.skip_to_item_end();
                 decls.push(Decl::Unknown {
                     raw: self.slice_text(start),
@@ -743,17 +758,22 @@ impl Parser {
                     });
                 }
             },
-            // Operator definition or signature: `(<=) = curry Lte`.
+            // Operator definition or signature: `(<=) = curry Lte`, `(>=>) : ...`.
             Some(TokenKind::LParen)
                 if matches!(self.peek_at(1), Some(TokenKind::Op(_)))
                     && self.peek_at(2) == Some(&TokenKind::RParen) =>
             {
-                self.skip_to_item_end();
-                decls.push(Decl::Unknown {
-                    raw: self.slice_text(start),
-                    span: self.node_span(start),
-                    pos,
-                });
+                match self.operator_function_item() {
+                    Some(d) => decls.push(d),
+                    None => {
+                        self.skip_to_item_end();
+                        decls.push(Decl::Unknown {
+                            raw: self.slice_text(start),
+                            span: self.node_span(start),
+                            pos,
+                        });
+                    }
+                }
             }
             // Top-level pattern binding: `[a, b, c] = ...`, `(x, y) = ...`.
             Some(TokenKind::LParen | TokenKind::LBracket) => {
@@ -1449,10 +1469,233 @@ impl Parser {
 
     // ----- functions -----------------------------------------------------
 
+    fn fixity_decl(&mut self) -> Option<FixityDecl> {
+        let pos = self.pos();
+        let start_i = self.i;
+        let assoc = match self.peek() {
+            Some(t) if t.is_keyword("infixr") => FixityAssoc::InfixR,
+            Some(t) if t.is_keyword("infixl") => FixityAssoc::InfixL,
+            Some(t) if t.is_keyword("infix") => FixityAssoc::Infix,
+            _ => return None,
+        };
+        self.bump();
+        let precedence = match self.peek() {
+            Some(TokenKind::IntLit(n)) => {
+                let parsed: u8 = n.parse().ok()?;
+                self.bump();
+                parsed
+            }
+            _ => {
+                self.diag_malformed(
+                    MalformedSyntaxKind::FunctionEquation,
+                    "expected precedence number in fixity declaration",
+                );
+                return None;
+            }
+        };
+        let mut operators = Vec::new();
+        loop {
+            match self.peek().cloned() {
+                Some(TokenKind::Backtick) => {
+                    self.bump();
+                    let name = match self.peek().cloned() {
+                        Some(
+                            TokenKind::LowerId {
+                                qualifier: None,
+                                name,
+                            }
+                            | TokenKind::UpperId {
+                                qualifier: None,
+                                name,
+                            },
+                        ) => {
+                            self.bump();
+                            name
+                        }
+                        _ => {
+                            self.diag_malformed(
+                                MalformedSyntaxKind::FunctionEquation,
+                                "expected identifier in backtick fixity target",
+                            );
+                            return None;
+                        }
+                    };
+                    if !self.eat(&TokenKind::Backtick) {
+                        self.diag_malformed(
+                            MalformedSyntaxKind::FunctionEquation,
+                            "expected closing backtick in fixity declaration",
+                        );
+                        return None;
+                    }
+                    operators.push(FixityTarget::Backtick(name));
+                }
+                Some(TokenKind::Op(op)) if !is_reserved_op(&op) => {
+                    self.bump();
+                    operators.push(FixityTarget::Operator(op));
+                }
+                _ => break,
+            }
+            if !self.eat(&TokenKind::Comma) {
+                break;
+            }
+        }
+        if operators.is_empty() {
+            self.diag_malformed(
+                MalformedSyntaxKind::FunctionEquation,
+                "fixity declaration must name at least one operator",
+            );
+            return None;
+        }
+        self.skip_to_item_end();
+        Some(FixityDecl {
+            assoc,
+            precedence,
+            operators,
+            pos,
+            span: self.node_span(start_i),
+        })
+    }
+
+    /// Parenthesized operator signature or equation: `(===) : ...`, `(>=>) = ...`.
+    fn operator_function_item(&mut self) -> Option<Decl> {
+        let pos = self.pos();
+        let start_i = self.i;
+        if !self.eat(&TokenKind::LParen) {
+            return None;
+        }
+        let Some(TokenKind::Op(op)) = self.peek().cloned() else {
+            return None;
+        };
+        if is_reserved_op(&op) {
+            return None;
+        }
+        self.bump();
+        if !self.eat(&TokenKind::RParen) {
+            return None;
+        }
+        let name = Identifier::from(op.as_str());
+
+        if self.at_op(":") {
+            self.eat_op(":");
+            let ty_start = self.i;
+            self.skip_to_item_end();
+            let ty = self.parse_type_annotation(ty_start, self.i, TypeAnnotationContext::Function);
+            return Some(Decl::Function(FunctionDecl {
+                name,
+                ty,
+                equations: Vec::new(),
+                pos,
+                sig_span: Some(self.node_span(start_i)),
+                span: self.node_span(start_i),
+            }));
+        }
+
+        if self.at_op("=") || self.at_op("|") {
+            let (body, guards) = self.equation_rhs()?;
+            let where_bindings = if self.eat_keyword("where") {
+                self.binding_block()
+            } else {
+                Vec::new()
+            };
+            self.skip_to_item_end();
+            return Some(Decl::Function(FunctionDecl {
+                name,
+                ty: TypeAnnotation::Absent,
+                equations: vec![Equation {
+                    params: Vec::new(),
+                    body,
+                    guards,
+                    where_bindings,
+                    pos,
+                    span: self.node_span(start_i),
+                }],
+                pos,
+                sig_span: None,
+                span: self.node_span(start_i),
+            }));
+        }
+
+        None
+    }
+
+    fn try_infix_operator_function(&mut self) -> Option<Decl> {
+        let pos = self.pos();
+        let start_i = self.i;
+        let Some(TokenKind::LowerId {
+            qualifier: None,
+            name: lhs,
+        }) = self.peek().cloned()
+        else {
+            return None;
+        };
+        let lhs_start = self.i;
+        self.bump();
+        let Some(TokenKind::Op(op)) = self.peek().cloned() else {
+            return None;
+        };
+        if is_reserved_op(&op) {
+            return None;
+        }
+        self.bump();
+        let rhs_start = self.i;
+        let Some(TokenKind::LowerId {
+            qualifier: None,
+            name: rhs,
+        }) = self.peek().cloned()
+        else {
+            return None;
+        };
+        self.bump();
+        if !(self.at_op("=") || self.at_op("|")) {
+            return None;
+        }
+        let name = Identifier::from(op.as_str());
+        let lhs_pat = Pat::Var {
+            name: lhs,
+            pos: self.pos_of_token(lhs_start),
+            span: self.node_span(lhs_start),
+        };
+        let rhs_pat = Pat::Var {
+            name: rhs,
+            pos: self.pos_of_token(rhs_start),
+            span: self.node_span(rhs_start),
+        };
+        let (body, guards) = self.equation_rhs()?;
+        let where_bindings = if self.eat_keyword("where") {
+            self.binding_block()
+        } else {
+            Vec::new()
+        };
+        self.skip_to_item_end();
+        Some(Decl::Function(FunctionDecl {
+            name,
+            ty: TypeAnnotation::Absent,
+            equations: vec![Equation {
+                params: vec![lhs_pat, rhs_pat],
+                body,
+                guards,
+                where_bindings,
+                pos,
+                span: self.node_span(start_i),
+            }],
+            pos,
+            sig_span: None,
+            span: self.node_span(start_i),
+        }))
+    }
+
     /// A top-level item starting with a lowercase identifier: type
     /// signature or function equation. Operator definitions and other
     /// exotica return None.
     fn function_item(&mut self) -> Option<Decl> {
+        let snap = self.i;
+        let saved_diags = self.diags.len();
+        if let Some(decl) = self.try_infix_operator_function() {
+            return Some(decl);
+        }
+        self.i = snap;
+        self.diags.truncate(saved_diags);
+
         let pos = self.pos();
         let start_i = self.i;
         let Some(TokenKind::LowerId {

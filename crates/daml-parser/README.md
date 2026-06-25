@@ -197,6 +197,9 @@ and `ParseDiagnosticKind::RecursionLimit { .. }`.
 Partial structure is explicit in the AST. For example:
 
 - `Decl::Unknown` preserves raw top-level declaration text.
+- `Decl::UnsupportedSyntax` preserves intentionally unmodeled top-level syntax (e.g. pattern synonyms) with a typed [`UnsupportedSyntaxKind`].
+- `Decl::Fixity` models top-level fixity metadata (`infix`, `infixl`, `infixr`).
+- Parenthesized and infix operator definitions parse as `Decl::Function` grouped by operator name.
 - `Expr::Error` preserves raw expression text.
 - `Pat::Other` preserves raw pattern text.
 - `TemplateBodyDecl::Other` preserves template body items that are not modeled.

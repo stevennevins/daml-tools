@@ -895,6 +895,35 @@ pub struct FunctionDecl {
     pub sig_span: Option<Span>,
 }
 
+/// Fixity associativity keyword (`infix`, `infixl`, `infixr`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum FixityAssoc {
+    Infix,
+    InfixL,
+    InfixR,
+}
+
+/// Operator or backtick-quoted name in a fixity declaration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum FixityTarget {
+    /// Symbolic operator such as `===` or `>=>`.
+    Operator(Operator),
+    /// Backtick-quoted identifier such as `` `Pair` ``.
+    Backtick(Identifier),
+}
+
+/// Top-level fixity declaration (`infix[l|r]? n op [, op ...]`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FixityDecl {
+    pub assoc: FixityAssoc,
+    pub precedence: u8,
+    pub operators: Vec<FixityTarget>,
+    pub pos: Pos,
+    pub span: Span,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImportDecl {
     /// Imported module path.
@@ -927,6 +956,19 @@ pub enum Decl {
         /// Position of the declaration keyword.
         pos: Pos,
         /// Span of the declaration header/body consumed by the parser.
+        span: Span,
+    },
+    /// Top-level fixity declaration.
+    Fixity(FixityDecl),
+    /// Top-level syntax the parser recognizes but intentionally does not model.
+    UnsupportedSyntax {
+        /// Why the declaration is unsupported.
+        kind: UnsupportedSyntaxKind,
+        /// Raw source text of the declaration.
+        raw: String,
+        /// Position of the declaration's first token.
+        pos: Pos,
+        /// Span of the declaration text.
         span: Span,
     },
     /// Anything unparseable at the top level (diagnostic already emitted).
@@ -1106,6 +1148,7 @@ pub enum SkippedDeclarationReason {
 #[non_exhaustive]
 pub enum UnsupportedSyntaxKind {
     LegacyControllerCan,
+    PatternSynonym,
 }
 
 /// Parse diagnostic — never fatal under tolerant parsing.

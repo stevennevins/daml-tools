@@ -11,8 +11,8 @@
 //! token's bytes from every node span, or produced an overlap, fails here.
 
 use crate::ast::{
-    Alt, Binding, ChoiceDecl, Decl, DoStmt, Equation, Expr, FieldAssign, Module, Pat, Span,
-    TemplateBodyDecl, Type, TypeAnnotation,
+    Alt, Binding, ChoiceDecl, Decl, DoStmt, Equation, Expr, FieldAssign, FixityDecl, Module, Pat,
+    Span, TemplateBodyDecl, Type, TypeAnnotation,
 };
 use crate::lexer::{Trivia, TriviaKind};
 
@@ -363,7 +363,10 @@ fn collect_decl(decl: &Decl, spans: &mut Vec<Span>) {
                 collect_type(ty, spans);
             }
         }
-        Decl::TypeDef { span, .. } | Decl::Unknown { span, .. } => spans.push(*span),
+        Decl::TypeDef { span, .. }
+        | Decl::Unknown { span, .. }
+        | Decl::Fixity(FixityDecl { span, .. })
+        | Decl::UnsupportedSyntax { span, .. } => spans.push(*span),
     }
 }
 
