@@ -47,7 +47,7 @@ parser, one lossless tree, many consumers.
 
 ```toml
 [dependencies]
-daml-parser = "0.7"
+daml-parser = "0.8.0"
 ```
 
 ```rust
@@ -78,10 +78,11 @@ use daml_parser::parse::{parse_module, parse_module_strict};
 let tolerant = parse_module("module M where\n%%% junk\n");
 assert!(!tolerant.diagnostics.is_empty());
 
-match parse_module_strict("module M where\n%%% junk\n") {
-    Ok(_) => panic!("junk declaration should fail strict parsing"),
-    Err(err) => assert!(!err.diagnostics().is_empty()),
-}
+let strict = parse_module_strict("module M where\n%%% junk\n");
+assert!(matches!(
+    strict.as_ref(),
+    Err(err) if !err.diagnostics().is_empty()
+));
 ```
 
 ## Choosing a parser layer
@@ -151,15 +152,24 @@ let Some((template_name, template_span)) = templates.first() else {
 assert_eq!(template_name.as_str(), "Account");
 ```
 
-Every AST node that represents source text carries a 1-based `Pos` and a byte
-`Span`. Use spans when you need an exact source slice:
+Declarations, expressions, patterns, and most parser DTOs carry a 1-based
+`Pos` for their first token and a byte `Span` for their full source extent.
+Structured `Type` nodes carry `Span` only; map their spans back to line/column
+coordinates when a type-fragment diagnostic needs a position. Use spans when
+you need an exact source slice:
 
 ```rust
-let Some(snippet) = source.get(template_span.range()) else {
-    panic!("parser spans are UTF-8 boundaries");
-};
+fn render_template_snippet(
+    source: &str,
+    template_span: daml_parser::ast::Span,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let snippet = template_span
+        .get(source)
+        .ok_or("parser span was not a valid UTF-8 source slice")?;
 
-assert!(snippet.starts_with("template Account"));
+    assert!(snippet.starts_with("template Account"));
+    Ok(())
+}
 ```
 
 ## Diagnostics and partial structure

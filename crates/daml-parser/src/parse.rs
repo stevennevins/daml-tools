@@ -17,9 +17,19 @@ use std::collections::HashMap;
 
 pub const MAX_RECURSION_DEPTH: u32 = 128;
 
+/// Result of tolerant module parsing.
+///
+/// The parser always returns a [`Module`], even when it had to recover from
+/// lexical errors, malformed syntax, unsupported syntax, or skipped
+/// declarations. Inspect [`Self::diagnostics`] (or use [`Self::has_errors`]) to
+/// decide whether the partial tree is acceptable. Use [`Self::into_result`] for
+/// callers that require a diagnostic-free parse.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseModuleResult {
+    /// Parsed module tree. This is always present and may be partial when
+    /// diagnostics were recorded.
     pub module: Module,
+    /// Recoverable parse and lex issues in source order.
     pub diagnostics: Vec<ParseDiagnostic>,
 }
 
@@ -81,11 +91,13 @@ impl DoExpressionMode {
 }
 
 impl ParseModuleResult {
+    /// True when tolerant parsing recorded any recoverable diagnostic.
     #[must_use]
     pub const fn has_errors(&self) -> bool {
         !self.diagnostics.is_empty()
     }
 
+    /// Split the partial module tree from its source-ordered diagnostics.
     #[must_use]
     pub fn into_parts(self) -> (Module, Vec<ParseDiagnostic>) {
         (self.module, self.diagnostics)
@@ -173,10 +185,11 @@ pub fn parse_module(source: &str) -> ParseModuleResult {
 /// let module = parse_module_strict("module M where\nfoo : Int\nfoo = 1\n")?;
 /// assert_eq!(module.name, "M");
 ///
-/// match parse_module_strict("module M where\n%%% junk\n") {
-///     Ok(_) => panic!("junk declaration should fail strict parsing"),
-///     Err(err) => assert!(!err.diagnostics().is_empty()),
-/// }
+/// let strict = parse_module_strict("module M where\n%%% junk\n");
+/// assert!(matches!(
+///     strict.as_ref(),
+///     Err(err) if !err.diagnostics().is_empty()
+/// ));
 /// # Ok(())
 /// # }
 /// ```

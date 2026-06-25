@@ -1,9 +1,18 @@
 //! Typed, lossless parse tree produced by the recursive-descent parser
 //! (src/parse.rs).
 //!
-//! Every node carries a source position and byte span. Downstream crates
-//! consume this tree directly: daml-fmt re-prints layout from the spans, and
-//! daml-lint lowers it onto its own rule-facing IR.
+//! Declarations, expressions, patterns, and most parser DTOs carry both a
+//! 1-based source `Pos` for their first token and a byte `Span` for their
+//! full source extent. `Type` nodes carry spans only because downstream
+//! consumers slice type source text but do not currently need line/column
+//! anchors per type fragment. Downstream crates consume this tree directly:
+//! daml-fmt re-prints layout from the spans, and daml-lint lowers it onto its
+//! own rule-facing IR.
+//!
+//! Parser-created trees are the supported construction path. Public fields are
+//! exposed so tools can match the tree directly; vectors preserve source order,
+//! `pos` is the first token's position, and `span` is the half-open byte range
+//! covering the node's real source tokens.
 
 pub use crate::lexer::{ByteOffset, Identifier, ModuleName, Operator, Pos};
 
@@ -107,9 +116,13 @@ impl Span {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum LitKind {
+    /// Integer literal.
     Int,
+    /// Decimal literal.
     Decimal,
+    /// Text/string literal.
     Text,
+    /// Character literal.
     Char,
 }
 
@@ -128,19 +141,31 @@ pub enum ImportStyle {
 pub enum FieldAssign {
     /// Explicit record assignment: `field = expression`.
     Assign {
+        /// Field being assigned.
         name: Identifier,
+        /// Right-hand-side expression after `=`.
         value: Expr,
+        /// Position of the field name.
         pos: Pos,
+        /// Span of the whole `field = expression` assignment.
         span: Span,
     },
     /// Record pun: `field`, meaning `field = field`.
     Pun {
+        /// Punned field name.
         name: Identifier,
+        /// Position of the field name.
         pos: Pos,
+        /// Span of the field name.
         span: Span,
     },
     /// Record wildcard: `..`.
-    Wildcard { pos: Pos, span: Span },
+    Wildcard {
+        /// Position of the `..` token.
+        pos: Pos,
+        /// Span of the `..` token.
+        span: Span,
+    },
 }
 
 impl FieldAssign {
@@ -171,9 +196,13 @@ impl FieldAssign {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Alt {
+    /// Pattern to match before `->`.
     pub pat: Pat,
+    /// Alternative body after `->`.
     pub body: Expr,
+    /// Position of the alternative's first token.
     pub pos: Pos,
+    /// Span of the whole alternative.
     pub span: Span,
 }
 
@@ -183,57 +212,93 @@ pub struct Binding {
     pub pat: Pat,
     /// Parameter patterns when the LHS is a function binding (`f x y = ...`).
     pub params: Vec<Pat>,
+    /// Right-hand-side expression.
     pub expr: Expr,
+    /// Position of the binding's first token.
     pub pos: Pos,
+    /// Span of the whole binding.
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Pat {
+    /// Variable pattern.
     Var {
+        /// Bound variable name.
         name: Identifier,
+        /// Position of the variable token.
         pos: Pos,
+        /// Span of the variable token.
         span: Span,
     },
+    /// Wildcard pattern (`_`).
     Wild {
+        /// Position of the `_` token.
         pos: Pos,
+        /// Span of the `_` token.
         span: Span,
     },
+    /// Constructor pattern with source-ordered arguments.
     Con {
+        /// Optional module qualifier before the constructor name.
         qualifier: Option<ModuleName>,
+        /// Constructor name.
         name: Identifier,
+        /// Constructor arguments in source order.
         args: Vec<Self>,
+        /// Position of the constructor token.
         pos: Pos,
+        /// Span of the whole constructor pattern.
         span: Span,
     },
+    /// Tuple pattern with source-ordered items.
     Tuple {
+        /// Tuple items in source order.
         items: Vec<Self>,
+        /// Position of the opening parenthesis.
         pos: Pos,
+        /// Span from `(` through `)`.
         span: Span,
     },
+    /// List pattern with source-ordered items.
     List {
+        /// List items in source order.
         items: Vec<Self>,
+        /// Position of the opening bracket.
         pos: Pos,
+        /// Span from `[` through `]`.
         span: Span,
     },
+    /// Literal pattern; `text` is the parser's normalized literal text.
     Lit {
+        /// Literal family.
         kind: LitKind,
+        /// Normalized literal payload.
         text: String,
+        /// Position of the literal token.
         pos: Pos,
+        /// Span of the literal token in the source.
         span: Span,
     },
     /// `name@pat`
     As {
+        /// Name bound to the whole matched pattern.
         name: Identifier,
+        /// Pattern being aliased.
         pat: Box<Self>,
+        /// Position of the bound name.
         pos: Pos,
+        /// Span of the whole `name@pat` pattern.
         span: Span,
     },
     /// Anything the parser couldn't classify; raw text preserved.
     Other {
+        /// Raw source text of the unclassified pattern.
         raw: String,
+        /// Position of the raw pattern's first token.
         pos: Pos,
+        /// Span of the preserved raw pattern text.
         span: Span,
     },
 }
@@ -243,119 +308,207 @@ pub enum Pat {
 pub enum Expr {
     /// Lowercase variable reference, possibly qualified.
     Var {
+        /// Optional module qualifier before the variable name.
         qualifier: Option<ModuleName>,
+        /// Variable name.
         name: Identifier,
+        /// Position of the variable token.
         pos: Pos,
+        /// Span of the variable token.
         span: Span,
     },
     /// Constructor / data-constructor reference, possibly qualified.
     Con {
+        /// Optional module qualifier before the constructor name.
         qualifier: Option<ModuleName>,
+        /// Constructor name.
         name: Identifier,
+        /// Position of the constructor token.
         pos: Pos,
+        /// Span of the constructor token.
         span: Span,
     },
+    /// Literal expression; `text` is the parser's normalized literal text.
     Lit {
+        /// Literal family.
         kind: LitKind,
+        /// Normalized literal payload.
         text: String,
+        /// Position of the literal token.
         pos: Pos,
+        /// Span of the literal token in the source.
         span: Span,
     },
     /// Application, flattened: `f a b c` is one App with three args.
     App {
+        /// Function expression being applied.
         func: Box<Self>,
+        /// Arguments in source order.
         args: Vec<Self>,
+        /// Position of the application's first token.
         pos: Pos,
+        /// Span of the whole application.
         span: Span,
     },
     /// Binary operator application with source-level operator text.
     BinOp {
+        /// Operator token text.
         op: Operator,
+        /// Left operand.
         lhs: Box<Self>,
+        /// Right operand.
         rhs: Box<Self>,
+        /// Position of the left operand.
         pos: Pos,
+        /// Span of the whole infix expression.
         span: Span,
     },
     /// Unary negation.
     Neg {
+        /// Negated expression.
         expr: Box<Self>,
+        /// Position of the `-` token.
         pos: Pos,
+        /// Span of the whole negated expression.
         span: Span,
     },
+    /// Lambda expression (`\params -> body`).
     Lambda {
+        /// Parameter patterns in source order.
         params: Vec<Pat>,
+        /// Lambda body.
         body: Box<Self>,
+        /// Position of the lambda token.
         pos: Pos,
+        /// Span of the whole lambda expression.
         span: Span,
     },
+    /// Conditional expression.
     If {
+        /// Condition after `if`.
         cond: Box<Self>,
+        /// Expression after `then`.
         then_branch: Box<Self>,
+        /// Expression after `else`.
         else_branch: Box<Self>,
+        /// Position of the `if` token.
         pos: Pos,
+        /// Span of the whole conditional expression.
         span: Span,
     },
+    /// Case expression with source-ordered alternatives.
     Case {
+        /// Scrutinee after `case`.
         scrutinee: Box<Self>,
+        /// Alternatives in source order.
         alts: Vec<Alt>,
+        /// Position of the `case` token.
         pos: Pos,
+        /// Span of the whole case expression.
         span: Span,
     },
+    /// Do block.
     Do {
+        /// Statements in source order.
         stmts: Vec<DoStmt>,
+        /// Position of the `do` token.
         pos: Pos,
+        /// Span of the whole do block.
         span: Span,
     },
+    /// Let/in expression.
     LetIn {
+        /// Bindings in source order.
         bindings: Vec<Binding>,
+        /// Body expression after `in`.
         body: Box<Self>,
+        /// Position of the `let` token.
         pos: Pos,
+        /// Span of the whole let/in expression.
         span: Span,
     },
     /// `base with f = e, ...` — record construction when base is a Con,
     /// record update otherwise.
     Record {
+        /// Constructor or record value being constructed/updated.
         base: Box<Self>,
+        /// Field assignments in source order.
         fields: Vec<FieldAssign>,
+        /// Position of the base expression.
         pos: Pos,
+        /// Span of the whole record expression.
         span: Span,
     },
+    /// Tuple expression with source-ordered items.
     Tuple {
+        /// Tuple items in source order.
         items: Vec<Self>,
+        /// Position of the opening parenthesis.
         pos: Pos,
+        /// Span from `(` through `)`.
         span: Span,
     },
+    /// List expression with source-ordered items.
     List {
+        /// List items in source order.
         items: Vec<Self>,
+        /// Position of the opening bracket.
         pos: Pos,
+        /// Span from `[` through `]`.
         span: Span,
     },
     /// `try <body> catch <alts>`
     Try {
+        /// Body after `try`.
         body: Box<Self>,
+        /// Catch handlers in source order.
         handlers: Vec<Alt>,
+        /// Position of the `try` token.
         pos: Pos,
+        /// Span of the whole try/catch expression.
         span: Span,
     },
     /// Parenthesized operator reference like `(+)`.
-    OperatorRef { op: Operator, pos: Pos, span: Span },
+    OperatorRef {
+        /// Referenced operator.
+        op: Operator,
+        /// Position of the opening parenthesis.
+        pos: Pos,
+        /// Span from `(` through `)`.
+        span: Span,
+    },
     /// Left operator section like `(1 +)`.
     LeftSection {
+        /// Section operator.
         op: Operator,
+        /// Left operand before the operator.
         operand: Box<Self>,
+        /// Position of the opening parenthesis.
         pos: Pos,
+        /// Span from `(` through `)`.
         span: Span,
     },
     /// Right operator section like `(+ 1)`.
     RightSection {
+        /// Section operator.
         op: Operator,
+        /// Right operand after the operator.
         operand: Box<Self>,
+        /// Position of the opening parenthesis.
         pos: Pos,
+        /// Span from `(` through `)`.
         span: Span,
     },
     /// Expression the parser could not understand; raw text preserved so
     /// a parse failure degrades to the shim's behavior instead of dying.
-    Error { raw: String, pos: Pos, span: Span },
+    Error {
+        /// Raw source text preserved for the malformed expression.
+        raw: String,
+        /// Position of the malformed expression's first token.
+        pos: Pos,
+        /// Span of the preserved raw expression text.
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -363,19 +516,33 @@ pub enum Expr {
 pub enum DoStmt {
     /// `pat <- expr`
     Bind {
+        /// Pattern before `<-`.
         pat: Pat,
+        /// Expression after `<-`.
         expr: Expr,
+        /// Position of the statement's first token.
         pos: Pos,
+        /// Span of the whole bind statement.
         span: Span,
     },
     /// `let x = e` (no `in`) inside a do block.
     Let {
+        /// Let bindings in source order.
         bindings: Vec<Binding>,
+        /// Position of the `let` token.
         pos: Pos,
+        /// Span of the whole let statement.
         span: Span,
     },
     /// Bare expression statement.
-    Expr { expr: Expr, pos: Pos, span: Span },
+    Expr {
+        /// Statement expression.
+        expr: Expr,
+        /// Position of the expression's first token.
+        pos: Pos,
+        /// Span of the expression statement.
+        span: Span,
+    },
 }
 
 /// Structured Daml type, parsed from the real token stream.
@@ -384,14 +551,19 @@ pub enum DoStmt {
 /// tell a type *application* from a *function arrow* from an
 /// atomic constructor — a distinction a string matcher structurally cannot make.
 /// Every node carries a byte span so consumers can render exact source text from
-/// `(source, span)`.
+/// `(source, span)`. Unlike declarations, expressions, and patterns, type nodes
+/// do not carry a separate [`Pos`]; use [`Type::span`] and source line mapping
+/// when a line/column anchor is required for a type fragment.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum Type {
     /// Type constructor, possibly qualified: `Party`, `DA.Map.Map`.
     Con {
+        /// Optional module qualifier before the constructor name.
         qualifier: Option<ModuleName>,
+        /// Constructor name.
         name: Identifier,
+        /// Span of the constructor token in the source.
         span: Span,
     },
     /// Type application, head applied to one or more args: `ContractId Foo`,
@@ -415,8 +587,11 @@ pub enum Type {
     /// Type-level string or char literal, e.g. the `"observers"` in
     /// `HasField "observers" t PartiesMap`.
     Lit {
+        /// Literal family.
         kind: LitKind,
+        /// Normalized literal payload.
         text: String,
+        /// Span of the literal token in the source.
         span: Span,
     },
 }
@@ -528,75 +703,112 @@ impl TypeAnnotation {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldDecl {
+    /// Field or method name.
     pub name: Identifier,
     /// Structured field type parse state.
     pub ty: TypeAnnotation,
+    /// Position of the field/method name.
     pub pos: Pos,
+    /// Span of the full field declaration (`name : Type` when present).
     pub span: Span,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Consuming {
+    /// Daml `consuming` choice.
     Consuming,
+    /// Daml `nonconsuming` choice.
     NonConsuming,
+    /// Legacy/pre-Daml-3 `preconsuming` spelling.
     PreConsuming,
+    /// Legacy/pre-Daml-3 `postconsuming` spelling.
     PostConsuming,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChoiceDecl {
+    /// Choice name.
     pub name: Identifier,
+    /// Consuming mode parsed from the choice header.
     pub consuming: Consuming,
-    /// Structured return type. `None` if it could not be parsed cleanly or the
-    /// choice declared no return type.
+    /// Structured return type parse state.
     pub return_ty: TypeAnnotation,
+    /// Choice parameter fields in source order.
     pub params: Vec<FieldDecl>,
     /// Comma-separated controller expressions.
     pub controllers: Vec<Expr>,
     /// Choice observers, if any.
     pub observers: Vec<Expr>,
+    /// Choice body after `do`; `None` when the parser did not find one.
     pub body: Option<Expr>,
+    /// Position of the `choice` token.
     pub pos: Pos,
+    /// Span of the whole choice declaration.
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum TemplateBodyDecl {
+    /// `signatory` clause with source-ordered party expressions.
     Signatory {
+        /// Party expressions in source order.
         parties: Vec<Expr>,
+        /// Position of the `signatory` token.
         pos: Pos,
+        /// Span of the whole clause.
         span: Span,
     },
+    /// `observer` clause with source-ordered party expressions.
     Observer {
+        /// Party expressions in source order.
         parties: Vec<Expr>,
+        /// Position of the `observer` token.
         pos: Pos,
+        /// Span of the whole clause.
         span: Span,
     },
+    /// `ensure` clause.
     Ensure {
+        /// Predicate expression after `ensure`.
         expr: Expr,
+        /// Position of the `ensure` token.
         pos: Pos,
+        /// Span of the whole clause.
         span: Span,
     },
+    /// Template `key` declaration.
     Key {
+        /// Key expression.
         expr: Expr,
         /// Structured key type parse state.
         ty: TypeAnnotation,
+        /// Position of the `key` token.
         pos: Pos,
+        /// Span of the whole key declaration.
         span: Span,
     },
+    /// `maintainer` clause.
     Maintainer {
+        /// Maintainer expression.
         expr: Expr,
+        /// Position of the `maintainer` token.
         pos: Pos,
+        /// Span of the whole clause.
         span: Span,
     },
+    /// `choice` declaration.
     Choice(ChoiceDecl),
+    /// `interface instance` declaration nested in a template.
     InterfaceInstance(InterfaceInstanceDecl),
     /// `agreement`, `let` blocks, deprecated `controller ... can`, etc.
     Other {
+        /// Raw source text preserved for unsupported/malformed body syntax.
         raw: String,
+        /// Position of the raw body's first token.
         pos: Pos,
+        /// Span of the preserved raw body text.
         span: Span,
     },
 }
@@ -610,50 +822,70 @@ pub struct InterfaceInstanceDecl {
     pub for_template: Option<ModuleName>,
     /// Method implementations: name → bound expression.
     pub methods: Vec<Binding>,
+    /// Position of the `interface instance` clause.
     pub pos: Pos,
+    /// Span of the whole interface instance declaration.
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TemplateDecl {
+    /// Template name.
     pub name: Identifier,
+    /// Template fields in source order.
     pub fields: Vec<FieldDecl>,
+    /// Template body declarations in source order.
     pub body: Vec<TemplateBodyDecl>,
+    /// Position of the `template` token.
     pub pos: Pos,
+    /// Span of the whole template declaration.
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InterfaceDecl {
+    /// Interface name.
     pub name: Identifier,
     /// Interfaces this interface requires (`requires Lockable.I, ...`).
     pub requires: Vec<ModuleName>,
+    /// Optional view type name from `viewtype`.
     pub viewtype: Option<ModuleName>,
-    /// Method signatures: name and type text.
+    /// Method signatures in source order.
     pub methods: Vec<FieldDecl>,
+    /// Interface choices in source order.
     pub choices: Vec<ChoiceDecl>,
+    /// Position of the `interface` token.
     pub pos: Pos,
+    /// Span of the whole interface declaration.
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Equation {
+    /// Parameter patterns in source order.
     pub params: Vec<Pat>,
+    /// Unguarded body or first guarded body for convenience.
     pub body: Expr,
     /// Guarded equations keep their guards as (guard, body) pairs; `body`
     /// then holds the first guarded body for convenience.
     pub guards: Vec<(Expr, Expr)>,
     /// `where` helper bindings attached to this equation.
     pub where_bindings: Vec<Binding>,
+    /// Position of the equation's first token.
     pub pos: Pos,
+    /// Span of this equation only.
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionDecl {
+    /// Function name.
     pub name: Identifier,
+    /// Standalone signature type parse state.
     pub ty: TypeAnnotation,
+    /// Equations for this function in source order.
     pub equations: Vec<Equation>,
+    /// Position of the function's first appearance.
     pub pos: Pos,
     /// Span of the function's first appearance (signature or first equation).
     /// Convenience anchor; a multi-equation function's precise ranges are the
@@ -665,37 +897,54 @@ pub struct FunctionDecl {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImportDecl {
+    /// Imported module path.
     pub module_name: ModuleName,
+    /// Whether the import is qualified.
     pub style: ImportStyle,
+    /// Optional module alias from `as`.
     pub alias: Option<ModuleName>,
+    /// Position of the `import` token.
     pub pos: Pos,
+    /// Span of the whole import declaration.
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Decl {
+    /// Template declaration.
     Template(TemplateDecl),
+    /// Interface declaration.
     Interface(InterfaceDecl),
+    /// Function signature/equations grouped by name.
     Function(FunctionDecl),
     /// data/type/class/instance/exception — recorded with name + span.
     TypeDef {
+        /// Declaration keyword (`data`, `type`, `class`, ...).
         keyword: String,
+        /// Declared type/class/instance name as parsed.
         name: Identifier,
+        /// Position of the declaration keyword.
         pos: Pos,
+        /// Span of the declaration header/body consumed by the parser.
         span: Span,
     },
     /// Anything unparseable at the top level (diagnostic already emitted).
     Unknown {
+        /// Raw source text of the skipped declaration.
         raw: String,
+        /// Position of the skipped declaration's first token.
         pos: Pos,
+        /// Span of the skipped declaration text.
         span: Span,
     },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Module {
+    /// Module name from the header, or `Unknown` when the source has no header.
     pub name: ModuleName,
+    /// Position of the `module` keyword, or the start of the fallback module.
     pub pos: Pos,
     /// Whole-module extent: `[0, source.len())`. Container for all decls.
     pub span: Span,
@@ -703,7 +952,9 @@ pub struct Module {
     /// has no module header. Lets the span oracle treat header tokens as
     /// covered without a dedicated header node.
     pub header: Span,
+    /// Imports in source order.
     pub imports: Vec<ImportDecl>,
+    /// Top-level declarations in source order.
     pub decls: Vec<Decl>,
 }
 

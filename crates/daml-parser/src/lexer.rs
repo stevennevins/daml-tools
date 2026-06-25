@@ -39,7 +39,9 @@ impl From<ByteOffset> for usize {
 /// Byte span into the original UTF-8 source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct ByteSpan {
+    /// Inclusive byte offset at which the span starts.
     pub start: ByteOffset,
+    /// Exclusive byte offset at which the span ends.
     pub end: ByteOffset,
 }
 
@@ -323,7 +325,10 @@ impl PartialEq<ModuleName> for String {
 /// 1-based source position of a token's first character.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Pos {
+    /// 1-based source line.
     pub line: usize,
+    /// 1-based visual character column. Tabs advance to the next 8-column tab
+    /// stop, matching the lexer's layout calculations.
     pub column: usize,
 }
 
@@ -349,18 +354,33 @@ pub enum TokenKind {
     },
     /// Symbolic operator: `+`, `<-`, `->`, `=`, `=>`, `::`, `.`, `\`, ...
     Op(Operator),
+    /// Integer literal payload as normalized token text.
     IntLit(String),
+    /// Decimal literal payload as normalized token text.
     DecimalLit(String),
+    /// String literal value after escape decoding. Use the token span to
+    /// recover original quotes and escape spelling.
     StringLit(String),
+    /// Character literal value after escape decoding. Use the token span to
+    /// recover original quotes and escape spelling.
     CharLit(String),
+    /// `(`.
     LParen,
+    /// `)`.
     RParen,
+    /// `[`.
     LBracket,
+    /// `]`.
     RBracket,
+    /// Explicit `{` from source.
     LBrace,
+    /// Explicit `}` from source.
     RBrace,
+    /// `,`.
     Comma,
+    /// Explicit `;` from source.
     Semi,
+    /// `` ` ``.
     Backtick,
     /// Layout-inserted virtual open brace (block start).
     VLBrace,
@@ -682,14 +702,23 @@ fn byte_of_pos(source: &str, pos: Pos) -> usize {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum LexErrorKind {
+    /// A character could not begin or continue any token.
     UnexpectedCharacter(char),
+    /// A nested block comment reached EOF before `-}`.
     UnterminatedBlockComment,
+    /// A string literal reached EOF or newline before its closing quote.
     UnterminatedStringLiteral,
+    /// A string gap was opened but not closed correctly.
     UnterminatedStringGap,
+    /// A string or character escape used an unsupported escape code.
     InvalidEscapeSequence(char),
+    /// A single quote did not form a valid character literal.
     StraySingleQuote,
+    /// A character literal decoded to zero or multiple Unicode scalar values.
     CharacterLiteralWrongLength,
+    /// A `0x`/`0X` literal prefix was not followed by a hexadecimal digit.
     HexLiteralMissingDigits,
+    /// A decimal exponent marker was not followed by exponent digits.
     DecimalExponentMissingDigits,
 }
 
@@ -715,7 +744,10 @@ impl std::fmt::Display for LexErrorKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LexOutput {
+    /// Non-trivia tokens in source order. Layout virtual tokens are not present
+    /// until [`crate::layout::resolve_layout`] is run.
     pub tokens: Vec<Token>,
+    /// Recoverable lexical errors in source order.
     pub errors: Vec<LexError>,
 }
 
@@ -728,8 +760,11 @@ impl LexOutput {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LexWithTriviaOutput {
+    /// Non-trivia tokens in source order.
     pub tokens: Vec<Token>,
+    /// Comments, CPP directives, and blank-line markers in source order.
     pub trivia: Vec<Trivia>,
+    /// Recoverable lexical errors in source order.
     pub errors: Vec<LexError>,
 }
 
@@ -743,16 +778,26 @@ impl LexWithTriviaOutput {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RenderLosslessError {
+    /// A token/trivia span starts before the previous interval ended; `start`
+    /// is the overlapping byte offset.
     OverlappingSpans {
+        /// Byte offset where the overlap was detected.
         start: usize,
     },
+    /// A non-empty source byte interval was not covered by any token/trivia.
     UncoveredBytes {
+        /// Inclusive start byte offset of the uncovered interval.
         start: usize,
+        /// Exclusive end byte offset of the uncovered interval.
         end: usize,
+        /// Source text from the uncovered interval.
         text: String,
     },
+    /// Source bytes after the final token/trivia interval were not covered.
     UncoveredTail {
+        /// Inclusive start byte offset of the uncovered tail.
         start: usize,
+        /// Source text from the uncovered tail.
         text: String,
     },
 }

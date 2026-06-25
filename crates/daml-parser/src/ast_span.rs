@@ -19,45 +19,77 @@ use crate::lexer::{Trivia, TriviaKind};
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum AstSpanError {
+    /// An AST span had `start > end`; both fields are byte offsets.
     InvalidSpan {
+        /// Inclusive start byte offset.
         start: usize,
+        /// Exclusive end byte offset.
         end: usize,
     },
+    /// Two AST spans overlapped without one containing the other.
     OverlappingSpans {
+        /// Inclusive start byte offset of the offending span.
         start: usize,
+        /// Exclusive end byte offset of the offending span.
         end: usize,
+        /// Inclusive start byte offset of the active parent/sibling span.
         parent_start: usize,
+        /// Exclusive end byte offset of the active parent/sibling span.
         parent_end: usize,
     },
+    /// A reconstruction tile overlapped bytes already emitted.
     OverlappingTile {
+        /// Inclusive start byte offset of the overlapping tile.
         start: usize,
+        /// Exclusive end byte offset of the overlapping tile.
         end: usize,
+        /// Exclusive end byte offset of the previous tile.
         previous_end: usize,
     },
+    /// A non-empty source byte interval was not covered by AST or trivia.
     UncoveredBytes {
+        /// Inclusive start byte offset of the uncovered interval.
         start: usize,
+        /// Exclusive end byte offset of the uncovered interval.
         end: usize,
+        /// Source text from the uncovered interval.
         text: String,
     },
+    /// Source bytes after the final AST/trivia interval were not covered.
     UncoveredTail {
+        /// Inclusive start byte offset of the uncovered tail.
         start: usize,
+        /// Source text from the uncovered tail.
         text: String,
     },
+    /// Reconstructed source length differed from the original source length.
     ReconstructionMismatch {
+        /// Reconstructed byte length.
         reconstructed_len: usize,
+        /// Original source byte length.
         source_len: usize,
     },
+    /// A token/trivia interval had `start > end`; both fields are byte offsets.
     IntervalStartAfterEnd {
+        /// Inclusive start byte offset.
         start: usize,
+        /// Exclusive end byte offset.
         end: usize,
     },
+    /// A token/trivia interval extended past `source_len`.
     IntervalExceedsSource {
+        /// Inclusive start byte offset.
         start: usize,
+        /// Exclusive end byte offset.
         end: usize,
+        /// Original source byte length.
         source_len: usize,
     },
+    /// A token/trivia interval boundary was not a UTF-8 boundary in `source`.
     IntervalNotUtf8Boundary {
+        /// Inclusive start byte offset.
         start: usize,
+        /// Exclusive end byte offset.
         end: usize,
     },
 }
