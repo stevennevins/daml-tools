@@ -1,14 +1,13 @@
-//! Tests for parse diagnostics: recovery categories, byte-span end positions,
-//! and the guarantee that a malformed item does not abort later declarations.
+//! Integration tests for parse diagnostics: recovery categories, byte-span end
+//! positions, and the guarantee that a malformed item does not abort later
+//! declarations.
 
-#![cfg(test)]
-
-use crate::ast::{Decl, DiagnosticCategory};
-use crate::parse::{parse_module, MAX_RECURSION_DEPTH};
+use daml_parser::ast::{Decl, DiagnosticCategory};
+use daml_parser::parse::{parse_module, MAX_RECURSION_DEPTH};
 
 const TEST_RECURSION_DEPTH: usize = MAX_RECURSION_DEPTH as usize + 172;
 
-fn diags(src: &str) -> Vec<crate::ast::ParseDiagnostic> {
+fn diags(src: &str) -> Vec<daml_parser::ast::ParseDiagnostic> {
     parse_module(src).diagnostics
 }
 

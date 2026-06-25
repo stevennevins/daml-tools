@@ -51,8 +51,6 @@ pub mod lexer;
 pub mod parse;
 
 #[cfg(test)]
-mod diag_tests;
-#[cfg(test)]
 mod projection_tests;
 #[cfg(test)]
 mod span_tests;
