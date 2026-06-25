@@ -8,8 +8,8 @@ use daml_parser::ast::Span as ParserSpan;
 use daml_parser::ast_span::render_from_ast;
 use daml_parser::lexer::render_lossless;
 use daml_syntax::{
-    try_parser_span_to_text_range, Coordinate, ParserSpanToTextRangeErrorKind, SourceFile,
-    SourceTokens, TextRange,
+    try_parser_span_to_text_range, ByteOffset, Coordinate, DiagnosticEndColumn,
+    ParserSpanToTextRangeErrorKind, SourceFile, SourceTokens, TextRange,
 };
 
 #[test]
@@ -83,7 +83,7 @@ fn try_parser_span_to_text_range_rejects_out_of_bounds_spans() {
             source.len()
         )
     );
-    assert_eq!(err.source_len(), source.len());
+    assert_eq!(err.source_len_bytes(), ByteOffset::new(source.len()));
     assert_eq!(err.span_start(), daml_syntax::ByteOffset::new(0));
     assert_eq!(
         err.span_end(),
@@ -102,7 +102,7 @@ fn try_parser_span_to_text_range_reports_inverted_spans() {
         err.to_string(),
         "parser span [2, 1) is invalid for source length 3"
     );
-    assert_eq!(err.source_len(), source.len());
+    assert_eq!(err.source_len_bytes(), ByteOffset::new(source.len()));
     assert_eq!(err.span_start(), daml_syntax::ByteOffset::new(2));
     assert_eq!(err.span_end(), daml_syntax::ByteOffset::new(1));
 }
@@ -117,7 +117,7 @@ fn try_parser_span_to_text_range_rejects_non_utf8_boundary_spans() {
         err.to_string(),
         "parser span [1, 2) is invalid for source length 6"
     );
-    assert_eq!(err.source_len(), source.len());
+    assert_eq!(err.source_len_bytes(), ByteOffset::new(source.len()));
     assert_eq!(err.span_start(), daml_syntax::ByteOffset::new(1));
     assert_eq!(err.span_end(), daml_syntax::ByteOffset::new(2));
 }
@@ -135,6 +135,12 @@ fn diagnostics_are_read_through_accessors_not_field_literals() {
     assert!(diagnostic.range().start() <= diagnostic.range().end());
     assert!(diagnostic.line().get() >= 1);
     assert!(diagnostic.column().get() >= 1);
+    assert!(matches!(
+        diagnostic.end_column(),
+        DiagnosticEndColumn::SameLineEnd(_)
+            | DiagnosticEndColumn::Multiline
+            | DiagnosticEndColumn::EmptySpan
+    ));
 }
 
 #[test]

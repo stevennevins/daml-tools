@@ -19,7 +19,9 @@
 //!
 //! Coordinate newtypes such as [`LineNumber`], [`ByteColumn`], and
 //! [`CharColumn`] are 1-based and reject zero via [`LineNumber::try_new`] and
-//! siblings; 0-based offsets use [`ByteOffset`] and [`Utf16Offset`].
+//! siblings; 0-based offsets use [`ByteOffset`] and [`Utf16Offset`]. UTF-16
+//! ranges use [`Utf16Range`] so JavaScript string slices cannot be mistaken for
+//! byte ranges.
 //!
 //! ```rust
 //! use daml_syntax::{parser_span_to_text_range, SourceFile};
@@ -47,7 +49,7 @@ pub mod coordinate;
 
 pub use coordinate::{
     ByteColumn, ByteLineCol, ByteOffset, CharColumn, CharLineCol, Coordinate, LineNumber,
-    Utf16Offset,
+    Utf16Offset, Utf16Range,
 };
 pub use text_size::{TextRange, TextSize};
 
@@ -61,9 +63,25 @@ pub struct Diagnostic {
     range: TextRange,
     line: LineNumber,
     column: CharColumn,
-    end_column: Option<CharColumn>,
+    end_column: DiagnosticEndColumn,
     message: String,
     category: DiagnosticCategory,
+}
+
+/// End-column shape for a diagnostic span.
+///
+/// The end column is an exclusive 1-based Unicode-scalar column only when a
+/// diagnostic covers non-empty text on one line. Multi-line and empty spans are
+/// separate variants so callers cannot silently treat both cases as `None`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DiagnosticEndColumn {
+    /// Non-empty single-line diagnostic ending at this exclusive column.
+    SameLineEnd(CharColumn),
+    /// Diagnostic span crosses at least one newline.
+    Multiline,
+    /// Diagnostic span is zero-width.
+    EmptySpan,
 }
 
 impl Diagnostic {
@@ -85,9 +103,9 @@ impl Diagnostic {
         self.column
     }
 
-    /// 1-based character column of the diagnostic end when the span is single-line.
+    /// Shape of the diagnostic span end.
     #[must_use]
-    pub const fn end_column(&self) -> Option<CharColumn> {
+    pub const fn end_column(&self) -> DiagnosticEndColumn {
         self.end_column
     }
 
@@ -179,6 +197,12 @@ impl LineIndex {
         }
     }
 
+    /// Source length in bytes, represented as the EOF byte offset.
+    #[must_use]
+    pub const fn source_len_bytes(&self) -> ByteOffset {
+        ByteOffset::new(self.source_len)
+    }
+
     /// Maps a byte offset to a 1-based line and byte column, clamping past EOF.
     #[must_use]
     pub fn line_col(&self, offset: TextSize) -> ByteLineCol {
@@ -231,10 +255,10 @@ impl LineIndex {
 
     /// Maps a byte range to UTF-16 start/end offsets, clamping to source bounds.
     #[must_use]
-    pub fn utf16_range(&self, range: TextRange) -> (Utf16Offset, Utf16Offset) {
+    pub fn utf16_range(&self, range: TextRange) -> Utf16Range {
         let start = usize::from(range.start()).min(self.source_len);
         let end = usize::from(range.end()).min(self.source_len).max(start);
-        (
+        Utf16Range::new(
             Utf16Offset::new(self.utf16_offset_by_byte[start]),
             Utf16Offset::new(self.utf16_offset_by_byte[end]),
         )
@@ -322,15 +346,12 @@ impl SourceFile {
                 let range = try_parser_span_to_text_range(source, diagnostic.span)
                     .expect("parser span in diagnostic must map to source bytes");
                 let start = range.start();
-                let end_column = source
-                    .get(usize::from(range.start())..usize::from(range.end()))
-                    .filter(|s| !s.is_empty() && !s.contains('\n'))
-                    .map(|s| CharColumn::new(diagnostic.pos.column + s.chars().count()));
                 let start_pos = line_index.char_line_col(start);
+                let end_column = diagnostic_end_column(source, range, start_pos.column);
                 Diagnostic {
                     range,
                     line: start_pos.line,
-                    column: CharColumn::new(diagnostic.pos.column),
+                    column: start_pos.column,
                     end_column,
                     message: diagnostic.message,
                     category: diagnostic.category,
@@ -429,6 +450,25 @@ impl SourceFile {
     }
 }
 
+fn diagnostic_end_column(
+    source: &str,
+    range: TextRange,
+    start_column: CharColumn,
+) -> DiagnosticEndColumn {
+    let span_text = source
+        .get(usize::from(range.start())..usize::from(range.end()))
+        .expect("validated parser span should slice source");
+    if span_text.is_empty() {
+        DiagnosticEndColumn::EmptySpan
+    } else if span_text.contains('\n') {
+        DiagnosticEndColumn::Multiline
+    } else {
+        DiagnosticEndColumn::SameLineEnd(CharColumn::new(
+            start_column.get() + span_text.chars().count(),
+        ))
+    }
+}
+
 /// Convert a parser span into a `text-size` byte range for an arbitrary source
 /// string.
 ///
@@ -470,8 +510,8 @@ pub struct ParserSpanToTextRangeError {
 impl ParserSpanToTextRangeError {
     /// Length of the source string the span was checked against.
     #[must_use]
-    pub const fn source_len(&self) -> usize {
-        self.source_len
+    pub const fn source_len_bytes(&self) -> ByteOffset {
+        ByteOffset::new(self.source_len)
     }
 
     /// Inclusive start byte offset from the parser span.
@@ -613,6 +653,7 @@ mod tests {
     #[test]
     fn maps_empty_source_to_first_line() {
         let index = LineIndex::new("");
+        assert_eq!(index.source_len_bytes(), ByteOffset::new(0));
 
         assert_eq!(
             index.line_col(0.into()),
@@ -623,7 +664,7 @@ mod tests {
         );
         assert_eq!(
             index.utf16_range(TextRange::empty(0.into())),
-            (Utf16Offset::new(0), Utf16Offset::new(0))
+            Utf16Range::new(Utf16Offset::new(0), Utf16Offset::new(0))
         );
     }
 
@@ -652,7 +693,7 @@ mod tests {
 
         assert_eq!(
             index.utf16_range(TextRange::new(0.into(), 6.into())),
-            (Utf16Offset::new(0), Utf16Offset::new(4))
+            Utf16Range::new(Utf16Offset::new(0), Utf16Offset::new(4))
         );
         assert_eq!(
             index.utf16_col(LineNumber::new(1), ByteColumn::new(6)),
@@ -715,7 +756,33 @@ mod tests {
 
         assert_eq!(
             index.utf16_range(range),
-            (Utf16Offset::new(1), Utf16Offset::new(3))
+            Utf16Range::new(Utf16Offset::new(1), Utf16Offset::new(3))
+        );
+    }
+
+    #[test]
+    fn diagnostic_end_column_names_same_line_multiline_and_empty_spans() {
+        let source = "abc\ndef";
+
+        assert_eq!(
+            diagnostic_end_column(
+                source,
+                TextRange::new(1.into(), 3.into()),
+                CharColumn::new(2)
+            ),
+            DiagnosticEndColumn::SameLineEnd(CharColumn::new(4))
+        );
+        assert_eq!(
+            diagnostic_end_column(
+                source,
+                TextRange::new(1.into(), 5.into()),
+                CharColumn::new(2)
+            ),
+            DiagnosticEndColumn::Multiline
+        );
+        assert_eq!(
+            diagnostic_end_column(source, TextRange::empty(1.into()), CharColumn::new(2)),
+            DiagnosticEndColumn::EmptySpan
         );
     }
 

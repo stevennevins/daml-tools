@@ -11,6 +11,14 @@ lexer, and layout types plus `TextRange`/`TextSize` appear in this crate's publi
 API. SemVer for `daml-syntax` includes compatible major versions of those crates
 when upgrading.
 
+## Coordinate safety
+
+Line and column APIs use distinct coordinate newtypes: `LineNumber`,
+`ByteColumn`, `CharColumn`, `ByteOffset`, and `Utf16Offset`. UTF-16 slices are
+returned as `Utf16Range` values with named `start()`/`end()` accessors, and
+diagnostic end columns use `DiagnosticEndColumn` so same-line, multi-line, and
+empty spans cannot be collapsed accidentally.
+
 ## Quick start
 
 ```rust

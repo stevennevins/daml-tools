@@ -128,6 +128,37 @@ define_zero_based_coordinate!(
     Utf16Offset
 );
 
+/// 0-based half-open range in UTF-16 code units.
+///
+/// Use this when interoperating with JavaScript-style string ranges. The named
+/// endpoints avoid confusing UTF-16 offsets with byte ranges or line/column
+/// pairs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Utf16Range {
+    start: Utf16Offset,
+    end: Utf16Offset,
+}
+
+impl Utf16Range {
+    /// Creates a UTF-16 range from inclusive start and exclusive end offsets.
+    #[must_use]
+    pub const fn new(start: Utf16Offset, end: Utf16Offset) -> Self {
+        Self { start, end }
+    }
+
+    /// Inclusive 0-based start offset in UTF-16 code units.
+    #[must_use]
+    pub const fn start(self) -> Utf16Offset {
+        self.start
+    }
+
+    /// Exclusive 0-based end offset in UTF-16 code units.
+    #[must_use]
+    pub const fn end(self) -> Utf16Offset {
+        self.end
+    }
+}
+
 impl From<TextSize> for ByteOffset {
     fn from(offset: TextSize) -> Self {
         Self::new(usize::from(offset))

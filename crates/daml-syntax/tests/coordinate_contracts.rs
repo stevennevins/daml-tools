@@ -3,7 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 use daml_syntax::{
-    ByteColumn, ByteOffset, CharColumn, Coordinate, LineNumber, TextSize, Utf16Offset,
+    ByteColumn, ByteOffset, CharColumn, Coordinate, LineNumber, TextSize, Utf16Offset, Utf16Range,
 };
 
 #[test]
@@ -36,6 +36,9 @@ fn coordinate_newtypes_expose_distinct_values() {
     let _: CharColumn = char_col;
     let _: ByteOffset = byte;
     let _: Utf16Offset = utf16;
+    let utf16_range = Utf16Range::new(Utf16Offset::new(1), Utf16Offset::new(3));
+    assert_eq!(utf16_range.start(), Utf16Offset::new(1));
+    assert_eq!(utf16_range.end(), Utf16Offset::new(3));
 }
 
 #[test]

@@ -103,8 +103,10 @@ README: [`crates/daml-syntax/README.md`](../../crates/daml-syntax/README.md)
 | `SourceFile` | Parsed source plus diagnostics, line index, tokens, trivia, laid-out tokens, and parser-span conversion. |
 | `SourceTokens` | Tokenized source for callers that need tokens, trivia, lex errors, or laid-out tokens without a full parse. |
 | `LineIndex` | Byte, line/column, and UTF-16 offset mapping over one source string. |
-| `Diagnostic` | Parser diagnostic with source range, line/column, message, and category. Read through accessors; constructed by `SourceFile::parse`. |
+| `Diagnostic` | Parser diagnostic with source range, line/column, named end-column shape, message, and category. Read through accessors; constructed by `SourceFile::parse`. |
 | `ByteLineCol`, `CharLineCol` | 1-based line/column pairs that distinguish byte columns from Unicode scalar columns. |
+| `DiagnosticEndColumn` | Same-line, multi-line, or empty-span end-column shape for diagnostics. |
+| `Utf16Range` | Named start/end range in UTF-16 code units for JavaScript-style string offsets. |
 | `TextRange`, `TextSize` | Re-exported `text-size` range and offset types used by public range APIs. |
 
 ## `daml-lint`

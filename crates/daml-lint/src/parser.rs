@@ -14,7 +14,7 @@ use daml_parser::ast::{
     self, Consuming as ParserConsuming, Decl, DiagnosticCategory as ParserDiagnosticCategory,
     DoStmt, ImportStyle as ParserImportStyle, TemplateBodyDecl,
 };
-use daml_syntax::{Coordinate, SourceFile};
+use daml_syntax::{Coordinate, DiagnosticEndColumn, SourceFile};
 use std::path::Path;
 
 #[cfg(all(test, feature = "js-runtime"))]
@@ -153,7 +153,11 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> ParseResult {
         .map(|d| ParseDiagnostic {
             line: d.line().get(),
             column: d.column().get(),
-            end_column: d.end_column().map(Coordinate::get),
+            end_column: if let DiagnosticEndColumn::SameLineEnd(end_column) = d.end_column() {
+                Some(end_column.get())
+            } else {
+                None
+            },
             message: d.message().to_owned(),
             category: ParseDiagnosticCategory::from_parser_category(d.category()),
         })

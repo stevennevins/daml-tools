@@ -39,13 +39,13 @@ impl SourceSpan {
         let byte_start = usize::from(range.start());
         let byte_end = usize::from(range.end());
         let line_col = source_file.line_index().char_line_col(range.start());
-        let (start, end) = source_file.line_index().utf16_range(range);
+        let utf16_range = source_file.line_index().utf16_range(range);
         Self {
             file: file.to_path_buf(),
             line: line_col.line.get(),
             column: line_col.column.get(),
-            start: start.get(),
-            end: end.get(),
+            start: utf16_range.start().get(),
+            end: utf16_range.end().get(),
             byte_start,
             byte_end,
         }
