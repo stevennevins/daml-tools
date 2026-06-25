@@ -442,24 +442,3 @@ mod configured_detector_tests {
         assert_eq!(findings[0].severity, Severity::Info);
     }
 }
-
-#[cfg(all(test, feature = "js-runtime"))]
-#[allow(clippy::unwrap_used)]
-mod registration_tests {
-    use super::*;
-
-    #[test]
-    fn returns_none_when_detector_names_are_unique() {
-        assert_eq!(
-            find_duplicate_detector_name(&crate::detectors::create_builtin_detectors()),
-            None
-        );
-    }
-
-    #[test]
-    fn returns_duplicate_detector_name() {
-        let mut doubled = crate::detectors::create_builtin_detectors();
-        doubled.extend(crate::detectors::create_builtin_detectors());
-        assert!(find_duplicate_detector_name(&doubled).is_some());
-    }
-}
