@@ -25,19 +25,32 @@ fn format_options_can_be_created_and_built() {
 #[test]
 fn format_coverage_counts_modeled_constructs_independently_of_edit_candidates() {
     let canonical = "module M where\nmain = do\n  pass\n";
-    let canonical_coverage = coverage(canonical);
+    let canonical_coverage = coverage(canonical).expect("canonical source coverage");
     assert!(
         canonical_coverage.modeled_constructs() >= 1,
         "do expressions are counted as modeled constructs"
     );
 
     let messy = "module M where\nmain = do\n    pass\n";
-    let messy_coverage = coverage(messy);
+    let messy_coverage = coverage(messy).expect("messy source coverage");
     assert!(
         messy_coverage.edit_candidates() > 0,
         "over-indented do body should surface structural edit candidates"
     );
     assert!(messy_coverage.modeled_constructs() >= 1);
+}
+
+#[test]
+fn coverage_rejects_malformed_input_with_typed_diagnostics() {
+    let malformed = "module M where\nfoo = if x then 1\n";
+    let err = coverage(malformed).expect_err("coverage must reject malformed input");
+    let diagnostic = err
+        .diagnostics()
+        .first()
+        .expect("malformed source must include a diagnostic");
+
+    assert_ne!(diagnostic.category(), DiagnosticCategory::Lex);
+    assert!(!diagnostic.message().is_empty());
 }
 
 #[test]

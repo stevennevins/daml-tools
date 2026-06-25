@@ -35,8 +35,9 @@ stdout.
 | `daml-fmt -w file.daml` | file contents | rewrites the file only when changed |
 | `daml-fmt --check file.daml` | file contents | prints the file path if formatting would change it |
 
-Malformed lexical input, such as an unterminated string or block comment, is
-reported on stderr. In write mode, malformed input is not rewritten.
+Malformed input with lexical or parser diagnostics, such as an unterminated
+string or incomplete expression, is reported on stderr. In write mode,
+malformed input is not rewritten.
 
 Import organization is enabled by default. It may change Daml package identity
 because import declaration order contributes to the compiled package; pass
@@ -48,7 +49,7 @@ because import declaration order contributes to the compiled package; pass
 |------|---------|
 | `0` | Formatting completed successfully, or `--check` found no changes. |
 | `1` | `--check` found one or more files that would change. |
-| `2` | CLI usage error, read/write error, or malformed lexical input. |
+| `2` | CLI usage error, read/write error, or malformed input with lexical or parser diagnostics. |
 
 ## `daml-lint`
 

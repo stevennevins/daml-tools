@@ -190,22 +190,27 @@ README: [`crates/daml-fmt/README.md`](../../crates/daml-fmt/README.md)
 |------|------------|-------------|
 | `format_source(src: &str) -> String` | Public | Formats Daml source with the AST-driven formatter. |
 | `format_source_with_options(src: &str, options: FormatOptions) -> String` | Public | Formats Daml source with explicit formatter options. |
-| `try_format_source(src: &str) -> Result<String, FormatError>` | Public | Formats Daml source with default options, rejecting lexical or parser diagnostics. |
-| `try_format_source_with_options(src: &str, options: FormatOptions) -> Result<String, FormatError>` | Public | Formats Daml source with explicit options, rejecting lexical or parser diagnostics. |
+| `try_format_source(src: &str) -> Result<String, FormatError>` | Public | Formats Daml source with default options, rejecting diagnostics reported by `source_diagnostics`. |
+| `try_format_source_with_options(src: &str, options: FormatOptions) -> Result<String, FormatError>` | Public | Formats Daml source with explicit options, rejecting diagnostics reported by `source_diagnostics`. |
 | `FormatOptions` | Public | Formatter switches. Prefer `Default`/`new()`/`with_*` for forward-compatible construction. |
 | `ImportOrder` | Public | Import ordering strategy (`Organize` default, `Preserve` via CLI `--preserve-import-order`). `#[non_exhaustive]`. |
 | `FormatDiagnostic` | Public | Typed formatter diagnostic. Access line, column, category, and message through accessors. |
-| `FormatError` | Public | Formatting rejection error. Access typed diagnostics through `diagnostics()`. |
+| `FormatError` | Public | Formatting or coverage rejection error. Implements `Display` and `std::error::Error`; access typed diagnostics through `diagnostics()`. |
 | `lex_diagnostics(src: &str) -> Vec<FormatDiagnostic>` | Public | Returns typed lexer diagnostics for malformed source. |
 | `source_diagnostics(src: &str) -> Vec<FormatDiagnostic>` | Public | Returns typed lexer and parser diagnostics for malformed source. |
 | `FormatCoverage` | Public | Structural edit-candidate and modeled-construct counts from `coverage`. Read through `edit_candidates()` and `modeled_constructs()`. |
-| `coverage(src: &str) -> FormatCoverage` | Public | Counts formatter structural edit candidates over modeled constructs. |
+| `coverage(src: &str) -> Result<FormatCoverage, FormatError>` | Public | Counts formatter structural edit candidates over modeled constructs, rejecting diagnostics reported by `source_diagnostics`. |
 
 The formatter backend is implemented in the private `layout_ast` module.
 
 `ImportOrder` is `#[non_exhaustive]` so new strategies can be added without
 breaking downstream `match` arms. `FormatOptions` keeps fields private and adds
 new switches through `Default`/`new()` plus `with_*` helpers.
+
+`source_diagnostics` intentionally suppresses parser recovery diagnostics for
+CPP-conditional sources because inactive `#if`/`#else` module branches are not
+preprocessed before parsing. Lexical diagnostics are still returned and still
+cause `try_format_source*` and `coverage` to fail.
 
 ### Binaries
 

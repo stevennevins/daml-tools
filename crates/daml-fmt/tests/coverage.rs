@@ -42,3 +42,25 @@ fn valid_input_reports_metrics() {
     assert!(output.status.success());
     assert!(String::from_utf8_lossy(&output.stdout).contains("AST layout:"));
 }
+
+#[test]
+fn malformed_input_reports_diagnostic_and_exits_nonzero() {
+    let path = std::env::temp_dir().join(format!(
+        "daml-fmt-coverage-malformed-{}-{}.daml",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::write(&path, "module M where\nfoo = if x then 1\n").unwrap();
+    let output = cmd().arg(&path).output().unwrap();
+    std::fs::remove_file(&path).ok();
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("DIAG-ERR"),
+        "expected DIAG-ERR diagnostic, got: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

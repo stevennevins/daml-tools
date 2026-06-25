@@ -285,29 +285,29 @@ pub fn format_source_with_options(src: &str, options: FormatOptions) -> String {
 
 /// Format Daml source with explicit formatter options, rejecting malformed input.
 ///
-/// Returns [`FormatError`] with typed [`FormatDiagnostic`] entries when lexical or
-/// parser diagnostics are present.
+/// Returns [`FormatError`] with typed [`FormatDiagnostic`] entries when
+/// [`source_diagnostics`] reports lexical or parser diagnostics. CPP-conditional
+/// parser recovery diagnostics are ignored by [`source_diagnostics`], while
+/// lexical diagnostics are still rejected.
 ///
 /// # Errors
 ///
-/// Returns [`FormatError`] when `src` produces lexical or parser diagnostics.
+/// Returns [`FormatError`] when `src` produces diagnostics reported by
+/// [`source_diagnostics`].
 pub fn try_format_source_with_options(
     src: &str,
     options: FormatOptions,
 ) -> Result<String, FormatError> {
-    let diagnostics = source_diagnostics(src);
-    if diagnostics.is_empty() {
-        Ok(layout_ast::format_ast(src, options))
-    } else {
-        Err(FormatError { diagnostics })
-    }
+    reject_source_diagnostics(src)?;
+    Ok(layout_ast::format_ast(src, options))
 }
 
 /// Format Daml source with default formatter options, rejecting malformed input.
 ///
 /// # Errors
 ///
-/// Returns [`FormatError`] when `src` produces lexical or parser diagnostics.
+/// Returns [`FormatError`] when `src` produces diagnostics reported by
+/// [`source_diagnostics`].
 pub fn try_format_source(src: &str) -> Result<String, FormatError> {
     try_format_source_with_options(src, FormatOptions::default())
 }
@@ -338,9 +338,23 @@ impl FormatCoverage {
 }
 
 /// Count AST formatter structural edit candidates over modeled constructs.
-#[must_use]
-pub fn coverage(src: &str) -> FormatCoverage {
-    layout_ast::coverage(src)
+///
+/// # Errors
+///
+/// Returns [`FormatError`] when `src` produces diagnostics reported by
+/// [`source_diagnostics`].
+pub fn coverage(src: &str) -> Result<FormatCoverage, FormatError> {
+    reject_source_diagnostics(src)?;
+    Ok(layout_ast::coverage(src))
+}
+
+fn reject_source_diagnostics(src: &str) -> Result<(), FormatError> {
+    let diagnostics = source_diagnostics(src);
+    if diagnostics.is_empty() {
+        Ok(())
+    } else {
+        Err(FormatError { diagnostics })
+    }
 }
 
 /// Reconstruct `src`, normalizing gap whitespace. With `colon`, also drop

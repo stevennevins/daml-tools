@@ -14,18 +14,36 @@ use daml_fmt::coverage;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 
-fn collect(path: &Path, out: &mut Vec<PathBuf>) {
+fn collect(path: &Path, out: &mut Vec<PathBuf>) -> usize {
     if path.is_dir() {
-        let mut entries: Vec<_> = std::fs::read_dir(path)
-            .unwrap_or_else(|e| panic!("read_dir {}: {}", path.display(), e))
-            .map(|e| e.expect("valid read_dir entry").path())
+        let entries = match std::fs::read_dir(path) {
+            Ok(entries) => entries,
+            Err(e) => {
+                eprintln!("READ-ERR {}: {}", path.display(), e);
+                return 1;
+            }
+        };
+        let mut entry_errors = 0usize;
+        let mut entries: Vec<_> = entries
+            .filter_map(|entry| match entry {
+                Ok(entry) => Some(entry.path()),
+                Err(e) => {
+                    eprintln!("READ-ERR {}: {}", path.display(), e);
+                    entry_errors += 1;
+                    None
+                }
+            })
             .collect();
         entries.sort();
         for e in entries {
-            collect(&e, out);
+            entry_errors += collect(&e, out);
         }
+        entry_errors
     } else if path.extension().is_some_and(|x| x == "daml") {
         out.push(path.to_path_buf());
+        0
+    } else {
+        0
     }
 }
 
@@ -45,26 +63,35 @@ fn main() {
     }
 
     let mut originals = Vec::new();
+    let mut traversal_errors = 0usize;
     for root in &roots {
-        collect(root, &mut originals);
+        traversal_errors += collect(root, &mut originals);
     }
     if originals.is_empty() {
         eprintln!("coverage: no .daml files found under supplied path(s)");
         exit(1);
     }
 
-    let (mut candidates, mut modeled, mut files_with_candidates, mut read_errors) =
+    let (mut candidates, mut modeled, mut files_with_candidates, mut errors) =
         (0usize, 0usize, 0usize, 0usize);
+    errors += traversal_errors;
     for o in &originals {
         let src = match std::fs::read_to_string(o) {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("READ-ERR {}: {}", o.display(), e);
-                read_errors += 1;
+                errors += 1;
                 continue;
             }
         };
-        let coverage = coverage(&src);
+        let coverage = match coverage(&src) {
+            Ok(coverage) => coverage,
+            Err(e) => {
+                eprintln!("DIAG-ERR {}: {}", o.display(), e);
+                errors += 1;
+                continue;
+            }
+        };
         candidates += coverage.edit_candidates();
         modeled += coverage.modeled_constructs();
         if coverage.edit_candidates() > 0 {
@@ -85,7 +112,7 @@ fn main() {
         originals.len(),
         files_with_candidates
     );
-    if read_errors > 0 {
+    if errors > 0 {
         exit(1);
     }
 }
