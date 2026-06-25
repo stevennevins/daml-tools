@@ -2,7 +2,7 @@
 //!
 //! Byte offsets, line numbers, and column positions use distinct newtypes so
 //! they cannot be passed to the wrong API by accident. Conversions to raw
-//! `usize` are explicit via [`Coordinate::get`].
+//! `usize` are explicit via inherent `get` methods or `usize::from`.
 
 use std::fmt;
 use std::num::NonZeroUsize;
@@ -42,11 +42,23 @@ macro_rules! define_zero_based_coordinate {
             pub const fn new(value: usize) -> Self {
                 Self(value)
             }
+
+            /// Returns the underlying numeric value for this coordinate.
+            #[must_use]
+            pub const fn get(self) -> usize {
+                self.0
+            }
         }
 
-        impl Coordinate for $name {
-            fn get(self) -> usize {
-                self.0
+        impl From<$name> for usize {
+            fn from(value: $name) -> Self {
+                value.get()
+            }
+        }
+
+        impl From<usize> for $name {
+            fn from(value: usize) -> Self {
+                Self::new(value)
             }
         }
 
@@ -92,11 +104,17 @@ macro_rules! define_one_based_coordinate {
                     None => panic!("1-based coordinates must be non-zero"),
                 }
             }
+
+            /// Returns the underlying numeric value for this coordinate.
+            #[must_use]
+            pub const fn get(self) -> usize {
+                self.0.get()
+            }
         }
 
-        impl Coordinate for $name {
-            fn get(self) -> usize {
-                self.0.get()
+        impl From<$name> for usize {
+            fn from(value: $name) -> Self {
+                value.get()
             }
         }
 
@@ -120,12 +138,6 @@ macro_rules! define_one_based_coordinate {
             }
         }
     };
-}
-
-/// Explicit conversion from a typed coordinate to a raw `usize`.
-pub trait Coordinate {
-    /// Returns the underlying numeric value for this coordinate.
-    fn get(self) -> usize;
 }
 
 define_one_based_coordinate!(

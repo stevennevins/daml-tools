@@ -20,6 +20,7 @@
 //! Coordinate newtypes such as [`LineNumber`], [`ByteColumn`], and
 //! [`CharColumn`] are 1-based and reject zero via [`LineNumber::try_new`] or
 //! `TryFrom<usize>`; 0-based offsets use [`ByteOffset`] and [`Utf16Offset`].
+//! Use `usize::from(coordinate)` for explicit raw extraction.
 //! UTF-16 column lookup returns [`CoordinateRangeError`] for line or column
 //! coordinates outside a source, and UTF-16 ranges use [`Utf16Range`] so
 //! JavaScript string slices cannot be mistaken for byte ranges.
@@ -49,8 +50,8 @@ use std::sync::OnceLock;
 pub mod coordinate;
 
 pub use coordinate::{
-    ByteColumn, ByteLineCol, ByteOffset, CharColumn, CharLineCol, Coordinate,
-    InvalidOneBasedCoordinate, LineNumber, Utf16Offset, Utf16Range,
+    ByteColumn, ByteLineCol, ByteOffset, CharColumn, CharLineCol, InvalidOneBasedCoordinate,
+    LineNumber, Utf16Offset, Utf16Range,
 };
 pub use text_size::{TextRange, TextSize};
 
@@ -395,6 +396,31 @@ pub struct SourceTokens {
     laid_out_tokens: OnceLock<Vec<Token>>,
 }
 
+impl Clone for SourceTokens {
+    fn clone(&self) -> Self {
+        let cloned = Self {
+            tokens: self.tokens.clone(),
+            trivia: self.trivia.clone(),
+            lex_errors: self.lex_errors.clone(),
+            laid_out_tokens: OnceLock::new(),
+        };
+        if let Some(laid_out_tokens) = self.laid_out_tokens.get() {
+            let _ = cloned.laid_out_tokens.set(laid_out_tokens.clone());
+        }
+        cloned
+    }
+}
+
+impl PartialEq for SourceTokens {
+    fn eq(&self, other: &Self) -> bool {
+        self.tokens == other.tokens
+            && self.trivia == other.trivia
+            && self.lex_errors == other.lex_errors
+    }
+}
+
+impl Eq for SourceTokens {}
+
 impl SourceTokens {
     /// Lexes `source` and records trivia and lexer errors.
     #[must_use]
@@ -443,6 +469,33 @@ pub struct SourceFile {
     line_index: LineIndex,
     tokens: OnceLock<SourceTokens>,
 }
+
+impl Clone for SourceFile {
+    fn clone(&self) -> Self {
+        let cloned = Self {
+            source: self.source.clone(),
+            module: self.module.clone(),
+            diagnostics: self.diagnostics.clone(),
+            line_index: self.line_index.clone(),
+            tokens: OnceLock::new(),
+        };
+        if let Some(tokens) = self.tokens.get() {
+            let _ = cloned.tokens.set(tokens.clone());
+        }
+        cloned
+    }
+}
+
+impl PartialEq for SourceFile {
+    fn eq(&self, other: &Self) -> bool {
+        self.source == other.source
+            && self.module == other.module
+            && self.diagnostics == other.diagnostics
+            && self.line_index == other.line_index
+    }
+}
+
+impl Eq for SourceFile {}
 
 impl SourceFile {
     /// Parses `source` into a module AST and source-facing presentation data.
@@ -617,6 +670,17 @@ pub enum ParserSpanToTextRangeErrorKind {
     TextSizeOverflow,
 }
 
+impl std::fmt::Display for ParserSpanToTextRangeErrorKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::OutOfBounds => f.write_str("out of bounds"),
+            Self::InvertedSpan => f.write_str("start after end"),
+            Self::NonUtf8Boundary => f.write_str("not on a UTF-8 boundary"),
+            Self::TextSizeOverflow => f.write_str("text-size overflow"),
+        }
+    }
+}
+
 /// Error returned when a parser span cannot be converted to a [`TextRange`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParserSpanToTextRangeError {
@@ -645,18 +709,6 @@ impl ParserSpanToTextRangeError {
         self.span_end
     }
 
-    /// Inclusive start byte offset as a raw `usize`.
-    #[must_use]
-    pub fn span_start_usize(&self) -> usize {
-        self.span_start.get()
-    }
-
-    /// Exclusive end byte offset as a raw `usize`.
-    #[must_use]
-    pub fn span_end_usize(&self) -> usize {
-        self.span_end.get()
-    }
-
     /// Specific reason the conversion failed.
     #[must_use]
     pub const fn kind(&self) -> ParserSpanToTextRangeErrorKind {
@@ -667,32 +719,22 @@ impl ParserSpanToTextRangeError {
 impl std::fmt::Display for ParserSpanToTextRangeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.kind {
-            ParserSpanToTextRangeErrorKind::OutOfBounds => write!(
+            ParserSpanToTextRangeErrorKind::OutOfBounds
+            | ParserSpanToTextRangeErrorKind::InvertedSpan
+            | ParserSpanToTextRangeErrorKind::NonUtf8Boundary => write!(
                 f,
-                "parser span [{}, {}) is out of bounds for source length {}",
+                "parser span [{}, {}) is invalid: {} for source length {}",
                 self.span_start.get(),
                 self.span_end.get(),
-                self.source_len
-            ),
-            ParserSpanToTextRangeErrorKind::InvertedSpan => write!(
-                f,
-                "parser span [{}, {}) has start after end for source length {}",
-                self.span_start.get(),
-                self.span_end.get(),
-                self.source_len
-            ),
-            ParserSpanToTextRangeErrorKind::NonUtf8Boundary => write!(
-                f,
-                "parser span [{}, {}) is not on a UTF-8 boundary for source length {}",
-                self.span_start.get(),
-                self.span_end.get(),
+                self.kind,
                 self.source_len
             ),
             ParserSpanToTextRangeErrorKind::TextSizeOverflow => write!(
                 f,
-                "parser span [{}, {}) cannot be represented as a text-size value",
+                "parser span [{}, {}) is invalid: {}; endpoints cannot be represented as text-size values",
                 self.span_start.get(),
-                self.span_end.get()
+                self.span_end.get(),
+                self.kind
             ),
         }
     }
@@ -967,5 +1009,25 @@ mod tests {
         assert_ne!(byte_pos.column.get(), char_pos.column.get());
         assert_eq!(byte_pos.column, ByteColumn::new(5));
         assert_eq!(char_pos.column, CharColumn::new(2));
+    }
+
+    #[test]
+    fn parser_span_text_size_overflow_display_includes_kind() {
+        let text_size_overflow_start = usize::try_from(u32::MAX).unwrap() + 1;
+        let text_size_overflow_end = usize::try_from(u32::MAX).unwrap() + 2;
+        let err = ParserSpanToTextRangeError {
+            source_len: usize::MAX,
+            span_start: ByteOffset::new(text_size_overflow_start),
+            span_end: ByteOffset::new(text_size_overflow_end),
+            kind: ParserSpanToTextRangeErrorKind::TextSizeOverflow,
+        };
+
+        assert_eq!(err.kind().to_string(), "text-size overflow");
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "parser span [{text_size_overflow_start}, {text_size_overflow_end}) is invalid: text-size overflow; endpoints cannot be represented as text-size values"
+            )
+        );
     }
 }

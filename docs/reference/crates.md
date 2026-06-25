@@ -100,11 +100,12 @@ README: [`crates/daml-syntax/README.md`](../../crates/daml-syntax/README.md)
 
 | Item | Description |
 |------|-------------|
-| `SourceFile` | Parsed source plus diagnostics, line index, tokens, trivia, laid-out tokens, and parser-span conversion. |
-| `SourceTokens` | Tokenized source for callers that need tokens, trivia, lex errors, or laid-out tokens without a full parse. |
+| `SourceFile` | Parsed source plus diagnostics, line index, tokens, trivia, laid-out tokens, and parser-span conversion; implements clone/equality independent of lazy token-cache state. |
+| `SourceTokens` | Tokenized source for callers that need tokens, trivia, lex errors, or laid-out tokens without a full parse; implements clone/equality independent of lazy layout-cache state. |
 | `LineIndex` | Byte, line/column, and fallible UTF-16 column mapping over one source string. |
 | `Diagnostic` | Parser diagnostic with source range, line/column, named end-column shape, message, and category. Read through accessors; constructed by `SourceFile::parse`. |
 | `ByteLineCol`, `CharLineCol` | 1-based line/column pairs that distinguish byte columns from Unicode scalar columns. |
+| Coordinate newtypes | `LineNumber`, `ByteColumn`, `CharColumn`, `ByteOffset`, and `Utf16Offset` support standard conversion traits where valid; use `usize::from(coordinate)` for raw extraction. |
 | `CoordinateRangeError` | Typed error for line or byte-column coordinates outside a `LineIndex`. |
 | `InvalidOneBasedCoordinate` | Typed error returned by `TryFrom<usize>` for zero one-based coordinates. |
 | `DiagnosticEndColumn` | Same-line, multi-line, or empty-span end-column shape for diagnostics. |

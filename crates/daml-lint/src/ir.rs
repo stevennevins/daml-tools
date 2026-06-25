@@ -7,7 +7,7 @@
 //! wildcard arms when matching instead of exhaustiveness assumptions.
 
 use daml_parser::ast::Type;
-use daml_syntax::{Coordinate, SourceFile, TextRange};
+use daml_syntax::{SourceFile, TextRange};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 

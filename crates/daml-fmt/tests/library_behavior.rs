@@ -9,7 +9,6 @@ use daml_fmt::{
     ImportOrder,
 };
 use daml_parser::ast::DiagnosticCategory;
-use daml_syntax::Coordinate;
 
 #[test]
 fn format_options_default_matches_new() {

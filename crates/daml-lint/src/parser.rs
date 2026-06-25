@@ -14,7 +14,7 @@ use daml_parser::ast::{
     self, Consuming as ParserConsuming, Decl, DiagnosticCategory as ParserDiagnosticCategory,
     DoStmt, ImportStyle as ParserImportStyle, TemplateBodyDecl,
 };
-use daml_syntax::{Coordinate, DiagnosticEndColumn, SourceFile};
+use daml_syntax::{DiagnosticEndColumn, SourceFile};
 use std::path::Path;
 
 #[cfg(all(test, feature = "js-runtime"))]
