@@ -4,14 +4,13 @@
 //! these tests pin them so parser changes cannot silently regress structure
 //! extraction. The corpus is vendored under corpus/daml-finance/.
 
-#![cfg(test)]
 #![allow(clippy::unwrap_used)]
 
-use crate::ir::*;
-use crate::parser::parse_daml_with_diagnostics;
+use daml_lint::ir::*;
+use daml_lint::parser::parse_daml_with_diagnostics;
 use std::path::{Path, PathBuf};
 
-pub fn corpus_root() -> PathBuf {
+fn corpus_root() -> PathBuf {
     // Shared integration corpus, vendored once at the workspace root and used
     // by both daml-parser (lex/layout gate) and daml-lint (parse/IR gate).
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus/daml-finance/daml")
@@ -97,7 +96,7 @@ fn expr_texts(exprs: &[Expr]) -> Vec<String> {
     exprs.iter().map(expr_text).collect()
 }
 
-fn con_name(ty: Option<&TypeNode>) -> Option<&str> {
+const fn con_name(ty: Option<&TypeNode>) -> Option<&str> {
     match ty {
         Some(TypeNode::Con { name, .. }) => Some(name.as_str()),
         _ => None,

@@ -2,11 +2,10 @@
 //! or phantom structure. The lexer/layout/parser pipeline is the defense;
 //! these tests pin the failure modes the old line shim had.
 
-#![cfg(test)]
 #![allow(clippy::unwrap_used)]
 
-use crate::ir::*;
-use crate::parser::parse_daml_with_diagnostics;
+use daml_lint::ir::*;
+use daml_lint::parser::parse_daml_with_diagnostics;
 use std::fmt::Write as _;
 use std::path::Path;
 
