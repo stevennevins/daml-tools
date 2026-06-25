@@ -1,17 +1,16 @@
-//! Tests for the AST byte-span layer and the `render_from_ast` oracle.
+//! Integration tests for AST byte spans and the `render_from_ast` oracle.
 //!
 //! Tightness tests pin specific node spans to exact source substrings so the
 //! spans can't silently degrade to a useless catch-all. The corpus test runs
 //! the `render_from_ast` losslessness/nesting oracle over the vendored
 //! daml-finance corpus shared at the workspace root.
 
-#![cfg(test)]
 #![allow(clippy::unwrap_used)]
 
-use crate::ast::*;
-use crate::ast_span::{render_from_ast, AstSpanError};
-use crate::lexer::lex_with_trivia;
-use crate::parse::parse_module;
+use daml_parser::ast::*;
+use daml_parser::ast_span::{render_from_ast, AstSpanError};
+use daml_parser::lexer::lex_with_trivia;
+use daml_parser::parse::parse_module;
 use std::path::{Path, PathBuf};
 
 /// Run the oracle the way daml-fmt will: AST + the lexer's trivia.
@@ -336,7 +335,7 @@ fn render_lossless_over_finance_corpus() {
             continue; // lex errors drop bytes by design; losslessness is exempt
         }
         checked += 1;
-        if let Err(e) = crate::lexer::render_lossless(&src, &tokens, &trivia) {
+        if let Err(e) = daml_parser::lexer::render_lossless(&src, &tokens, &trivia) {
             panic!("round trip failed for {}: {}", f.display(), e);
         }
     }

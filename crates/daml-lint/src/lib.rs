@@ -63,8 +63,3 @@ pub mod ir;
 /// Lowering: `daml-parser`'s typed AST → rule-facing IR ([`ir`]).
 pub mod parser;
 pub mod reporter;
-
-#[cfg(test)]
-mod adversarial_tests;
-#[cfg(test)]
-mod corpus_tests;

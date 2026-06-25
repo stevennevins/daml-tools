@@ -1,0 +1,7 @@
+error[E0308]: mismatched types
+ --> tests/compile_fail/coordinate_column_types_not_interchangeable.rs:5:25
+  |
+5 |     let _: ByteColumn = char_col;
+  |            ----------   ^^^^^^^^ expected `ByteColumn`, found `CharColumn`
+  |            |
+  |            expected due to this

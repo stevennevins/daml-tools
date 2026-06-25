@@ -263,6 +263,7 @@ const fn virtual_tok(tok: TokenKind, pos: Pos) -> Token {
     }
 }
 
+// Virtual-brace layout invariants for the layout resolver phase.
 #[cfg(test)]
 mod tests {
     use super::*;

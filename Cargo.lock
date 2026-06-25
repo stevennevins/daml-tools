@@ -145,6 +145,7 @@ version = "0.7.0"
 dependencies = [
  "daml-parser",
  "text-size",
+ "trybuild",
 ]
 
 [[package]]

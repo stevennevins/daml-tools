@@ -21,3 +21,6 @@ workspace = true
 daml-parser.workspace = true
 # Public dependency: TextRange and TextSize are re-exported from this crate.
 text-size.workspace = true
+
+[dev-dependencies]
+trybuild = "1.0.117"

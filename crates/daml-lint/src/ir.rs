@@ -523,6 +523,7 @@ mod tests {
     use super::*;
     use std::path::Path;
 
+    // Pins private SourceSpan::from_text_range line/column mapping.
     #[test]
     fn source_span_line_calculation_tracks_its_source_file() {
         let source_a = SourceFile::parse("module A where\nabcde\n");
