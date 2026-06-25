@@ -61,7 +61,7 @@ fn malformed_source_keeps_source_file_and_diagnostics() {
 fn converts_parser_spans_to_text_ranges() {
     let file = SourceFile::parse("module M where\nfoo = 1\n");
     let source_len = file.source().len();
-    let range = file.parser_span_to_text_range(ParserSpan::new(0, source_len));
+    let range = file.parser_span_to_text_range(ParserSpan::from_usize(0, source_len));
 
     assert_eq!(
         range,
@@ -72,8 +72,8 @@ fn converts_parser_spans_to_text_ranges() {
 #[test]
 fn try_parser_span_to_text_range_rejects_out_of_bounds_spans() {
     let source = "module M where\nfoo = 1\n";
-    let err =
-        try_parser_span_to_text_range(source, ParserSpan::new(0, source.len() + 1)).unwrap_err();
+    let err = try_parser_span_to_text_range(source, ParserSpan::from_usize(0, source.len() + 1))
+        .unwrap_err();
     assert_eq!(err.kind(), ParserSpanToTextRangeErrorKind::OutOfBounds);
     assert_eq!(
         err.to_string(),
@@ -96,7 +96,7 @@ fn try_parser_span_to_text_range_rejects_out_of_bounds_spans() {
 #[test]
 fn try_parser_span_to_text_range_reports_inverted_spans() {
     let source = "abc";
-    let err = try_parser_span_to_text_range(source, ParserSpan::new(2, 1)).unwrap_err();
+    let err = try_parser_span_to_text_range(source, ParserSpan::from_usize(2, 1)).unwrap_err();
     assert_eq!(err.kind(), ParserSpanToTextRangeErrorKind::InvertedSpan);
     assert_eq!(
         err.to_string(),
@@ -110,7 +110,7 @@ fn try_parser_span_to_text_range_reports_inverted_spans() {
 #[test]
 fn try_parser_span_to_text_range_rejects_non_utf8_boundary_spans() {
     let source = "a😀b";
-    let err = try_parser_span_to_text_range(source, ParserSpan::new(1, 2)).unwrap_err();
+    let err = try_parser_span_to_text_range(source, ParserSpan::from_usize(1, 2)).unwrap_err();
     assert_eq!(err.kind(), ParserSpanToTextRangeErrorKind::NonUtf8Boundary);
 
     assert_eq!(
@@ -140,7 +140,7 @@ fn diagnostics_are_read_through_accessors_not_field_literals() {
 #[test]
 fn try_parser_span_to_text_range_succeeds_for_valid_span() {
     let source = "module M where\nfoo = 1\n";
-    let range =
-        try_parser_span_to_text_range(source, ParserSpan::new(0, 5)).expect("span should be valid");
+    let range = try_parser_span_to_text_range(source, ParserSpan::from_usize(0, 5))
+        .expect("span should be valid");
     assert_eq!(range, TextRange::new(0.into(), 5.into()));
 }

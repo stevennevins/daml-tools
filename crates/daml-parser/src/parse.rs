@@ -7,8 +7,8 @@
 use crate::ast::{
     Alt, Binding, ChoiceDecl, Consuming, Decl, DiagnosticCategory, DoStmt, Equation, Expr,
     FieldAssign, FieldDecl, FunctionDecl, Identifier, ImportDecl, ImportStyle, InterfaceDecl,
-    InterfaceInstanceDecl, LitKind, Module, ModuleName, Operator, ParseDiagnostic, Pat,
-    SectionSide, Span, TemplateBodyDecl, TemplateDecl, Type,
+    InterfaceInstanceDecl, LitKind, Module, ModuleName, Operator, ParseDiagnostic, Pat, Span,
+    TemplateBodyDecl, TemplateDecl, Type, TypeAnnotation,
 };
 use crate::layout::resolve_layout;
 use crate::lexer::{lex, Pos, Token, TokenKind};
@@ -143,14 +143,14 @@ pub fn parse_module(source: &str) -> ParseModuleResult {
                 ParseDiagnostic {
                     message: e.to_string(),
                     pos: e.pos,
-                    span: crate::ast::Span::new(range.start, range.end),
+                    span: crate::ast::Span::from_usize(range.start, range.end),
                     category: DiagnosticCategory::Lex,
                 }
             })
             .collect(),
     };
     let mut module = p.module();
-    module.span = crate::ast::Span::new(0, source.len());
+    module.span = crate::ast::Span::from_usize(0, source.len());
     ParseModuleResult {
         module,
         diagnostics: p.diags,
@@ -214,9 +214,9 @@ impl Parser {
             // parent. Use `a` (past any leading virtual tokens) — `from` itself
             // may be a virtual token whose byte offset is a meaningless 0.
             let p = self.byte_at(a);
-            return crate::ast::Span::new(p, p);
+            return crate::ast::Span::from_usize(p, p);
         }
-        crate::ast::Span::new(self.toks[a].start, self.toks[b - 1].end)
+        crate::ast::Span::from_usize(self.toks[a].start, self.toks[b - 1].end)
     }
 
     /// Byte offset where token `i` begins, or the source end past the last one.
@@ -329,7 +329,7 @@ impl Parser {
         type_start: usize,
         type_end: usize,
         context: &'static str,
-    ) -> Option<Type> {
+    ) -> TypeAnnotation {
         let type_start = type_start.min(self.toks.len());
         let type_end = type_end.min(self.toks.len());
         let tokens = &self.toks[type_start..type_end];
@@ -341,15 +341,19 @@ impl Parser {
                 None
             }
         });
-        if ty.is_none() {
-            self.diags.push(ParseDiagnostic {
-                message: format!("malformed {context} type annotation"),
-                pos: self.pos_of_token(type_start),
-                span: self.span_of_token_range(type_start, type_end),
-                category: DiagnosticCategory::Malformed,
-            });
+        match ty {
+            Some(ty) => TypeAnnotation::Present(ty),
+            None => {
+                let span = self.span_of_token_range(type_start, type_end);
+                self.diags.push(ParseDiagnostic {
+                    message: format!("malformed {context} type annotation"),
+                    pos: self.pos_of_token(type_start),
+                    span,
+                    category: DiagnosticCategory::Malformed,
+                });
+                TypeAnnotation::Malformed { span }
+            }
         }
-        ty
     }
 
     /// Trim trailing tokens that belong to declaration tails (for example `= expr`
@@ -421,7 +425,7 @@ impl Parser {
         let end = end.min(self.toks.len());
         let span_start = self.byte_at(start);
         if end <= start {
-            return Span::new(span_start, span_start);
+            return Span::from_usize(span_start, span_start);
         }
 
         let mut cursor = end;
@@ -429,11 +433,11 @@ impl Parser {
             cursor -= 1;
             let token = &self.toks[cursor];
             if !token.is_virtual() {
-                return Span::new(span_start, token.end);
+                return Span::from_usize(span_start, token.end);
             }
         }
 
-        Span::new(span_start, span_start)
+        Span::from_usize(span_start, span_start)
     }
 
     /// Byte span of the next real (non-virtual) token, or a zero-width span at
@@ -444,8 +448,8 @@ impl Parser {
             j += 1;
         }
         self.toks.get(j).map_or_else(
-            || crate::ast::Span::new(self.src_len, self.src_len),
-            |t| crate::ast::Span::new(t.start, t.end),
+            || crate::ast::Span::from_usize(self.src_len, self.src_len),
+            |t| crate::ast::Span::from_usize(t.start, t.end),
         )
     }
 
@@ -489,7 +493,7 @@ impl Parser {
     fn module(&mut self) -> Module {
         let pos = self.pos();
         let header_start = self.i;
-        let mut header = crate::ast::Span::new(0, 0);
+        let mut header = crate::ast::Span::from_usize(0, 0);
         let mut name = ModuleName::from("Unknown");
 
         if self.eat_keyword("module") {
@@ -558,7 +562,7 @@ impl Parser {
             header,
             imports,
             decls,
-            span: crate::ast::Span::new(0, self.src_len),
+            span: crate::ast::Span::from_usize(0, self.src_len),
         }
     }
 
@@ -922,7 +926,7 @@ impl Parser {
             }) = self.peek().cloned()
             {
                 let p = self.pos();
-                let nspan = Span::new(self.toks[self.i].start, self.toks[self.i].end);
+                let nspan = Span::from_usize(self.toks[self.i].start, self.toks[self.i].end);
                 self.bump();
                 names.push((name, p, nspan));
                 if !self.eat(&TokenKind::Comma) {
@@ -945,7 +949,7 @@ impl Parser {
             let last = names.len() - 1;
             for (idx, (name, p, nspan)) in names.into_iter().enumerate() {
                 let span = if idx == last {
-                    Span::new(nspan.start, type_end.max(nspan.end))
+                    Span::from_usize(nspan.start_usize(), type_end.max(nspan.end_usize()))
                 } else {
                     nspan
                 };
@@ -1049,7 +1053,9 @@ impl Parser {
                             _ => {}
                         }
                     }
-                    let ty = colon.and_then(|j| self.parse_type_annotation(j + 1, self.i, "key"));
+                    let ty = colon.map_or(TypeAnnotation::Absent, |j| {
+                        self.parse_type_annotation(j + 1, self.i, "key")
+                    });
                     self.skip_to_item_end();
                     ty
                 };
@@ -1148,7 +1154,7 @@ impl Parser {
             self.skip_type_tokens();
             self.parse_type_annotation(ty_start, self.i, "choice")
         } else {
-            None
+            TypeAnnotation::Absent
         };
         let (params, dangling) = if self.eat_keyword("with") {
             let parsed = self.field_block();
@@ -1328,7 +1334,7 @@ impl Parser {
                                     "interface method",
                                 ),
                                 pos: mpos,
-                                span: Span::new(mstart, self.end_byte().max(mstart)),
+                                span: Span::from_usize(mstart, self.end_byte().max(mstart)),
                             });
                             continue;
                         }
@@ -1523,7 +1529,7 @@ impl Parser {
         self.skip_to_item_end();
         Some(Decl::Function(FunctionDecl {
             name,
-            ty: None,
+            ty: TypeAnnotation::Absent,
             equations: vec![Equation {
                 params,
                 body,
@@ -2171,7 +2177,7 @@ impl Parser {
                 self.bump(); // with
                 let fields = self.record_fields();
                 let tpos = target.pos();
-                let sp = Span::new(target.span().start, self.end_byte());
+                let sp = Span::from_usize(target.span().start_usize(), self.end_byte());
                 let rec = Expr::Record {
                     base: Box::new(target),
                     fields,
@@ -2270,9 +2276,7 @@ impl Parser {
             let start_i = self.i;
             if self.at_op("..") {
                 self.bump();
-                fields.push(FieldAssign {
-                    name: "..".into(),
-                    value: None,
+                fields.push(FieldAssign::Wildcard {
                     pos,
                     span: self.node_span(start_i),
                 });
@@ -2293,17 +2297,16 @@ impl Parser {
             };
             if self.eat_op("=") {
                 let value = self.expr_prec(1, DoExpressionMode::Allow);
-                fields.push(FieldAssign {
+                fields.push(FieldAssign::Assign {
                     name,
-                    value: Some(value),
+                    value,
                     pos,
                     span: self.node_span(start_i),
                 });
             } else {
                 // Pun: `Foo with owner`.
-                fields.push(FieldAssign {
+                fields.push(FieldAssign::Pun {
                     name,
-                    value: None,
                     pos,
                     span: self.node_span(start_i),
                 });
@@ -2351,7 +2354,7 @@ impl Parser {
     /// (`Map.lookup`) are already a single token and never reach here.
     fn projection_tail(&mut self, mut base: Expr) -> Expr {
         while self.at_tight_projection() {
-            let start = base.span().start;
+            let start = base.span().start_usize();
             let pos = base.pos();
             self.bump(); // '.'
             let Some(field_tok) = self.bump() else {
@@ -2366,14 +2369,14 @@ impl Parser {
                 qualifier,
                 name,
                 pos: field_tok.pos,
-                span: Span::new(field_tok.start, field_tok.end),
+                span: Span::from_usize(field_tok.start, field_tok.end),
             };
             base = Expr::BinOp {
                 op: ".".into(),
                 lhs: Box::new(base),
                 rhs: Box::new(field),
                 pos,
-                span: Span::new(start, self.end_byte()),
+                span: Span::from_usize(start, self.end_byte()),
             };
         }
         base
@@ -2818,14 +2821,14 @@ impl Parser {
                 params: vec![Pat::Var {
                     name: "_".into(),
                     pos,
-                    span: Span::new(self.byte_at(start_i), self.byte_at(start_i)),
+                    span: Span::from_usize(self.byte_at(start_i), self.byte_at(start_i)),
                 }],
                 body: Box::new(Expr::Case {
                     scrutinee: Box::new(Expr::Var {
                         qualifier: None,
                         name: "_".into(),
                         pos,
-                        span: Span::new(self.byte_at(start_i), self.byte_at(start_i)),
+                        span: Span::from_usize(self.byte_at(start_i), self.byte_at(start_i)),
                     }),
                     alts,
                     pos,
@@ -2878,20 +2881,17 @@ impl Parser {
             if !is_reserved_op(&o) && o != "\\" && o != "-" {
                 self.bump();
                 if self.eat(&TokenKind::RParen) {
-                    return Some(Expr::Section {
+                    return Some(Expr::OperatorRef {
                         op: o,
-                        operand: None,
-                        side: SectionSide::Right,
                         pos,
                         span: self.node_span(start_i),
                     });
                 }
                 let operand = self.expr();
                 self.eat(&TokenKind::RParen);
-                return Some(Expr::Section {
+                return Some(Expr::RightSection {
                     op: o,
-                    operand: Some(Box::new(operand)),
-                    side: SectionSide::Right,
+                    operand: Box::new(operand),
                     pos,
                     span: self.node_span(start_i),
                 });
@@ -2915,10 +2915,9 @@ impl Parser {
             if !is_reserved_op(&o) && self.peek_at(1) == Some(&TokenKind::RParen) {
                 self.bump();
                 self.bump();
-                return Some(Expr::Section {
+                return Some(Expr::LeftSection {
                     op: o,
-                    operand: Some(Box::new(first)),
-                    side: SectionSide::Left,
+                    operand: Box::new(first),
                     pos,
                     span: self.node_span(start_i),
                 });
@@ -3058,7 +3057,7 @@ fn merge_functions(decls: &mut Vec<Decl>) {
                         out.push(Decl::Function(f));
                         continue;
                     };
-                    if g.ty.is_none() {
+                    if g.ty.is_absent() {
                         g.ty = f.ty.clone();
                     }
                     if g.sig_span.is_none() {
@@ -3162,12 +3161,12 @@ impl<'a> TypeTokenParser<'a> {
         if self.eat_op("=>") {
             // `lhs` was the constraint context; drop it, keep the body.
             let body = self.parse_type()?;
-            let span = Span::new(lhs.span().start, body.span().end);
+            let span = Span::from_usize(lhs.span().start_usize(), body.span().end_usize());
             return Some(Type::Constrained(Box::new(body), span));
         }
         if self.eat_op("->") {
             let rhs = self.parse_type()?;
-            let span = Span::new(lhs.span().start, rhs.span().end);
+            let span = Span::from_usize(lhs.span().start_usize(), rhs.span().end_usize());
             return Some(Type::Fun(Box::new(lhs), Box::new(rhs), span));
         }
         Some(lhs)
@@ -3181,8 +3180,8 @@ impl<'a> TypeTokenParser<'a> {
             TypeAtom::DroppedLiteral(_) => return None,
         };
         let mut args = Vec::new();
-        let start = head.span().start;
-        let mut end = head.span().end;
+        let start = head.span().start_usize();
+        let mut end = head.span().end_usize();
         loop {
             // Only continue the spine if the next token can START an atom; an
             // operator (`->`, `=>`) or closer ends it.
@@ -3191,17 +3190,17 @@ impl<'a> TypeTokenParser<'a> {
             }
             match self.parse_atom()? {
                 TypeAtom::ParsedType(t) => {
-                    end = t.span().end;
+                    end = t.span().end_usize();
                     args.push(t);
                 }
                 TypeAtom::DroppedLiteral(span) => {
                     // `Numeric 10` — drop the `10` as structure but keep it in
                     // the enclosing type span.
-                    end = span.end;
+                    end = span.end_usize();
                 }
             }
         }
-        let span = Span::new(start, end);
+        let span = Span::from_usize(start, end);
         if args.is_empty() {
             Some(head.with_span(span))
         } else {
@@ -3234,7 +3233,7 @@ impl<'a> TypeTokenParser<'a> {
                 let con = Type::Con {
                     qualifier: qualifier.clone(),
                     name: name.clone(),
-                    span: Span::new(tok.start, tok.end),
+                    span: Span::from_usize(tok.start, tok.end),
                 };
                 self.cursor += 1;
                 Some(TypeAtom::ParsedType(con))
@@ -3242,21 +3241,23 @@ impl<'a> TypeTokenParser<'a> {
             TokenKind::LowerId { name, .. } => {
                 // Type variable (`a`, `n`). Qualified lowercase never appears in
                 // a real type position; treat the name as the variable.
-                let var = Type::Var(name.clone(), Span::new(tok.start, tok.end));
+                let var = Type::Var(name.clone(), Span::from_usize(tok.start, tok.end));
                 self.cursor += 1;
                 Some(TypeAtom::ParsedType(var))
             }
             TokenKind::IntLit(_) | TokenKind::DecimalLit(_) => {
                 // Type-level nat literal (`Numeric 10`): consumed, but dropped.
                 self.cursor += 1;
-                Some(TypeAtom::DroppedLiteral(Span::new(tok.start, tok.end)))
+                Some(TypeAtom::DroppedLiteral(Span::from_usize(
+                    tok.start, tok.end,
+                )))
             }
             TokenKind::StringLit(text) => {
                 self.cursor += 1;
                 Some(TypeAtom::ParsedType(Type::Lit {
                     kind: LitKind::Text,
                     text: text.clone(),
-                    span: Span::new(tok.start, tok.end),
+                    span: Span::from_usize(tok.start, tok.end),
                 }))
             }
             TokenKind::CharLit(text) => {
@@ -3264,7 +3265,7 @@ impl<'a> TypeTokenParser<'a> {
                 Some(TypeAtom::ParsedType(Type::Lit {
                     kind: LitKind::Char,
                     text: text.clone(),
-                    span: Span::new(tok.start, tok.end),
+                    span: Span::from_usize(tok.start, tok.end),
                 }))
             }
             TokenKind::LBracket => {
@@ -3272,7 +3273,10 @@ impl<'a> TypeTokenParser<'a> {
                 self.cursor += 1;
                 let inner = self.parse_type()?;
                 self.eat_token(&TokenKind::RBracket).map(|end| {
-                    TypeAtom::ParsedType(Type::List(Box::new(inner), Span::new(start, end.end)))
+                    TypeAtom::ParsedType(Type::List(
+                        Box::new(inner),
+                        Span::from_usize(start, end.end),
+                    ))
                 })
             }
             TokenKind::LParen => {
@@ -3299,7 +3303,7 @@ impl<'a> TypeTokenParser<'a> {
                         return Some(TypeAtom::ParsedType(Type::Con {
                             qualifier: None,
                             name: name.into(),
-                            span: Span::new(start, end.end),
+                            span: Span::from_usize(start, end.end),
                         }));
                     }
                     return None;
@@ -3327,14 +3331,16 @@ impl<'a> TypeTokenParser<'a> {
                         return Some(TypeAtom::ParsedType(Type::Con {
                             qualifier: None,
                             name: name.into(),
-                            span: Span::new(start, end.end),
+                            span: Span::from_usize(start, end.end),
                         }));
                     }
                     return None;
                 }
                 if let Some(end) = self.eat_token(&TokenKind::RParen) {
                     // ()
-                    return Some(TypeAtom::ParsedType(Type::Unit(Span::new(start, end.end))));
+                    return Some(TypeAtom::ParsedType(Type::Unit(Span::from_usize(
+                        start, end.end,
+                    ))));
                 }
                 let first = self.parse_type()?;
                 if self.peek().map(|t| &t.kind) == Some(&TokenKind::Comma) {
@@ -3343,12 +3349,12 @@ impl<'a> TypeTokenParser<'a> {
                         items.push(self.parse_type()?);
                     }
                     self.eat_token(&TokenKind::RParen).map(|end| {
-                        TypeAtom::ParsedType(Type::Tuple(items, Span::new(start, end.end)))
+                        TypeAtom::ParsedType(Type::Tuple(items, Span::from_usize(start, end.end)))
                     })
                 } else {
                     self.eat_token(&TokenKind::RParen).map(|end| {
                         // Grouping parens.
-                        TypeAtom::ParsedType(first.with_span(Span::new(start, end.end)))
+                        TypeAtom::ParsedType(first.with_span(Span::from_usize(start, end.end)))
                     })
                 }
             }
@@ -3376,7 +3382,7 @@ impl<'a> TypeTokenParser<'a> {
                 self.cursor += 1;
                 let body = self.parse_type()?;
                 let body_span = body.span();
-                return Some(body.with_span(Span::new(start, body_span.end)));
+                return Some(body.with_span(Span::from_usize(start, body_span.end_usize())));
             }
             self.cursor += 1;
         }

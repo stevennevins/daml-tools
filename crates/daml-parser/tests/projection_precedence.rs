@@ -237,10 +237,10 @@ fn find_binop<'a>(e: &'a Expr, op: &str) -> Option<&'a Expr> {
             .find_map(|binding| find_binop_in_binding(binding, op))
             .or_else(|| find_binop(body, op)),
         Expr::Record { base, fields, .. } => find_binop(base, op).or_else(|| {
-            fields
-                .iter()
-                .filter_map(|field| field.value.as_ref())
-                .find_map(|value| find_binop(value, op))
+            fields.iter().find_map(|field| match field {
+                FieldAssign::Assign { value, .. } => find_binop(value, op),
+                _ => None,
+            })
         }),
         Expr::Tuple { items, .. } | Expr::List { items, .. } => {
             items.iter().find_map(|item| find_binop(item, op))
@@ -250,7 +250,9 @@ fn find_binop<'a>(e: &'a Expr, op: &str) -> Option<&'a Expr> {
                 .iter()
                 .find_map(|handler| find_binop(&handler.body, op))
         }),
-        Expr::Section { operand, .. } => operand.as_deref().and_then(|expr| find_binop(expr, op)),
+        Expr::LeftSection { operand, .. } | Expr::RightSection { operand, .. } => {
+            find_binop(operand, op)
+        }
         _ => None,
     }
 }

@@ -36,7 +36,9 @@
 //! (`crate::normalize_gaps`).
 
 use crate::ImportOrder;
-use daml_parser::ast::{ChoiceDecl, Decl, DoStmt, Expr, Module, Span, TemplateBodyDecl};
+use daml_parser::ast::{
+    ChoiceDecl, Decl, DoStmt, Expr, FieldAssign, Module, Span, TemplateBodyDecl, TypeAnnotation,
+};
 use daml_parser::lexer::TriviaKind;
 use daml_syntax::{SourceFile, SourceTokens};
 
@@ -606,7 +608,7 @@ fn collect_inline_expression_rewrites(
         };
         for eq in &fun.equations {
             let line_starts = line_start_table(src);
-            let eq_line = line_of(&line_starts, eq.span.start);
+            let eq_line = line_of(&line_starts, eq.span.start_usize());
             if leading_has_tab(src, line_starts[eq_line]) {
                 continue;
             }
@@ -656,18 +658,18 @@ fn collect_expr_rewrite(
                 text.push_str(&ind);
             }
             text.push_str("if ");
-            text.push_str(src[cond.span().start..cond.span().end].trim());
+            text.push_str(src[cond.span().range()].trim());
             text.push('\n');
             text.push_str(&nested);
             text.push_str("then ");
-            text.push_str(src[then_branch.span().start..then_branch.span().end].trim());
+            text.push_str(src[then_branch.span().range()].trim());
             text.push('\n');
             text.push_str(&nested);
             text.push_str("else ");
-            text.push_str(src[else_branch.span().start..else_branch.span().end].trim());
+            text.push_str(src[else_branch.span().range()].trim());
             replacements.push(Replacement {
-                start: span.start,
-                end: span.end,
+                start: span.start_usize(),
+                end: span.end_usize(),
                 text,
             });
         }
@@ -679,18 +681,18 @@ fn collect_expr_rewrite(
         {
             let ind = " ".repeat(indent);
             let mut text = String::from("case ");
-            text.push_str(src[scrutinee.span().start..scrutinee.span().end].trim());
+            text.push_str(src[scrutinee.span().range()].trim());
             text.push_str(" of");
             for alt in alts {
                 text.push('\n');
                 text.push_str(&ind);
-                text.push_str(src[alt.pat.span().start..alt.pat.span().end].trim());
+                text.push_str(src[alt.pat.span().range()].trim());
                 text.push_str(" -> ");
-                text.push_str(src[alt.body.span().start..alt.body.span().end].trim());
+                text.push_str(src[alt.body.span().range()].trim());
             }
             replacements.push(Replacement {
-                start: span.start,
-                end: span.end,
+                start: span.start_usize(),
+                end: span.end_usize(),
                 text,
             });
         }
@@ -710,37 +712,37 @@ fn collect_expr_rewrite(
             for binding in bindings {
                 text.push('\n');
                 text.push_str(&nested);
-                text.push_str(src[binding.span.start..binding.span.end].trim());
+                text.push_str(src[binding.span.range()].trim());
             }
             text.push('\n');
             text.push_str(&ind);
             text.push_str("in ");
-            text.push_str(src[body.span().start..body.span().end].trim());
+            text.push_str(src[body.span().range()].trim());
             replacements.push(Replacement {
-                start: span.start,
-                end: span.end,
+                start: span.start_usize(),
+                end: span.end_usize(),
                 text,
             });
         }
         Expr::Record { base, fields, .. }
             if rewrite_mode == RewriteLeadMode::LeadCandidate
                 && same_line_span(src, span)
-                && src[span.start..span.end].contains(';')
+                && src[span.range()].contains(';')
                 && matches!(base.as_ref(), Expr::Con { .. })
                 && fields.len() > 1 =>
         {
             let ind = " ".repeat(indent);
             let mut text = String::new();
-            text.push_str(src[base.span().start..base.span().end].trim());
+            text.push_str(src[base.span().range()].trim());
             text.push_str(" with");
             for field in fields {
                 text.push('\n');
                 text.push_str(&ind);
-                text.push_str(src[field.span.start..field.span.end].trim());
+                text.push_str(src[field.span().range()].trim());
             }
             replacements.push(Replacement {
-                start: span.start,
-                end: span.end,
+                start: span.start_usize(),
+                end: span.end_usize(),
                 text,
             });
         }
@@ -758,20 +760,20 @@ fn collect_expr_rewrite(
                 text.push('\n');
                 text.push_str(&ind);
             }
-            text.push_str(src[func.span().start..func.span().end].trim());
+            text.push_str(src[func.span().range()].trim());
             for arg in args {
                 text.push('\n');
                 text.push_str(&nested);
-                text.push_str(src[arg.span().start..arg.span().end].trim());
+                text.push_str(src[arg.span().range()].trim());
             }
             replacements.push(Replacement {
-                start: span.start,
-                end: span.end,
+                start: span.start_usize(),
+                end: span.end_usize(),
                 text,
             });
         }
         _ => {
-            let expr_line = line_of(&line_starts, span.start);
+            let expr_line = line_of(&line_starts, span.start_usize());
             let child_indent = if expr_line < line_starts.len() {
                 indent_of_usize(src, &line_starts, expr_line).saturating_add(INDENT_WIDTH)
             } else {
@@ -887,7 +889,7 @@ fn collect_expr_rewrite(
                         replacements,
                     );
                     for field in fields {
-                        if let Some(value) = &field.value {
+                        if let FieldAssign::Assign { value, .. } = field {
                             collect_expr_rewrite(
                                 src,
                                 value,
@@ -925,7 +927,7 @@ fn inline_if_parts_are_simple(
 ) -> bool {
     [cond.span(), then_branch.span(), else_branch.span()]
         .into_iter()
-        .map(|span| src[span.start..span.end].trim())
+        .map(|span| src[span.range()].trim())
         .all(is_simple_inline_piece)
 }
 
@@ -939,7 +941,7 @@ fn is_simple_inline_piece(text: &str) -> bool {
 
 fn app_args_are_simple(src: &str, args: &[Expr]) -> bool {
     args.iter()
-        .map(|arg| src[arg.span().start..arg.span().end].trim())
+        .map(|arg| src[arg.span().range()].trim())
         .all(is_simple_app_arg)
 }
 
@@ -952,7 +954,7 @@ fn is_simple_app_arg(text: &str) -> bool {
 }
 
 fn same_line_span(src: &str, span: Span) -> bool {
-    !src[span.start..span.end].contains('\n')
+    !src[span.range()].contains('\n')
 }
 
 fn has_trailing_with_comment(src: &str) -> bool {
@@ -987,8 +989,8 @@ fn organize_imports(src: &str) -> String {
     };
 
     let line_starts = line_start_table(src);
-    let start_line = line_of(&line_starts, first.span.start);
-    let end_line = line_of(&line_starts, last.span.end.saturating_sub(1));
+    let start_line = line_of(&line_starts, first.span.start_usize());
+    let end_line = line_of(&line_starts, last.span.end_usize().saturating_sub(1));
     let block_start = line_starts[start_line];
     let block_end = *line_starts.get(end_line + 1).unwrap_or(&src.len());
     if src[block_start..block_end].contains("--")
@@ -1006,7 +1008,7 @@ fn organize_imports(src: &str) -> String {
         .map(|imp| BorrowedImport {
             group: import_group(&imp.module_name),
             module_name: &imp.module_name,
-            text: src[imp.span.start..imp.span.end].trim(),
+            text: src[imp.span.range()].trim(),
         })
         .collect();
     imports.sort_by(|a, b| {
@@ -1020,7 +1022,7 @@ fn organize_imports(src: &str) -> String {
         .imports
         .iter()
         .zip(&imports)
-        .all(|(imp, sorted)| sorted.text == src[imp.span.start..imp.span.end].trim());
+        .all(|(imp, sorted)| sorted.text == src[imp.span.range()].trim());
     if order_unchanged {
         return src.to_string();
     }
@@ -1062,8 +1064,8 @@ fn rewrite_lambda_bodies(src: &str) -> String {
         let Expr::Lambda { span, body, .. } = expr else {
             return;
         };
-        let lambda_line = line_of(&line_starts, span.start);
-        let body_line = line_of(&line_starts, body.span().start);
+        let lambda_line = line_of(&line_starts, span.start_usize());
+        let body_line = line_of(&line_starts, body.span().start_usize());
         if body_line <= lambda_line || leading_has_tab(src, line_starts[body_line]) {
             return;
         }
@@ -1072,7 +1074,7 @@ fn rewrite_lambda_bodies(src: &str) -> String {
         if delta != 0 {
             edits.push(Edit {
                 child_start: line_starts[body_line],
-                block_end: body.span().end,
+                block_end: body.span().end_usize(),
                 delta,
             });
         }
@@ -1100,10 +1102,10 @@ fn rewrite_infix_continuations(src: &str) -> String {
         };
         for eq in &fun.equations {
             let body_span = eq.body.span();
-            let first_line = line_of(&line_starts, body_span.start);
+            let first_line = line_of(&line_starts, body_span.start_usize());
             let target = indent_of(src, &line_starts, first_line) + INDENT;
             let mut line = first_line + 1;
-            while line < line_starts.len() && line_starts[line] < body_span.end {
+            while line < line_starts.len() && line_starts[line] < body_span.end_usize() {
                 let Some(trimmed) = code_line_trimmed(src, &line_starts, &comments, line) else {
                     line += 1;
                     continue;
@@ -1174,17 +1176,18 @@ fn do_block_edits(src: &str, module: &Module) -> Vec<Edit> {
     let mut accepted: Vec<Span> = Vec::new();
     for do_span in do_block_spans {
         // Skip a do-block nested in one we already accepted (it rides along).
-        if accepted
-            .iter()
-            .any(|a| a.start <= do_span.start && do_span.end <= a.end && *a != do_span)
-        {
+        if accepted.iter().any(|a| {
+            a.start_usize() <= do_span.start_usize()
+                && do_span.end_usize() <= a.end_usize()
+                && *a != do_span
+        }) {
             continue;
         }
-        let do_line = line_of(&line_starts, do_span.start);
+        let do_line = line_of(&line_starts, do_span.start_usize());
         let do_indent = indent_of(src, &line_starts, do_line);
         // First real (non-blank, non-comment) statement line after the do line.
         let Some(first_stmt_line) =
-            first_code_line_after(src, &line_starts, &comments, do_line, do_span.end)
+            first_code_line_after(src, &line_starts, &comments, do_line, do_span.end_usize())
         else {
             continue; // inline `do stmt` — nothing on its own line; leave it
         };
@@ -1199,7 +1202,7 @@ fn do_block_edits(src: &str, module: &Module) -> Vec<Edit> {
         if delta != 0 {
             edits.push(Edit {
                 child_start: line_starts[first_stmt_line],
-                block_end: do_span.end,
+                block_end: do_span.end_usize(),
                 delta,
             });
         }
@@ -1252,7 +1255,7 @@ fn comment_spans(src: &str) -> Vec<(usize, usize)> {
         .trivia()
         .iter()
         .filter(|t| matches!(t.kind(), TriviaKind::LineComment | TriviaKind::BlockComment))
-        .map(|t| (t.start(), t.end()))
+        .map(|t| (t.start().get(), t.end().get()))
         .collect();
     v.sort_by_key(|&(s, _)| s);
     v
@@ -1456,8 +1459,8 @@ fn walk_expression(expr: &Expr, f: &mut impl FnMut(&Expr)) {
         Expr::Record { base, fields, .. } => {
             walk_expression(base, f);
             for fa in fields {
-                if let Some(v) = &fa.value {
-                    walk_expression(v, f);
+                if let FieldAssign::Assign { value, .. } = fa {
+                    walk_expression(value, f);
                 }
             }
         }
@@ -1470,9 +1473,9 @@ fn walk_expression(expr: &Expr, f: &mut impl FnMut(&Expr)) {
                 .iter()
                 .for_each(|handler| walk_expression(&handler.body, f));
         }
-        Expr::Section {
-            operand: Some(o), ..
-        } => walk_expression(o, f),
+        Expr::LeftSection { operand, .. } | Expr::RightSection { operand, .. } => {
+            walk_expression(operand, f);
+        }
         _ => {}
     }
 }
@@ -1526,8 +1529,8 @@ fn if_edits(src: &str, module: &Module) -> Vec<Edit> {
         {
             ifs.push((
                 *span,
-                span.start,
-                cond.span().end,
+                span.start_usize(),
+                cond.span().end_usize(),
                 then_branch.span(),
                 else_branch.span(),
             ));
@@ -1539,10 +1542,11 @@ fn if_edits(src: &str, module: &Module) -> Vec<Edit> {
     let mut accepted: Vec<Span> = Vec::new();
     for (if_span, if_byte, cond_end, then_span, else_span) in ifs {
         // Skip an if nested in one we already claimed (it rides the outer shift).
-        if accepted
-            .iter()
-            .any(|a| a.start <= if_span.start && if_span.end <= a.end && *a != if_span)
-        {
+        if accepted.iter().any(|a| {
+            a.start_usize() <= if_span.start_usize()
+                && if_span.end_usize() <= a.end_usize()
+                && *a != if_span
+        }) {
             continue;
         }
         accepted.push(if_span);
@@ -1557,10 +1561,19 @@ fn if_edits(src: &str, module: &Module) -> Vec<Edit> {
         let if_col = usize_to_i64_saturating(src[line_starts[if_line]..if_byte].chars().count());
         let target = if_col + INDENT;
 
-        let then_byte = find_keyword(src, cond_end, then_span.start, "then", &comments);
-        let else_byte = find_keyword(src, then_span.end, else_span.start, "else", &comments);
+        let then_byte = find_keyword(src, cond_end, then_span.start_usize(), "then", &comments);
+        let else_byte = find_keyword(
+            src,
+            then_span.end_usize(),
+            else_span.start_usize(),
+            "else",
+            &comments,
+        );
 
-        for (kw_byte, branch_end) in [(then_byte, then_span.end), (else_byte, else_span.end)] {
+        for (kw_byte, branch_end) in [
+            (then_byte, then_span.end_usize()),
+            (else_byte, else_span.end_usize()),
+        ] {
             let Some(kw_byte) = kw_byte else { continue };
             let kw_line = line_of(&line_starts, kw_byte);
             let ls = line_starts[kw_line];
@@ -1609,7 +1622,7 @@ fn case_edits(src: &str, module: &Module) -> Vec<Edit> {
     walk_module_expressions(module, &mut |e| {
         if let Expr::Case { span, alts, .. } = e {
             if let (Some(first), Some(last)) = (alts.first(), alts.last()) {
-                cases.push((*span, first.span.start, last.span.end));
+                cases.push((*span, first.span.start_usize(), last.span.end_usize()));
             }
         }
     });
@@ -1619,15 +1632,16 @@ fn case_edits(src: &str, module: &Module) -> Vec<Edit> {
     let mut accepted: Vec<Span> = Vec::new();
     for (case_span, first_alt, last_alt_end) in cases {
         // Skip a case nested in one we already claimed (it rides the outer shift).
-        if accepted
-            .iter()
-            .any(|a| a.start <= case_span.start && case_span.end <= a.end && *a != case_span)
-        {
+        if accepted.iter().any(|a| {
+            a.start_usize() <= case_span.start_usize()
+                && case_span.end_usize() <= a.end_usize()
+                && *a != case_span
+        }) {
             continue;
         }
         accepted.push(case_span);
 
-        let case_line = line_of(&line_starts, case_span.start);
+        let case_line = line_of(&line_starts, case_span.start_usize());
         let alt_line = line_of(&line_starts, first_alt);
         // Inline `case x of A -> …` (alts share the case line): leave verbatim.
         if alt_line <= case_line {
@@ -1675,7 +1689,7 @@ fn letin_edits(src: &str, module: &Module) -> Vec<Edit> {
     walk_module_expressions(module, &mut |e| {
         if let Expr::LetIn { span, bindings, .. } = e {
             if let (Some(first), Some(last)) = (bindings.first(), bindings.last()) {
-                lets.push((*span, first.span.start, last.span.end));
+                lets.push((*span, first.span.start_usize(), last.span.end_usize()));
             }
         }
     });
@@ -1684,15 +1698,16 @@ fn letin_edits(src: &str, module: &Module) -> Vec<Edit> {
     let mut edits: Vec<Edit> = Vec::new();
     let mut accepted: Vec<Span> = Vec::new();
     for (let_span, first_bind, last_bind_end) in lets {
-        if accepted
-            .iter()
-            .any(|a| a.start <= let_span.start && let_span.end <= a.end && *a != let_span)
-        {
+        if accepted.iter().any(|a| {
+            a.start_usize() <= let_span.start_usize()
+                && let_span.end_usize() <= a.end_usize()
+                && *a != let_span
+        }) {
             continue;
         }
         accepted.push(let_span);
 
-        let let_line = line_of(&line_starts, let_span.start);
+        let let_line = line_of(&line_starts, let_span.start_usize());
         let bind_line = line_of(&line_starts, first_bind);
         // Inline `let x = … in …` (binding shares the let line): leave verbatim.
         if bind_line <= let_line {
@@ -1704,7 +1719,7 @@ fn letin_edits(src: &str, module: &Module) -> Vec<Edit> {
         // a mismatch. Unlike do/case (whose `name = do`/`= case` line-indent
         // convention is idiomatic), let-in needs `let` at line start for the
         // `bindings = let_indent + 2`, `in = let_indent` shape to line up.
-        if src[line_starts[let_line]..let_span.start]
+        if src[line_starts[let_line]..let_span.start_usize()]
             .chars()
             .any(|c| c != ' ')
         {
@@ -1759,7 +1774,12 @@ fn con_with_edits(src: &str, module: &Module) -> Vec<Edit> {
                 return;
             }
             if let (Some(first), Some(last)) = (fields.first(), fields.last()) {
-                recs.push((*span, base.span().end, first.span.start, last.span.end));
+                recs.push((
+                    *span,
+                    base.span().end_usize(),
+                    first.span().start_usize(),
+                    last.span().end_usize(),
+                ));
             }
         }
     });
@@ -1768,15 +1788,16 @@ fn con_with_edits(src: &str, module: &Module) -> Vec<Edit> {
     let mut edits: Vec<Edit> = Vec::new();
     let mut accepted: Vec<Span> = Vec::new();
     for (rec_span, base_end, first_field, last_field_end) in recs {
-        if accepted
-            .iter()
-            .any(|a| a.start <= rec_span.start && rec_span.end <= a.end && *a != rec_span)
-        {
+        if accepted.iter().any(|a| {
+            a.start_usize() <= rec_span.start_usize()
+                && rec_span.end_usize() <= a.end_usize()
+                && *a != rec_span
+        }) {
             continue;
         }
         accepted.push(rec_span);
 
-        let rec_line = line_of(&line_starts, rec_span.start);
+        let rec_line = line_of(&line_starts, rec_span.start_usize());
         let field_line = line_of(&line_starts, first_field);
         // Inline `Con with a = 1` (first field shares the line): leave verbatim.
         if field_line <= rec_line {
@@ -1890,7 +1911,7 @@ const fn body_decl_span(d: &TemplateBodyDecl) -> Span {
         | TemplateBodyDecl::Other { span, .. } => *span,
         TemplateBodyDecl::Choice(c) => c.span,
         TemplateBodyDecl::InterfaceInstance(i) => i.span,
-        _ => Span::new(0, 0),
+        _ => Span::from_usize(0, 0),
     }
 }
 
@@ -1943,8 +1964,8 @@ fn template_edits(src: &str, module: &Module) -> Vec<Edit> {
     let mut edits = Vec::new();
     for d in &module.decls {
         let head_byte = match d {
-            Decl::Template(t) => t.span.start,
-            Decl::Interface(i) => i.span.start,
+            Decl::Template(t) => t.span.start_usize(),
+            Decl::Interface(i) => i.span.start_usize(),
             _ => continue,
         };
         let head_line = line_of(&line_starts, head_byte);
@@ -1971,16 +1992,20 @@ fn template_edits(src: &str, module: &Module) -> Vec<Edit> {
                         kw_target,
                         body_target,
                         "with",
-                        t.span.start,
-                        f0.span.start,
-                        fl.span.end,
+                        t.span.start_usize(),
+                        f0.span.start_usize(),
+                        fl.span.end_usize(),
                     );
                 }
                 // where-block: signatory/choice decls, anchored on `where`.
                 if let (Some(b0), Some(bl)) = (t.body.first(), t.body.last()) {
                     let b0_start = body_decl_span(b0).start;
                     let bl_end = body_decl_span(bl).end;
-                    let where_from = t.fields.last().map(|f| f.span.end).unwrap_or(t.span.start);
+                    let where_from = t
+                        .fields
+                        .last()
+                        .map(|f| f.span.end_usize())
+                        .unwrap_or_else(|| t.span.start_usize());
                     reindent_keyword_block(
                         &mut edits,
                         &line_starts,
@@ -1991,8 +2016,8 @@ fn template_edits(src: &str, module: &Module) -> Vec<Edit> {
                         body_target,
                         "where",
                         where_from,
-                        b0_start,
-                        bl_end,
+                        b0_start.get(),
+                        bl_end.get(),
                     );
                 }
             }
@@ -2009,7 +2034,9 @@ fn template_edits(src: &str, module: &Module) -> Vec<Edit> {
                     .map(|m| m.span)
                     .chain(i.choices.iter().map(|c| c.span))
                 {
-                    last_end = Some(last_end.map_or(s.end, |e: usize| e.max(s.end)));
+                    last_end = Some(
+                        last_end.map_or_else(|| s.end_usize(), |e: usize| e.max(s.end_usize())),
+                    );
                 }
                 if let Some(last_end) = last_end {
                     if let Some(fbl) =
@@ -2026,7 +2053,7 @@ fn template_edits(src: &str, module: &Module) -> Vec<Edit> {
                             kw_target,
                             head_indent + INDENT,
                             "where",
-                            i.span.start,
+                            i.span.start_usize(),
                             line_starts[fbl],
                             last_end,
                         );
@@ -2086,10 +2113,10 @@ fn push_continuation_lines(
     span: Span,
     offset: i64,
 ) {
-    let head_line = line_of(ls, span.start);
+    let head_line = line_of(ls, span.start_usize());
     let target = indent_of(src, ls, head_line) + offset;
     let mut line = head_line + 1;
-    while line < ls.len() && ls[line] < span.end {
+    while line < ls.len() && ls[line] < span.end_usize() {
         push_code_line_edit(edits, src, ls, comments, line, target);
         line += 1;
     }
@@ -2115,7 +2142,7 @@ fn collect_choices<'a>(module: &'a Module, choices: &mut Vec<&'a ChoiceDecl>) {
         a.span
             .start
             .cmp(&b.span.start)
-            .then(b.span.end.cmp(&a.span.end))
+            .then(b.span.end_usize().cmp(&a.span.end_usize()))
     });
 }
 
@@ -2127,7 +2154,7 @@ fn choice_edits(src: &str, module: &Module) -> Vec<Edit> {
 
     let mut edits = Vec::new();
     for c in choices {
-        let choice_line = line_of(&line_starts, c.span.start);
+        let choice_line = line_of(&line_starts, c.span.start_usize());
         if leading_has_tab(src, line_starts[choice_line]) {
             continue;
         }
@@ -2135,31 +2162,41 @@ fn choice_edits(src: &str, module: &Module) -> Vec<Edit> {
         let clause_target = choice_indent + INDENT;
         let nested_target = choice_indent + 2 * INDENT;
 
-        if let Some(ty) = &c.return_ty {
-            if let Some(colon) = find_symbol(src, c.span.start, ty.span().start, ":", &comments) {
+        if let TypeAnnotation::Present(ty) = &c.return_ty {
+            if let Some(colon) = find_symbol(
+                src,
+                c.span.start_usize(),
+                ty.span().start_usize(),
+                ":",
+                &comments,
+            ) {
                 push_span_block_edit(
                     &mut edits,
                     &line_starts,
                     src,
                     colon,
-                    ty.span().end,
+                    ty.span().end_usize(),
                     clause_target,
                 );
             }
         }
 
         if let (Some(first), Some(last)) = (c.params.first(), c.params.last()) {
-            let kw_from = c.return_ty.as_ref().map_or(c.span.start, |t| t.span().end);
-            if let Some(w) = find_keyword(src, kw_from, first.span.start, "with", &comments) {
+            let kw_from = c
+                .return_ty
+                .as_type()
+                .map_or_else(|| c.span.start_usize(), |t| t.span().end_usize());
+            if let Some(w) = find_keyword(src, kw_from, first.span.start_usize(), "with", &comments)
+            {
                 let with_line = line_of(&line_starts, w);
-                let first_param_line = line_of(&line_starts, first.span.start);
+                let first_param_line = line_of(&line_starts, first.span.start_usize());
                 if first_param_line == with_line {
                     push_span_block_edit(
                         &mut edits,
                         &line_starts,
                         src,
                         w,
-                        last.span.end,
+                        last.span.end_usize(),
                         clause_target,
                     );
                 } else {
@@ -2168,8 +2205,8 @@ fn choice_edits(src: &str, module: &Module) -> Vec<Edit> {
                         &mut edits,
                         &line_starts,
                         src,
-                        first.span.start,
-                        last.span.end,
+                        first.span.start_usize(),
+                        last.span.end_usize(),
                         nested_target,
                         choice_line,
                     );
@@ -2178,15 +2215,19 @@ fn choice_edits(src: &str, module: &Module) -> Vec<Edit> {
         }
 
         if let (Some(first), Some(last)) = (c.observers.first(), c.observers.last()) {
-            if let Some(k) =
-                find_keyword(src, c.span.start, first.span().start, "observer", &comments)
-            {
+            if let Some(k) = find_keyword(
+                src,
+                c.span.start_usize(),
+                first.span().start_usize(),
+                "observer",
+                &comments,
+            ) {
                 push_span_block_edit(
                     &mut edits,
                     &line_starts,
                     src,
                     k,
-                    last.span().end,
+                    last.span().end_usize(),
                     clause_target,
                 );
             }
@@ -2194,8 +2235,8 @@ fn choice_edits(src: &str, module: &Module) -> Vec<Edit> {
         if let (Some(first), Some(last)) = (c.controllers.first(), c.controllers.last()) {
             if let Some(k) = find_keyword(
                 src,
-                c.span.start,
-                first.span().start,
+                c.span.start_usize(),
+                first.span().start_usize(),
                 "controller",
                 &comments,
             ) {
@@ -2204,7 +2245,7 @@ fn choice_edits(src: &str, module: &Module) -> Vec<Edit> {
                     &line_starts,
                     src,
                     k,
-                    last.span().end,
+                    last.span().end_usize(),
                     clause_target,
                 );
             }
@@ -2215,8 +2256,8 @@ fn choice_edits(src: &str, module: &Module) -> Vec<Edit> {
                 &mut edits,
                 &line_starts,
                 src,
-                body.span().start,
-                body.span().end,
+                body.span().start_usize(),
+                body.span().end_usize(),
                 clause_target,
             );
         }
@@ -2242,7 +2283,7 @@ fn type_def_edits(src: &str, module: &Module) -> Vec<Edit> {
         let Decl::TypeDef { span, .. } = decl else {
             continue;
         };
-        let head_line = line_of(&line_starts, span.start);
+        let head_line = line_of(&line_starts, span.start_usize());
         if leading_has_tab(src, line_starts[head_line]) {
             continue;
         }
@@ -2250,16 +2291,28 @@ fn type_def_edits(src: &str, module: &Module) -> Vec<Edit> {
         let head_has_with = line_contains_word(src, &line_starts, head_line, "with");
         let mut in_with = head_has_with;
         let mut with_body_target = if head_has_with {
-            first_body_anchor_indent_after(src, &line_starts, &comments, head_line, span.end)
-                .unwrap_or(head_indent + INDENT)
+            first_body_anchor_indent_after(
+                src,
+                &line_starts,
+                &comments,
+                head_line,
+                span.end_usize(),
+            )
+            .unwrap_or(head_indent + INDENT)
         } else {
             head_indent + 2 * INDENT
         };
         let head_has_where = line_contains_word(src, &line_starts, head_line, "where");
         let mut in_where = head_has_where;
         let mut where_body_target = if head_has_where {
-            first_body_anchor_indent_after(src, &line_starts, &comments, head_line, span.end)
-                .unwrap_or(head_indent + INDENT)
+            first_body_anchor_indent_after(
+                src,
+                &line_starts,
+                &comments,
+                head_line,
+                span.end_usize(),
+            )
+            .unwrap_or(head_indent + INDENT)
         } else {
             head_indent + INDENT
         };
@@ -2267,7 +2320,7 @@ fn type_def_edits(src: &str, module: &Module) -> Vec<Edit> {
         let mut after_bar_variant = false;
 
         let mut line = head_line + 1;
-        while line < line_starts.len() && line_starts[line] < span.end {
+        while line < line_starts.len() && line_starts[line] < span.end_usize() {
             let Some(trimmed) = code_line_trimmed(src, &line_starts, &comments, line) else {
                 line += 1;
                 continue;
@@ -2368,28 +2421,32 @@ fn guard_edits(src: &str, module: &Module) -> Vec<Edit> {
             continue;
         };
         for eq in &fun.equations {
-            let eq_line = line_of(&line_starts, eq.span.start);
+            let eq_line = line_of(&line_starts, eq.span.start_usize());
             if leading_has_tab(src, line_starts[eq_line]) {
                 continue;
             }
             let guard_target = indent_of(src, &line_starts, eq_line) + INDENT;
-            let mut cursor = eq.span.start;
+            let mut cursor = eq.span.start_usize();
             for (guard, body) in &eq.guards {
-                if let Some(pipe) = find_symbol(src, cursor, guard.span().start, "|", &comments) {
+                if let Some(pipe) =
+                    find_symbol(src, cursor, guard.span().start_usize(), "|", &comments)
+                {
                     push_span_block_edit(
                         &mut edits,
                         &line_starts,
                         src,
                         pipe,
-                        body.span().end,
+                        body.span().end_usize(),
                         guard_target,
                     );
                 }
-                cursor = body.span().end;
+                cursor = body.span().end_usize();
             }
             if let (Some(first), Some(last)) = (eq.where_bindings.first(), eq.where_bindings.last())
             {
-                if let Some(w) = find_keyword(src, cursor, first.span.start, "where", &comments) {
+                if let Some(w) =
+                    find_keyword(src, cursor, first.span.start_usize(), "where", &comments)
+                {
                     push_span_block_edit(
                         &mut edits,
                         &line_starts,
@@ -2402,8 +2459,8 @@ fn guard_edits(src: &str, module: &Module) -> Vec<Edit> {
                         &mut edits,
                         &line_starts,
                         src,
-                        first.span.start,
-                        last.span.end,
+                        first.span.start_usize(),
+                        last.span.end_usize(),
                         guard_target + INDENT,
                         eq_line,
                     );
@@ -2437,7 +2494,12 @@ fn record_update_edits(src: &str, module: &Module) -> Vec<Edit> {
                 return;
             }
             if let (Some(first), Some(last)) = (fields.first(), fields.last()) {
-                recs.push((*span, base.span().end, first.span.start, last.span.end));
+                recs.push((
+                    *span,
+                    base.span().end_usize(),
+                    first.span().start_usize(),
+                    last.span().end_usize(),
+                ));
             }
         }
     });
@@ -2445,7 +2507,7 @@ fn record_update_edits(src: &str, module: &Module) -> Vec<Edit> {
 
     let mut edits = Vec::new();
     for (rec_span, base_end, first_field, last_field_end) in recs {
-        let rec_line = line_of(&line_starts, rec_span.start);
+        let rec_line = line_of(&line_starts, rec_span.start_usize());
         let field_line = line_of(&line_starts, first_field);
         if field_line <= rec_line || leading_has_tab(src, line_starts[rec_line]) {
             continue;
@@ -2513,26 +2575,33 @@ fn try_edits(src: &str, module: &Module) -> Vec<Edit> {
 
     let mut edits = Vec::new();
     for (try_span, body_span, handlers) in tries {
-        let try_line = line_of(&line_starts, try_span.start);
+        let try_line = line_of(&line_starts, try_span.start_usize());
         if leading_has_tab(src, line_starts[try_line]) {
             continue;
         }
-        let try_col =
-            usize_to_i64_saturating(src[line_starts[try_line]..try_span.start].chars().count());
+        let try_col = usize_to_i64_saturating(
+            src[line_starts[try_line]..try_span.start_usize()]
+                .chars()
+                .count(),
+        );
         let nested_target = try_col + INDENT;
         push_block_edit(
             &mut edits,
             &line_starts,
             src,
-            body_span.start,
-            body_span.end,
+            body_span.start_usize(),
+            body_span.end_usize(),
             nested_target,
             try_line,
         );
         if let Some(first_handler) = handlers.first() {
-            if let Some(catch) =
-                find_keyword(src, body_span.end, first_handler.start, "catch", &comments)
-            {
+            if let Some(catch) = find_keyword(
+                src,
+                body_span.end_usize(),
+                first_handler.start_usize(),
+                "catch",
+                &comments,
+            ) {
                 push_span_block_edit(
                     &mut edits,
                     &line_starts,
@@ -2548,8 +2617,8 @@ fn try_edits(src: &str, module: &Module) -> Vec<Edit> {
                 &mut edits,
                 &line_starts,
                 src,
-                first.start,
-                last.end,
+                first.start_usize(),
+                last.end_usize(),
                 nested_target,
                 try_line,
             );
@@ -2596,22 +2665,22 @@ fn push_item_continuations(
     span: Span,
     items: impl Iterator<Item = Span>,
 ) {
-    let head_line = line_of(ls, span.start);
+    let head_line = line_of(ls, span.start_usize());
     let target = indent_of(src, ls, head_line) + INDENT;
     for item in items {
-        let item_line = line_of(ls, item.start);
+        let item_line = line_of(ls, item.start_usize());
         if item_line <= head_line {
             continue;
         }
-        let mut first = item.start;
+        let mut first = item.start_usize();
         let line_start = ls[item_line];
-        if let Some(comma) = src[line_start..item.start].rfind(',') {
+        if let Some(comma) = src[line_start..item.start_usize()].rfind(',') {
             first = line_start + comma;
         }
         if is_comment_line(comments, first) {
             continue;
         }
-        push_span_block_edit(edits, ls, src, first, item.end, target);
+        push_span_block_edit(edits, ls, src, first, item.end_usize(), target);
     }
 }
 

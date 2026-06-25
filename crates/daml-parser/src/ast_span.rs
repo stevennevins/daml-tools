@@ -12,7 +12,7 @@
 
 use crate::ast::{
     Alt, Binding, ChoiceDecl, Decl, DoStmt, Equation, Expr, FieldAssign, Module, Pat, Span,
-    TemplateBodyDecl, Type,
+    TemplateBodyDecl, Type, TypeAnnotation,
 };
 use crate::lexer::{Trivia, TriviaKind};
 
@@ -151,8 +151,8 @@ fn check_nesting(module: &Module) -> Result<(), AstSpanError> {
     for span in &spans {
         if !span.is_valid() {
             return Err(AstSpanError::InvalidSpan {
-                start: span.start,
-                end: span.end,
+                start: span.start_usize(),
+                end: span.end_usize(),
             });
         }
     }
@@ -172,10 +172,10 @@ fn check_nesting(module: &Module) -> Result<(), AstSpanError> {
         if let Some(parent) = stack.last() {
             if !parent.contains(&span) {
                 return Err(AstSpanError::OverlappingSpans {
-                    start: span.start,
-                    end: span.end,
-                    parent_start: parent.start,
-                    parent_end: parent.end,
+                    start: span.start_usize(),
+                    end: span.end_usize(),
+                    parent_start: parent.start_usize(),
+                    parent_end: parent.end_usize(),
                 });
             }
         }
@@ -195,7 +195,10 @@ fn tile(source: &str, module: &Module, trivia: &[Trivia]) -> Result<String, AstS
     let container = module.span;
     content.retain(|s| !(s.is_empty() || (s.start == container.start && s.end == container.end)));
 
-    let mut items: Vec<(usize, usize)> = content.iter().map(|s| (s.start, s.end)).collect();
+    let mut items: Vec<(usize, usize)> = content
+        .iter()
+        .map(|s| (s.start_usize(), s.end_usize()))
+        .collect();
     // Blank-line trivia carry no bytes; comment/CPP trivia fill the gaps that
     // are legitimately not AST nodes.
     items.extend(
@@ -294,7 +297,7 @@ fn collect_decl(decl: &Decl, spans: &mut Vec<Span>) {
             spans.push(template.span);
             for field in &template.fields {
                 spans.push(field.span);
-                if let Some(ty) = &field.ty {
+                if let TypeAnnotation::Present(ty) = &field.ty {
                     collect_type(ty, spans);
                 }
             }
@@ -306,7 +309,7 @@ fn collect_decl(decl: &Decl, spans: &mut Vec<Span>) {
             spans.push(interface.span);
             for method in &interface.methods {
                 spans.push(method.span);
-                if let Some(ty) = &method.ty {
+                if let TypeAnnotation::Present(ty) = &method.ty {
                     collect_type(ty, spans);
                 }
             }
@@ -324,7 +327,7 @@ fn collect_decl(decl: &Decl, spans: &mut Vec<Span>) {
             if let Some(sig) = function.sig_span {
                 spans.push(sig);
             }
-            if let Some(ty) = &function.ty {
+            if let TypeAnnotation::Present(ty) = &function.ty {
                 collect_type(ty, spans);
             }
         }
@@ -342,25 +345,16 @@ fn collect_tbody(template_body_decl: &TemplateBodyDecl, spans: &mut Vec<Span>) {
             }
         }
         TemplateBodyDecl::Ensure { expr, span, .. }
-        | TemplateBodyDecl::Maintainer { expr, span, .. }
-        | TemplateBodyDecl::Key {
-            expr,
-            span,
-            ty: None,
-            ..
-        } => {
+        | TemplateBodyDecl::Maintainer { expr, span, .. } => {
             spans.push(*span);
             collect_expr(expr, spans);
         }
-        TemplateBodyDecl::Key {
-            expr,
-            span,
-            ty: Some(ty),
-            ..
-        } => {
+        TemplateBodyDecl::Key { expr, span, ty, .. } => {
             spans.push(*span);
             collect_expr(expr, spans);
-            collect_type(ty, spans);
+            if let TypeAnnotation::Present(ty) = ty {
+                collect_type(ty, spans);
+            }
         }
         TemplateBodyDecl::Choice(choice) => collect_choice(choice, spans),
         TemplateBodyDecl::InterfaceInstance(interface_instance) => {
@@ -377,7 +371,7 @@ fn collect_choice(choice: &ChoiceDecl, spans: &mut Vec<Span>) {
     spans.push(choice.span);
     for param in &choice.params {
         spans.push(param.span);
-        if let Some(ty) = &param.ty {
+        if let TypeAnnotation::Present(ty) = &param.ty {
             collect_type(ty, spans);
         }
     }
@@ -390,7 +384,7 @@ fn collect_choice(choice: &ChoiceDecl, spans: &mut Vec<Span>) {
     if let Some(body) = &choice.body {
         collect_expr(body, spans);
     }
-    if let Some(return_ty) = &choice.return_ty {
+    if let TypeAnnotation::Present(return_ty) = &choice.return_ty {
         collect_type(return_ty, spans);
     }
 }
@@ -526,14 +520,13 @@ fn collect_expr(expr: &Expr, spans: &mut Vec<Span>) {
                 collect_alt(handler, spans);
             }
         }
-        Expr::Section {
-            operand: Some(operand),
-            ..
-        } => collect_expr(operand, spans),
+        Expr::LeftSection { operand, .. } | Expr::RightSection { operand, .. } => {
+            collect_expr(operand, spans);
+        }
         Expr::Var { .. }
         | Expr::Con { .. }
         | Expr::Lit { .. }
-        | Expr::Section { operand: None, .. }
+        | Expr::OperatorRef { .. }
         | Expr::Error { .. } => {}
     }
 }
@@ -545,8 +538,8 @@ fn collect_alt(alt: &Alt, spans: &mut Vec<Span>) {
 }
 
 fn collect_field_assign(field_assign: &FieldAssign, spans: &mut Vec<Span>) {
-    spans.push(field_assign.span);
-    if let Some(value) = &field_assign.value {
+    spans.push(field_assign.span());
+    if let FieldAssign::Assign { value, .. } = field_assign {
         collect_expr(value, spans);
     }
 }
@@ -586,8 +579,8 @@ mod tests {
         let module = Module {
             name: "M".into(),
             pos: Pos { line: 1, column: 1 },
-            span: Span::new(0, source.len()),
-            header: Span::new(0, "module M where".len()),
+            span: Span::from_usize(0, source.len()),
+            header: Span::from_usize(0, "module M where".len()),
             imports: Vec::new(),
             decls: Vec::new(),
         };
@@ -632,8 +625,8 @@ mod tests {
         let module = Module {
             name: "M".into(),
             pos: Pos { line: 1, column: 1 },
-            span: Span::new(0, source.len()),
-            header: Span::new(0, "module M where".len()),
+            span: Span::from_usize(0, source.len()),
+            header: Span::from_usize(0, "module M where".len()),
             imports: Vec::new(),
             decls: Vec::new(),
         };
@@ -653,8 +646,8 @@ mod tests {
         let module = Module {
             name: "M".into(),
             pos: Pos { line: 1, column: 1 },
-            span: Span::new(0, source.len()),
-            header: Span::new(0, "module M where".len()),
+            span: Span::from_usize(0, source.len()),
+            header: Span::from_usize(0, "module M where".len()),
             imports: Vec::new(),
             decls: Vec::new(),
         };

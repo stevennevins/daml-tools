@@ -271,9 +271,23 @@ fn lower_expr(e: &ast::Expr) -> Expr {
             base: Box::new(lower_expr(base)),
             fields: fields
                 .iter()
-                .map(|f| RecordField {
-                    name: f.name.to_string(),
-                    value: f.value.as_ref().map(lower_expr),
+                .map(|f| match f {
+                    ast::FieldAssign::Assign { name, value, .. } => RecordField {
+                        name: name.to_string(),
+                        value: Some(lower_expr(value)),
+                    },
+                    ast::FieldAssign::Pun { name, .. } => RecordField {
+                        name: name.to_string(),
+                        value: None,
+                    },
+                    ast::FieldAssign::Wildcard { .. } => RecordField {
+                        name: "..".to_string(),
+                        value: None,
+                    },
+                    _ => RecordField {
+                        name: String::new(),
+                        value: None,
+                    },
                 })
                 .collect(),
             span,
@@ -288,12 +302,6 @@ fn lower_expr(e: &ast::Expr) -> Expr {
         },
         // No structured rule-facing encoding (yet): sections, try-in-
         // expression-position, recovered parse errors.
-        ast::Expr::Try { .. } | ast::Expr::Section { .. } | ast::Expr::Error { .. } => {
-            Expr::Unknown {
-                raw: e.render(),
-                span,
-            }
-        }
         _ => Expr::Unknown {
             raw: e.render(),
             span,
@@ -320,7 +328,7 @@ fn lower_template(t: &ast::TemplateDecl, file: &Path, source_file: &SourceFile) 
             name: f.name.to_string(),
             type_: f
                 .ty
-                .as_ref()
+                .as_type()
                 .map(|ty| TypeNode::from_type(ty, file, source_file)),
             span: span_at(file, f.pos),
         })
@@ -352,7 +360,7 @@ fn lower_template(t: &ast::TemplateDecl, file: &Path, source_file: &SourceFile) 
             TemplateBodyDecl::Key { expr, ty, .. } => {
                 key_expr = Some(lower_expr(expr));
                 key_type = ty
-                    .as_ref()
+                    .as_type()
                     .map(|ty| TypeNode::from_type(ty, file, source_file));
             }
             TemplateBodyDecl::Maintainer { expr, .. } => {
@@ -397,7 +405,7 @@ fn lower_interface(i: &ast::InterfaceDecl, file: &Path, source_file: &SourceFile
                 name: m.name.to_string(),
                 type_: m
                     .ty
-                    .as_ref()
+                    .as_type()
                     .map(|ty| TypeNode::from_type(ty, file, source_file)),
                 span: span_at(file, m.pos),
             })
@@ -419,7 +427,7 @@ fn lower_choice(c: &ast::ChoiceDecl, file: &Path, source_file: &SourceFile) -> C
             name: f.name.to_string(),
             type_: f
                 .ty
-                .as_ref()
+                .as_type()
                 .map(|ty| TypeNode::from_type(ty, file, source_file)),
             span: span_at(file, f.pos),
         })
@@ -441,7 +449,7 @@ fn lower_choice(c: &ast::ChoiceDecl, file: &Path, source_file: &SourceFile) -> C
         parameters,
         return_type: c
             .return_ty
-            .as_ref()
+            .as_type()
             .map(|ty| TypeNode::from_type(ty, file, source_file)),
         body,
         span: span_at(file, c.pos),
@@ -471,7 +479,7 @@ fn lower_function(f: &ast::FunctionDecl, file: &Path, source_file: &SourceFile) 
         name: f.name.to_string(),
         type_signature: f
             .ty
-            .as_ref()
+            .as_type()
             .map(|ty| TypeNode::from_type(ty, file, source_file)),
         body,
         span: span_at(file, f.pos),
@@ -689,9 +697,28 @@ fn subst_expr(
             base: Box::new(subst_expr(base, subst, call_pos)),
             fields: fields
                 .iter()
-                .map(|f| ast::FieldAssign {
-                    value: f.value.as_ref().map(|v| subst_expr(v, subst, call_pos)),
-                    ..f.clone()
+                .map(|f| match f {
+                    ast::FieldAssign::Assign {
+                        name,
+                        value,
+                        pos,
+                        span,
+                    } => ast::FieldAssign::Assign {
+                        name: name.clone(),
+                        value: subst_expr(value, subst, call_pos),
+                        pos: *pos,
+                        span: *span,
+                    },
+                    ast::FieldAssign::Pun { name, pos, span } => ast::FieldAssign::Pun {
+                        name: name.clone(),
+                        pos: *pos,
+                        span: *span,
+                    },
+                    ast::FieldAssign::Wildcard { pos, span } => ast::FieldAssign::Wildcard {
+                        pos: *pos,
+                        span: *span,
+                    },
+                    _ => f.clone(),
                 })
                 .collect(),
             pos: call_pos,
@@ -742,7 +769,9 @@ fn repoint(expr: &ast::Expr, call_pos: ast::Pos) -> ast::Expr {
         | E::Tuple { pos, .. }
         | E::List { pos, .. }
         | E::Try { pos, .. }
-        | E::Section { pos, .. }
+        | E::OperatorRef { pos, .. }
+        | E::LeftSection { pos, .. }
+        | E::RightSection { pos, .. }
         | E::Error { pos, .. } => *pos = call_pos,
         _ => {}
     }

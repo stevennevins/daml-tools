@@ -5,7 +5,74 @@
 //! here, so no later stage can ever mistake `-- exercise the option` for a
 //! ledger action.
 
-/// A small domain type for identifier-like text.
+/// Parser byte offset into the original UTF-8 source.
+///
+/// This is intentionally distinct from line, column, token-index, and UTF-16
+/// coordinate spaces. Convert to `usize` explicitly at source-slicing or wire
+/// format boundaries with [`ByteOffset::get`] or `usize::from(offset)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct ByteOffset(usize);
+
+impl ByteOffset {
+    #[must_use]
+    pub const fn new(value: usize) -> Self {
+        Self(value)
+    }
+
+    #[must_use]
+    pub const fn get(self) -> usize {
+        self.0
+    }
+
+    #[must_use]
+    pub const fn saturating_sub(self, rhs: usize) -> Self {
+        Self(self.0.saturating_sub(rhs))
+    }
+}
+
+impl From<ByteOffset> for usize {
+    fn from(value: ByteOffset) -> Self {
+        value.get()
+    }
+}
+
+/// Byte span into the original UTF-8 source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct ByteSpan {
+    pub start: ByteOffset,
+    pub end: ByteOffset,
+}
+
+impl ByteSpan {
+    #[must_use]
+    pub const fn new(start: ByteOffset, end: ByteOffset) -> Self {
+        Self { start, end }
+    }
+
+    #[must_use]
+    pub const fn from_usize(start: usize, end: usize) -> Self {
+        Self {
+            start: ByteOffset::new(start),
+            end: ByteOffset::new(end),
+        }
+    }
+
+    #[must_use]
+    pub const fn start_usize(self) -> usize {
+        self.start.get()
+    }
+
+    #[must_use]
+    pub const fn end_usize(self) -> usize {
+        self.end.get()
+    }
+}
+
+/// A small, deliberately unchecked domain type for parser identifier-like text.
+///
+/// The parser also uses this wrapper for a few source-level labels such as the
+/// unit constructor `()`; callers should not treat construction as lexical
+/// validation. Values produced by the lexer are lexically valid for their token.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Identifier(String);
 
@@ -83,7 +150,10 @@ impl PartialEq<Identifier> for String {
     }
 }
 
-/// A small domain type for symbolic operator text.
+/// A small, deliberately unchecked domain type for symbolic operator text.
+///
+/// Values produced by the lexer are Daml operator tokens; public construction is
+/// intentionally a lightweight source-label wrapper, not validation.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Operator(String);
 
@@ -161,7 +231,12 @@ impl PartialEq<Operator> for String {
     }
 }
 
-/// A small domain type for module-style qualified names (`DA.Map`, `Daml.Foo`).
+/// A small, deliberately unchecked domain type for module-style qualified names
+/// (`DA.Map`, `Daml.Foo`).
+///
+/// Values produced by the lexer are Daml module/name tokens; public
+/// construction is intentionally a lightweight source-label wrapper, not
+/// validation.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct ModuleName(String);
 
@@ -311,13 +386,18 @@ impl Token {
     }
 
     #[must_use]
-    pub const fn start(&self) -> usize {
-        self.start
+    pub const fn start(&self) -> ByteOffset {
+        ByteOffset::new(self.start)
     }
 
     #[must_use]
-    pub const fn end(&self) -> usize {
-        self.end
+    pub const fn end(&self) -> ByteOffset {
+        ByteOffset::new(self.end)
+    }
+
+    #[must_use]
+    pub const fn span(&self) -> ByteSpan {
+        ByteSpan::from_usize(self.start, self.end)
     }
 
     /// Layout-inserted tokens carry no source bytes (they are zero-width);
@@ -375,13 +455,18 @@ impl Trivia {
     }
 
     #[must_use]
-    pub const fn start(&self) -> usize {
-        self.start
+    pub const fn start(&self) -> ByteOffset {
+        ByteOffset::new(self.start)
     }
 
     #[must_use]
-    pub const fn end(&self) -> usize {
-        self.end
+    pub const fn end(&self) -> ByteOffset {
+        ByteOffset::new(self.end)
+    }
+
+    #[must_use]
+    pub const fn span(&self) -> ByteSpan {
+        ByteSpan::from_usize(self.start, self.end)
     }
 }
 

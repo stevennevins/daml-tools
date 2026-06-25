@@ -20,7 +20,7 @@ f : HasField "observers" t PartiesMap => ()
         Decl::Function(f) => f,
         other => panic!("expected function, got {other:?}"),
     };
-    let ty = function.ty.as_ref().expect("function signature type");
+    let ty = function.ty.as_type().expect("function signature type");
     assert!(matches!(
         ty,
         Type::Constrained(body, _)

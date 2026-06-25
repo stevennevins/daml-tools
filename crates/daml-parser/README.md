@@ -154,7 +154,7 @@ Every AST node that represents source text carries a 1-based `Pos` and a byte
 
 ```rust
 let snippet = source
-    .get(template_span.start..template_span.end)
+    .get(template_span.range())
     .expect("parser spans are UTF-8 boundaries");
 
 assert!(snippet.starts_with("template Account"));
@@ -184,7 +184,9 @@ use. The parser itself does not treat diagnostics as a process-level failure.
 
 ## Source positions, spans, and trivia
 
-`Span` values are byte offsets into the original source: `[start, end)`.
+`Span` values are typed byte offsets into the original source: `[start, end)`.
+Use `Span::range()`, `start_usize()`, or `end_usize()` only where raw byte
+offsets are required for slicing or external interop.
 Virtual layout tokens have zero-width spans and are skipped when AST node spans
 are computed. Comments and whitespace live in lexer trivia rather than AST
 nodes.

@@ -8,14 +8,6 @@ fn parse(src: &str) -> (Module, Vec<ParseDiagnostic>) {
     parse_module(src).into_parts()
 }
 
-fn section_side_for_fn(module: &Module, name: &str) -> SectionSide {
-    let body = get_first_equation_body(module, name);
-    match body {
-        Expr::Section { side, .. } => *side,
-        other => panic!("expected section body for {name}, got {other:?}"),
-    }
-}
-
 fn get_first_equation_body<'a>(module: &'a Module, name: &str) -> &'a Expr {
     let function = module
         .decls
@@ -53,7 +45,7 @@ import Baz as B",
 }
 
 #[test]
-fn expression_sections_encode_side_in_ast() {
+fn expression_sections_use_distinct_ast_shapes() {
     let (module, diagnostics) = parse(
         "module M where
 f = (+ 1)
@@ -64,17 +56,40 @@ g = (+)
     assert!(diagnostics.is_empty());
     assert!(matches!(
         get_first_equation_body(&module, "f"),
-        Expr::Section {
-            operand: Some(_),
-            ..
-        }
+        Expr::RightSection { .. }
     ));
     assert!(matches!(
         get_first_equation_body(&module, "g"),
-        Expr::Section { operand: None, .. }
+        Expr::OperatorRef { .. }
     ));
-    assert_eq!(section_side_for_fn(&module, "f"), SectionSide::Right);
-    assert_eq!(section_side_for_fn(&module, "g"), SectionSide::Right);
+}
+
+#[test]
+fn record_fields_use_explicit_ast_shapes() {
+    let (module, diagnostics) = parse(
+        "module M where
+f owner = T with owner; count = 1; ..
+",
+    );
+
+    assert!(diagnostics.is_empty());
+    let Expr::Record { fields, .. } = get_first_equation_body(&module, "f") else {
+        panic!("expected record expression");
+    };
+    assert!(matches!(
+        &fields[0],
+        FieldAssign::Pun { name, .. } if name.as_str() == "owner"
+    ));
+    assert!(matches!(
+        &fields[1],
+        FieldAssign::Assign { name, value: Expr::Lit { .. }, .. } if name.as_str() == "count"
+    ));
+    assert!(matches!(&fields[2], FieldAssign::Wildcard { .. }));
+    assert_eq!(
+        fields[2].name(),
+        None,
+        "wildcards must not use '..' as a fake field name"
+    );
 }
 
 #[test]

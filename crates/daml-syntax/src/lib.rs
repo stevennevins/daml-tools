@@ -543,41 +543,41 @@ pub fn try_parser_span_to_text_range(
     span: ParserSpan,
 ) -> Result<TextRange, ParserSpanToTextRangeError> {
     let source_len = source.len();
-    if span.start > source_len || span.end > source_len {
+    if span.start_usize() > source_len || span.end_usize() > source_len {
         return Err(ParserSpanToTextRangeError {
             source_len,
-            span_start: ByteOffset::new(span.start),
-            span_end: ByteOffset::new(span.end),
+            span_start: ByteOffset::new(span.start_usize()),
+            span_end: ByteOffset::new(span.end_usize()),
             kind: ParserSpanToTextRangeErrorKind::OutOfBounds,
         });
     }
     if span.start > span.end {
         return Err(ParserSpanToTextRangeError {
             source_len,
-            span_start: ByteOffset::new(span.start),
-            span_end: ByteOffset::new(span.end),
+            span_start: ByteOffset::new(span.start_usize()),
+            span_end: ByteOffset::new(span.end_usize()),
             kind: ParserSpanToTextRangeErrorKind::InvertedSpan,
         });
     }
-    if !source.is_char_boundary(span.start) || !source.is_char_boundary(span.end) {
+    if !source.is_char_boundary(span.start_usize()) || !source.is_char_boundary(span.end_usize()) {
         return Err(ParserSpanToTextRangeError {
             source_len,
-            span_start: ByteOffset::new(span.start),
-            span_end: ByteOffset::new(span.end),
+            span_start: ByteOffset::new(span.start_usize()),
+            span_end: ByteOffset::new(span.end_usize()),
             kind: ParserSpanToTextRangeErrorKind::NonUtf8Boundary,
         });
     }
     Ok(TextRange::new(
-        TextSize::try_from(span.start).map_err(|_| ParserSpanToTextRangeError {
+        TextSize::try_from(span.start_usize()).map_err(|_| ParserSpanToTextRangeError {
             source_len,
-            span_start: ByteOffset::new(span.start),
-            span_end: ByteOffset::new(span.end),
+            span_start: ByteOffset::new(span.start_usize()),
+            span_end: ByteOffset::new(span.end_usize()),
             kind: ParserSpanToTextRangeErrorKind::TextSizeOverflow,
         })?,
-        TextSize::try_from(span.end).map_err(|_| ParserSpanToTextRangeError {
+        TextSize::try_from(span.end_usize()).map_err(|_| ParserSpanToTextRangeError {
             source_len,
-            span_start: ByteOffset::new(span.start),
-            span_end: ByteOffset::new(span.end),
+            span_start: ByteOffset::new(span.start_usize()),
+            span_end: ByteOffset::new(span.end_usize()),
             kind: ParserSpanToTextRangeErrorKind::TextSizeOverflow,
         })?,
     ))

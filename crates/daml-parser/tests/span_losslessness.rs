@@ -147,13 +147,13 @@ f cid = pure ()
     else {
         unreachable!()
     };
-    let field_ty = t.fields[0].ty.as_ref().expect("field type");
+    let field_ty = t.fields[0].ty.as_type().expect("field type");
     assert_eq!(text(src, field_ty.span()), "Party");
     let key_ty = t
         .body
         .iter()
         .find_map(|b| match b {
-            TemplateBodyDecl::Key { ty, .. } => ty.as_ref(),
+            TemplateBodyDecl::Key { ty, .. } => ty.as_type(),
             _ => None,
         })
         .expect("key type");
@@ -162,7 +162,7 @@ f cid = pure ()
         .body
         .iter()
         .find_map(|b| match b {
-            TemplateBodyDecl::Choice(c) => c.return_ty.as_ref(),
+            TemplateBodyDecl::Choice(c) => c.return_ty.as_type(),
             _ => None,
         })
         .expect("choice return type");
@@ -176,11 +176,11 @@ f cid = pure ()
     else {
         unreachable!()
     };
-    let method_ty = i.methods[0].ty.as_ref().expect("method type");
+    let method_ty = i.methods[0].ty.as_type().expect("method type");
     assert_eq!(text(src, method_ty.span()), "Numeric 10");
 
     let f = first_function(&m, "f");
-    let fn_ty = f.ty.as_ref().expect("function signature type");
+    let fn_ty = f.ty.as_type().expect("function signature type");
     assert_eq!(text(src, fn_ty.span()), "ContractId T -> Script ()");
 
     match choice_ty {

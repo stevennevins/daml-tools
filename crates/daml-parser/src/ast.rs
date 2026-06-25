@@ -5,7 +5,7 @@
 //! consume this tree directly: daml-fmt re-prints layout from the spans, and
 //! daml-lint lowers it onto its own rule-facing IR.
 
-pub use crate::lexer::{Identifier, ModuleName, Operator, Pos};
+pub use crate::lexer::{ByteOffset, Identifier, ModuleName, Operator, Pos};
 
 /// Byte span of an AST node.
 ///
@@ -17,43 +17,78 @@ pub use crate::lexer::{Identifier, ModuleName, Operator, Pos};
 /// `render_from_ast`): a child's span is contained in its parent's span, and
 /// sibling spans are ordered and non-overlapping. Trivia (comments, blank
 /// lines) live *between* sibling spans.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Span {
-    pub start: usize,
-    pub end: usize,
+    /// Inclusive byte offset at which the node starts.
+    pub start: ByteOffset,
+    /// Exclusive byte offset at which the node ends.
+    pub end: ByteOffset,
 }
 
 impl Span {
+    /// Create a span from already-typed byte offsets.
+    ///
+    /// Use [`Self::from_usize`] only at parser/source-slicing boundaries where
+    /// raw byte offsets are being converted deliberately.
+    ///
+    /// ```compile_fail
+    /// use daml_parser::ast::Span;
+    ///
+    /// let _ = Span::new(1usize, 2usize);
+    /// ```
     #[must_use]
-    pub const fn new(start: usize, end: usize) -> Self {
+    pub const fn new(start: ByteOffset, end: ByteOffset) -> Self {
         Self { start, end }
+    }
+
+    /// Convert raw byte offsets into a typed parser span.
+    #[must_use]
+    pub const fn from_usize(start: usize, end: usize) -> Self {
+        Self {
+            start: ByteOffset::new(start),
+            end: ByteOffset::new(end),
+        }
+    }
+
+    /// Raw start byte offset for source slicing and external interop.
+    #[must_use]
+    pub const fn start_usize(self) -> usize {
+        self.start.get()
+    }
+
+    /// Raw exclusive end byte offset for source slicing and external interop.
+    #[must_use]
+    pub const fn end_usize(self) -> usize {
+        self.end.get()
     }
 
     /// True when the span is well-formed (`start <= end`).
     #[must_use]
     pub const fn is_valid(&self) -> bool {
-        self.start <= self.end
+        self.start.get() <= self.end.get()
     }
 
     /// True for a zero-width but still valid span.
     #[must_use]
     pub const fn is_empty(&self) -> bool {
-        self.start == self.end
+        self.start.get() == self.end.get()
     }
 
     #[must_use]
     pub const fn range(&self) -> std::ops::Range<usize> {
-        self.start..self.end
+        self.start.get()..self.end.get()
     }
 
     #[must_use]
     pub fn get<'a>(&self, source: &'a str) -> Option<&'a str> {
-        if self.start <= self.end
-            && self.end <= source.len()
-            && source.is_char_boundary(self.start)
-            && source.is_char_boundary(self.end)
+        let start = self.start.get();
+        let end = self.end.get();
+        if start <= end
+            && end <= source.len()
+            && source.is_char_boundary(start)
+            && source.is_char_boundary(end)
         {
-            Some(&source[self.start..self.end])
+            Some(&source[start..end])
         } else {
             None
         }
@@ -62,7 +97,10 @@ impl Span {
     /// `self` fully contains `other`.
     #[must_use]
     pub const fn contains(&self, other: &Self) -> bool {
-        self.is_valid() && other.is_valid() && self.start <= other.start && other.end <= self.end
+        self.is_valid()
+            && other.is_valid()
+            && self.start.get() <= other.start.get()
+            && other.end.get() <= self.end.get()
     }
 }
 
@@ -73,19 +111,6 @@ pub enum LitKind {
     Decimal,
     Text,
     Char,
-}
-
-/// Side of an operator section.
-///
-/// `(+ 1)` stores `SectionSide::Right`, while `(1 +)` stores
-/// `SectionSide::Left`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum SectionSide {
-    /// Right section: operator followed by right operand.
-    Right,
-    /// Left section: left operand followed by operator.
-    Left,
 }
 
 /// Import syntax style.
@@ -99,13 +124,49 @@ pub enum ImportStyle {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FieldAssign {
-    pub name: Identifier,
-    /// None for record puns (`Foo with owner` meaning `owner = owner`)
-    /// and `..` wildcards.
-    pub value: Option<Expr>,
-    pub pos: Pos,
-    pub span: Span,
+#[non_exhaustive]
+pub enum FieldAssign {
+    /// Explicit record assignment: `field = expression`.
+    Assign {
+        name: Identifier,
+        value: Expr,
+        pos: Pos,
+        span: Span,
+    },
+    /// Record pun: `field`, meaning `field = field`.
+    Pun {
+        name: Identifier,
+        pos: Pos,
+        span: Span,
+    },
+    /// Record wildcard: `..`.
+    Wildcard { pos: Pos, span: Span },
+}
+
+impl FieldAssign {
+    #[must_use]
+    pub const fn pos(&self) -> Pos {
+        match self {
+            Self::Assign { pos, .. } | Self::Pun { pos, .. } | Self::Wildcard { pos, .. } => *pos,
+        }
+    }
+
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        match self {
+            Self::Assign { span, .. } | Self::Pun { span, .. } | Self::Wildcard { span, .. } => {
+                *span
+            }
+        }
+    }
+
+    #[must_use]
+    pub const fn name(&self) -> Option<&Identifier> {
+        match self {
+            Self::Assign { name, .. } | Self::Pun { name, .. } => Some(name),
+            Self::Wildcard { .. } => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -276,11 +337,19 @@ pub enum Expr {
         pos: Pos,
         span: Span,
     },
-    /// Right operator section like `(+ 1)` / left section `(1 +)`.
-    Section {
+    /// Parenthesized operator reference like `(+)`.
+    OperatorRef { op: Operator, pos: Pos, span: Span },
+    /// Left operator section like `(1 +)`.
+    LeftSection {
         op: Operator,
-        operand: Option<Box<Self>>,
-        side: SectionSide,
+        operand: Box<Self>,
+        pos: Pos,
+        span: Span,
+    },
+    /// Right operator section like `(+ 1)`.
+    RightSection {
+        op: Operator,
+        operand: Box<Self>,
         pos: Pos,
         span: Span,
     },
@@ -426,11 +495,42 @@ impl Type {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TypeAnnotation {
+    /// The source construct did not include a type annotation.
+    Absent,
+    /// The source construct included a type annotation that parsed cleanly.
+    Present(Type),
+    /// The source construct included a type annotation, but the parser could
+    /// not model it as a [`Type`]. Diagnostics carry the detailed message.
+    Malformed { span: Span },
+}
+
+impl TypeAnnotation {
+    #[must_use]
+    pub const fn as_type(&self) -> Option<&Type> {
+        match self {
+            Self::Present(ty) => Some(ty),
+            Self::Absent | Self::Malformed { .. } => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn is_absent(&self) -> bool {
+        matches!(self, Self::Absent)
+    }
+
+    #[must_use]
+    pub const fn is_malformed(&self) -> bool {
+        matches!(self, Self::Malformed { .. })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldDecl {
     pub name: Identifier,
-    /// Structured field type parsed from the token stream. `None` when the type
-    /// could not be parsed cleanly (analysis treats it as unknown).
-    pub ty: Option<Type>,
+    /// Structured field type parse state.
+    pub ty: TypeAnnotation,
     pub pos: Pos,
     pub span: Span,
 }
@@ -450,7 +550,7 @@ pub struct ChoiceDecl {
     pub consuming: Consuming,
     /// Structured return type. `None` if it could not be parsed cleanly or the
     /// choice declared no return type.
-    pub return_ty: Option<Type>,
+    pub return_ty: TypeAnnotation,
     pub params: Vec<FieldDecl>,
     /// Comma-separated controller expressions.
     pub controllers: Vec<Expr>,
@@ -481,8 +581,8 @@ pub enum TemplateBodyDecl {
     },
     Key {
         expr: Expr,
-        /// Structured key type. `None` if absent or not cleanly parseable.
-        ty: Option<Type>,
+        /// Structured key type parse state.
+        ty: TypeAnnotation,
         pos: Pos,
         span: Span,
     },
@@ -552,7 +652,7 @@ pub struct Equation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionDecl {
     pub name: Identifier,
-    pub ty: Option<Type>,
+    pub ty: TypeAnnotation,
     pub equations: Vec<Equation>,
     pub pos: Pos,
     /// Span of the function's first appearance (signature or first equation).
@@ -680,7 +780,9 @@ impl Expr {
             | Self::Tuple { pos, .. }
             | Self::List { pos, .. }
             | Self::Try { pos, .. }
-            | Self::Section { pos, .. }
+            | Self::OperatorRef { pos, .. }
+            | Self::LeftSection { pos, .. }
+            | Self::RightSection { pos, .. }
             | Self::Error { pos, .. } => *pos,
         }
     }
@@ -704,7 +806,9 @@ impl Expr {
             | Self::Tuple { span, .. }
             | Self::List { span, .. }
             | Self::Try { span, .. }
-            | Self::Section { span, .. }
+            | Self::OperatorRef { span, .. }
+            | Self::LeftSection { span, .. }
+            | Self::RightSection { span, .. }
             | Self::Error { span, .. } => *span,
         }
     }
@@ -786,11 +890,12 @@ impl Expr {
             Self::Record { base, fields, .. } => {
                 let fs: Vec<String> = fields
                     .iter()
-                    .map(|f| {
-                        f.value.as_ref().map_or_else(
-                            || f.name.to_string(),
-                            |v| format!("{} = {}", f.name, v.render()),
-                        )
+                    .map(|f| match f {
+                        FieldAssign::Assign { name, value, .. } => {
+                            format!("{} = {}", name, value.render())
+                        }
+                        FieldAssign::Pun { name, .. } => name.to_string(),
+                        FieldAssign::Wildcard { .. } => "..".to_string(),
                     })
                     .collect();
                 format!("{} with {}", base.render_atomic(), fs.join("; "))
@@ -810,13 +915,9 @@ impl Expr {
                     .collect();
                 format!("try {} catch {}", body.render(), hs.join("; "))
             }
-            Self::Section {
-                op, operand, side, ..
-            } => match (operand, side) {
-                (Some(e), SectionSide::Left) => format!("({} {})", e.render(), op),
-                (Some(e), SectionSide::Right) => format!("({} {})", op, e.render()),
-                (None, _) => format!("({op})"),
-            },
+            Self::OperatorRef { op, .. } => format!("({op})"),
+            Self::LeftSection { op, operand, .. } => format!("({} {})", operand.render(), op),
+            Self::RightSection { op, operand, .. } => format!("({} {})", op, operand.render()),
             Self::Error { raw, .. } => raw.clone(),
         }
     }
@@ -830,7 +931,9 @@ impl Expr {
             | Self::Lit { .. }
             | Self::Tuple { .. }
             | Self::List { .. }
-            | Self::Section { .. }
+            | Self::OperatorRef { .. }
+            | Self::LeftSection { .. }
+            | Self::RightSection { .. }
             | Self::Error { .. } => self.render(),
             _ => format!("({})", self.render()),
         }
@@ -969,7 +1072,7 @@ mod tests {
     use super::*;
 
     fn span(start: usize, end: usize) -> Span {
-        Span::new(start, end)
+        Span::from_usize(start, end)
     }
 
     #[test]

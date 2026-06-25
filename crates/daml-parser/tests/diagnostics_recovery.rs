@@ -2,7 +2,7 @@
 //! positions, and the guarantee that a malformed item does not abort later
 //! declarations.
 
-use daml_parser::ast::{Decl, DiagnosticCategory};
+use daml_parser::ast::{Decl, DiagnosticCategory, TypeAnnotation};
 use daml_parser::parse::{parse_module, MAX_RECURSION_DEPTH};
 
 const TEST_RECURSION_DEPTH: usize = MAX_RECURSION_DEPTH as usize + 172;
@@ -116,6 +116,13 @@ template T
         .decls
         .iter()
         .any(|decl| matches!(decl, Decl::Template(template) if template.name == "T")),);
+    let Decl::Template(template) = &module.decls[0] else {
+        panic!("expected recovered template, got {:?}", module.decls[0]);
+    };
+    assert!(
+        matches!(template.fields[0].ty, TypeAnnotation::Malformed { .. }),
+        "malformed annotation must remain distinct from an absent annotation"
+    );
 }
 
 #[test]
@@ -243,13 +250,13 @@ fn each_deep_declaration_reports_its_own_recursion_limit() {
     assert!(
         recursion_limit_spans
             .iter()
-            .any(|span| span.start >= g_start && span.start < h_start),
+            .any(|span| span.start_usize() >= g_start && span.start_usize() < h_start),
         "g declaration must report its own recursion-limit, got {recursion_limit_spans:?}"
     );
     assert!(
         recursion_limit_spans
             .iter()
-            .any(|span| span.start >= h_start),
+            .any(|span| span.start_usize() >= h_start),
         "h declaration must report its own recursion-limit, got {recursion_limit_spans:?}"
     );
 }
@@ -266,7 +273,7 @@ fn lex_error_span_is_tab_correct() {
         .find(|d| d.category == DiagnosticCategory::Lex)
         .expect("lexical-error diagnostic");
     assert_eq!(
-        &src[lex.span.start..lex.span.start + 1],
+        &src[lex.span.start_usize()..lex.span.start_usize() + 1],
         "\"",
         "lex span must point at the opening quote, not a tab-naive offset"
     );
@@ -288,8 +295,8 @@ fn diagnostic_span_pins_the_offending_token() {
         skipped.span
     );
     // The span points at the junk, not past it into the source.
-    assert!(skipped.span.end <= src.len());
-    assert_eq!(&src[skipped.span.start..skipped.span.end], "%%%");
+    assert!(skipped.span.end_usize() <= src.len());
+    assert_eq!(&src[skipped.span.range()], "%%%");
 }
 
 #[test]
@@ -315,7 +322,7 @@ fn lexical_error_is_categorized_lex() {
         lex.span
     );
     assert_eq!(
-        &src[lex.span.start..lex.span.end],
+        &src[lex.span.range()],
         "\"",
         "unterminated string span must point at opening quote"
     );
@@ -331,7 +338,7 @@ fn lexical_error_is_categorized_lex() {
         "invalid-escape lex span should be non-zero: {:?}",
         lex.span
     );
-    assert_eq!(&src[lex.span.start..lex.span.end], "\\q");
+    assert_eq!(&src[lex.span.range()], "\\q");
 }
 
 #[test]

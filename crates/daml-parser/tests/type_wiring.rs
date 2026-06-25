@@ -34,10 +34,10 @@ template T
         Decl::Template(t) => t,
         other => panic!("expected template, got {other:?}"),
     };
-    assert_eq!(t.fields[0].ty, Some(con("Party")));
+    assert_eq!(t.fields[0].ty, TypeAnnotation::Present(con("Party")));
     assert_eq!(
         t.fields[1].ty,
-        Some(app(con("ContractId"), vec![con("Asset")]))
+        TypeAnnotation::Present(app(con("ContractId"), vec![con("Asset")]))
     );
     let choice = match &t
         .body
@@ -49,7 +49,7 @@ template T
     };
     assert_eq!(
         choice.return_ty,
-        Some(app(
+        TypeAnnotation::Present(app(
             con("Optional"),
             vec![app(con("ContractId"), vec![con("Asset")])]
         ))
@@ -79,13 +79,13 @@ interface I where
         TemplateBodyDecl::Key { ty, .. } => Some(ty.clone()),
         _ => None,
     });
-    assert_eq!(key_ty, Some(Some(con("Party"))));
+    assert_eq!(key_ty, Some(TypeAnnotation::Present(con("Party"))));
 
     let iface = match &m.decls[1] {
         Decl::Interface(i) => i,
         other => panic!("expected interface, got {other:?}"),
     };
-    assert_eq!(iface.methods[0].ty, Some(con("Numeric")));
+    assert_eq!(iface.methods[0].ty, TypeAnnotation::Present(con("Numeric")));
 }
 
 #[test]

@@ -390,8 +390,8 @@ fn rewrite(src: &str, mode: ColonSpacingMode) -> String {
             )
         })
         .map(|t| GapTokenSpan {
-            start: t.start(),
-            end: t.end(),
+            start: t.start().get(),
+            end: t.end().get(),
             brace_depth_delta: brace_delta(t.kind()),
             is_lone_colon: is_lone_colon(t.kind()),
             is_rparen: matches!(t.kind(), TokenKind::RParen),
@@ -403,8 +403,8 @@ fn rewrite(src: &str, mode: ColonSpacingMode) -> String {
                 .iter()
                 .filter(|t| !matches!(t.kind(), TriviaKind::BlankLines(_)))
                 .map(|t| GapTokenSpan {
-                    start: t.start(),
-                    end: t.end(),
+                    start: t.start().get(),
+                    end: t.end().get(),
                     brace_depth_delta: 0,
                     is_lone_colon: false,
                     is_rparen: false,
