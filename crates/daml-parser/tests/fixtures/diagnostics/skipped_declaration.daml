@@ -1,0 +1,7 @@
+module M where
+%%% junk
+template Good
+  with
+    o : Party
+  where
+    signatory o
