@@ -5,8 +5,9 @@
 #![allow(clippy::unwrap_used)]
 
 use daml_fmt::{
-    coverage, format_source, lex_diagnostics, source_diagnostics, try_format_source,
-    FormatDiagnostic, FormatError, FormatOptions, ImportOrder,
+    coverage, format_source, format_source_with_options, lex_diagnostics, source_diagnostics,
+    try_format_source, FormatDiagnostic, FormatError, FormatOptions, FormatRule, FormatRuleSet,
+    ImportOrder,
 };
 use daml_parser::ast::DiagnosticCategory;
 
@@ -32,6 +33,47 @@ fn format_options_can_be_created_and_built() {
     let options = FormatOptions::new().with_import_order(ImportOrder::Preserve);
 
     assert_eq!(options.import_order(), ImportOrder::Preserve);
+}
+
+#[test]
+fn format_rules_have_stable_cli_ids() {
+    assert_eq!("imports".parse::<FormatRule>(), Ok(FormatRule::Imports));
+    assert_eq!("layout".parse::<FormatRule>(), Ok(FormatRule::Layout));
+    assert_eq!("spacing".parse::<FormatRule>(), Ok(FormatRule::Spacing));
+    assert_eq!(
+        "syntax-normalization".parse::<FormatRule>(),
+        Ok(FormatRule::SyntaxNormalization)
+    );
+    assert!("unknown-rule".parse::<FormatRule>().is_err());
+}
+
+#[test]
+fn format_options_can_limit_formatter_to_selected_rules() {
+    let src = "module M where\n\nimport DA.Optional\nimport DA.List\n\nfoo : Int\nfoo = 1\n";
+    let imports_only =
+        FormatOptions::new().with_rules(FormatRuleSet::from_rules([FormatRule::Imports]));
+    let spacing_only =
+        FormatOptions::new().with_rules(FormatRuleSet::from_rules([FormatRule::Spacing]));
+
+    assert_eq!(
+        format_source_with_options(src, imports_only),
+        "module M where\n\nimport DA.List\nimport DA.Optional\n\nfoo : Int\nfoo = 1\n"
+    );
+    assert_eq!(
+        format_source_with_options(src, spacing_only),
+        "module M where\n\nimport DA.Optional\nimport DA.List\n\nfoo: Int\nfoo = 1\n"
+    );
+}
+
+#[test]
+fn syntax_normalization_rule_does_not_apply_pure_layout_reindent() {
+    let infix = "module M where\nfoo = a\n + b\n";
+    let lambda = "module M where\nfoo = \\x ->\n x\n";
+    let syntax_only = FormatOptions::new()
+        .with_rules(FormatRuleSet::from_rules([FormatRule::SyntaxNormalization]));
+
+    assert_eq!(format_source_with_options(infix, syntax_only), infix);
+    assert_eq!(format_source_with_options(lambda, syntax_only), lambda);
 }
 
 #[test]

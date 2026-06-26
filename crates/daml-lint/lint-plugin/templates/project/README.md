@@ -1,7 +1,7 @@
 # daml-lint plugin starter
 
 This project shows the minimal TypeScript flow for a `daml-lint` custom rule
-plugin loaded through `.daml-lint.json`.
+plugin loaded through `./daml.yaml`.
 
 ```sh
 npm install
@@ -15,9 +15,9 @@ The first scan reports one `template-requires-ensure` finding. The second scan
 has no finding from the custom rule.
 
 The package manifest exposes bundled rule files under `damlLint.rules`.
-`.daml-lint.json` uses `pluginPaths: ["."]` so the project can resolve itself
-before it is published. After publishing, consumers install the package and
-enable rules by `plugin/rule` ID.
+`daml.yaml` uses `plugin-paths: [.]` so the project can resolve itself before
+it is published. After publishing, consumers install the package and enable
+rules by `plugin/rule` ID.
 
 The runtime still discovers top-level metadata constants and visitor
 `function` declarations. The `globalThis.__daml_lint_rule` assignment gives

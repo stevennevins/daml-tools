@@ -37,7 +37,8 @@ aim to match any other formatter's output.
 
 Import organization is enabled by default. Reordering import declarations can
 change Daml package identity even when the formatted source denotes the same
-imports; use `--preserve-import-order` when package identity stability matters.
+imports; use `--preserve-import-order` or set `daml-tools.fmt.import-order` to
+`preserve` when package identity stability matters.
 
 ## Documentation
 
@@ -86,10 +87,42 @@ daml-fmt Foo.daml                                  # formatted source to stdout
 find src -name '*.daml' -exec daml-fmt -w {} +     # rewrite files in place
 find src -name '*.daml' -exec daml-fmt --check {} + # list unformatted files
 daml-fmt --preserve-import-order Foo.daml          # format without import sorting
+find src -name '*.daml' -exec daml-fmt --ignore-path .damlfmtignore --check {} + # skip generated/vendored files
+daml-fmt --rule imports Foo.daml                   # run only import organization
+daml-fmt --rule spacing Foo.daml                   # run only whitespace/colon spacing
 cat Foo.daml | daml-fmt                            # stdin -> stdout
 ```
 
 Exit codes: 0 ok, 1 `--check` found unformatted files, 2 error.
+
+Rule ids are `imports`, `layout`, `spacing`, and `syntax-normalization`.
+`daml-fmt` reads `./daml.yaml` when present:
+
+```yaml
+daml-tools:
+  fmt:
+    import-order: preserve
+    ignore:
+      - generated/**
+      - vendor.daml
+    groups: [all]
+    rules:
+      imports: off
+      layout: on
+      spacing: on
+      syntax-normalization: on
+```
+
+Default config discovery checks exactly `./daml.yaml` in the current working
+directory; it does not walk parent directories. CLI `--rule`/`--group`
+selection overrides config selection, and `--preserve-import-order` overrides
+`import-order`.
+
+`daml-tools.fmt.ignore` entries resolve relative to the config file directory.
+Repeatable `--ignore-path <FILE>` entries resolve patterns relative to each
+ignore file's directory. Ignore files support blank lines, `#` comments, exact
+paths, directory prefixes ending in `/`, leading `/`, `*`, and `**`; this is a
+small gitignore-like subset.
 
 ## Library API
 
@@ -101,7 +134,8 @@ Exit codes: 0 ok, 1 `--check` found unformatted files, 2 error.
 
 ```rust
 use daml_fmt::{
-    format_source, format_source_with_options, try_format_source, FormatOptions, ImportOrder,
+    format_source, format_source_with_options, try_format_source, FormatOptions, FormatRule,
+    FormatRuleSet, ImportOrder,
 };
 
 let formatted = format_source("module M where\nfoo : Int\nfoo = 1\n");
@@ -111,8 +145,14 @@ let preserved = format_source_with_options(
     FormatOptions::new().with_import_order(ImportOrder::Preserve),
 );
 
+let imports_only = format_source_with_options(
+    "module M where\nimport DA.Optional\nimport DA.List\n\nx : Int\nx = 1\n",
+    FormatOptions::new().with_rules(FormatRuleSet::from_rules([FormatRule::Imports])),
+);
+
 let checked = try_format_source("module M where\nfoo: Int\nfoo = 1\n").expect("valid source");
 assert_eq!(checked, formatted);
+assert!(imports_only.contains("import DA.List\nimport DA.Optional"));
 ```
 
 `ImportOrder` implements `Default` (`Organize`) and `Display` (`organize` /

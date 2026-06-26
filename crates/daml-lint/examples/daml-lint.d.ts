@@ -292,7 +292,7 @@ export type RuleModule = {
 export type ReportTarget = { span: Span } | { span: SrcPos } | number;
 
 declare global {
-  /** Per-rule options from `.daml-lint.json`. Defaults to `{}`. */
+  /** Per-rule options from `daml.yaml`. Defaults to `{}`. */
   var CONFIG: unknown;
 
   var __daml_lint_rule: RuleModule | undefined;

@@ -57,11 +57,14 @@
 
 // AST-driven layout (own-design canonical layout). This is the shipping
 // backend. See src/layout_ast.rs.
+pub mod config;
+mod format_rules;
 mod layout_ast;
 
 use daml_parser::ast::DiagnosticCategory;
 use daml_parser::lexer::{TokenKind, TriviaKind};
 use daml_syntax::{CharColumn, LineNumber, SourceFile, SourceTokens};
+pub use format_rules::{FormatRule, FormatRuleParseError, FormatRuleSet};
 use std::error::Error;
 use std::fmt;
 
@@ -251,6 +254,7 @@ impl fmt::Display for ImportOrder {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct FormatOptions {
     import_order: ImportOrder,
+    rules: FormatRuleSet,
 }
 
 impl FormatOptions {
@@ -262,6 +266,7 @@ impl FormatOptions {
     pub const fn new() -> Self {
         Self {
             import_order: ImportOrder::Organize,
+            rules: FormatRuleSet::all(),
         }
     }
 
@@ -276,6 +281,19 @@ impl FormatOptions {
     #[must_use]
     pub const fn import_order(self) -> ImportOrder {
         self.import_order
+    }
+
+    /// Formatter rules enabled for this formatting run.
+    #[must_use]
+    pub const fn rules(self) -> FormatRuleSet {
+        self.rules
+    }
+
+    /// Set the formatter rules enabled for this formatting run.
+    #[must_use]
+    pub const fn with_rules(mut self, rules: FormatRuleSet) -> Self {
+        self.rules = rules;
+        self
     }
 
     /// Set the import ordering strategy.

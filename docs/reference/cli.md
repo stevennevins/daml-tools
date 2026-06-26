@@ -21,6 +21,10 @@ stdout.
 | `-w`, `--write` | Rewrite each file in place when the formatted output differs. Requires file arguments. |
 | `--check` | Print each file that would change and exit `1` if any file is not formatted. Requires file arguments. |
 | `--preserve-import-order` | Keep import declarations in source order instead of applying default import organization. |
+| `--config <FILE>` | Load formatter config from a YAML file. Default discovery: `./daml.yaml` when present. |
+| `--ignore-path <FILE>` | Load formatter ignore patterns from a file. Repeatable. Patterns resolve relative to the ignore file's directory. |
+| `--group <ID>` | Enable a formatter rule group. Repeatable. Currently `all`. |
+| `--rule <ID>` | Enable a specific formatter rule. Repeatable. Accepted values: `imports`, `layout`, `spacing`, `syntax-normalization`. |
 | `-h`, `--help` | Show usage text and exit `0`. |
 | `-v`, `--version` | Print the crate version and exit `0`. |
 
@@ -42,6 +46,16 @@ malformed input is not rewritten.
 Import organization is enabled by default. It may change Daml package identity
 because import declaration order contributes to the compiled package; pass
 `--preserve-import-order` when package identity stability matters.
+
+Formatter rule selection runs only the selected rules. CLI `--rule`/`--group`
+selection overrides `daml.yaml`. With no explicit selection, all formatter
+rules run unless config disables one.
+
+Formatter config may set `daml-tools.fmt.import-order` to `organize` or
+`preserve`. `--preserve-import-order` takes precedence over config. File
+arguments matching `daml-tools.fmt.ignore` or any repeatable `--ignore-path`
+file are skipped before reading, checking, printing, or writing. Stdin has no
+file path, so ignore patterns do not apply.
 
 ### Exit codes
 
@@ -73,30 +87,67 @@ warning. If no `.daml` files are found, the command exits `2`.
 | `-f`, `--format <FORMAT>` | Output format. Accepted values: `markdown`, `md`, `json`, `sarif`. Default: `markdown`. |
 | `-o`, `--output <FILE>` | Write the report to a file instead of stdout. |
 | `--fail-on <SEVERITY>` | Minimum finding severity that causes exit `1`. Accepted values: `critical`, `high`, `medium`, `low`, `info`. Default: `high`. |
-| `-c`, `--config <FILE>` | Load a JSON config file with plugins and rule settings. Default discovery: `.daml-lint.json` in the current directory. Requires the `custom-rules` feature. |
+| `-c`, `--config <FILE>` | Load config from a YAML file. Default discovery: `./daml.yaml` when present. |
+| `--rule <ID>` | Run only the named lint rule. Repeatable. Built-ins use their detector id; plugin rules use `plugin/rule`. |
+| `--group <ID>` | Run a lint rule group. Repeatable. Accepted values: `recommended`, `all`. |
 | `--rules <FILE>` | Load a JavaScript custom rule file. Repeatable. Requires the `custom-rules` feature. |
 | `-h`, `--help` | Show clap-generated help. |
 | `-V`, `--version` | Show the crate version. |
 
 ### Config file
 
-`.daml-lint.json` can enable installed plugin rules, disable rules, and override
-rule severities:
+`./daml.yaml` can configure formatter and linter rule groups, rule toggles,
+severity overrides, plugin packages, plugin search roots, and rule-specific
+options:
 
-```json
-{
-  "plugins": ["template"],
-  "rules": {
-    "missing-ensure-decimal": "off",
-    "template/template-requires-ensure": ["medium", { "allowEmptyEnsure": false }]
-  }
-}
+```yaml
+daml-tools:
+  fmt:
+    import-order: preserve
+    ignore:
+      - generated/**
+      - vendor.daml
+    groups: [all]
+    rules:
+      imports: off
+      layout: on
+      spacing: on
+      syntax-normalization: on
+
+  lint:
+    groups: [recommended]
+    plugin-paths: [./plugins]
+    plugins: [template]
+    rules:
+      missing-ensure-decimal: off
+      head-of-list-query: warning
+      template/template-requires-ensure:
+        - warning
+        - allowEmptyEnsure: false
 ```
 
-Plugin names resolve to npm packages with the `daml-lint-plugin-` prefix, so
-`template` resolves to `daml-lint-plugin-template`. Configured plugin rules are
-reported as `plugin/rule`. Rule options are exposed to the JavaScript rule as
-global `CONFIG`.
+Default discovery checks only `./daml.yaml` in the current working directory for
+both `daml-fmt` and `daml-lint`; it does not walk parent directories and does
+not read `.daml-lint.json`.
+`--config <FILE>` selects a specific YAML file instead.
+
+| Field | Applies to | Description |
+|-------|------------|-------------|
+| `import-order` | `fmt` | Formatter import ordering strategy: `organize` (default) or `preserve`. Overridden by `daml-fmt --preserve-import-order`. |
+| `ignore` | `fmt` | Formatter ignore patterns. Relative patterns resolve from the config file directory. |
+| `groups` | `fmt`, `lint` | Rule groups to enable before per-rule overrides. Formatter accepts `all`; linter accepts `recommended` and `all`. |
+| `rules` | `fmt`, `lint` | Map of rule ids to settings. Formatter settings are `on`/`off`; linter settings are `off`, `on`, a severity, or `[severity, options]`. |
+| `plugins` | `lint` | Installed lint plugin package names. `template` resolves to `daml-lint-plugin-template`; scoped packages may use `@scope/name`. |
+| `plugin-paths` | `lint` | Additional package search roots for plugin packages. Relative paths are resolved relative to the config file. |
+
+Formatter ignore files passed with `--ignore-path <FILE>` support blank lines,
+lines whose first non-whitespace character is `#`, exact paths, directory
+prefixes ending in `/`, leading `/` anchors relative to the ignore source
+directory, `*` within one path segment, and `**` across path separators. This
+is a documented subset of gitignore semantics.
+
+Configured plugin rules are reported as `plugin/rule`. Rule options are exposed
+to the JavaScript rule as global `CONFIG`.
 
 ### Output formats
 
@@ -133,9 +184,10 @@ formatted output. Each diagnostic carries a stable category tag such as
 `properties.category`, markdown report headings). A scan with parse errors exits
 `3`, even if no detector findings meet the `--fail-on` threshold.
 
-Rule settings in `.daml-lint.json` accept only canonical severities:
-`off`, `critical`, `high`, `medium`, `low`, and `info`. Legacy aliases such as
-`warn`/`error` and numeric shortcuts are rejected.
+Lint rule settings in `daml.yaml` accept `off`, `on`, `warning`, `error`,
+and canonical severities `critical`, `high`, `medium`, `low`, and `info`.
+`warning` maps to medium severity and `error` maps to high severity. Numeric
+shortcuts and `warn` are rejected. Formatter rule settings accept `on`/`off`.
 
 ### Exit codes
 

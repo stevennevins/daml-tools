@@ -35,7 +35,7 @@
 //! Final whitespace + colon-spacing normalization remains token-gated
 //! (`crate::normalize_gaps`).
 
-use crate::ImportOrder;
+use crate::{FormatRule, ImportOrder};
 use daml_parser::ast::{
     ChoiceDecl, Decl, DoStmt, Expr, FieldAssign, Module, Span, TemplateBodyDecl, TypeAnnotation,
 };
@@ -147,27 +147,42 @@ pub fn format_ast(src: &str, options: crate::FormatOptions) -> String {
         return src.to_string();
     }
 
+    let rules = options.rules();
+
     // Step 1: structural reindent, each family as its own gated pass.
-    let mut base = run_structural_passes(src);
+    let mut base = if rules.contains(FormatRule::Layout) {
+        run_structural_passes(src)
+    } else {
+        src.to_string()
+    };
 
     // Step 2: layout-organizing rewrites that intentionally change layout
     // tokens while preserving the non-layout token stream. Import organization
     // is controlled separately because it reorders import declarations.
-    if options.import_order() == ImportOrder::Organize {
+    if rules.contains(FormatRule::Imports) && options.import_order() == ImportOrder::Organize {
         base = organize_imports(&base);
     }
-    base = rewrite_layout_forms(&base);
-    base = run_structural_passes(&base);
+    if rules.contains(FormatRule::SyntaxNormalization) {
+        base = rewrite_syntax_forms(&base, rules.contains(FormatRule::Layout));
+        if rules.contains(FormatRule::Layout) {
+            base = run_structural_passes(&base);
+        }
+    } else if rules.contains(FormatRule::Layout) {
+        base = rewrite_pure_layout_forms(&base);
+        base = run_structural_passes(&base);
+    }
 
     // Step 3: whitespace + colon normalization on top, gated vs `base`.
     // same_tokens keeps this final spacing step from changing `base`'s parse.
-    let full = crate::normalize_gaps(&base, crate::ColonSpacingMode::Canonical);
-    if same_tokens(&base, &full) {
-        return full;
-    }
-    let ws_only = crate::normalize_gaps(&base, crate::ColonSpacingMode::Preserve);
-    if same_tokens(&base, &ws_only) {
-        return ws_only;
+    if rules.contains(FormatRule::Spacing) {
+        let full = crate::normalize_gaps(&base, crate::ColonSpacingMode::Canonical);
+        if same_tokens(&base, &full) {
+            return full;
+        }
+        let ws_only = crate::normalize_gaps(&base, crate::ColonSpacingMode::Preserve);
+        if same_tokens(&base, &ws_only) {
+            return ws_only;
+        }
     }
     base
 }
@@ -444,18 +459,24 @@ fn apply_replacements(src: &str, replacements: &[Replacement]) -> String {
     out
 }
 
-fn rewrite_layout_forms(src: &str) -> String {
+fn rewrite_syntax_forms(src: &str, include_pure_layout: bool) -> String {
     let mut base = rewrite_line_forms(src);
-    base = rewrite_lambda_bodies(&base);
-    base = rewrite_infix_continuations(&base);
-
+    if include_pure_layout {
+        base = rewrite_pure_layout_forms(&base);
+    }
     let source_file = SourceFile::parse(&base);
     let mut replacements = Vec::new();
     collect_inline_expression_rewrites(&base, source_file.module(), &mut replacements);
     apply_replacements(&base, &replacements)
 }
 
-fn rewrite_line_forms(src: &str) -> String {
+fn rewrite_pure_layout_forms(src: &str) -> String {
+    let base = rewrite_line_infix_continuations(src);
+    let base = rewrite_lambda_bodies(&base);
+    rewrite_infix_continuations(&base)
+}
+
+fn rewrite_line_infix_continuations(src: &str) -> String {
     let mut out = String::with_capacity(src.len());
     let mut last_expr_indent: Option<usize> = None;
     for line in src.split_inclusive('\n') {
@@ -485,22 +506,6 @@ fn rewrite_line_forms(src: &str) -> String {
             }
         }
 
-        if let Some(rewritten) = rewrite_signature_line(body, ending) {
-            out.push_str(&rewritten);
-            last_expr_indent = None;
-            continue;
-        }
-        if let Some(rewritten) = rewrite_inline_let_line(body, ending) {
-            out.push_str(&rewritten);
-            last_expr_indent = None;
-            continue;
-        }
-        if let Some(rewritten) = rewrite_long_application_line(body, ending) {
-            out.push_str(&rewritten);
-            last_expr_indent = None;
-            continue;
-        }
-
         out.push_str(line);
         if !starts_with_infix_operator(trimmed)
             && !starts_with_word(trimmed, "module")
@@ -509,6 +514,41 @@ fn rewrite_line_forms(src: &str) -> String {
         {
             last_expr_indent = Some(leading);
         }
+    }
+    out
+}
+
+fn rewrite_line_forms(src: &str) -> String {
+    let mut out = String::with_capacity(src.len());
+    for line in src.split_inclusive('\n') {
+        let (body, ending) = split_line_ending(line);
+        let leading = body.len() - body.trim_start_matches(' ').len();
+        let trimmed = body[leading..].trim_end();
+        if trimmed.is_empty() || trimmed.starts_with("--") {
+            out.push_str(line);
+            continue;
+        }
+        if let Some(comment_at) = body.find("--") {
+            if !body[..comment_at].trim().is_empty() {
+                out.push_str(line);
+                continue;
+            }
+        }
+
+        if let Some(rewritten) = rewrite_signature_line(body, ending) {
+            out.push_str(&rewritten);
+            continue;
+        }
+        if let Some(rewritten) = rewrite_inline_let_line(body, ending) {
+            out.push_str(&rewritten);
+            continue;
+        }
+        if let Some(rewritten) = rewrite_long_application_line(body, ending) {
+            out.push_str(&rewritten);
+            continue;
+        }
+
+        out.push_str(line);
     }
     out
 }

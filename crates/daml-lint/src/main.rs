@@ -6,7 +6,6 @@ use daml_syntax::{CharColumn, LineNumber};
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
-#[cfg(feature = "custom-rules")]
 mod config;
 
 #[derive(Parser)]
@@ -30,10 +29,17 @@ struct Cli {
     #[arg(long, default_value = "high", value_parser = parse_fail_on)]
     fail_on: Severity,
 
-    /// JSON config file with plugins and rule settings (default: .daml-lint.json)
-    #[cfg(feature = "custom-rules")]
+    /// YAML config file with plugins and rule settings (default: ./daml.yaml)
     #[arg(short, long)]
     config: Option<PathBuf>,
+
+    /// Rule id to run, repeatable
+    #[arg(long = "rule")]
+    rule_ids: Vec<String>,
+
+    /// Rule group to run, repeatable
+    #[arg(long = "group")]
+    group_ids: Vec<String>,
 
     /// Custom AST rule scripts (JavaScript), repeatable. Write in TypeScript
     /// against examples/daml-lint.d.ts and compile; see examples/
@@ -45,39 +51,68 @@ struct Cli {
 fn main() {
     let cli = Cli::parse();
 
-    // Load detectors first so rule-file errors surface before scanning
-    #[cfg(feature = "custom-rules")]
-    let detectors = {
-        let lint_config = config::LintConfig::load(cli.config.as_deref()).unwrap_or_else(|e| {
+    // Load detectors first so rule-file errors surface before scanning.
+    let lint_config = config::LintConfig::load(cli.config.as_deref()).unwrap_or_else(|e| {
+        eprintln!("Error: {e}");
+        std::process::exit(2);
+    });
+    let mut detectors = detectors::create_builtin_detectors();
+    match lint_config.load_plugin_detectors() {
+        Ok(plugin_detectors) => detectors.extend(plugin_detectors),
+        Err(e) => {
             eprintln!("Error: {e}");
             std::process::exit(2);
-        });
-        let mut detectors = detectors::create_builtin_detectors();
-        match lint_config.load_plugin_detectors() {
-            Ok(plugin_detectors) => detectors.extend(plugin_detectors),
+        }
+    }
+    #[cfg(feature = "custom-rules")]
+    for rules_path in &cli.rules {
+        match detectors::script::load_script(rules_path) {
+            Ok(rule) => detectors.push(rule),
             Err(e) => {
                 eprintln!("Error: {e}");
                 std::process::exit(2);
             }
         }
-        for rules_path in &cli.rules {
-            match detectors::script::load_script(rules_path) {
-                Ok(rule) => detectors.push(rule),
-                Err(e) => {
-                    eprintln!("Error: {e}");
-                    std::process::exit(2);
-                }
+    }
+
+    let detector_names: std::collections::BTreeSet<String> = detectors
+        .iter()
+        .map(|detector| detector.name().to_string())
+        .collect();
+    if let Err(e) = lint_config.validate_rule_settings(&detector_names) {
+        eprintln!("Error: {e}");
+        std::process::exit(2);
+    }
+    let cli_selection =
+        match config::RuleSelection::from_cli(&cli.rule_ids, &cli.group_ids, &detector_names) {
+            Ok(selection) => selection,
+            Err(e) => {
+                eprintln!("Error: {e}");
+                std::process::exit(2);
             }
-        }
-        let detectors = lint_config.apply_rule_settings(detectors);
-        if let Err(e) = lint_config.validate_rule_settings(&detectors) {
+        };
+    let selection = match lint_config.resolve_selection(cli_selection, &detector_names) {
+        Ok(selection) => selection,
+        Err(e) => {
             eprintln!("Error: {e}");
             std::process::exit(2);
         }
+    };
+    if let Some(selection) = &selection {
+        if let Err(e) = selection.validate(&detector_names) {
+            eprintln!("Error: {e}");
+            std::process::exit(2);
+        }
+    }
+    let detectors = lint_config.apply_rule_settings(detectors, selection.as_ref());
+    let detectors = if let Some(selection) = &selection {
+        detectors
+            .into_iter()
+            .filter(|detector| selection.contains(detector.name()))
+            .collect()
+    } else {
         detectors
     };
-    #[cfg(not(feature = "custom-rules"))]
-    let detectors = detectors::create_builtin_detectors();
     if let Some(duplicate_detector_name) = detector::find_duplicate_detector_name(&detectors) {
         eprintln!(
             "Error: rule '{duplicate_detector_name}': name collides with a built-in detector or another rule"
