@@ -66,6 +66,17 @@ fn format_options_can_limit_formatter_to_selected_rules() {
 }
 
 #[test]
+fn syntax_normalization_rule_does_not_apply_pure_layout_reindent() {
+    let infix = "module M where\nfoo = a\n + b\n";
+    let lambda = "module M where\nfoo = \\x ->\n x\n";
+    let syntax_only = FormatOptions::new()
+        .with_rules(FormatRuleSet::from_rules([FormatRule::SyntaxNormalization]));
+
+    assert_eq!(format_source_with_options(infix, syntax_only), infix);
+    assert_eq!(format_source_with_options(lambda, syntax_only), lambda);
+}
+
+#[test]
 fn format_coverage_counts_modeled_constructs_independently_of_edit_candidates() {
     let canonical = "module M where\nmain = do\n  pass\n";
     let canonical_coverage = coverage(canonical).expect("canonical source coverage");

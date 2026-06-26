@@ -180,6 +180,88 @@ template Iou
 }
 
 #[test]
+fn rule_flag_overrides_disabled_config_selection() {
+    let project = temp_dir("cli-over-disabled-config-project");
+    std::fs::write(
+        project.join("daml.yaml"),
+        r#"daml-tools:
+  lint:
+    rules:
+      missing-ensure-decimal: off
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        project.join("Iou.daml"),
+        r#"module Iou where
+
+template Iou
+  with
+    issuer : Party
+    amount : Decimal
+  where
+    signatory issuer
+"#,
+    )
+    .unwrap();
+
+    let output = cmd()
+        .current_dir(&project)
+        .arg("--rule")
+        .arg("missing-ensure-decimal")
+        .arg("Iou.daml")
+        .arg("--fail-on")
+        .arg("info")
+        .output()
+        .unwrap();
+    std::fs::remove_dir_all(&project).ok();
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("missing-ensure-decimal"));
+}
+
+#[test]
+fn implicit_daml_yaml_does_not_walk_parent_directories() {
+    let project = temp_dir("parent-config-project");
+    let child = project.join("child");
+    std::fs::create_dir(&child).unwrap();
+    std::fs::write(
+        project.join("daml.yaml"),
+        r#"daml-tools:
+  lint:
+    rules:
+      missing-ensure-decimal: off
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        child.join("Iou.daml"),
+        r#"module Iou where
+
+template Iou
+  with
+    issuer : Party
+    amount : Decimal
+  where
+    signatory issuer
+"#,
+    )
+    .unwrap();
+
+    let output = cmd()
+        .current_dir(&child)
+        .arg("Iou.daml")
+        .arg("--fail-on")
+        .arg("info")
+        .output()
+        .unwrap();
+    std::fs::remove_dir_all(&project).ok();
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("missing-ensure-decimal"));
+}
+
+#[test]
 #[cfg(feature = "custom-rules")]
 fn config_unknown_enabled_rule_exits_two() {
     let project = temp_dir("unknown-rule-project");

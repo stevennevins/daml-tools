@@ -30,9 +30,9 @@ speculatively:
 | QuickJS rule runtime | `rquickjs` 0.12 (`daml-lint` optional dep) | `1.87` |
 | CLI argument parsing | `clap` 4.6 (`daml-lint` optional dep) | `1.85` |
 
-`daml-parser` and `daml-fmt` have no external Rust dependencies beyond the
-shared syntax stack, but they share the workspace MSRV so `cargo install` and CI
-stay aligned.
+`daml-parser` has no external Rust dependencies. `daml-fmt` uses the shared
+syntax stack plus `serde`/`serde_yaml` for `daml.yaml` config. Both share the
+workspace MSRV so `cargo install` and CI stay aligned.
 
 ### Published package contents
 
@@ -175,8 +175,8 @@ Library root: [`crates/daml-fmt/src/lib.rs`](../../crates/daml-fmt/src/lib.rs)
 
 README: [`crates/daml-fmt/README.md`](../../crates/daml-fmt/README.md)
 
-`daml-fmt` depends on `daml-parser` and `daml-syntax`. It does not depend on
-`daml-lint`.
+`daml-fmt` depends on `daml-parser`, `daml-syntax`, `serde`, and `serde_yaml`.
+It does not depend on `daml-lint`.
 
 ### Features
 
@@ -193,6 +193,8 @@ README: [`crates/daml-fmt/README.md`](../../crates/daml-fmt/README.md)
 | `try_format_source(src: &str) -> Result<String, FormatError>` | Public | Formats Daml source with default options, rejecting diagnostics reported by `source_diagnostics`. |
 | `try_format_source_with_options(src: &str, options: FormatOptions) -> Result<String, FormatError>` | Public | Formats Daml source with explicit options, rejecting diagnostics reported by `source_diagnostics`. |
 | `FormatOptions` | Public | Formatter switches. Prefer `Default`/`new()`/`with_*` for forward-compatible construction. |
+| `FormatRule` | Public | Discrete formatter rule ids: `imports`, `layout`, `spacing`, and `syntax-normalization`. Implements string parsing/display for CLI/config selection. |
+| `FormatRuleSet` | Public | Set of enabled formatter rules with `all()`, `none()`, `from_rules`, `contains`, `insert`, and `remove` helpers. |
 | `ImportOrder` | Public | Import ordering strategy (`Organize` default, `Preserve` via CLI `--preserve-import-order`). Implements `Default` and `Display`; `#[non_exhaustive]`. |
 | `FormatDiagnostic` | Public | Typed formatter diagnostic. Access line, column, category, and message through accessors. |
 | `FormatError` | Public | Formatting or coverage rejection error. Implements `Display`, `std::error::Error`, and `AsRef<[FormatDiagnostic]>`; access typed diagnostics through `diagnostics()`. |
@@ -200,6 +202,7 @@ README: [`crates/daml-fmt/README.md`](../../crates/daml-fmt/README.md)
 | `source_diagnostics(src: &str) -> Vec<FormatDiagnostic>` | Public | Returns typed lexer and parser diagnostics for malformed source. |
 | `FormatCoverage` | Public | Structural edit-candidate and modeled-construct counts from `coverage`. Read through `edit_candidates()` and `modeled_constructs()`. |
 | `coverage(src: &str) -> Result<FormatCoverage, FormatError>` | Public | Counts formatter structural edit candidates over modeled constructs, rejecting diagnostics reported by `source_diagnostics`. |
+| `config` module | Public | YAML config loader and CLI rule/group resolution helpers for `daml-tools.fmt`. |
 
 The formatter backend is implemented in the private `layout_ast` module.
 

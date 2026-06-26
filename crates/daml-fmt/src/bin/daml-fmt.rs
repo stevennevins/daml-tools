@@ -35,6 +35,9 @@ fn usage(code: i32) -> ! {
          \x20 -w, --write    rewrite files in place\n\
          \x20     --check    exit 1 if any file is not formatted\n\
          \x20     --preserve-import-order  do not reorder import declarations\n\
+         \x20     --config <FILE>  read formatter config from FILE (default: ./daml.yaml)\n\
+         \x20     --group <ID>     enable a formatter rule group (repeatable; currently all)\n\
+         \x20     --rule <ID>      enable a formatter rule (repeatable; imports, layout, spacing, syntax-normalization)\n\
          \x20 -h, --help     show this help\n\
          \x20 -v, --version  show version\n\
          \n\

@@ -29,9 +29,9 @@ Installed plugin packages expose bundled rules from `package.json`:
 }
 ```
 
-Consumers enable installed rules from `.daml-lint.json` with `plugin/rule`
-IDs. Rule options from `[severity, options]` settings are available as global
-`CONFIG`.
+Consumers enable installed rules from `daml.yaml` under
+`daml-tools.lint.rules` with `plugin/rule` IDs. Rule options from
+`[severity, options]` settings are available as global `CONFIG`.
 
 Runtime helper functions are intentionally not exported. The package is the
 public rule-facing IR contract and starter templates for plugin projects.

@@ -38,7 +38,11 @@ fn temp_dir(name: &str) -> std::path::PathBuf {
 fn help_exits_successfully() {
     let output = cmd().arg("--help").output().unwrap();
     assert!(output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("usage: daml-fmt"));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("usage: daml-fmt"));
+    assert!(stderr.contains("--config <FILE>"));
+    assert!(stderr.contains("--group <ID>"));
+    assert!(stderr.contains("--rule <ID>"));
 }
 
 #[test]
@@ -145,6 +149,102 @@ fn daml_yaml_can_disable_formatter_rule() {
         String::from_utf8_lossy(&output.stdout),
         "module M where\n\nimport DA.Optional\nimport DA.List\n\nfoo: Int\nfoo = 1\n"
     );
+}
+
+#[test]
+fn daml_yaml_can_disable_each_formatter_rule() {
+    let cases = [
+        (
+            "imports",
+            "module M where\n\nimport DA.Optional\nimport DA.List\n\nfoo: Int\nfoo = 1\n",
+            "import DA.Optional\nimport DA.List",
+            "foo: Int",
+        ),
+        (
+            "layout",
+            "module M where\nmain = do\n    pass\n",
+            "main = do\n    pass",
+            "module M where",
+        ),
+        (
+            "spacing",
+            "module M where\nfoo : Int\nfoo = 1\n",
+            "foo : Int",
+            "foo = 1",
+        ),
+        (
+            "syntax-normalization",
+            "module M where\ng x = if x then 1 else 2\n",
+            "g x = if x then 1 else 2",
+            "module M where",
+        ),
+    ];
+
+    for (rule, input, disabled_rule_fragment, still_formats_fragment) in cases {
+        let project = temp_dir(&format!("disable-{rule}-project"));
+        std::fs::write(
+            project.join("daml.yaml"),
+            format!("daml-tools:\n  fmt:\n    groups: [all]\n    rules:\n      {rule}: off\n"),
+        )
+        .unwrap();
+
+        let output = cmd()
+            .current_dir(&project)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .and_then(|mut child| {
+                child.stdin.as_mut().unwrap().write_all(input.as_bytes())?;
+                child.wait_with_output()
+            })
+            .unwrap();
+        std::fs::remove_dir_all(&project).ok();
+
+        assert!(output.status.success(), "rule {rule}");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains(disabled_rule_fragment),
+            "disabled {rule} fragment missing from:\n{stdout}"
+        );
+        assert!(
+            stdout.contains(still_formats_fragment),
+            "other formatter behavior missing for {rule} from:\n{stdout}"
+        );
+    }
+}
+
+#[test]
+fn implicit_daml_yaml_does_not_walk_parent_directories() {
+    let project = temp_dir("parent-config-project");
+    let child = project.join("child");
+    std::fs::create_dir(&child).unwrap();
+    std::fs::write(
+        project.join("daml.yaml"),
+        r#"daml-tools:
+  fmt:
+    rules:
+      imports: off
+"#,
+    )
+    .unwrap();
+    let input = "module M where\n\nimport DA.Optional\nimport DA.List\n\nfoo : Int\nfoo = 1\n";
+
+    let output = cmd()
+        .current_dir(&child)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            child.stdin.as_mut().unwrap().write_all(input.as_bytes())?;
+            child.wait_with_output()
+        })
+        .unwrap();
+    std::fs::remove_dir_all(&project).ok();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("import DA.List\nimport DA.Optional"));
+    assert!(stdout.contains("foo: Int"));
 }
 
 #[test]

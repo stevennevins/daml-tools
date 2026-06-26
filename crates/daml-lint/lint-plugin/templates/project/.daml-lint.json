@@ -1,7 +1,0 @@
-{
-  "pluginPaths": ["."],
-  "plugins": ["template-requires-ensure"],
-  "rules": {
-    "template-requires-ensure/template-requires-ensure": "medium"
-  }
-}

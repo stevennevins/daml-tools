@@ -89,8 +89,9 @@ warning. If no `.daml` files are found, the command exits `2`.
 
 ### Config file
 
-``./daml.yaml` can configure formatter and linter rule groups, rule toggles,
-severity overrides, plugin packages, and rule-specific options:
+`./daml.yaml` can configure formatter and linter rule groups, rule toggles,
+severity overrides, plugin packages, plugin search roots, and rule-specific
+options:
 
 ```yaml
 daml-tools:
@@ -104,6 +105,7 @@ daml-tools:
 
   lint:
     groups: [recommended]
+    plugin-paths: [./plugins]
     plugins: [template]
     rules:
       missing-ensure-decimal: off
@@ -113,10 +115,19 @@ daml-tools:
         - allowEmptyEnsure: false
 ```
 
-Plugin names resolve to npm packages with the `daml-lint-plugin-` prefix, so
-`template` resolves to `daml-lint-plugin-template`. Configured plugin rules are
-reported as `plugin/rule`. Rule options are exposed to the JavaScript rule as
-global `CONFIG`.
+Default discovery checks only `./daml.yaml` in the current working directory; it
+does not walk parent directories and does not read `.daml-lint.json`.
+`--config <FILE>` selects a specific YAML file instead.
+
+| Field | Applies to | Description |
+|-------|------------|-------------|
+| `groups` | `fmt`, `lint` | Rule groups to enable before per-rule overrides. Formatter accepts `all`; linter accepts `recommended` and `all`. |
+| `rules` | `fmt`, `lint` | Map of rule ids to settings. Formatter settings are `on`/`off`; linter settings are `off`, `on`, a severity, or `[severity, options]`. |
+| `plugins` | `lint` | Installed lint plugin package names. `template` resolves to `daml-lint-plugin-template`; scoped packages may use `@scope/name`. |
+| `plugin-paths` | `lint` | Additional package search roots for plugin packages. Relative paths are resolved relative to the config file. |
+
+Configured plugin rules are reported as `plugin/rule`. Rule options are exposed
+to the JavaScript rule as global `CONFIG`.
 
 ### Output formats
 
