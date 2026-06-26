@@ -76,7 +76,7 @@ reports.
 
 ## Project config
 
-`daml-lint` reads `daml-tools.lint` from `./daml.yaml` then `./daml.yml` in the
+`daml-lint` reads `daml-tools.lint` from `./daml.yaml` in the
 current directory by default. Use `--config <FILE>` to load a different YAML
 file. Legacy `.daml-lint.json` is not discovered.
 

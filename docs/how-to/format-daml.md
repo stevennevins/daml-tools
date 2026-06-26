@@ -96,7 +96,7 @@ rule set. It conflicts with an explicit `--rule import-order`.
 
 ## Select formatter rules
 
-Configure formatter rules in `daml.yaml` / `daml.yml`:
+Configure formatter rules in `daml.yaml`:
 
 ```yaml
 daml-tools:
@@ -119,7 +119,7 @@ Rule ids (applied in this order when selected):
 - `gap-normalization`
 
 Load an explicit config file with `--config <FILE>`. Without `--config`,
-`daml-fmt` checks only `./daml.yaml` then `./daml.yml`.
+`daml-fmt` checks only `./daml.yaml` .
 
 ## Avoid invalid option combinations
 

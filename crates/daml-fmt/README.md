@@ -91,8 +91,7 @@ cat Foo.daml | daml-fmt                            # stdin -> stdout
 ```
 
 Configure formatter rules in `daml.yaml` under `daml-tools.fmt.rules`, or pass
-repeatable `--rule <ID>` flags. Without `--config`, only `./daml.yaml` then
-`./daml.yml` are checked.
+repeatable `--rule <ID>` flags. Without `--config`, only `./daml.yaml` is checked.
 
 Exit codes: 0 ok, 1 `--check` found unformatted files, 2 error.
 

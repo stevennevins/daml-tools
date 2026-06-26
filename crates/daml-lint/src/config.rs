@@ -229,7 +229,7 @@ pub struct LintConfig {
 impl LintConfig {
     /// Read and validate `daml-tools.lint` from YAML config, returning defaults when missing.
     ///
-    /// Discovery checks `./daml.yaml` then `./daml.yml` unless `--config` is set.
+    /// Discovery checks `./daml.yaml` unless `--config` is set.
     #[must_use = "propagate config read/parse failures"]
     pub fn load(explicit_path: Option<&Path>) -> Result<Self, ConfigError> {
         let Some(path) = find_config_path(explicit_path)? else {
@@ -688,11 +688,9 @@ fn find_config_path(explicit_path: Option<&Path>) -> Result<Option<PathBuf>, Con
 
     let cwd =
         std::env::current_dir().map_err(|source| ConfigError::MissingCurrentDir { source })?;
-    for name in ["daml.yaml", "daml.yml"] {
-        let path = cwd.join(name);
-        if path.is_file() {
-            return Ok(Some(path));
-        }
+    let path = cwd.join("daml.yaml");
+    if path.is_file() {
+        return Ok(Some(path));
     }
     Ok(None)
 }

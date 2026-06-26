@@ -20,7 +20,7 @@ stdout.
 |--------|-------------|
 | `-w`, `--write` | Rewrite each file in place when the formatted output differs. Default for file arguments. |
 | `--check` | Print each file that would change under the selected formatter rules and exit `1` if any file is not formatted. Requires file arguments. |
-| `--config <FILE>` | Load a YAML config file with `daml-tools.fmt` settings. Default discovery: `./daml.yaml` then `./daml.yml` in the current directory. |
+| `--config <FILE>` | Load a YAML config file with `daml-tools.fmt` settings. Default discovery: `./daml.yaml` in the current directory. |
 | `--rule <ID>` | Formatter rule to apply. Repeatable. Replaces config `fmt.rules`. |
 | `--preserve-import-order` | Remove `import-order` from the default formatter rule set. Conflicts with `--rule import-order`. |
 | `-h`, `--help` | Show usage text and exit `0`. |
@@ -75,7 +75,7 @@ warning. If no `.daml` files are found, the command exits `2`.
 | `-f`, `--format <FORMAT>` | Output format. Accepted values: `markdown`, `md`, `json`, `sarif`. Default: `markdown`. |
 | `-o`, `--output <FILE>` | Write the report to a file instead of stdout. |
 | `--fail-on <SEVERITY>` | Minimum finding severity that causes exit `1`. Accepted values: `critical`, `high`, `medium`, `low`, `info`. Default: `high`. |
-| `-c`, `--config <FILE>` | Load a YAML config file with `daml-tools.lint` settings. Default discovery: `./daml.yaml` then `./daml.yml` in the current directory. Requires the `custom-rules` feature. |
+| `-c`, `--config <FILE>` | Load a YAML config file with `daml-tools.lint` settings. Default discovery: `./daml.yaml` in the current directory. Requires the `custom-rules` feature. |
 | `--rule <ID>` | Run a built-in or plugin rule by id. Repeatable. Replaces config rule/group selection. Requires the `custom-rules` feature. |
 | `--group <GROUP>` | Run a built-in or plugin rule group (`recommended`, `all`, `off`, or `plugin/group`). Repeatable. Replaces config rule/group selection. Requires the `custom-rules` feature. |
 | `--rules <FILE>` | Load a JavaScript custom rule file. Repeatable. Requires the `custom-rules` feature. |
@@ -84,8 +84,8 @@ warning. If no `.daml` files are found, the command exits `2`.
 
 ### Config file
 
-`daml.yaml` / `daml.yml` can configure linting under top-level `daml-tools.lint`.
-`daml-lint` discovers `./daml.yaml` then `./daml.yml` in the current directory.
+`daml.yaml` can configure linting under top-level `daml-tools.lint`.
+`daml-lint` discovers `./daml.yaml` in the current directory.
 Legacy `.daml-lint.json` is not read.
 
 ```yaml

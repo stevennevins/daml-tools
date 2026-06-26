@@ -218,7 +218,7 @@ template Holding
 
 #[test]
 #[cfg(feature = "custom-rules")]
-fn daml_yml_is_discovered_when_yaml_missing() {
+fn daml_yml_is_not_discovered() {
     let project = temp_dir("daml-yml-project");
     std::fs::write(
         project.join("daml.yml"),
@@ -252,8 +252,8 @@ template Iou
         .unwrap();
     std::fs::remove_dir_all(&project).ok();
 
-    assert!(output.status.success());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("No findings."));
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("missing-ensure-decimal"));
 }
 
 #[test]

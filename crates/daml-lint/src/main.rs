@@ -32,7 +32,7 @@ struct Cli {
     #[arg(long, default_value = "high", value_parser = parse_fail_on)]
     fail_on: Severity,
 
-    /// YAML config file with daml-tools.lint settings (default: ./daml.yaml then ./daml.yml)
+    /// YAML config file with daml-tools.lint settings (default: ./daml.yaml)
     #[cfg(feature = "custom-rules")]
     #[arg(short, long)]
     config: Option<PathBuf>,
