@@ -15,7 +15,7 @@ template OpenMiningRound
 
 -- Detector #2: unguarded division
 scaleFees fees openRound =
-  map (\f -> f { amount = f.amount * (1.0 / openRound.amuletPrice) }) fees
+  map (\f -> f with amount = f.amount * (1.0 / openRound.amuletPrice)) fees
 
 -- Detector #4: unbounded fields
 template BuyTrafficRequest

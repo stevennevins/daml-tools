@@ -1,0 +1,80 @@
+# daml-lint Report
+
+**Summary:** 7 finding(s) — 0 Critical, 5 High, 2 Medium, 0 Low, 0 Info
+
+## HIGH (5)
+
+### HIGH `missing-ensure-decimal`
+
+**Template 'OpenMiningRound' has Decimal field 'amuletPrice' with no positivity bound (e.g. `amuletPrice > 0`) in its ensure clause.**
+
+- **File:** `tests/fixtures/bad_patterns.daml:6`
+- **Evidence:**
+  ```
+  amuletPrice : Decimal  -- ensure clause does not bound this field
+  ```
+
+### HIGH `missing-ensure-decimal`
+
+**Template 'OpenMiningRound' has Decimal field 'tickDuration' with no positivity bound (e.g. `tickDuration > 0`) in its ensure clause.**
+
+- **File:** `tests/fixtures/bad_patterns.daml:6`
+- **Evidence:**
+  ```
+  tickDuration : Decimal  -- ensure clause does not bound this field
+  ```
+
+### HIGH `unguarded-division`
+
+**Unguarded division by 'openRound.amuletPrice' — no prior > 0 check found in function 'scaleFees'.**
+
+- **File:** `tests/fixtures/bad_patterns.daml:18`
+- **Evidence:**
+  ```
+  1.0 / openRound.amuletPrice
+  ```
+
+### HIGH `missing-positive-amount`
+
+**Choice 'Transfer' accepts Decimal parameter 'amount' without asserting > 0.**
+
+- **File:** `tests/fixtures/bad_patterns.daml:38`
+- **Evidence:**
+  ```
+  amount : Decimal  -- no positive-amount check
+  ```
+
+### HIGH `archive-before-execute`
+
+**Contract archived via 'fetchAndArchive' at line 58 before try/catch block at line 60. If execution fails, the archived contract is permanently consumed.**
+
+- **File:** `tests/fixtures/bad_patterns.daml:58`
+- **Evidence:**
+  ```
+  fetchAndArchive requestCid
+  ...
+  try do ...
+  ```
+
+## MEDIUM (2)
+
+### MEDIUM `unbounded-fields`
+
+**Template 'BuyTrafficRequest' has unbounded fields 'trackingId', 'memberId', 'synchronizerId', 'reason' with no ensure clause bounding their length.**
+
+- **File:** `tests/fixtures/bad_patterns.daml:21`
+- **Evidence:**
+  ```
+  Fields without size bounds: trackingId, memberId, synchronizerId, reason
+  ```
+
+### MEDIUM `head-of-list-query`
+
+**Head-of-list pattern '(:: (rightCid, _) _)' on query result in function 'getFeaturedAppRight'. Query results have non-deterministic order.**
+
+- **File:** `tests/fixtures/bad_patterns.daml:68`
+- **Evidence:**
+  ```
+  (:: (rightCid, _) _)
+  ```
+

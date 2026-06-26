@@ -1,0 +1,12 @@
+error[E0639]: cannot create non-exhaustive struct using struct expression
+  --> tests/compile_fail/diagnostic_construct_private_fields.rs:5:13
+   |
+ 5 |       let _ = Diagnostic {
+   |  _____________^
+ 6 | |         range: TextRange::new(0.into(), 1.into()),
+ 7 | |         line: LineNumber::new(1),
+ 8 | |         column: CharColumn::new(1),
+...  |
+11 | |         category: DiagnosticCategory::Malformed,
+12 | |     };
+   | |_____^

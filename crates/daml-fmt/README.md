@@ -232,7 +232,10 @@ tools/gen-expected.sh
   verified to desugar clean. The formatting test cases.
 - `expected/` — the formatter's output over the corpus, the regression
   baseline (regenerate with `tools/gen-expected.sh`).
-- `corpus/` — corpus manifests.
+- `corpus/` — corpus manifests plus `gap-cases/`, a small package-local
+  bad/good formatter fixture set. These gap cases are separate from the
+  large `original/`/`expected/` SDK corpus and stay under `corpus/` because the
+  published crate excludes workspace-only verification data as one tree.
 - `tools/` — `verify-rust.sh` (desugar subset + idempotence by default; full
   desugar with `--desugar`), `gen-expected.sh`.
 - `test/diff.js` — the differential harness (`npm test`).

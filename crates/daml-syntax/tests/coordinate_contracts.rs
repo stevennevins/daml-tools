@@ -65,7 +65,7 @@ fn byte_offset_converts_to_text_size() {
 }
 
 #[test]
-fn coordinate_column_types_are_not_interchangeable() {
+fn coordinate_and_public_api_shape_compile_fail_cases_are_enforced() {
     let t = trybuild::TestCases::new();
-    t.compile_fail("tests/compile_fail/coordinate_*.rs");
+    t.compile_fail("tests/compile_fail/*.rs");
 }

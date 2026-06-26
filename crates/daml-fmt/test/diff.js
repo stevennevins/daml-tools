@@ -39,10 +39,82 @@ execFileSync("cargo", ["build", "--release", "--bin", "daml-fmt"], {
 const format = (src) =>
   execFileSync(bin, [], { input: src, cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 }).toString();
 
-const manifest = fs
-  .readFileSync(path.join(repoRoot, "corpus", "desugar-ok.txt"), "utf8")
-  .trim()
-  .split("\n");
+const readManifest = (relPath) => {
+  const abs = path.join(repoRoot, relPath);
+  return fs
+    .readFileSync(abs, "utf8")
+    .split("\n")
+    .map((line) => line.replace(/\r$/, ""))
+    .filter((line) => line.trim().length > 0)
+    .map((line) => line.trim());
+};
+
+const walkFiles = (rootDir, prefix = "") => {
+  const out = [];
+  for (const entry of fs.readdirSync(rootDir, { withFileTypes: true })) {
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    const abs = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) out.push(...walkFiles(abs, rel));
+    else out.push(rel);
+  }
+  return out;
+};
+
+const validateManifestIntegrity = () => {
+  const manifestPath = path.join(repoRoot, "corpus", "desugar-ok.txt");
+  const rawLines = fs
+    .readFileSync(manifestPath, "utf8")
+    .split("\n")
+    .map((line) => line.replace(/\r$/, ""));
+
+  const errors = [];
+  for (let i = 0; i < rawLines.length; i += 1) {
+    if (rawLines[i].trim().length === 0) {
+      if (i === rawLines.length - 1 && rawLines[i] === "") continue;
+      errors.push(`manifest line ${i + 1}: blank entry`);
+    }
+  }
+
+  const manifest = readManifest("corpus/desugar-ok.txt");
+  const seen = new Set();
+  for (const rel of manifest) {
+    if (seen.has(rel)) errors.push(`manifest duplicate: ${rel}`);
+    seen.add(rel);
+  }
+
+  for (const rel of manifest) {
+    if (!fs.existsSync(path.join(repoRoot, "original", rel))) {
+      errors.push(`missing original: ${rel}`);
+    }
+    if (!fs.existsSync(path.join(repoRoot, "expected", rel))) {
+      errors.push(`missing expected: ${rel}`);
+    }
+  }
+
+  const manifestSet = new Set(manifest);
+  for (const rel of walkFiles(path.join(repoRoot, "expected"))) {
+    if (!manifestSet.has(rel)) errors.push(`expected without manifest entry: ${rel}`);
+  }
+
+  const documentedOutsideManifest = new Set([
+    ...readManifest("corpus/excluded-error-annotated.txt"),
+    ...readManifest("corpus/desugar-fail.txt"),
+  ]);
+  for (const rel of walkFiles(path.join(repoRoot, "original"))) {
+    if (!manifestSet.has(rel) && !documentedOutsideManifest.has(rel)) {
+      errors.push(`original without manifest entry: ${rel}`);
+    }
+  }
+
+  if (errors.length) {
+    console.error(`manifest integrity (${errors.length}):`);
+    for (const item of errors) console.error(`  ${item}`);
+    process.exit(1);
+  }
+  return manifest;
+};
+
+const manifest = validateManifestIntegrity();
 
 const mismatched = [];
 const nonIdempotent = [];

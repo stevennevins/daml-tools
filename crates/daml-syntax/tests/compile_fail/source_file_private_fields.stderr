@@ -1,0 +1,5 @@
+error[E0451]: field `source` of struct `SourceFile` is private
+ --> tests/compile_fail/source_file_private_fields.rs:5:22
+  |
+5 |     let SourceFile { source, .. } = file;
+  |                      ^^^^^^ private field

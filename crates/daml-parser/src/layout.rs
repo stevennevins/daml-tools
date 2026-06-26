@@ -395,7 +395,13 @@ mod tests {
             .join("../../corpus/daml-finance/daml");
         if !root.exists() {
             // Corpus absent (e.g. a published crate built outside the
-            // workspace): skip rather than panic. Present in CI, so it runs.
+            // workspace): skip rather than panic. In CI, fail loud so a
+            // missing vendored corpus cannot pass green.
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "vendored corpus missing under CI (was it committed?): {}",
+                root.display()
+            );
             eprintln!("corpus absent (published crate?), skipping");
             return;
         }

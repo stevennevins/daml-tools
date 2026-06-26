@@ -1,0 +1,5 @@
+error[E0451]: field `message` of struct `Diagnostic` is private
+ --> tests/compile_fail/diagnostic_private_fields.rs:6:22
+  |
+6 |     let Diagnostic { message, .. } = diagnostic;
+  |                      ^^^^^^^ private field

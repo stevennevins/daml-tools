@@ -209,6 +209,11 @@ fn gap_cases_format_to_expected_output() {
     let bad_dir = root.join("bad");
     let good_dir = root.join("good");
     if !bad_dir.exists() || !good_dir.exists() {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "gap-cases fixtures missing under CI (was crates/daml-fmt/corpus/gap-cases committed?): {}",
+            root.display()
+        );
         eprintln!("gap cases corpus missing (published crate test fixture), skipping");
         return;
     }

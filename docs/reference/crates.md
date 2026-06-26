@@ -40,7 +40,7 @@ workspace MSRV so `cargo install` and CI stay aligned.
 |-------|----------------------|-------|
 | `daml-parser` | _(none)_ | Ships `LICENSE`, `README.md`, `CHANGELOG.md`, and `src/`. |
 | `daml-syntax` | _(none)_ | Ships `LICENSE`, `README.md`, `CHANGELOG.md`, and `src/`. |
-| `daml-lint` | `test-fixtures/`, `docs/`, `tools/`, `lint-plugin/`, npm metadata, `rules/*.ts` | Keeps `examples/` and compiled `rules/*.js` (embedded via `include_str!`). |
+| `daml-lint` | `tests/fixtures/`, `docs/`, `tools/`, `lint-plugin/`, npm metadata, `rules/*.ts` | Keeps `examples/` and compiled `rules/*.js` (embedded via `include_str!`). |
 | `daml-fmt` | corpus, differential-test trees, dev scripts | Keeps the published `daml-fmt` binary and integration tests. |
 
 ## Workspace members

@@ -4,6 +4,15 @@
 //! spans can't silently degrade to a useless catch-all. The corpus test runs
 //! the `render_from_ast` losslessness/nesting oracle over the vendored
 //! daml-finance corpus shared at the workspace root.
+//!
+//! ## Fixture layout
+//!
+//! Integration tests under `tests/` and `#[cfg(test)]` modules in `src/` use
+//! inline Daml source strings; there is no `tests/fixtures/` tree. The
+//! daml-finance corpus is referenced via
+//! `CARGO_MANIFEST_DIR/../../corpus/daml-finance/daml`. A shared
+//! `tests/common/mod.rs` is deferred until M2/M3 corpus-helper extraction
+//! introduces real reuse across integration tests.
 
 #![allow(clippy::unwrap_used)]
 
@@ -284,6 +293,11 @@ fn run_finance_corpus_oracle(root: &Path) -> std::io::Result<(usize, Vec<String>
 fn span_oracle_over_finance_corpus() {
     let root = finance_corpus_root();
     if !root.exists() {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "vendored corpus missing under CI (was it committed?): {}",
+            root.display()
+        );
         eprintln!("corpus absent (published crate?), skipping");
         return;
     }
