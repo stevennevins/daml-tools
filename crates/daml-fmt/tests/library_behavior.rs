@@ -5,8 +5,9 @@
 #![allow(clippy::unwrap_used)]
 
 use daml_fmt::{
-    coverage, format_source, lex_diagnostics, source_diagnostics, try_format_source,
-    FormatDiagnostic, FormatError, FormatOptions, ImportOrder,
+    coverage, format_source, format_source_with_options, lex_diagnostics, source_diagnostics,
+    try_format_source, FormatDiagnostic, FormatError, FormatOptions, FormatRule, FormatRuleSet,
+    ImportOrder,
 };
 use daml_parser::ast::DiagnosticCategory;
 
@@ -32,6 +33,22 @@ fn format_options_can_be_created_and_built() {
     let options = FormatOptions::new().with_import_order(ImportOrder::Preserve);
 
     assert_eq!(options.import_order(), ImportOrder::Preserve);
+}
+
+#[test]
+fn format_options_can_select_individual_rules() {
+    let src = "module M where\nfoo : Int\nfoo = 1\n";
+    let gap_only = format_source_with_options(
+        src,
+        FormatOptions::new().with_rules(FormatRuleSet::from_ids(&[FormatRule::GapNormalization])),
+    );
+    assert_eq!(gap_only, "module M where\nfoo: Int\nfoo = 1\n");
+
+    let structural_only = format_source_with_options(
+        "module M where\nmain = do\n    pass\n",
+        FormatOptions::new().with_rules(FormatRuleSet::from_ids(&[FormatRule::StructuralLayout])),
+    );
+    assert_eq!(structural_only, "module M where\nmain = do\n  pass\n");
 }
 
 #[test]

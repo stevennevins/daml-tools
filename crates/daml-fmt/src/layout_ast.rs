@@ -142,33 +142,41 @@ const MAX_STRUCTURAL_PASSES: usize = 6;
 /// Format with AST-driven structural reindents, layout-organizing rewrites, and
 /// final token-gated gap normalization.
 #[must_use]
-pub fn format_ast(src: &str, options: crate::FormatOptions) -> String {
+pub fn format_ast(src: &str, options: &crate::FormatOptions) -> String {
     if has_source_location_expectation(src) || has_trailing_with_comment(src) {
         return src.to_string();
     }
 
-    // Step 1: structural reindent, each family as its own gated pass.
-    let mut base = run_structural_passes(src);
+    let rules = options.rules();
+    let import_order = options.import_order();
+    let mut base = src.to_string();
 
-    // Step 2: layout-organizing rewrites that intentionally change layout
-    // tokens while preserving the non-layout token stream. Import organization
-    // is controlled separately because it reorders import declarations.
-    if options.import_order() == ImportOrder::Organize {
+    if rules.contains(crate::FormatRule::StructuralLayout) {
+        base = run_structural_passes(&base);
+    }
+
+    if rules.contains(crate::FormatRule::ImportOrder) && import_order == ImportOrder::Organize {
         base = organize_imports(&base);
     }
-    base = rewrite_layout_forms(&base);
-    base = run_structural_passes(&base);
 
-    // Step 3: whitespace + colon normalization on top, gated vs `base`.
-    // same_tokens keeps this final spacing step from changing `base`'s parse.
-    let full = crate::normalize_gaps(&base, crate::ColonSpacingMode::Canonical);
-    if same_tokens(&base, &full) {
-        return full;
+    if rules.contains(crate::FormatRule::LayoutRewrites) {
+        base = rewrite_layout_forms(&base);
+        if rules.contains(crate::FormatRule::StructuralLayout) {
+            base = run_structural_passes(&base);
+        }
     }
-    let ws_only = crate::normalize_gaps(&base, crate::ColonSpacingMode::Preserve);
-    if same_tokens(&base, &ws_only) {
-        return ws_only;
+
+    if rules.contains(crate::FormatRule::GapNormalization) {
+        let full = crate::normalize_gaps(&base, crate::ColonSpacingMode::Canonical);
+        if same_tokens(&base, &full) {
+            return full;
+        }
+        let ws_only = crate::normalize_gaps(&base, crate::ColonSpacingMode::Preserve);
+        if same_tokens(&base, &ws_only) {
+            return ws_only;
+        }
     }
+
     base
 }
 

@@ -18,9 +18,11 @@ stdout.
 
 | Option | Description |
 |--------|-------------|
-| `-w`, `--write` | Rewrite each file in place when the formatted output differs. Requires file arguments. |
-| `--check` | Print each file that would change and exit `1` if any file is not formatted. Requires file arguments. |
-| `--preserve-import-order` | Keep import declarations in source order instead of applying default import organization. |
+| `-w`, `--write` | Rewrite each file in place when the formatted output differs. Default for file arguments. |
+| `--check` | Print each file that would change under the selected formatter rules and exit `1` if any file is not formatted. Requires file arguments. |
+| `--config <FILE>` | Load a YAML config file with `daml-tools.fmt` settings. Default discovery: `./daml.yaml` then `./daml.yml` in the current directory. |
+| `--rule <ID>` | Formatter rule to apply. Repeatable. Replaces config `fmt.rules`. |
+| `--preserve-import-order` | Remove `import-order` from the default formatter rule set. Conflicts with `--rule import-order`. |
 | `-h`, `--help` | Show usage text and exit `0`. |
 | `-v`, `--version` | Print the crate version and exit `0`. |
 
@@ -31,9 +33,9 @@ stdout.
 | Invocation | Input | Output |
 |------------|-------|--------|
 | `daml-fmt` | stdin | formatted source on stdout |
-| `daml-fmt file.daml` | file contents | formatted source on stdout |
-| `daml-fmt -w file.daml` | file contents | rewrites the file only when changed |
-| `daml-fmt --check file.daml` | file contents | prints the file path if formatting would change it |
+| `daml-fmt file.daml` | file contents | rewrites the file in place only when selected rules would change it |
+| `daml-fmt -w file.daml` | file contents | same as default file mode |
+| `daml-fmt --check file.daml` | file contents | prints the file path if selected-rule formatting would change it |
 
 Malformed input with lexical or parser diagnostics, such as an unterminated
 string or incomplete expression, is reported on stderr. In write mode,

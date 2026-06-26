@@ -193,6 +193,10 @@ README: [`crates/daml-fmt/README.md`](../../crates/daml-fmt/README.md)
 | `try_format_source(src: &str) -> Result<String, FormatError>` | Public | Formats Daml source with default options, rejecting diagnostics reported by `source_diagnostics`. |
 | `try_format_source_with_options(src: &str, options: FormatOptions) -> Result<String, FormatError>` | Public | Formats Daml source with explicit options, rejecting diagnostics reported by `source_diagnostics`. |
 | `FormatOptions` | Public | Formatter switches. Prefer `Default`/`new()`/`with_*` for forward-compatible construction. |
+| `FormatRule` | Public | Coarse formatter rule id (`structural-layout`, `import-order`, `layout-rewrites`, `gap-normalization`). |
+| `FormatRuleSet` | Public | Selected formatter rules in deterministic application order. |
+| `FmtConfig` | Public | YAML config loader for `daml-tools.fmt`. |
+| `ConfigError` | Public | Config discovery, parse, and rule-selection errors. |
 | `ImportOrder` | Public | Import ordering strategy (`Organize` default, `Preserve` via CLI `--preserve-import-order`). Implements `Default` and `Display`; `#[non_exhaustive]`. |
 | `FormatDiagnostic` | Public | Typed formatter diagnostic. Access line, column, category, and message through accessors. |
 | `FormatError` | Public | Formatting or coverage rejection error. Implements `Display`, `std::error::Error`, and `AsRef<[FormatDiagnostic]>`; access typed diagnostics through `diagnostics()`. |

@@ -82,12 +82,17 @@ cargo install --path crates/daml-fmt         # puts daml-fmt on your PATH
 ## Usage
 
 ```sh
-daml-fmt Foo.daml                                  # formatted source to stdout
-find src -name '*.daml' -exec daml-fmt -w {} +     # rewrite files in place
+daml-fmt Foo.daml                                  # rewrite in place (default)
+find src -name '*.daml' -exec daml-fmt -w {} +     # explicit in-place rewrite
 find src -name '*.daml' -exec daml-fmt --check {} + # list unformatted files
+daml-fmt --rule gap-normalization Foo.daml         # apply one formatter rule
 daml-fmt --preserve-import-order Foo.daml          # format without import sorting
 cat Foo.daml | daml-fmt                            # stdin -> stdout
 ```
+
+Configure formatter rules in `daml.yaml` under `daml-tools.fmt.rules`, or pass
+repeatable `--rule <ID>` flags. Without `--config`, only `./daml.yaml` then
+`./daml.yml` are checked.
 
 Exit codes: 0 ok, 1 `--check` found unformatted files, 2 error.
 

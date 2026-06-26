@@ -57,7 +57,12 @@
 
 // AST-driven layout (own-design canonical layout). This is the shipping
 // backend. See src/layout_ast.rs.
+mod config;
+mod format_rules;
 mod layout_ast;
+
+pub use config::{ConfigError, FmtConfig, RuleSelectionSource};
+pub use format_rules::{FormatRule, FormatRuleSet};
 
 use daml_parser::ast::DiagnosticCategory;
 use daml_parser::lexer::{TokenKind, TriviaKind};
@@ -251,17 +256,19 @@ impl fmt::Display for ImportOrder {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct FormatOptions {
     import_order: ImportOrder,
+    rules: FormatRuleSet,
 }
 
 impl FormatOptions {
     /// Create formatter options with the default organizing configuration.
     ///
     /// This is equivalent to [`Default::default`] and currently uses
-    /// [`ImportOrder::Organize`].
+    /// [`ImportOrder::Organize`] and the full formatter rule set.
     #[must_use]
     pub const fn new() -> Self {
         Self {
             import_order: ImportOrder::Organize,
+            rules: FormatRuleSet::all(),
         }
     }
 
@@ -274,7 +281,7 @@ impl FormatOptions {
     /// declarations denote the same imports; use `--preserve-import-order` in the
     /// CLI when package identity stability matters more than import organization.
     #[must_use]
-    pub const fn import_order(self) -> ImportOrder {
+    pub const fn import_order(&self) -> ImportOrder {
         self.import_order
     }
 
@@ -285,6 +292,19 @@ impl FormatOptions {
     #[must_use]
     pub const fn with_import_order(mut self, import_order: ImportOrder) -> Self {
         self.import_order = import_order;
+        self
+    }
+
+    /// Selected formatter rules in deterministic application order.
+    #[must_use]
+    pub const fn rules(&self) -> &FormatRuleSet {
+        &self.rules
+    }
+
+    /// Replace the selected formatter rule set.
+    #[must_use]
+    pub const fn with_rules(mut self, rules: FormatRuleSet) -> Self {
+        self.rules = rules;
         self
     }
 }
@@ -304,9 +324,11 @@ pub fn format_source(src: &str) -> String {
 ///
 /// Malformed input is formatted as a byte-faithful passthrough. Use
 /// [`try_format_source_with_options`] when callers need a typed error instead.
+// Keep `FormatOptions` by value to preserve the established public API shape.
+#[allow(clippy::needless_pass_by_value)]
 #[must_use]
 pub fn format_source_with_options(src: &str, options: FormatOptions) -> String {
-    layout_ast::format_ast(src, options)
+    layout_ast::format_ast(src, &options)
 }
 
 /// Format Daml source with explicit formatter options, rejecting malformed input.
@@ -320,12 +342,14 @@ pub fn format_source_with_options(src: &str, options: FormatOptions) -> String {
 ///
 /// Returns [`FormatError`] when `src` produces diagnostics reported by
 /// [`source_diagnostics`].
+// Keep `FormatOptions` by value to preserve the established public API shape.
+#[allow(clippy::needless_pass_by_value)]
 pub fn try_format_source_with_options(
     src: &str,
     options: FormatOptions,
 ) -> Result<String, FormatError> {
     reject_source_diagnostics(src)?;
-    Ok(layout_ast::format_ast(src, options))
+    Ok(layout_ast::format_ast(src, &options))
 }
 
 /// Format Daml source with default formatter options, rejecting malformed input.
