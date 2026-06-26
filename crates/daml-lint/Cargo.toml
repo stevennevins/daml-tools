@@ -16,7 +16,7 @@ categories = ["development-tools", "command-line-utilities"]
 # compiled `rules/*.js` (embedded at build time via `include_str!`); exclude
 # TypeScript rule sources, lint-plugin npm metadata, and release sync scripts.
 exclude = [
-    "test-fixtures/",
+    "tests/fixtures/",
     "docs/",
     "tools/",
     "lint-plugin/",

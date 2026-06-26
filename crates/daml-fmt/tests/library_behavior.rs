@@ -203,12 +203,13 @@ fn interior_blank_runs_collapse_to_one_blank_line() {
     assert_eq!(format_source(src), "module M where\n\nx = 1\n");
 }
 
-/// Formatter gap-case fixtures (`corpus/gap-cases/`). Skips gracefully when
+/// Formatter gap-case fixtures (`tests/fixtures/gap-cases/`). Skips gracefully when
 /// absent off the workspace (e.g. a published crate), but fails loud under CI
 /// so a missing/forgotten fixture tree cannot pass green.
 #[test]
 fn gap_cases_format_to_expected_output() {
-    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("corpus/gap-cases");
+    let root =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/gap-cases");
     let bad_dir = root.join("bad");
     let good_dir = root.join("good");
     if !bad_dir.exists() || !good_dir.exists() {
