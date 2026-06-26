@@ -212,6 +212,11 @@ strategies can be added without breaking downstream `match` arms.
 `FormatOptions` keeps fields private and adds new switches through
 `Default`/`new()` plus `with_*` helpers.
 
+The CLI can read `daml-tools.fmt.import-order` from `./daml.yaml` and can skip
+file arguments with `daml-tools.fmt.ignore` or repeatable
+`--ignore-path <FILE>` ignore files. Formatter config discovery is cwd-only: it
+checks exactly `./daml.yaml` unless `--config <FILE>` is supplied.
+
 `source_diagnostics` intentionally suppresses parser recovery diagnostics for
 CPP-conditional sources because inactive `#if`/`#else` module branches are not
 preprocessed before parsing. Lexical diagnostics are still returned and still

@@ -22,6 +22,7 @@ stdout.
 | `--check` | Print each file that would change and exit `1` if any file is not formatted. Requires file arguments. |
 | `--preserve-import-order` | Keep import declarations in source order instead of applying default import organization. |
 | `--config <FILE>` | Load formatter config from a YAML file. Default discovery: `./daml.yaml` when present. |
+| `--ignore-path <FILE>` | Load formatter ignore patterns from a file. Repeatable. Patterns resolve relative to the ignore file's directory. |
 | `--group <ID>` | Enable a formatter rule group. Repeatable. Currently `all`. |
 | `--rule <ID>` | Enable a specific formatter rule. Repeatable. Accepted values: `imports`, `layout`, `spacing`, `syntax-normalization`. |
 | `-h`, `--help` | Show usage text and exit `0`. |
@@ -49,6 +50,12 @@ because import declaration order contributes to the compiled package; pass
 Formatter rule selection runs only the selected rules. CLI `--rule`/`--group`
 selection overrides `daml.yaml`. With no explicit selection, all formatter
 rules run unless config disables one.
+
+Formatter config may set `daml-tools.fmt.import-order` to `organize` or
+`preserve`. `--preserve-import-order` takes precedence over config. File
+arguments matching `daml-tools.fmt.ignore` or any repeatable `--ignore-path`
+file are skipped before reading, checking, printing, or writing. Stdin has no
+file path, so ignore patterns do not apply.
 
 ### Exit codes
 
@@ -96,6 +103,10 @@ options:
 ```yaml
 daml-tools:
   fmt:
+    import-order: preserve
+    ignore:
+      - generated/**
+      - vendor.daml
     groups: [all]
     rules:
       imports: off
@@ -115,16 +126,25 @@ daml-tools:
         - allowEmptyEnsure: false
 ```
 
-Default discovery checks only `./daml.yaml` in the current working directory; it
-does not walk parent directories and does not read `.daml-lint.json`.
+Default discovery checks only `./daml.yaml` in the current working directory for
+both `daml-fmt` and `daml-lint`; it does not walk parent directories and does
+not read `.daml-lint.json`.
 `--config <FILE>` selects a specific YAML file instead.
 
 | Field | Applies to | Description |
 |-------|------------|-------------|
+| `import-order` | `fmt` | Formatter import ordering strategy: `organize` (default) or `preserve`. Overridden by `daml-fmt --preserve-import-order`. |
+| `ignore` | `fmt` | Formatter ignore patterns. Relative patterns resolve from the config file directory. |
 | `groups` | `fmt`, `lint` | Rule groups to enable before per-rule overrides. Formatter accepts `all`; linter accepts `recommended` and `all`. |
 | `rules` | `fmt`, `lint` | Map of rule ids to settings. Formatter settings are `on`/`off`; linter settings are `off`, `on`, a severity, or `[severity, options]`. |
 | `plugins` | `lint` | Installed lint plugin package names. `template` resolves to `daml-lint-plugin-template`; scoped packages may use `@scope/name`. |
 | `plugin-paths` | `lint` | Additional package search roots for plugin packages. Relative paths are resolved relative to the config file. |
+
+Formatter ignore files passed with `--ignore-path <FILE>` support blank lines,
+lines whose first non-whitespace character is `#`, exact paths, directory
+prefixes ending in `/`, leading `/` anchors relative to the ignore source
+directory, `*` within one path segment, and `**` across path separators. This
+is a documented subset of gitignore semantics.
 
 Configured plugin rules are reported as `plugin/rule`. Rule options are exposed
 to the JavaScript rule as global `CONFIG`.

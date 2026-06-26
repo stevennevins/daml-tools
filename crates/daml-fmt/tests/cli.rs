@@ -41,6 +41,7 @@ fn help_exits_successfully() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("usage: daml-fmt"));
     assert!(stderr.contains("--config <FILE>"));
+    assert!(stderr.contains("--ignore-path <FILE>"));
     assert!(stderr.contains("--group <ID>"));
     assert!(stderr.contains("--rule <ID>"));
 }
@@ -90,6 +91,65 @@ fn preserve_import_order_disables_import_organization() {
             child.wait_with_output()
         })
         .unwrap();
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), input);
+}
+
+#[test]
+fn daml_yaml_can_preserve_import_order() {
+    let project = temp_dir("import-order-config-project");
+    std::fs::write(
+        project.join("daml.yaml"),
+        r#"daml-tools:
+  fmt:
+    import-order: preserve
+"#,
+    )
+    .unwrap();
+    let input = "module M where\n\nimport DA.Optional\nimport Daml.Script\nimport DA.List\n\nx: Optional Text\nx = Some \"ok\"\n";
+
+    let output = cmd()
+        .current_dir(&project)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            child.stdin.as_mut().unwrap().write_all(input.as_bytes())?;
+            child.wait_with_output()
+        })
+        .unwrap();
+    std::fs::remove_dir_all(&project).ok();
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), input);
+}
+
+#[test]
+fn preserve_import_order_flag_overrides_daml_yaml_import_order() {
+    let project = temp_dir("import-order-cli-project");
+    std::fs::write(
+        project.join("daml.yaml"),
+        r#"daml-tools:
+  fmt:
+    import-order: organize
+"#,
+    )
+    .unwrap();
+    let input = "module M where\n\nimport DA.Optional\nimport Daml.Script\nimport DA.List\n\nx: Optional Text\nx = Some \"ok\"\n";
+
+    let output = cmd()
+        .current_dir(&project)
+        .arg("--preserve-import-order")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            child.stdin.as_mut().unwrap().write_all(input.as_bytes())?;
+            child.wait_with_output()
+        })
+        .unwrap();
+    std::fs::remove_dir_all(&project).ok();
 
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stdout), input);
@@ -149,6 +209,99 @@ fn daml_yaml_can_disable_formatter_rule() {
         String::from_utf8_lossy(&output.stdout),
         "module M where\n\nimport DA.Optional\nimport DA.List\n\nfoo: Int\nfoo = 1\n"
     );
+}
+
+#[test]
+fn daml_yaml_ignore_skips_matching_files_in_check_mode() {
+    let project = temp_dir("config-ignore-project");
+    let generated = project.join("generated");
+    std::fs::create_dir(&generated).unwrap();
+    let ignored = generated.join("NeedsFormatting.daml");
+    std::fs::write(&ignored, "module M where\nfoo = if x then 1\n").unwrap();
+    std::fs::write(
+        project.join("daml.yaml"),
+        r#"daml-tools:
+  fmt:
+    ignore:
+      - generated/**
+"#,
+    )
+    .unwrap();
+
+    let output = cmd()
+        .current_dir(&project)
+        .arg("--check")
+        .arg(&ignored)
+        .output()
+        .unwrap();
+    std::fs::remove_dir_all(&project).ok();
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn ignore_path_skips_matching_files_in_write_mode() {
+    let project = temp_dir("ignore-path-project");
+    let ignored = project.join("vendor.daml");
+    let original = "module M where\nfoo : Int\nfoo = 1\n";
+    std::fs::write(&ignored, original).unwrap();
+    std::fs::write(
+        project.join(".damlfmtignore"),
+        "\n# generated or vendored sources\nvendor.daml\n",
+    )
+    .unwrap();
+
+    let output = cmd()
+        .current_dir(&project)
+        .arg("--ignore-path")
+        .arg(".damlfmtignore")
+        .arg("--write")
+        .arg(&ignored)
+        .output()
+        .unwrap();
+    let after = std::fs::read_to_string(&ignored).unwrap();
+    std::fs::remove_dir_all(&project).ok();
+
+    assert!(output.status.success());
+    assert_eq!(after, original);
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn config_ignore_patterns_resolve_from_config_file_directory() {
+    let project = temp_dir("relative-config-ignore-project");
+    let config_dir = project.join("config");
+    let generated_dir = project.join("generated");
+    std::fs::create_dir(&config_dir).unwrap();
+    std::fs::create_dir(&generated_dir).unwrap();
+    let ignored = generated_dir.join("NeedsFormatting.daml");
+    std::fs::write(&ignored, "module M where\nfoo = if x then 1\n").unwrap();
+    std::fs::write(
+        config_dir.join("formatter.yaml"),
+        r#"daml-tools:
+  fmt:
+    ignore:
+      - ../generated/**
+"#,
+    )
+    .unwrap();
+
+    let output = cmd()
+        .current_dir(&project)
+        .arg("--config")
+        .arg("config/formatter.yaml")
+        .arg("--check")
+        .arg(&ignored)
+        .output()
+        .unwrap();
+    std::fs::remove_dir_all(&project).ok();
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 
 #[test]

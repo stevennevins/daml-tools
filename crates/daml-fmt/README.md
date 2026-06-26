@@ -37,7 +37,8 @@ aim to match any other formatter's output.
 
 Import organization is enabled by default. Reordering import declarations can
 change Daml package identity even when the formatted source denotes the same
-imports; use `--preserve-import-order` when package identity stability matters.
+imports; use `--preserve-import-order` or set `daml-tools.fmt.import-order` to
+`preserve` when package identity stability matters.
 
 ## Documentation
 
@@ -86,6 +87,7 @@ daml-fmt Foo.daml                                  # formatted source to stdout
 find src -name '*.daml' -exec daml-fmt -w {} +     # rewrite files in place
 find src -name '*.daml' -exec daml-fmt --check {} + # list unformatted files
 daml-fmt --preserve-import-order Foo.daml          # format without import sorting
+find src -name '*.daml' -exec daml-fmt --ignore-path .damlfmtignore --check {} + # skip generated/vendored files
 daml-fmt --rule imports Foo.daml                   # run only import organization
 daml-fmt --rule spacing Foo.daml                   # run only whitespace/colon spacing
 cat Foo.daml | daml-fmt                            # stdin -> stdout
@@ -99,6 +101,10 @@ Rule ids are `imports`, `layout`, `spacing`, and `syntax-normalization`.
 ```yaml
 daml-tools:
   fmt:
+    import-order: preserve
+    ignore:
+      - generated/**
+      - vendor.daml
     groups: [all]
     rules:
       imports: off
@@ -107,7 +113,16 @@ daml-tools:
       syntax-normalization: on
 ```
 
-CLI `--rule`/`--group` selection overrides config selection.
+Default config discovery checks exactly `./daml.yaml` in the current working
+directory; it does not walk parent directories. CLI `--rule`/`--group`
+selection overrides config selection, and `--preserve-import-order` overrides
+`import-order`.
+
+`daml-tools.fmt.ignore` entries resolve relative to the config file directory.
+Repeatable `--ignore-path <FILE>` entries resolve patterns relative to each
+ignore file's directory. Ignore files support blank lines, `#` comments, exact
+paths, directory prefixes ending in `/`, leading `/`, `*`, and `**`; this is a
+small gitignore-like subset.
 
 ## Library API
 
