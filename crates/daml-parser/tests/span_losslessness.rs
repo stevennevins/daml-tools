@@ -279,11 +279,17 @@ fn run_finance_corpus_oracle(root: &Path) -> std::io::Result<(usize, Vec<String>
 /// Run the `render_from_ast` losslessness/nesting oracle over the vendored
 /// daml-finance corpus (shared at the workspace root). Skips gracefully when
 /// the corpus is absent (e.g. a published crate built outside the workspace),
-/// so it runs in CI yet never panics off-machine.
+/// but fails loud under CI so a missing/forgotten vendored corpus can never
+/// pass green.
 #[test]
 fn span_oracle_over_finance_corpus() {
     let root = finance_corpus_root();
     if !root.exists() {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "vendored corpus missing under CI (was it committed?): {}",
+            root.display()
+        );
         eprintln!("corpus absent (published crate?), skipping");
         return;
     }

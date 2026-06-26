@@ -394,8 +394,11 @@ mod tests {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../corpus/daml-finance/daml");
         if !root.exists() {
-            // Corpus absent (e.g. a published crate built outside the
-            // workspace): skip rather than panic. Present in CI, so it runs.
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "vendored corpus missing under CI (was it committed?): {}",
+                root.display()
+            );
             eprintln!("corpus absent (published crate?), skipping");
             return;
         }
