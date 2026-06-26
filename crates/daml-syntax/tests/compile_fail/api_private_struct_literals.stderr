@@ -1,0 +1,83 @@
+error[E0451]: fields `source_len`, `line_start_bytes`, `char_offset_by_byte` and `utf16_offset_by_byte` of struct `LineIndex` are private
+  --> tests/compile_fail/api_private_struct_literals.rs:12:9
+   |
+11 |     let _ = LineIndex {
+   |             --------- in this type
+12 |         source_len: 0,
+   |         ^^^^^^^^^^ private field
+13 |         line_start_bytes: vec![],
+   |         ^^^^^^^^^^^^^^^^ private field
+14 |         char_offset_by_byte: vec![],
+   |         ^^^^^^^^^^^^^^^^^^^ private field
+15 |         utf16_offset_by_byte: vec![],
+   |         ^^^^^^^^^^^^^^^^^^^^ private field
+
+error[E0451]: fields `line`, `byte_column`, `source_line_count`, `max_byte_column` and `kind` of struct `CoordinateRangeError` are private
+  --> tests/compile_fail/api_private_struct_literals.rs:19:9
+   |
+18 |     let _ = CoordinateRangeError {
+   |             -------------------- in this type
+19 |         line: LineNumber::new(1),
+   |         ^^^^ private field
+20 |         byte_column: ByteColumn::new(1),
+   |         ^^^^^^^^^^^ private field
+21 |         source_line_count: LineNumber::new(1),
+   |         ^^^^^^^^^^^^^^^^^ private field
+22 |         max_byte_column: None,
+   |         ^^^^^^^^^^^^^^^ private field
+23 |         kind: CoordinateRangeErrorKind::LineOutOfRange,
+   |         ^^^^ private field
+
+error[E0451]: fields `tokens`, `trivia`, `lex_errors` and `laid_out_tokens` of struct `SourceTokens` are private
+  --> tests/compile_fail/api_private_struct_literals.rs:27:9
+   |
+26 |     let _ = SourceTokens {
+   |             ------------ in this type
+27 |         tokens: Vec::<Token>::new(),
+   |         ^^^^^^ private field
+28 |         trivia: Vec::<Trivia>::new(),
+   |         ^^^^^^ private field
+29 |         lex_errors: Vec::<LexError>::new(),
+   |         ^^^^^^^^^^ private field
+30 |         laid_out_tokens: std::sync::OnceLock::new(),
+   |         ^^^^^^^^^^^^^^^ private field
+
+error[E0451]: fields `source`, `module`, `diagnostics`, `line_index` and `tokens` of struct `SourceFile` are private
+  --> tests/compile_fail/api_private_struct_literals.rs:34:9
+   |
+33 |     let _ = SourceFile {
+   |             ---------- in this type
+34 |         source: parsed.source().to_string(),
+   |         ^^^^^^ private field
+35 |         module: parsed.module().clone(),
+   |         ^^^^^^ private field
+36 |         diagnostics: Vec::new(),
+   |         ^^^^^^^^^^^ private field
+37 |         line_index: LineIndex::new(""),
+   |         ^^^^^^^^^^ private field
+38 |         tokens: std::sync::OnceLock::new(),
+   |         ^^^^^^ private field
+
+error[E0451]: fields `source_len`, `span_start`, `span_end` and `kind` of struct `ParserSpanToTextRangeError` are private
+  --> tests/compile_fail/api_private_struct_literals.rs:42:9
+   |
+41 |     let _ = ParserSpanToTextRangeError {
+   |             -------------------------- in this type
+42 |         source_len: 0,
+   |         ^^^^^^^^^^ private field
+43 |         span_start: ByteOffset::new(0),
+   |         ^^^^^^^^^^ private field
+44 |         span_end: ByteOffset::new(0),
+   |         ^^^^^^^^ private field
+45 |         kind: ParserSpanToTextRangeErrorKind::OutOfBounds,
+   |         ^^^^ private field
+
+error[E0451]: fields `start` and `end` of struct `Utf16Range` are private
+  --> tests/compile_fail/api_private_struct_literals.rs:49:9
+   |
+48 |     let _ = Utf16Range {
+   |             ---------- in this type
+49 |         start: Utf16Offset::new(0),
+   |         ^^^^^ private field
+50 |         end: Utf16Offset::new(0),
+   |         ^^^ private field
