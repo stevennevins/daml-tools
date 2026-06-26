@@ -1,0 +1,7 @@
+# daml-lint Report
+
+## Parse Errors (1)
+
+- `Bad.daml:3:5` [lexical-error] unterminated string literal
+
+No findings, but parse errors were reported above.

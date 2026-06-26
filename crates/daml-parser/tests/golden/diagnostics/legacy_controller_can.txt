@@ -1,0 +1,1 @@
+7:5: [unsupported-syntax] legacy 'controller ... can' syntax is not supported; choices inside this block are not analyzed @"controller"

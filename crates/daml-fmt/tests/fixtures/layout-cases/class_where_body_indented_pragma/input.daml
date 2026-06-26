@@ -1,0 +1,5 @@
+class Foo t where
+    {-# MINIMAL foo1 | foo2 #-}
+
+    foo1 : t -> Int
+    foo1 x = foo1 x + 1

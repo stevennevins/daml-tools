@@ -1,0 +1,1 @@
+head-of-list-query|MEDIUM|HeadOfListQuery.daml|7|1|Head-of-list pattern '(:: first _)' on query result in function 'pick'. Query results have non-deterministic order.|(:: first _)

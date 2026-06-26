@@ -63,9 +63,3 @@ fn byte_offset_converts_to_text_size() {
     assert_eq!(TextSize::try_from(offset).unwrap(), TextSize::from(5));
     assert_eq!(ByteOffset::from(TextSize::from(5)), ByteOffset::new(5));
 }
-
-#[test]
-fn coordinate_column_types_are_not_interchangeable() {
-    let t = trybuild::TestCases::new();
-    t.compile_fail("tests/compile_fail/coordinate_*.rs");
-}

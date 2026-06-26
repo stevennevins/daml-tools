@@ -1,0 +1,6 @@
+module M where
+template T
+  with
+    owner : %
+  where
+    signatory owner

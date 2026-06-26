@@ -1,0 +1,16 @@
+{
+  "executionSuccessful": false,
+  "notifications": [
+    {
+      "category": "lexical-error",
+      "endColumn": 11,
+      "file": "Bad.daml",
+      "level": "error",
+      "message": "unterminated string literal",
+      "startColumn": 5,
+      "startLine": 3
+    }
+  ],
+  "results": [],
+  "rules": []
+}

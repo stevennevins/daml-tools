@@ -1,0 +1,5 @@
+f x = case x of
+      A -> case y of
+             P -> 1
+             Q -> 2
+      B -> 0

@@ -1,0 +1,6 @@
+interface Asset where
+    viewtype V
+    getOwner : Party
+    choice Xfer : ()
+      controller getOwner this
+      do pure ()

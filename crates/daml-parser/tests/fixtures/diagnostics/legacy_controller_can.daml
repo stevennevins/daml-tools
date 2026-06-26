@@ -1,0 +1,9 @@
+module M where
+template T
+  with
+    o : Party
+  where
+    signatory o
+    controller o can
+      Foo : ()
+        do pure ()

@@ -1,0 +1,1 @@
+daml-fmt: unknown formatter rule 'unknown-rule': unknown formatter rule 'unknown-rule' (expected one of imports|layout|spacing|syntax-normalization)

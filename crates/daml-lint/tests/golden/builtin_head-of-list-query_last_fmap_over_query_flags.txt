@@ -1,0 +1,1 @@
+head-of-list-query|MEDIUM|HeadOfListQuery.daml|4|1|`last` over query result in function 'pick'. Query results have non-deterministic order.|last <$> query

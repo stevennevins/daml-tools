@@ -1,0 +1,8 @@
+module M
+      ( f
+      , g
+      ) where
+
+import DA.Map
+      ( Map
+      )

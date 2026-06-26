@@ -1,0 +1,12 @@
+error[E0639]: cannot create non-exhaustive struct using struct expression
+  --> tests/compile_fail/api_non_exhaustive_diagnostic_literal.rs:5:13
+   |
+ 5 |       let _ = Diagnostic {
+   |  _____________^
+ 6 | |         range: TextRange::empty(0.into()),
+ 7 | |         line: LineNumber::new(1),
+ 8 | |         column: CharColumn::new(1),
+...  |
+11 | |         category: DiagnosticCategory::Lex,
+12 | |     };
+   | |_____^

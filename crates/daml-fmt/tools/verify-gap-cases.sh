@@ -4,7 +4,7 @@ set -eu
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 crate_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
 repo_root=$(CDPATH= cd -- "$crate_dir/../.." && pwd)
-case_root="$crate_dir/corpus/gap-cases"
+case_root="$crate_dir/tests/fixtures/gap-cases"
 out_dir="$repo_root/target/daml-fmt-gap-cases/desugar"
 
 normalize_desugar_import_order() {

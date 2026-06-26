@@ -1,0 +1,4 @@
+data ReceiverAmount = ReceiverAmount
+    with
+      receiver : Party
+      amount : Decimal

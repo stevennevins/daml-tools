@@ -60,6 +60,26 @@
 //! assert_eq!(module.name, "M");
 //! assert_eq!(module.templates.len(), 1);
 //! ```
+//!
+//! Loss-tolerant parsing always returns a module; reject scans when diagnostics
+//! are present. [`parser::ParseDiagnosticCategory`] parses stable category tags:
+//!
+//! ```
+//! use std::path::Path;
+//! use std::str::FromStr;
+//!
+//! use daml_lint::parser::{ParseDiagnosticCategory, parse_daml_with_diagnostics};
+//!
+//! let broken = parse_daml_with_diagnostics("module M where\n%%% junk\n", Path::new("M.daml"));
+//! assert!(!broken.diagnostics.is_empty());
+//! assert_eq!(broken.module.name, "M");
+//!
+//! assert_eq!(
+//!     ParseDiagnosticCategory::from_str("malformed").unwrap(),
+//!     ParseDiagnosticCategory::Malformed,
+//! );
+//! assert!(ParseDiagnosticCategory::from_str("not-a-category").is_err());
+//! ```
 
 #![warn(missing_docs)]
 

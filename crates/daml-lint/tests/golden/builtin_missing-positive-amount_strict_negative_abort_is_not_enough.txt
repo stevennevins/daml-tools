@@ -1,0 +1,1 @@
+missing-positive-amount|HIGH|MissingPositiveAmount.daml|9|5|Choice 'Transfer' accepts Decimal parameter 'amount' without asserting > 0.|amount : Decimal  -- no positive-amount check

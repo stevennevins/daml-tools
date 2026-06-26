@@ -1,0 +1,4 @@
+f = try
+        foo
+      catch
+        _ -> bar

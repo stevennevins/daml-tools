@@ -40,6 +40,25 @@
 //! assert_eq!(usize::from(header_range.start()), 0);
 //! assert_eq!(header_range, file.parser_span_to_text_range(file.module().header));
 //! ```
+//!
+//! Fallible coordinate and span conversion reject invalid inputs instead of
+//! clamping or panicking:
+//!
+//! ```rust
+//! use daml_parser::ast::Span;
+//! use daml_syntax::{ByteColumn, LineIndex, LineNumber, SourceFile};
+//!
+//! let source = "module M where\n";
+//! let file = SourceFile::parse(source);
+//! assert!(
+//!     file.try_parser_span_to_text_range(Span::from_usize(999, 1000))
+//!         .is_err()
+//! );
+//!
+//! let index = LineIndex::new(source);
+//! assert!(index.utf16_col(LineNumber::new(99), ByteColumn::new(1)).is_err());
+//! assert!(LineNumber::try_new(0).is_none());
+//! ```
 
 use daml_parser::ast::{DiagnosticCategory, Module, Span as ParserSpan};
 use daml_parser::layout::resolve_layout;

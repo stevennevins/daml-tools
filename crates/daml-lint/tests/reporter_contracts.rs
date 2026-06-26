@@ -2,6 +2,11 @@
 
 #![allow(clippy::unwrap_used)]
 
+mod common;
+
+use common::{
+    assert_golden_normalized, compact_sarif_report, normalize_json_report, normalize_markdown,
+};
 use daml_lint::detector::{Finding, FindingLocation, Severity};
 use daml_lint::parser::ParseDiagnosticCategory;
 use daml_lint::reporter::{self, OutputFormat, ParseError};
@@ -49,18 +54,30 @@ fn output_format_parses_known_values_and_reports_unknown_with_display_text() {
 
 #[test]
 fn json_and_sarif_clean_output_has_no_parse_errors() {
-    assert!(reporter::format_findings(&[], &[], OutputFormat::Markdown).contains("No findings."));
+    let markdown = reporter::format_findings(&[], &[], OutputFormat::Markdown);
+    assert!(markdown.contains("No findings."));
+    assert_golden_normalized("reporter_clean_markdown.txt", &markdown, normalize_markdown);
 
-    let json: serde_json::Value =
-        serde_json::from_str(&reporter::format_findings(&[], &[], OutputFormat::Json)).unwrap();
+    let json_text = reporter::format_findings(&[], &[], OutputFormat::Json);
+    let json: serde_json::Value = serde_json::from_str(&json_text).unwrap();
     assert_eq!(json["parseErrors"].as_array().unwrap().len(), 0);
     assert_eq!(json["summary"]["parseErrors"], 0);
+    assert_golden_normalized(
+        "reporter_clean_json.json",
+        &json_text,
+        normalize_json_report,
+    );
 
-    let sarif: serde_json::Value =
-        serde_json::from_str(&reporter::format_findings(&[], &[], OutputFormat::Sarif)).unwrap();
+    let sarif_text = reporter::format_findings(&[], &[], OutputFormat::Sarif);
+    let sarif: serde_json::Value = serde_json::from_str(&sarif_text).unwrap();
     assert_eq!(
         sarif["runs"][0]["invocations"][0]["executionSuccessful"],
         true
+    );
+    assert_golden_normalized(
+        "reporter_clean_sarif.json",
+        &sarif_text,
+        compact_sarif_report,
     );
 }
 
@@ -70,19 +87,25 @@ fn markdown_exposes_parse_errors() {
     assert!(out.contains("Parse Errors (1)"));
     assert!(out.contains("unterminated string literal"));
     assert!(!out.contains("\nNo findings.\n"));
+    assert_golden_normalized(
+        "reporter_parse_error_markdown.txt",
+        &out,
+        normalize_markdown,
+    );
 }
 
 #[test]
 fn json_exposes_parse_errors() {
-    let json: serde_json::Value = serde_json::from_str(&reporter::format_findings(
-        &[],
-        &[parse_err()],
-        OutputFormat::Json,
-    ))
-    .unwrap();
+    let json_text = reporter::format_findings(&[], &[parse_err()], OutputFormat::Json);
+    let json: serde_json::Value = serde_json::from_str(&json_text).unwrap();
     assert_eq!(json["parseErrors"].as_array().unwrap().len(), 1);
     assert_eq!(json["parseErrors"][0]["line"], 3);
     assert_eq!(json["summary"]["parseErrors"], 1);
+    assert_golden_normalized(
+        "reporter_parse_error_json.json",
+        &json_text,
+        normalize_json_report,
+    );
 }
 
 #[test]
@@ -115,12 +138,8 @@ fn sarif_notification_carries_category_and_end_column() {
 
 #[test]
 fn sarif_marks_run_unsuccessful_on_parse_errors() {
-    let sarif: serde_json::Value = serde_json::from_str(&reporter::format_findings(
-        &[],
-        &[parse_err()],
-        OutputFormat::Sarif,
-    ))
-    .unwrap();
+    let sarif_text = reporter::format_findings(&[], &[parse_err()], OutputFormat::Sarif);
+    let sarif: serde_json::Value = serde_json::from_str(&sarif_text).unwrap();
     let inv = &sarif["runs"][0]["invocations"][0];
     assert_eq!(inv["executionSuccessful"], false);
     assert_eq!(
@@ -128,6 +147,11 @@ fn sarif_marks_run_unsuccessful_on_parse_errors() {
         1
     );
     assert_eq!(sarif["runs"][0]["results"].as_array().unwrap().len(), 0);
+    assert_golden_normalized(
+        "reporter_parse_error_sarif.json",
+        &sarif_text,
+        compact_sarif_report,
+    );
 }
 
 #[test]

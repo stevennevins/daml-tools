@@ -418,19 +418,33 @@ fn finance_corpus_round_trips_byte_identical() {
 }
 
 /// Same gate over the full, hostile Daml SDK corpus (stdlib internals, broken
-/// fixtures). That corpus is NOT vendored (too large), so this is an opt-in
-/// LOCAL check: clone the SDK to /tmp/daml-repo to run it; it skips in CI.
+/// fixtures). The SDK is not vendored; set `DAML_SDK_CORPUS` to the root of a
+/// clone of digital-asset/daml and run with
+/// `cargo test sdk_corpus_round_trips -- --ignored`.
 #[test]
+#[ignore = "opt-in SDK corpus: set DAML_SDK_CORPUS and run with --ignored"]
 fn sdk_corpus_round_trips_byte_identical() {
-    let root = Path::new("/tmp/daml-repo");
-    if !root.exists() {
-        return;
-    }
-    let (checked, exempt) = round_trip_corpus(root);
+    let root = sdk_corpus_root();
+    let (checked, exempt) = round_trip_corpus(&root);
     assert!(checked > 1000, "corpus incomplete: {checked}");
     // The single exempt file is the deliberately invalid
     // compiler/damlc/tests/daml-test-files/BadUTF8.daml fixture.
     assert_eq!(exempt, 1, "exempt files beyond BadUTF8.daml");
+}
+
+fn sdk_corpus_root() -> PathBuf {
+    let Some(root) = std::env::var_os("DAML_SDK_CORPUS") else {
+        panic!(
+            "DAML_SDK_CORPUS is not set; clone the SDK and export DAML_SDK_CORPUS=/path/to/daml"
+        );
+    };
+    let root = PathBuf::from(root);
+    assert!(
+        root.is_dir(),
+        "DAML_SDK_CORPUS is not a directory: {}",
+        root.display()
+    );
+    root
 }
 
 fn collect(dir: &Path, out: &mut Vec<PathBuf>) {

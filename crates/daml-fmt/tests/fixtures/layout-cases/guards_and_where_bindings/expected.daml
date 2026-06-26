@@ -1,0 +1,6 @@
+f x
+  | x > 0 = g
+           x
+  | otherwise = 0
+  where
+    g y = y

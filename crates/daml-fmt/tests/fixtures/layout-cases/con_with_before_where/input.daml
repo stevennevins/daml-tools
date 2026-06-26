@@ -1,0 +1,7 @@
+module M where
+query : T
+query = lift $ QueryACS with
+    parties = p
+    tplId = t
+  where
+    convert = x
