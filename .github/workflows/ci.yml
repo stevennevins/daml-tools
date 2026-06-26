@@ -16,7 +16,6 @@ on:
       - "CONTRIBUTING.md"
       - "LICENSE"
       - "README.md"
-      - "RUST_MAINTAINABILITY_CHECKLIST.md"
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
