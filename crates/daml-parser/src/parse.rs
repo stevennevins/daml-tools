@@ -113,6 +113,17 @@ impl ParseModuleResult {
     /// # Errors
     ///
     /// Returns [`ParseModuleError`] when [`Self::diagnostics`] is non-empty.
+    ///
+    /// ```
+    /// use daml_parser::parse::parse_module;
+    ///
+    /// let ok = parse_module("module M where\nfoo: Int\nfoo = 1\n").into_result();
+    /// assert!(ok.is_ok());
+    ///
+    /// let err = parse_module("module M where\n@@@\n").into_result();
+    /// assert!(err.is_err());
+    /// assert!(!err.unwrap_err().diagnostics().is_empty());
+    /// ```
     pub fn into_result(self) -> Result<Module, ParseModuleError> {
         if self.diagnostics.is_empty() {
             Ok(self.module)

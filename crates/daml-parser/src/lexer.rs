@@ -924,6 +924,18 @@ pub fn lex_with_trivia(source: &str) -> LexWithTriviaOutput {
 ///
 /// Returns [`RenderLosslessError`] when token/trivia spans overlap, leave gaps,
 /// or extend past the end of `source`.
+///
+/// ```
+/// use daml_parser::lexer::{lex_with_trivia, render_lossless};
+///
+/// let src = "x = 1 -- comment\n";
+/// let lexed = lex_with_trivia(src);
+/// assert!(render_lossless(src, &lexed.tokens, &lexed.trivia).is_ok());
+///
+/// let mut broken_trivia = lexed.trivia.clone();
+/// broken_trivia.clear();
+/// assert!(render_lossless(src, &lexed.tokens, &broken_trivia).is_err());
+/// ```
 #[must_use = "handle render errors instead of discarding"]
 pub fn render_lossless(
     source: &str,

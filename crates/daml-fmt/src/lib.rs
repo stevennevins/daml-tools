@@ -352,6 +352,17 @@ pub fn try_format_source_with_options(
 ///
 /// Returns [`FormatError`] when `src` produces diagnostics reported by
 /// [`source_diagnostics`].
+///
+/// ```
+/// use daml_fmt::try_format_source;
+///
+/// let ok = try_format_source("module M where\nfoo: Int\nfoo = 1\n");
+/// assert!(ok.is_ok());
+///
+/// let err = try_format_source("module M where\n@@@\n");
+/// assert!(err.is_err());
+/// assert!(!err.unwrap_err().diagnostics().is_empty());
+/// ```
 pub fn try_format_source(src: &str) -> Result<String, FormatError> {
     try_format_source_with_options(src, FormatOptions::default())
 }
