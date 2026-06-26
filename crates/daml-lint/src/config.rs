@@ -1,4 +1,5 @@
 use daml_lint::detector::{ConfiguredDetector, Detector, Severity};
+#[cfg(feature = "custom-rules")]
 use daml_lint::detectors;
 use serde::Deserialize;
 use serde_json::Value;
@@ -7,6 +8,7 @@ use std::error::Error;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
+#[cfg_attr(not(feature = "custom-rules"), allow(dead_code))]
 pub enum ConfigError {
     MissingCurrentDir {
         source: std::io::Error,
@@ -17,7 +19,10 @@ pub enum ConfigError {
     },
     ParseConfig {
         path: PathBuf,
-        source: serde_json::Error,
+        source: serde_yaml::Error,
+    },
+    UnknownGroup {
+        group: String,
     },
     PluginResolveFailed {
         plugin: String,
@@ -78,6 +83,7 @@ impl std::fmt::Display for ConfigError {
             Self::ParseConfig { path, source } => {
                 write!(f, "invalid config {}: {source}", path.display())
             }
+            Self::UnknownGroup { group } => write!(f, "unknown lint rule group '{group}'"),
             Self::PluginResolveFailed { plugin, tried } => {
                 let tried = tried
                     .iter()
@@ -132,19 +138,19 @@ impl std::fmt::Display for ConfigError {
             Self::RuleSettingMissingSeverity { value } => {
                 write!(
                     f,
-                    "rule setting array must include a severity or 'off': {value}"
+                    "rule setting array must include a severity, 'on', or 'off': {value}"
                 )
             }
             Self::RuleSettingInvalidSeverity { value } => {
                 write!(
                     f,
-                    "rule setting must be a severity, 'off', or an array containing one: {value}",
+                    "rule setting must be a severity, 'on', 'off', or an array containing one: {value}",
                 )
             }
             Self::RuleSettingInvalidType { kind } => {
                 write!(
                     f,
-                    "rule setting must be a severity, 'off', or an array (got {kind})"
+                    "rule setting must be a severity, 'on', 'off', or an array (got {kind})"
                 )
             }
         }
@@ -157,11 +163,11 @@ impl Error for ConfigError {
             Self::MissingCurrentDir { source }
             | Self::ReadConfig { source, .. }
             | Self::PluginManifestRead { source, .. } => Some(source),
-            Self::ParseConfig { source, .. } | Self::PluginManifestParse { source, .. } => {
-                Some(source)
-            }
+            Self::ParseConfig { source, .. } => Some(source),
+            Self::PluginManifestParse { source, .. } => Some(source),
             Self::RuleLoadFailed { source, .. } => Some(source.as_ref()),
-            Self::PluginResolveFailed { .. }
+            Self::UnknownGroup { .. }
+            | Self::PluginResolveFailed { .. }
             | Self::PluginManifestMissingSection { .. }
             | Self::UnknownRuleId { .. }
             | Self::MissingPluginRule { .. }
@@ -174,22 +180,22 @@ impl Error for ConfigError {
 }
 
 #[derive(Debug)]
+#[cfg_attr(not(feature = "custom-rules"), allow(dead_code))]
 pub struct LintConfig {
     base_dir: PathBuf,
     plugin_paths: Vec<PathBuf>,
     plugins: Vec<String>,
+    groups: Vec<String>,
     rules: BTreeMap<String, RuleSetting>,
 }
 
 impl LintConfig {
-    /// Read and validate `.daml-lint.json`, returning defaults when missing.
+    /// Read `daml-tools.lint` from `./daml.yaml`, returning defaults when missing.
     ///
-    /// Returns:
-    /// - `Ok` with an explicit config loaded from `explicit_path`, or
-    ///   defaults when that file is absent.
-    /// - `Err` when the config path is unreadable, JSON is invalid, or plugin
-    ///   metadata cannot be parsed.
-    #[must_use = "propagate config read/parse failures"]
+    /// # Errors
+    ///
+    /// Returns [`ConfigError`] when the selected config path cannot be read or
+    /// parsed, or when the current directory cannot be resolved.
     pub fn load(explicit_path: Option<&Path>) -> Result<Self, ConfigError> {
         let Some(path) = find_config_path(explicit_path)? else {
             return Self::default_for_cwd();
@@ -199,8 +205,8 @@ impl LintConfig {
             path: path.clone(),
             source,
         })?;
-        let raw: RawConfig =
-            serde_json::from_str(&source).map_err(|source| ConfigError::ParseConfig {
+        let raw: RawRoot =
+            serde_yaml::from_str(&source).map_err(|source| ConfigError::ParseConfig {
                 path: path.clone(),
                 source,
             })?;
@@ -208,6 +214,10 @@ impl LintConfig {
             .parent()
             .unwrap_or_else(|| Path::new("."))
             .to_path_buf();
+        let raw = raw
+            .daml_tools
+            .and_then(|tools| tools.lint)
+            .unwrap_or_default();
         let plugin_paths = raw
             .plugin_paths
             .into_iter()
@@ -218,15 +228,18 @@ impl LintConfig {
             base_dir,
             plugin_paths,
             plugins: raw.plugins,
+            groups: raw.groups,
             rules: raw.rules,
         })
     }
 
     /// Load configured plugins into detector objects.
     ///
-    /// Returns `Err` if plugin resolution fails, manifest loading fails, or any
-    /// enabled plugin script cannot be loaded.
-    #[must_use = "load plugin detectors and handle failures before linting"]
+    /// # Errors
+    ///
+    /// Returns [`ConfigError`] if plugin resolution, manifest loading, or rule
+    /// script loading fails.
+    #[cfg(feature = "custom-rules")]
     pub fn load_plugin_detectors(&self) -> Result<Vec<Box<dyn Detector>>, ConfigError> {
         let mut detectors: Vec<Box<dyn Detector>> = Vec::new();
         for plugin in &self.plugins {
@@ -268,15 +281,66 @@ impl LintConfig {
         Ok(detectors)
     }
 
+    /// Return no plugin detectors when custom rule support is disabled.
+    ///
+    /// # Errors
+    ///
+    /// This implementation does not fail; it returns `Ok([])`.
+    #[cfg(not(feature = "custom-rules"))]
+    pub fn load_plugin_detectors(&self) -> Result<Vec<Box<dyn Detector>>, ConfigError> {
+        Ok(Vec::new())
+    }
+
+    /// Resolve config/CLI selection against loaded detector names.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError`] when a configured or CLI group is unknown.
+    pub fn resolve_selection(
+        &self,
+        cli_selection: Option<RuleSelection>,
+        detector_names: &BTreeSet<String>,
+    ) -> Result<Option<RuleSelection>, ConfigError> {
+        if cli_selection.is_some() {
+            return Ok(cli_selection);
+        }
+        if self.groups.is_empty() && self.rules.is_empty() {
+            return Ok(None);
+        }
+        let mut selected = if self.groups.is_empty() {
+            detector_names.clone()
+        } else {
+            let mut selected = BTreeSet::new();
+            for group in &self.groups {
+                add_group(&mut selected, group, detector_names)?;
+            }
+            selected
+        };
+        for (rule_id, setting) in &self.rules {
+            if setting.enabled {
+                selected.insert(rule_id.clone());
+            } else {
+                selected.remove(rule_id);
+            }
+        }
+        Ok(Some(RuleSelection { rule_ids: selected }))
+    }
+
     /// Apply configuration-level severity/enablement overrides to detectors in
     /// declaration order.
     #[must_use]
-    pub fn apply_rule_settings(&self, detectors: Vec<Box<dyn Detector>>) -> Vec<Box<dyn Detector>> {
+    pub fn apply_rule_settings(
+        &self,
+        detectors: Vec<Box<dyn Detector>>,
+        force_enabled: Option<&RuleSelection>,
+    ) -> Vec<Box<dyn Detector>> {
         detectors
             .into_iter()
             .filter_map(|detector| {
                 let setting = self.rules.get(detector.name());
-                if setting.is_some_and(|setting| !setting.enabled) {
+                let is_force_enabled =
+                    force_enabled.is_some_and(|selection| selection.contains(detector.name()));
+                if setting.is_some_and(|setting| !setting.enabled) && !is_force_enabled {
                     return None;
                 }
                 let severity = setting.and_then(|setting| setting.severity);
@@ -291,19 +355,18 @@ impl LintConfig {
             .collect()
     }
 
-    /// Validate every enabled rule-id in config against the concrete detector set.
+    /// Validate every rule-id in config against the concrete detector set.
     ///
-    /// Returns `Err` when the config references a rule-id that does not exist in
-    /// `detectors`.
-    #[must_use = "handle configuration validation errors before scanning"]
+    /// # Errors
+    ///
+    /// Returns [`ConfigError`] when the config references a rule-id that does
+    /// not exist in `detector_names`.
     pub fn validate_rule_settings(
         &self,
-        detectors: &[Box<dyn Detector>],
+        detector_names: &BTreeSet<String>,
     ) -> Result<(), ConfigError> {
-        let detector_names: BTreeSet<&str> =
-            detectors.iter().map(|detector| detector.name()).collect();
-        for (rule_id, setting) in &self.rules {
-            if setting.enabled && !detector_names.contains(rule_id.as_str()) {
+        for rule_id in self.rules.keys() {
+            if !detector_names.contains(rule_id) {
                 return Err(ConfigError::UnknownRuleId {
                     rule_id: rule_id.clone(),
                 });
@@ -318,10 +381,12 @@ impl LintConfig {
                 .map_err(|source| ConfigError::MissingCurrentDir { source })?,
             plugin_paths: Vec::new(),
             plugins: Vec::new(),
+            groups: Vec::new(),
             rules: BTreeMap::new(),
         })
     }
 
+    #[cfg_attr(not(feature = "custom-rules"), allow(dead_code))]
     fn enabled_rules_for_namespace(
         &self,
         namespace: &str,
@@ -337,6 +402,7 @@ impl LintConfig {
         })
     }
 
+    #[cfg_attr(not(feature = "custom-rules"), allow(dead_code))]
     fn resolve_plugin_package(&self, plugin: &str) -> Result<PathBuf, ConfigError> {
         let candidates = package_candidates(plugin);
         let mut tried = Vec::new();
@@ -356,6 +422,7 @@ impl LintConfig {
         })
     }
 
+    #[cfg_attr(not(feature = "custom-rules"), allow(dead_code))]
     fn package_dirs(&self, package_name: &str) -> Vec<PathBuf> {
         let mut dirs = vec![self.base_dir.join("node_modules").join(package_name)];
         for plugin_path in &self.plugin_paths {
@@ -367,18 +434,81 @@ impl LintConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleSelection {
+    rule_ids: BTreeSet<String>,
+}
+
+impl RuleSelection {
+    /// Resolve CLI rule/group ids into a selection.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError`] when a CLI group is unknown.
+    pub fn from_cli(
+        rule_ids: &[String],
+        group_ids: &[String],
+        detector_names: &BTreeSet<String>,
+    ) -> Result<Option<Self>, ConfigError> {
+        if rule_ids.is_empty() && group_ids.is_empty() {
+            return Ok(None);
+        }
+        let mut selected = BTreeSet::new();
+        for group in group_ids {
+            add_group(&mut selected, group, detector_names)?;
+        }
+        selected.extend(rule_ids.iter().cloned());
+        Ok(Some(Self { rule_ids: selected }))
+    }
+
+    #[must_use]
+    pub fn contains(&self, rule_id: &str) -> bool {
+        self.rule_ids.contains(rule_id)
+    }
+
+    /// Validate selected rule ids against loaded detectors.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError`] when the selection references an unknown rule id.
+    pub fn validate(&self, detector_names: &BTreeSet<String>) -> Result<(), ConfigError> {
+        for rule_id in &self.rule_ids {
+            if !detector_names.contains(rule_id) {
+                return Err(ConfigError::UnknownRuleId {
+                    rule_id: rule_id.clone(),
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct RawRoot {
+    #[serde(rename = "daml-tools")]
+    daml_tools: Option<RawDamlTools>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawDamlTools {
+    lint: Option<RawConfig>,
+}
+
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "kebab-case")]
 struct RawConfig {
     #[serde(default)]
     plugin_paths: Vec<PathBuf>,
     #[serde(default)]
     plugins: Vec<String>,
     #[serde(default)]
+    groups: Vec<String>,
+    #[serde(default)]
     rules: BTreeMap<String, RuleSetting>,
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(not(feature = "custom-rules"), allow(dead_code))]
 struct RuleSetting {
     enabled: bool,
     severity: Option<Severity>,
@@ -417,6 +547,11 @@ impl RuleSetting {
                 severity: None,
                 options,
             },
+            RuleLevel::On => Self {
+                enabled: true,
+                severity: None,
+                options,
+            },
             RuleLevel::Severity(severity) => Self {
                 enabled: true,
                 severity: Some(severity),
@@ -448,16 +583,19 @@ impl<'de> Deserialize<'de> for RuleSetting {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RuleLevel {
     Off,
+    On,
     Severity(Severity),
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(not(feature = "custom-rules"), allow(dead_code))]
 struct PackageJson {
     #[serde(rename = "damlLint")]
     daml_lint: Option<PluginManifest>,
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(not(feature = "custom-rules"), allow(dead_code))]
 struct PluginManifest {
     rules: BTreeMap<String, PathBuf>,
 }
@@ -469,7 +607,7 @@ fn find_config_path(explicit_path: Option<&Path>) -> Result<Option<PathBuf>, Con
 
     let path = std::env::current_dir()
         .map_err(|source| ConfigError::MissingCurrentDir { source })?
-        .join(".daml-lint.json");
+        .join("daml.yaml");
     Ok(path.is_file().then_some(path))
 }
 
@@ -481,6 +619,7 @@ fn resolve_config_path(base_dir: &Path, path: PathBuf) -> PathBuf {
     }
 }
 
+#[cfg_attr(not(feature = "custom-rules"), allow(dead_code))]
 fn read_plugin_manifest(plugin: &str, package_dir: &Path) -> Result<PluginManifest, ConfigError> {
     let package_json_path = package_dir.join("package.json");
     let source = std::fs::read_to_string(&package_json_path).map_err(|source| {
@@ -502,6 +641,7 @@ fn read_plugin_manifest(plugin: &str, package_dir: &Path) -> Result<PluginManife
         })
 }
 
+#[cfg_attr(not(feature = "custom-rules"), allow(dead_code))]
 fn package_candidates(plugin: &str) -> Vec<String> {
     if let Some((scope, package)) = plugin.split_once('/') {
         if package.starts_with("daml-lint-plugin-") {
@@ -519,6 +659,7 @@ fn package_candidates(plugin: &str) -> Vec<String> {
     }
 }
 
+#[cfg_attr(not(feature = "custom-rules"), allow(dead_code))]
 fn plugin_namespace(plugin: &str) -> String {
     if let Some((scope, package)) = plugin.split_once('/') {
         format!("{scope}/{}", strip_plugin_prefix(package))
@@ -527,20 +668,40 @@ fn plugin_namespace(plugin: &str) -> String {
     }
 }
 
+#[cfg_attr(not(feature = "custom-rules"), allow(dead_code))]
 fn strip_plugin_prefix(package: &str) -> &str {
     package.strip_prefix("daml-lint-plugin-").unwrap_or(package)
+}
+
+fn add_group(
+    selected: &mut BTreeSet<String>,
+    group: &str,
+    detector_names: &BTreeSet<String>,
+) -> Result<(), ConfigError> {
+    match group {
+        "all" | "recommended" => {
+            selected.extend(detector_names.iter().cloned());
+            Ok(())
+        }
+        _ => Err(ConfigError::UnknownGroup {
+            group: group.to_string(),
+        }),
+    }
 }
 
 fn parse_level_string(level: &str) -> Result<RuleLevel, ConfigError> {
     match level.to_lowercase().as_str() {
         "off" => Ok(RuleLevel::Off),
+        "on" => Ok(RuleLevel::On),
         "critical" => Ok(RuleLevel::Severity(Severity::Critical)),
-        "high" => Ok(RuleLevel::Severity(Severity::High)),
-        "medium" => Ok(RuleLevel::Severity(Severity::Medium)),
+        "error" | "high" => Ok(RuleLevel::Severity(Severity::High)),
+        "warning" | "medium" => Ok(RuleLevel::Severity(Severity::Medium)),
         "low" => Ok(RuleLevel::Severity(Severity::Low)),
         "info" => Ok(RuleLevel::Severity(Severity::Info)),
         _ => Err(ConfigError::RuleSettingInvalidSeverity {
-            value: format!("{level} (expected one of critical|high|medium|low|info|off)"),
+            value: format!(
+                "{level} (expected one of critical|high|medium|low|info|error|warning|on|off)"
+            ),
         }),
     }
 }
@@ -555,16 +716,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rule_setting_parses_canonical_severities_and_off() {
+    fn rule_setting_parses_canonical_severities_aliases_on_and_off() {
         let off = RuleSetting::from_value(serde_json::json!("off")).unwrap();
         assert!(!off.enabled);
         assert_eq!(off.severity, None);
         assert_eq!(off.options, serde_json::json!({}));
 
+        let on = RuleSetting::from_value(serde_json::json!("on")).unwrap();
+        assert!(on.enabled);
+        assert_eq!(on.severity, None);
+
         let high = RuleSetting::from_value(serde_json::json!("high")).unwrap();
         assert!(high.enabled);
         assert_eq!(high.severity, Some(Severity::High));
-        assert_eq!(high.options, serde_json::json!({}));
+
+        let error = RuleSetting::from_value(serde_json::json!("error")).unwrap();
+        assert_eq!(error.severity, Some(Severity::High));
+
+        let warning = RuleSetting::from_value(serde_json::json!("warning")).unwrap();
+        assert_eq!(warning.severity, Some(Severity::Medium));
 
         let medium_with_options =
             RuleSetting::from_value(serde_json::json!(["medium", { "names": ["Iou"] }])).unwrap();
@@ -586,10 +756,6 @@ mod tests {
             RuleSetting::from_value(serde_json::json!("warn")),
             Err(ConfigError::RuleSettingInvalidSeverity { .. })
         ));
-        assert!(matches!(
-            RuleSetting::from_value(serde_json::json!("error")),
-            Err(ConfigError::RuleSettingInvalidSeverity { .. })
-        ));
     }
 
     #[test]
@@ -603,7 +769,7 @@ mod tests {
     #[test]
     fn config_error_exposes_recoverable_source_errors() {
         let read = ConfigError::ReadConfig {
-            path: PathBuf::from(".daml-lint.json"),
+            path: PathBuf::from("daml.yaml"),
             source: std::io::Error::new(std::io::ErrorKind::PermissionDenied, "no access"),
         };
         assert!(std::error::Error::source(&read)

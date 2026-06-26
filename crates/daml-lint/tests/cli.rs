@@ -62,13 +62,14 @@ fn installed_plugin_manifest_rule_can_be_enabled_from_config() {
     let project = temp_dir("plugin-project");
     std::fs::create_dir_all(project.join("node_modules/daml-lint-plugin-template/dist")).unwrap();
     std::fs::write(
-        project.join(".daml-lint.json"),
-        r#"{
-  "plugins": ["template"],
-  "rules": {
-    "template/template-name-blocklist": ["medium", { "names": ["Iou"] }]
-  }
-}
+        project.join("daml.yaml"),
+        r#"daml-tools:
+  lint:
+    plugins: [template]
+    rules:
+      template/template-name-blocklist:
+        - medium
+        - names: [Iou]
 "#,
     )
     .unwrap();
@@ -143,12 +144,11 @@ template Iou
 fn config_can_disable_builtin_rule() {
     let project = temp_dir("disabled-builtin-project");
     std::fs::write(
-        project.join(".daml-lint.json"),
-        r#"{
-  "rules": {
-    "missing-ensure-decimal": "off"
-  }
-}
+        project.join("daml.yaml"),
+        r#"daml-tools:
+  lint:
+    rules:
+      missing-ensure-decimal: off
 "#,
     )
     .unwrap();
@@ -184,12 +184,11 @@ template Iou
 fn config_unknown_enabled_rule_exits_two() {
     let project = temp_dir("unknown-rule-project");
     std::fs::write(
-        project.join(".daml-lint.json"),
-        r#"{
-  "rules": {
-    "unknown-rule": "medium"
-  }
-}
+        project.join("daml.yaml"),
+        r#"daml-tools:
+  lint:
+    rules:
+      unknown-rule: medium
 "#,
     )
     .unwrap();
@@ -348,6 +347,63 @@ template Iou
 
     assert_eq!(output.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&output.stdout).contains("missing-ensure-decimal"));
+}
+
+#[test]
+fn rule_flag_runs_only_selected_builtin_rule() {
+    let path = temp_file(
+        "multi-finding.daml",
+        r#"module Multi where
+
+template Iou
+  with
+    issuer : Party
+    amount : Decimal
+    denom : Decimal
+  where
+    signatory issuer
+
+    choice Divide : Decimal
+      controller issuer
+      do
+        return (amount / denom)
+"#,
+    );
+    let output = cmd()
+        .arg("--rule")
+        .arg("missing-ensure-decimal")
+        .arg("--fail-on")
+        .arg("info")
+        .arg(&path)
+        .output()
+        .unwrap();
+    std::fs::remove_file(&path).ok();
+
+    assert_eq!(output.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("missing-ensure-decimal"),
+        "stdout was:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("unguarded-division"),
+        "stdout was:\n{stdout}"
+    );
+}
+
+#[test]
+fn unknown_lint_rule_exits_two() {
+    let path = clean_file();
+    let output = cmd()
+        .arg("--rule")
+        .arg("unknown-rule")
+        .arg(&path)
+        .output()
+        .unwrap();
+    std::fs::remove_file(&path).ok();
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unknown-rule"));
 }
 
 #[test]

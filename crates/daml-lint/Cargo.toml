@@ -49,6 +49,7 @@ daml-parser.workspace = true
 daml-syntax.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde_yaml.workspace = true
 # clap (CLI) and rquickjs (custom-rule JS engine) are optional so a library
 # consumer with `default-features = false` gets parser lowering and rule-facing
 # IR WITHOUT pulling a CLI arg parser or a JS runtime. The published binary
