@@ -1,5 +1,8 @@
 #![allow(clippy::unwrap_used)]
 
+mod common;
+
+use common::{assert_golden_normalized, normalize_cli_stderr, normalize_cli_stdout};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -298,6 +301,11 @@ template Holding
     assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("unknown-rule"), "stderr was:\n{stderr}");
+    assert_golden_normalized(
+        "cli_unknown_config_stderr.txt",
+        &stderr,
+        normalize_cli_stderr,
+    );
 }
 
 #[test]
@@ -485,7 +493,9 @@ fn unknown_lint_rule_exits_two() {
     std::fs::remove_file(&path).ok();
 
     assert_eq!(output.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&output.stderr).contains("unknown-rule"));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("unknown-rule"));
+    assert_golden_normalized("cli_unknown_rule_stderr.txt", &stderr, normalize_cli_stderr);
 }
 
 #[test]
@@ -579,7 +589,14 @@ fn parse_error_exits_three() {
     std::fs::remove_file(&path).ok();
 
     assert_eq!(output.status.code(), Some(3));
-    assert!(String::from_utf8_lossy(&output.stderr).contains("daml-lint: parse"));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("daml-lint: parse"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_golden_normalized(
+        "cli_parse_error_markdown.txt",
+        &stdout,
+        normalize_cli_stdout,
+    );
 }
 
 #[test]

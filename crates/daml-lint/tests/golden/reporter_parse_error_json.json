@@ -1,0 +1,24 @@
+{
+  "findings": [],
+  "parseErrors": [
+    {
+      "category": "lexical-error",
+      "column": 5,
+      "endColumn": 11,
+      "file": "Bad.daml",
+      "line": 3,
+      "message": "unterminated string literal"
+    }
+  ],
+  "summary": {
+    "critical": 0,
+    "high": 0,
+    "info": 0,
+    "low": 0,
+    "medium": 0,
+    "parseErrors": 1,
+    "total": 0
+  },
+  "tool": "daml-lint",
+  "version": "<VERSION>"
+}
