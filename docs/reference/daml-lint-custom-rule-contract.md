@@ -1,7 +1,7 @@
 # daml-lint custom rule contract
 
 This page describes the custom rule interface loaded by `daml-lint --rules`
-and by installed plugin packages configured in `.daml-lint.json`.
+and by installed plugin packages configured in `./daml.yaml`.
 
 ## Runtime file
 
@@ -75,26 +75,29 @@ reports.
 
 ## Project config
 
-`daml-lint` reads `.daml-lint.json` from the current directory by default. Use
-`--config <FILE>` to load a different file.
+`daml-lint` reads `./daml.yaml` from the current directory by default. Use
+`--config <FILE>` to load a different YAML file.
 
-```json
-{
-  "plugins": ["template"],
-  "pluginPaths": ["./local-plugins"],
-  "rules": {
-    "missing-ensure-decimal": "off",
-    "template/template-requires-ensure": ["medium", { "allowEmptyEnsure": false }]
-  }
-}
+```yaml
+daml-tools:
+  lint:
+    groups: [recommended]
+    plugins: [template]
+    plugin-paths: [./local-plugins]
+    rules:
+      missing-ensure-decimal: off
+      template/template-requires-ensure:
+        - warning
+        - allowEmptyEnsure: false
 ```
 
-Fields:
+Fields under `daml-tools.lint`:
 
 | Field | Shape | Meaning |
 |-------|-------|---------|
+| `groups` | string array | Built-in rule groups to enable. `recommended` and `all` are supported. |
 | `plugins` | string array | Plugin package names or short names. `template` resolves to `daml-lint-plugin-template`. |
-| `pluginPaths` | string array | Additional package search roots, resolved relative to the config file. |
+| `plugin-paths` | string array | Additional package search roots, resolved relative to the config file. |
 | `rules` | object | Built-in rule IDs or plugin-qualified rule IDs mapped to settings. |
 
 Rule IDs for plugin packages use `plugin/rule`, following the same namespace
@@ -107,7 +110,7 @@ Rule settings accept:
 | Setting | Meaning |
 |---------|---------|
 | `"off"` | Disable the rule. |
-| `"critical"`, `"high"`, `"medium"`, `"low"`, `"info"` | Enable and set a `daml-lint` severity. |
+| `"critical"`, `"high"`, `"medium"`, `"low"`, `"info"`, `"error"`, `"warning"` | Enable and set a `daml-lint` severity. `error` maps to high and `warning` maps to medium. |
 | `[severity, options]` | Enable with options exposed to the rule as global `CONFIG`. |
 
 `CONFIG` defaults to `{}`. If more than one option value is provided after the

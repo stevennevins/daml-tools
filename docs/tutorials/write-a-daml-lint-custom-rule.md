@@ -90,21 +90,20 @@ template Iou
 
 ## Add a local lint config
 
-Create `.daml-lint.json`:
+Create `daml.yaml`:
 
-```json
-{
-  "pluginPaths": ["."],
-  "plugins": ["template-requires-ensure"],
-  "rules": {
-    "template-requires-ensure/template-requires-ensure": "medium"
-  }
-}
+```yaml
+daml-tools:
+  lint:
+    plugin-paths: [.]
+    plugins: [template-requires-ensure]
+    rules:
+      template-requires-ensure/template-requires-ensure: warning
 ```
 
-`pluginPaths: ["."]` lets the package resolve itself before it is published.
+`plugin-paths: [.]` lets the package resolve itself before it is published.
 After publishing and installing it in another project, consumers only need the
-`plugins` and `rules` entries.
+`plugins` and `rules` entries under `daml-tools.lint`.
 
 ## Type-check and bundle
 
@@ -127,6 +126,6 @@ The ensured fixture should not report this custom finding:
 npx daml-lint fixtures/with-ensure.daml --fail-on info
 ```
 
-You now have a typed rule package that can be loaded through `.daml-lint.json`.
+You now have a typed rule package that can be loaded through `./daml.yaml`.
 The bundled JavaScript file also still works with direct `--rules` loading when
 you want to test one script without a package manifest.

@@ -80,6 +80,43 @@ daml-lint ./daml/ --fail-on critical
 
 Supported thresholds are `critical`, `high`, `medium`, `low`, and `info`.
 
+
+## Run selected lint rules
+
+Run one rule by id:
+
+```sh
+daml-lint ./daml/ --rule missing-ensure-decimal
+```
+
+Run a rule group:
+
+```sh
+daml-lint ./daml/ --group recommended
+```
+
+Available built-in rule ids are listed in the CLI reference. CLI `--rule` and
+`--group` selection overrides config selection from `daml.yaml`.
+
+## Configure rules in daml.yaml
+
+`daml-lint` reads `./daml.yaml` by default when it exists. Use `--config` to
+load a different YAML file.
+
+```yaml
+daml-tools:
+  lint:
+    groups: [recommended]
+    rules:
+      missing-ensure-decimal: off
+      head-of-list-query: warning
+      unguarded-division: error
+```
+
+Lint severities are `critical`, `high`, `medium`, `low`, `info`, plus
+ESLint-style aliases `error` (high) and `warning` (medium). Use `off` to disable
+a rule.
+
 ## Run custom rule scripts
 
 Pass JavaScript rule files with repeatable `--rules` options:
@@ -106,18 +143,17 @@ validate, but it does not replace the current runtime discovery contract.
 ## Run installed plugin rules
 
 Install a plugin package in the project and enable its rules from
-`.daml-lint.json`:
+`./daml.yaml`:
 
 ```sh
 npm install --save-dev daml-lint-plugin-template
-cat > .daml-lint.json <<'JSON'
-{
-  "plugins": ["template"],
-  "rules": {
-    "template/template-requires-ensure": "medium"
-  }
-}
-JSON
+cat > daml.yaml <<'YAML'
+daml-tools:
+  lint:
+    plugins: [template]
+    rules:
+      template/template-requires-ensure: warning
+YAML
 daml-lint ./daml/ --fail-on medium
 ```
 

@@ -77,6 +77,40 @@ cat Foo.daml | daml-fmt
 With no file arguments, `daml-fmt` reads stdin and writes formatted source to
 stdout.
 
+
+## Run selected formatter rules
+
+Run only one formatter rule with repeatable `--rule` options:
+
+```sh
+daml-fmt --rule imports Foo.daml
+daml-fmt --rule spacing Foo.daml
+```
+
+Formatter rule ids are:
+
+| Rule | Effect |
+|------|--------|
+| `imports` | Organize import declarations. |
+| `layout` | Apply AST-guided structural indentation. |
+| `spacing` | Normalize whitespace gaps and type-annotation colon spacing. |
+| `syntax-normalization` | Rewrite supported inline/layout forms into canonical multiline shapes. |
+
+Configure defaults in `./daml.yaml`:
+
+```yaml
+daml-tools:
+  fmt:
+    groups: [all]
+    rules:
+      imports: off
+      layout: on
+      spacing: on
+      syntax-normalization: on
+```
+
+CLI `--rule` and `--group` selection overrides `daml.yaml`.
+
 ## Preserve import order
 
 By default, `daml-fmt` organizes import declarations. Import reordering can

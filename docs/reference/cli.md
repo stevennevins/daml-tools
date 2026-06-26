@@ -21,6 +21,9 @@ stdout.
 | `-w`, `--write` | Rewrite each file in place when the formatted output differs. Requires file arguments. |
 | `--check` | Print each file that would change and exit `1` if any file is not formatted. Requires file arguments. |
 | `--preserve-import-order` | Keep import declarations in source order instead of applying default import organization. |
+| `--config <FILE>` | Load formatter config from a YAML file. Default discovery: `./daml.yaml` when present. |
+| `--group <ID>` | Enable a formatter rule group. Repeatable. Currently `all`. |
+| `--rule <ID>` | Enable a specific formatter rule. Repeatable. Accepted values: `imports`, `layout`, `spacing`, `syntax-normalization`. |
 | `-h`, `--help` | Show usage text and exit `0`. |
 | `-v`, `--version` | Print the crate version and exit `0`. |
 
@@ -42,6 +45,10 @@ malformed input is not rewritten.
 Import organization is enabled by default. It may change Daml package identity
 because import declaration order contributes to the compiled package; pass
 `--preserve-import-order` when package identity stability matters.
+
+Formatter rule selection runs only the selected rules. CLI `--rule`/`--group`
+selection overrides `daml.yaml`. With no explicit selection, all formatter
+rules run unless config disables one.
 
 ### Exit codes
 
@@ -73,24 +80,37 @@ warning. If no `.daml` files are found, the command exits `2`.
 | `-f`, `--format <FORMAT>` | Output format. Accepted values: `markdown`, `md`, `json`, `sarif`. Default: `markdown`. |
 | `-o`, `--output <FILE>` | Write the report to a file instead of stdout. |
 | `--fail-on <SEVERITY>` | Minimum finding severity that causes exit `1`. Accepted values: `critical`, `high`, `medium`, `low`, `info`. Default: `high`. |
-| `-c`, `--config <FILE>` | Load a JSON config file with plugins and rule settings. Default discovery: `.daml-lint.json` in the current directory. Requires the `custom-rules` feature. |
+| `-c`, `--config <FILE>` | Load config from a YAML file. Default discovery: `./daml.yaml` when present. |
+| `--rule <ID>` | Run only the named lint rule. Repeatable. Built-ins use their detector id; plugin rules use `plugin/rule`. |
+| `--group <ID>` | Run a lint rule group. Repeatable. Accepted values: `recommended`, `all`. |
 | `--rules <FILE>` | Load a JavaScript custom rule file. Repeatable. Requires the `custom-rules` feature. |
 | `-h`, `--help` | Show clap-generated help. |
 | `-V`, `--version` | Show the crate version. |
 
 ### Config file
 
-`.daml-lint.json` can enable installed plugin rules, disable rules, and override
-rule severities:
+``./daml.yaml` can configure formatter and linter rule groups, rule toggles,
+severity overrides, plugin packages, and rule-specific options:
 
-```json
-{
-  "plugins": ["template"],
-  "rules": {
-    "missing-ensure-decimal": "off",
-    "template/template-requires-ensure": ["medium", { "allowEmptyEnsure": false }]
-  }
-}
+```yaml
+daml-tools:
+  fmt:
+    groups: [all]
+    rules:
+      imports: off
+      layout: on
+      spacing: on
+      syntax-normalization: on
+
+  lint:
+    groups: [recommended]
+    plugins: [template]
+    rules:
+      missing-ensure-decimal: off
+      head-of-list-query: warning
+      template/template-requires-ensure:
+        - warning
+        - allowEmptyEnsure: false
 ```
 
 Plugin names resolve to npm packages with the `daml-lint-plugin-` prefix, so
@@ -133,9 +153,10 @@ formatted output. Each diagnostic carries a stable category tag such as
 `properties.category`, markdown report headings). A scan with parse errors exits
 `3`, even if no detector findings meet the `--fail-on` threshold.
 
-Rule settings in `.daml-lint.json` accept only canonical severities:
-`off`, `critical`, `high`, `medium`, `low`, and `info`. Legacy aliases such as
-`warn`/`error` and numeric shortcuts are rejected.
+Lint rule settings in `daml.yaml` accept `off`, `on`, `warning`, `error`,
+and canonical severities `critical`, `high`, `medium`, `low`, and `info`.
+`warning` maps to medium severity and `error` maps to high severity. Numeric
+shortcuts and `warn` are rejected. Formatter rule settings accept `on`/`off`.
 
 ### Exit codes
 
