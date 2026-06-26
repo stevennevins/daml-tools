@@ -1,10 +1,87 @@
 #![allow(clippy::unwrap_used)]
 
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static NEXT_TEMP: AtomicUsize = AtomicUsize::new(0);
+
+fn golden_path(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/golden")
+        .join(name)
+}
+
+fn read_golden(name: &str) -> String {
+    std::fs::read_to_string(golden_path(name))
+        .unwrap_or_else(|e| panic!("missing golden fixture {name}: {e}"))
+}
+
+fn assert_golden_normalized(name: &str, actual: &str, normalize: fn(&str) -> String) {
+    let expected = read_golden(name).trim_end().to_string();
+    let actual = normalize(actual).trim_end().to_string();
+    assert_eq!(
+        actual, expected,
+        "golden mismatch for {name}\n--- expected ---\n{expected}\n--- actual ---\n{actual}"
+    );
+}
+
+fn normalize_abs_paths(text: &str) -> String {
+    let mut out = text.to_string();
+    let mut search_from = 0;
+    while let Some(rel) = out[search_from..].find(".daml") {
+        let daml_idx = search_from + rel;
+        let path_start = out[..daml_idx]
+            .rfind(|c: char| c.is_whitespace() || c == '`')
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        let path_end = daml_idx + ".daml".len();
+        let path = &out[path_start..path_end];
+        if should_normalize_path(path) {
+            out.replace_range(path_start..path_end, "<PATH>");
+            search_from = path_start + "<PATH>".len();
+        } else {
+            search_from = path_end;
+        }
+    }
+    out
+}
+
+fn should_normalize_path(path: &str) -> bool {
+    path.starts_with('/') || path.contains("daml-fmt-cli-")
+}
+
+fn normalize_path_string(path: &str) -> String {
+    Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| {
+            if name.starts_with("daml-fmt-cli-") {
+                "<PATH>".to_string()
+            } else {
+                name.to_string()
+            }
+        })
+        .unwrap_or_else(|| "<PATH>".to_string())
+}
+
+fn normalize_cli_stderr(text: &str) -> String {
+    normalize_abs_paths(text)
+}
+
+fn normalize_cli_stdout(text: &str) -> String {
+    text.lines()
+        .map(|line| {
+            if line.ends_with(".daml") {
+                normalize_path_string(line)
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 
 fn cmd() -> Command {
     Command::new(env!("CARGO_BIN_EXE_daml-fmt"))
@@ -44,6 +121,28 @@ fn help_exits_successfully() {
     assert!(stderr.contains("--ignore-path <FILE>"));
     assert!(stderr.contains("--group <ID>"));
     assert!(stderr.contains("--rule <ID>"));
+    assert_golden_normalized("cli_help_stderr.txt", &stderr, normalize_cli_stderr);
+}
+
+#[test]
+fn version_exits_successfully() {
+    let output = cmd().arg("--version").output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_golden_normalized("cli_version_stdout.txt", &stdout, |text| text.to_string());
+}
+
+#[test]
+fn unknown_option_exits_two() {
+    let output = cmd().arg("--bogus").output().unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("unknown option"));
+    assert_golden_normalized(
+        "cli_unknown_option_stderr.txt",
+        &stderr,
+        normalize_cli_stderr,
+    );
 }
 
 #[test]
@@ -75,7 +174,28 @@ fn check_reports_unformatted_file_with_exit_one() {
     std::fs::remove_file(&path).ok();
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&output.stdout).contains(path.to_str().unwrap()));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains(path.to_str().unwrap()));
+    assert_golden_normalized(
+        "cli_check_unformatted_stdout.txt",
+        &stdout,
+        normalize_cli_stdout,
+    );
+}
+
+#[test]
+fn check_reports_formatted_file_with_exit_zero() {
+    let path = temp_file("formatted.daml", "module M where\nfoo: Int\nfoo = 1\n");
+    let output = cmd().arg("--check").arg(&path).output().unwrap();
+    std::fs::remove_file(&path).ok();
+
+    assert!(output.status.success());
+    assert_golden_normalized(
+        "cli_check_formatted_stdout.txt",
+        &String::from_utf8_lossy(&output.stdout),
+        normalize_cli_stdout,
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 
 #[test]
@@ -440,7 +560,9 @@ fn unknown_formatter_rule_exits_two() {
     let output = cmd().arg("--rule").arg("unknown-rule").output().unwrap();
 
     assert_eq!(output.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&output.stderr).contains("unknown-rule"));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("unknown-rule"));
+    assert_golden_normalized("cli_unknown_rule_stderr.txt", &stderr, normalize_cli_stderr);
 }
 
 #[test]
@@ -462,7 +584,9 @@ fn stdin_reports_parser_diagnostics_and_exits_two() {
     let output = child.wait_with_output().unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert_eq!(String::from_utf8_lossy(&output.stdout), input);
-    assert!(String::from_utf8_lossy(&output.stderr).contains("daml-fmt: <stdin>"));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("daml-fmt: <stdin>"));
+    assert_golden_normalized("cli_stdin_parser_stderr.txt", &stderr, normalize_cli_stderr);
 }
 
 #[test]
@@ -476,9 +600,9 @@ fn check_reports_parser_diagnostics_and_exits_two() {
     std::fs::remove_file(&path).ok();
 
     assert_eq!(output.status.code(), Some(2));
-    assert!(
-        String::from_utf8_lossy(&output.stderr).contains(&format!("daml-fmt: {}:", path.display()))
-    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains(&format!("daml-fmt: {}:", path.display())));
+    assert_golden_normalized("cli_check_parser_stderr.txt", &stderr, normalize_cli_stderr);
     assert_eq!(source, "module M where\nfoo = if x then 1\n");
 }
 
@@ -493,8 +617,28 @@ fn write_reports_parser_diagnostics_and_does_not_modify_input() {
     std::fs::remove_file(&path).ok();
 
     assert_eq!(output.status.code(), Some(2));
-    assert!(
-        String::from_utf8_lossy(&output.stderr).contains(&format!("daml-fmt: {}:", path.display()))
-    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains(&format!("daml-fmt: {}:", path.display())));
+    assert_golden_normalized("cli_write_parser_stderr.txt", &stderr, normalize_cli_stderr);
     assert_eq!(source, "module M where\nfoo = if x then 1\n");
+}
+
+#[test]
+fn write_reformats_file_in_place_with_exit_zero() {
+    let path = temp_file(
+        "write-formatted.daml",
+        "module M where\nfoo : Int\nfoo = 1\n",
+    );
+    let output = cmd().arg("--write").arg(&path).output().unwrap();
+    let after = std::fs::read_to_string(&path).unwrap();
+    std::fs::remove_file(&path).ok();
+
+    assert!(output.status.success());
+    assert_golden_normalized(
+        "cli_write_formatted_stdout.txt",
+        &String::from_utf8_lossy(&output.stdout),
+        normalize_cli_stdout,
+    );
+    assert_eq!(after, "module M where\nfoo: Int\nfoo = 1\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }

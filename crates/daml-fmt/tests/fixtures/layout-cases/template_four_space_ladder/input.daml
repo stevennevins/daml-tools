@@ -1,0 +1,8 @@
+template Coin
+    with
+        issuer : Party
+    where
+        signatory issuer
+        choice Burn : ()
+          controller issuer
+          do pure ()

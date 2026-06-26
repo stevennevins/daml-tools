@@ -1,0 +1,12 @@
+template T
+  with
+    p: Party
+  where
+    choice C
+      : ()
+      with
+        observer_name: Party
+      observer p
+      controller p
+      do
+        pure ()

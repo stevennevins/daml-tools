@@ -1,0 +1,10 @@
+data Color = Grey
+  | RGB
+    with r: Int
+  deriving (Eq, Show)
+
+exception E
+  with
+    msg: Text
+  where
+    message msg

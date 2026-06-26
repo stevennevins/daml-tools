@@ -4,6 +4,36 @@
 #![allow(clippy::unwrap_used)]
 
 use daml_fmt::format_source;
+use std::path::PathBuf;
+
+fn layout_cases_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/layout-cases")
+}
+
+fn assert_layout_case(case: &str) {
+    let case_dir = layout_cases_dir().join(case);
+    let input_path = case_dir.join("input.daml");
+    let expected_path = case_dir.join("expected.daml");
+    assert!(
+        input_path.is_file(),
+        "missing layout input: {}",
+        input_path.display()
+    );
+    assert!(
+        expected_path.is_file(),
+        "missing layout expected: {}",
+        expected_path.display()
+    );
+    let src = std::fs::read_to_string(input_path).unwrap();
+    let expected = std::fs::read_to_string(expected_path).unwrap();
+    let out = format_source(&src);
+    assert_eq!(out, expected, "layout case {case}");
+    assert_eq!(
+        format_source(&out),
+        out,
+        "layout case {case} not idempotent"
+    );
+}
 
 #[test]
 fn do_body_reindented_to_anchor_plus_two() {
@@ -111,23 +141,14 @@ fn do_then_if_passes_reach_a_single_call_fixpoint() {
     // if-pass then moves `else`, removing the collision. The structural
     // passes must iterate to a fixpoint so a SINGLE format call is already
     // idempotent — format(format(x)) == format(x).
-    let src = "f =\n  if c\n    then do\n       a\n       b\n      else d\n";
-    let once = format_source(src);
-    let twice = format_source(&once);
-    assert_eq!(once, twice, "single-call output must be a fixpoint");
+    assert_layout_case("do_then_if_fixpoint");
 }
 
 #[test]
 fn if_then_else_multiline_branch_rides_uniform_shift() {
     // A then-branch spanning extra lines shifts by ONE uniform delta, so the
     // branch's own indentation structure is preserved (8->6, 10->8).
-    let src = "f x =\n  if x > 0\n      then g\n             a\n      else h\n";
-    let out = format_source(src);
-    assert_eq!(
-        out,
-        "f x =\n  if x > 0\n    then g\n           a\n    else h\n"
-    );
-    assert_eq!(format_source(&out), out); // idempotent
+    assert_layout_case("if_then_else_multiline_branch");
 }
 
 #[test]
@@ -158,12 +179,7 @@ fn inline_case_alts_are_expanded() {
 fn nested_case_rides_outer_shift() {
     // Inner case (an alt body) rides the outer alt block's uniform shift; the
     // inner alts stay aligned relative to their own `case`.
-    let src = "f x = case x of\n      A -> case y of\n             P -> 1\n             Q -> 2\n      B -> 0\n";
-    let out = format_source(src);
-    // Outer alts to col 2; inner alts ride the same -4 shift (13 -> 9).
-    let want = "f x = case x of\n  A -> case y of\n         P -> 1\n         Q -> 2\n  B -> 0\n";
-    assert_eq!(out, want);
-    assert_eq!(format_source(&out), out); // idempotent
+    assert_layout_case("nested_case_outer_shift");
 }
 
 #[test]
@@ -226,12 +242,7 @@ fn inline_con_with_fields_are_expanded() {
 
 #[test]
 fn con_with_before_where_keeps_fields_inside_expression() {
-    let src = "module M where\nquery : T\nquery = lift $ QueryACS with\n    parties = p\n    tplId = t\n  where\n    convert = x\n";
-    let out = format_source(src);
-    assert_eq!(
-        out,
-        "module M where\nquery: T\nquery = lift $ QueryACS with\n    parties = p\n    tplId = t\n  where\n    convert = x\n"
-    );
+    assert_layout_case("con_with_before_where");
 }
 
 #[test]
@@ -240,11 +251,7 @@ fn template_four_space_ladder_canonicalized_to_two() {
     // structured reindent uses different deltas for keywords (-> +2) and
     // fields/decls (-> +4), so it becomes the canonical 2-space ladder, and
     // the choice's internal 2-space ladder rides the decl-block shift.
-    let src = "template Coin\n    with\n        issuer : Party\n    where\n        signatory issuer\n        choice Burn : ()\n          controller issuer\n          do pure ()\n";
-    let out = format_source(src);
-    let want = "template Coin\n  with\n    issuer: Party\n  where\n    signatory issuer\n    choice Burn: ()\n      controller issuer\n      do pure ()\n";
-    assert_eq!(out, want);
-    assert_eq!(format_source(&out), out); // idempotent
+    assert_layout_case("template_four_space_ladder");
 }
 
 #[test]
@@ -252,11 +259,7 @@ fn interface_body_canonicalized_to_two() {
     // `interface X where` has `where` inline, so the body (viewtype +
     // methods + choices) sits at head + 2, and a choice's internals ride to
     // head + 4.
-    let src = "interface Asset where\n    viewtype V\n    getOwner : Party\n    choice Xfer : ()\n      controller getOwner this\n      do pure ()\n";
-    let out = format_source(src);
-    let want = "interface Asset where\n  viewtype V\n  getOwner: Party\n  choice Xfer: ()\n    controller getOwner this\n    do pure ()\n";
-    assert_eq!(out, want);
-    assert_eq!(format_source(&out), out); // idempotent
+    assert_layout_case("interface_body_canonicalized");
 }
 
 #[test]
@@ -299,40 +302,22 @@ fn mid_line_let_is_left_verbatim() {
 
 #[test]
 fn choice_internal_ladder_is_canonicalized() {
-    let src = "template T\n  with\n    p: Party\n  where\n    choice C\n          : ()\n          with\n              arg: Text\n          observer p\n          controller p\n          do\n              pure ()\n";
-    let out = format_source(src);
-    let want = "template T\n  with\n    p: Party\n  where\n    choice C\n      : ()\n      with\n        arg: Text\n      observer p\n      controller p\n      do\n        pure ()\n";
-    assert_eq!(out, want);
-    assert_eq!(format_source(&out), out);
+    assert_layout_case("choice_internal_ladder");
 }
 
 #[test]
 fn choice_keyword_scan_ignores_identifier_fragments() {
-    let src = "template T\n  with\n    p: Party\n  where\n    choice C\n          : ()\n          with\n              observer_name: Party\n          observer p\n          controller p\n          do\n              pure ()\n";
-    let out = format_source(src);
-    let want = "template T\n  with\n    p: Party\n  where\n    choice C\n      : ()\n      with\n        observer_name: Party\n      observer p\n      controller p\n      do\n        pure ()\n";
-    assert_eq!(out, want);
-    assert_eq!(format_source(&out), out);
+    assert_layout_case("choice_keyword_scan_identifier");
 }
 
 #[test]
 fn type_def_ladders_are_canonicalized() {
-    let src = "data Color = Grey\n           | RGB\n                with r: Int\n           deriving (Eq, Show)\n\nexception E\n      with\n          msg: Text\n      where\n          message msg\n";
-    let out = format_source(src);
-    let want = "data Color = Grey\n  | RGB\n    with r: Int\n  deriving (Eq, Show)\n\nexception E\n  with\n    msg: Text\n  where\n    message msg\n";
-    assert_eq!(out, want);
-    assert_eq!(format_source(&out), out);
+    assert_layout_case("type_def_ladders");
 }
 
 #[test]
 fn data_record_with_ladder_keeps_with_above_fields() {
-    let src =
-        "data ReceiverAmount = ReceiverAmount\n    with\n      receiver : Party\n      amount : Decimal\n";
-    let out = format_source(src);
-    let want =
-        "data ReceiverAmount = ReceiverAmount\n  with\n    receiver: Party\n    amount: Decimal\n";
-    assert_eq!(out, want);
-    assert_eq!(format_source(&out), out);
+    assert_layout_case("data_record_with_ladder");
 }
 
 #[test]
@@ -343,39 +328,22 @@ fn inline_data_record_with_braces_keeps_body_column() {
 
 #[test]
 fn class_where_body_with_comments_keeps_body_indent() {
-    let src = "class ActionState s m | m -> s where\n  {-# MINIMAL get, (put | modify) #-}\n  -- | Fetch the current value.\n  get : m s\n\n  -- | Set the value.\n  put : s -> m ()\n  put = modify . const\n";
-    let out = format_source(src);
-    let want = "class ActionState s m | m -> s where\n  {-# MINIMAL get, (put | modify) #-}\n  -- | Fetch the current value.\n  get: m s\n\n  -- | Set the value.\n  put: s -> m ()\n  put = modify . const\n";
-    assert_eq!(out, want);
-    assert_eq!(format_source(&out), out);
+    assert_layout_case("class_where_body_comments");
 }
 
 #[test]
 fn class_where_body_with_indented_pragma_keeps_pragma_indent() {
-    let src = "class Foo t where\n    {-# MINIMAL foo1 | foo2 #-}\n\n    foo1 : t -> Int\n    foo1 x = foo1 x + 1\n";
-    let out = format_source(src);
-    let want = "class Foo t where\n    {-# MINIMAL foo1 | foo2 #-}\n\n    foo1: t -> Int\n    foo1 x = foo1 x + 1\n";
-    assert_eq!(out, want);
-    assert_eq!(format_source(&out), out);
+    assert_layout_case("class_where_body_indented_pragma");
 }
 
 #[test]
 fn guards_and_where_bindings_are_canonicalized() {
-    let src =
-        "f x\n      | x > 0 = g\n               x\n      | otherwise = 0\n      where\n          g y = y\n";
-    let out = format_source(src);
-    let want = "f x\n  | x > 0 = g\n           x\n  | otherwise = 0\n  where\n    g y = y\n";
-    assert_eq!(out, want);
-    assert_eq!(format_source(&out), out);
+    assert_layout_case("guards_and_where_bindings");
 }
 
 #[test]
 fn multiline_try_catch_is_canonicalized() {
-    let src = "f = try\n        foo\n      catch\n        _ -> bar\n";
-    let out = format_source(src);
-    let want = "f = try\n      foo\n    catch\n      _ -> bar\n";
-    assert_eq!(out, want);
-    assert_eq!(format_source(&out), out);
+    assert_layout_case("multiline_try_catch");
 }
 
 #[test]
@@ -389,12 +357,7 @@ fn explicit_list_continuations_are_canonicalized() {
 
 #[test]
 fn module_and_import_continuations_are_canonicalized() {
-    let src =
-        "module M\n      ( f\n      , g\n      ) where\n\nimport DA.Map\n      ( Map\n      )\n";
-    let out = format_source(src);
-    let want = "module M\n  ( f\n  , g\n  ) where\n\nimport DA.Map\n  ( Map\n  )\n";
-    assert_eq!(out, want);
-    assert_eq!(format_source(&out), out);
+    assert_layout_case("module_import_continuations");
 }
 
 #[test]

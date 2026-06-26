@@ -1,0 +1,13 @@
+usage: daml-fmt [options] [file...]
+
+  -w, --write    rewrite files in place
+      --check    exit 1 if any file is not formatted
+      --preserve-import-order  do not reorder import declarations
+      --config <FILE>  read formatter config from FILE (default: ./daml.yaml)
+      --ignore-path <FILE>  read formatter ignore patterns from FILE (repeatable)
+      --group <ID>     enable a formatter rule group (repeatable; currently all)
+      --rule <ID>      enable a formatter rule (repeatable; imports, layout, spacing, syntax-normalization)
+  -h, --help     show this help
+  -v, --version  show version
+
+With no files, reads stdin and writes the result to stdout.

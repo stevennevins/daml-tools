@@ -1,0 +1,8 @@
+class ActionState s m | m -> s where
+  {-# MINIMAL get, (put | modify) #-}
+  -- | Fetch the current value.
+  get: m s
+
+  -- | Set the value.
+  put: s -> m ()
+  put = modify . const
