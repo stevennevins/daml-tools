@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 
 #[cfg(feature = "custom-rules")]
 mod config;
+#[cfg(feature = "custom-rules")]
+mod rule_registry;
 
 #[derive(Parser)]
 #[command(name = "daml-lint")]
@@ -30,10 +32,20 @@ struct Cli {
     #[arg(long, default_value = "high", value_parser = parse_fail_on)]
     fail_on: Severity,
 
-    /// JSON config file with plugins and rule settings (default: .daml-lint.json)
+    /// YAML config file with daml-tools.lint settings (default: ./daml.yaml then ./daml.yml)
     #[cfg(feature = "custom-rules")]
     #[arg(short, long)]
     config: Option<PathBuf>,
+
+    /// Built-in or plugin rule id to run (repeatable). Replaces config rule/group selection.
+    #[cfg(feature = "custom-rules")]
+    #[arg(long)]
+    rule: Vec<String>,
+
+    /// Built-in or plugin rule group to run (repeatable). Replaces config rule/group selection.
+    #[cfg(feature = "custom-rules")]
+    #[arg(long)]
+    group: Vec<String>,
 
     /// Custom AST rule scripts (JavaScript), repeatable. Write in TypeScript
     /// against examples/daml-lint.d.ts and compile; see examples/
@@ -52,8 +64,14 @@ fn main() {
             eprintln!("Error: {e}");
             std::process::exit(2);
         });
+        let selection = lint_config
+            .resolve_effective_rules(&cli.group, &cli.rule)
+            .unwrap_or_else(|e| {
+                eprintln!("Error: {e}");
+                std::process::exit(2);
+            });
         let mut detectors = detectors::create_builtin_detectors();
-        match lint_config.load_plugin_detectors() {
+        match lint_config.load_plugin_detectors(&selection) {
             Ok(plugin_detectors) => detectors.extend(plugin_detectors),
             Err(e) => {
                 eprintln!("Error: {e}");
@@ -69,7 +87,15 @@ fn main() {
                 }
             }
         }
-        let detectors = lint_config.apply_rule_settings(detectors);
+        if let Err(e) =
+            config::LintConfig::validate_selection_against_detectors(&selection, &detectors)
+        {
+            eprintln!("Error: {e}");
+            std::process::exit(2);
+        }
+        let respect_disabled = selection.source != config::RuleSelectionSource::Cli;
+        let detectors = lint_config.filter_by_selection(detectors, &selection);
+        let detectors = lint_config.apply_rule_settings(detectors, respect_disabled);
         if let Err(e) = lint_config.validate_rule_settings(&detectors) {
             eprintln!("Error: {e}");
             std::process::exit(2);

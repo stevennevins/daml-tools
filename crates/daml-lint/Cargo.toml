@@ -49,6 +49,7 @@ daml-parser.workspace = true
 daml-syntax.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde_yaml = { workspace = true, optional = true }
 # clap (CLI) and rquickjs (custom-rule JS engine) are optional so a library
 # consumer with `default-features = false` gets parser lowering and rule-facing
 # IR WITHOUT pulling a CLI arg parser or a JS runtime. The published binary
@@ -67,7 +68,7 @@ cli = ["dep:clap", "js-runtime"]
 js-runtime = ["dep:rquickjs"]
 # `custom-rules`: enable loading user-provided JavaScript AST rule files;
 # implies `js-runtime` (and therefore QuickJS/rquickjs).
-custom-rules = ["js-runtime"]
+custom-rules = ["dep:serde_yaml", "js-runtime"]
 
 # The CLI binary needs the clap CLI and the JS runtime for built-ins. The
 # `custom-rules` feature adds `--rules`. With `default-features = false` the bin

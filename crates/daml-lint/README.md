@@ -143,20 +143,24 @@ Define your own detectors as AST rule scripts and pass them with `--rules`
 daml-lint ./daml/ --rules my-rule.js --rules another-rule.js
 ```
 
-Installed plugin packages can also be enabled from `.daml-lint.json`:
+Installed plugin packages can also be enabled from `daml.yaml`:
 
-```json
-{
-  "plugins": ["template"],
-  "rules": {
-    "template/template-requires-ensure": ["medium", { "allowEmptyEnsure": false }]
-  }
-}
+```yaml
+daml-tools:
+  lint:
+    plugins: [template]
+    groups: [template/recommended]
+    rules:
+      template/template-requires-ensure: [medium, { allowEmptyEnsure: false }]
 ```
 
 `template` resolves to `daml-lint-plugin-template` in `node_modules`; use
-`pluginPaths` for local package roots during development. Rule options from the
+`plugin-paths` for local package roots during development. Rule options from the
 array form are exposed to the rule as global `CONFIG`.
+
+Select built-in or plugin rules from the CLI with repeatable `--rule <ID>` and
+`--group <GROUP>`. `--rules <FILE>` loads ad hoc JavaScript rule files and is
+separate from `--rule`.
 
 A rule is TypeScript/JavaScript (executed by an embedded QuickJS engine):
 constants for metadata, plus visitor functions named after the node types you

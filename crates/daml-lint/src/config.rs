@@ -1,3 +1,4 @@
+use crate::rule_registry::expand_builtin_group;
 use daml_lint::detector::{ConfiguredDetector, Detector, Severity};
 use daml_lint::detectors;
 use serde::Deserialize;
@@ -17,7 +18,10 @@ pub enum ConfigError {
     },
     ParseConfig {
         path: PathBuf,
-        source: serde_json::Error,
+        source: serde_yaml::Error,
+    },
+    MissingLintSection {
+        path: PathBuf,
     },
     PluginResolveFailed {
         plugin: String,
@@ -38,9 +42,17 @@ pub enum ConfigError {
     UnknownRuleId {
         rule_id: String,
     },
+    UnknownGroupId {
+        group_id: String,
+    },
     MissingPluginRule {
         plugin: String,
         rule: String,
+        package_json: PathBuf,
+    },
+    MissingPluginGroup {
+        plugin: String,
+        group: String,
         package_json: PathBuf,
     },
     RuleNameMismatch {
@@ -78,6 +90,11 @@ impl std::fmt::Display for ConfigError {
             Self::ParseConfig { path, source } => {
                 write!(f, "invalid config {}: {source}", path.display())
             }
+            Self::MissingLintSection { path } => write!(
+                f,
+                "config {} is missing daml-tools.lint section",
+                path.display()
+            ),
             Self::PluginResolveFailed { plugin, tried } => {
                 let tried = tried
                     .iter()
@@ -98,7 +115,10 @@ impl std::fmt::Display for ConfigError {
                 write!(f, "invalid {}: {source}", path.display())
             }
             Self::UnknownRuleId { rule_id } => {
-                write!(f, "configures unknown rule '{rule_id}'")
+                write!(f, "unknown rule '{rule_id}'")
+            }
+            Self::UnknownGroupId { group_id } => {
+                write!(f, "unknown group '{group_id}'")
             }
             Self::MissingPluginRule {
                 plugin,
@@ -107,6 +127,15 @@ impl std::fmt::Display for ConfigError {
             } => write!(
                 f,
                 "plugin '{plugin}' does not declare rule '{rule}' in {}",
+                package_json.display()
+            ),
+            Self::MissingPluginGroup {
+                plugin,
+                group,
+                package_json,
+            } => write!(
+                f,
+                "plugin '{plugin}' does not declare group '{group}' in {}",
                 package_json.display()
             ),
             Self::RuleNameMismatch {
@@ -157,14 +186,16 @@ impl Error for ConfigError {
             Self::MissingCurrentDir { source }
             | Self::ReadConfig { source, .. }
             | Self::PluginManifestRead { source, .. } => Some(source),
-            Self::ParseConfig { source, .. } | Self::PluginManifestParse { source, .. } => {
-                Some(source)
-            }
+            Self::ParseConfig { source, .. } => Some(source),
+            Self::PluginManifestParse { source, .. } => Some(source),
             Self::RuleLoadFailed { source, .. } => Some(source.as_ref()),
             Self::PluginResolveFailed { .. }
             | Self::PluginManifestMissingSection { .. }
+            | Self::MissingLintSection { .. }
             | Self::UnknownRuleId { .. }
+            | Self::UnknownGroupId { .. }
             | Self::MissingPluginRule { .. }
+            | Self::MissingPluginGroup { .. }
             | Self::RuleNameMismatch { .. }
             | Self::RuleSettingMissingSeverity { .. }
             | Self::RuleSettingInvalidSeverity { .. }
@@ -173,22 +204,32 @@ impl Error for ConfigError {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuleSelectionSource {
+    Default,
+    Config,
+    Cli,
+}
+
+#[derive(Debug)]
+pub struct EffectiveRuleSelection {
+    pub source: RuleSelectionSource,
+    pub rule_ids: BTreeSet<String>,
+}
+
 #[derive(Debug)]
 pub struct LintConfig {
     base_dir: PathBuf,
     plugin_paths: Vec<PathBuf>,
     plugins: Vec<String>,
+    groups: Vec<String>,
     rules: BTreeMap<String, RuleSetting>,
 }
 
 impl LintConfig {
-    /// Read and validate `.daml-lint.json`, returning defaults when missing.
+    /// Read and validate `daml-tools.lint` from YAML config, returning defaults when missing.
     ///
-    /// Returns:
-    /// - `Ok` with an explicit config loaded from `explicit_path`, or
-    ///   defaults when that file is absent.
-    /// - `Err` when the config path is unreadable, JSON is invalid, or plugin
-    ///   metadata cannot be parsed.
+    /// Discovery checks `./daml.yaml` then `./daml.yml` unless `--config` is set.
     #[must_use = "propagate config read/parse failures"]
     pub fn load(explicit_path: Option<&Path>) -> Result<Self, ConfigError> {
         let Some(path) = find_config_path(explicit_path)? else {
@@ -199,16 +240,22 @@ impl LintConfig {
             path: path.clone(),
             source,
         })?;
-        let raw: RawConfig =
-            serde_json::from_str(&source).map_err(|source| ConfigError::ParseConfig {
+        let raw: DamlToolsFile =
+            serde_yaml::from_str(&source).map_err(|source| ConfigError::ParseConfig {
                 path: path.clone(),
                 source,
             })?;
+        let Some(lint) = raw.daml_tools.and_then(|root| root.lint) else {
+            if explicit_path.is_some() {
+                return Err(ConfigError::MissingLintSection { path });
+            }
+            return Self::default_for_cwd();
+        };
         let base_dir = path
             .parent()
             .unwrap_or_else(|| Path::new("."))
             .to_path_buf();
-        let plugin_paths = raw
+        let plugin_paths = lint
             .plugin_paths
             .into_iter()
             .map(|path| resolve_config_path(&base_dir, path))
@@ -217,28 +264,76 @@ impl LintConfig {
         Ok(Self {
             base_dir,
             plugin_paths,
-            plugins: raw.plugins,
-            rules: raw.rules,
+            plugins: lint.plugins,
+            groups: lint.groups,
+            rules: lint.rules,
+        })
+    }
+
+    /// Resolve which rule ids should run from config and optional CLI overrides.
+    #[must_use = "handle rule/group selection errors before scanning"]
+    pub fn resolve_effective_rules(
+        &self,
+        cli_groups: &[String],
+        cli_rules: &[String],
+    ) -> Result<EffectiveRuleSelection, ConfigError> {
+        if !cli_groups.is_empty() || !cli_rules.is_empty() {
+            let mut rule_ids = BTreeSet::new();
+            for group in cli_groups {
+                rule_ids.extend(self.expand_group(group)?);
+            }
+            for rule_id in cli_rules {
+                rule_ids.insert(rule_id.clone());
+            }
+            return Ok(EffectiveRuleSelection {
+                source: RuleSelectionSource::Cli,
+                rule_ids,
+            });
+        }
+
+        if self.groups.is_empty() {
+            return Ok(EffectiveRuleSelection {
+                source: RuleSelectionSource::Default,
+                rule_ids: BTreeSet::new(),
+            });
+        }
+
+        let mut rule_ids = BTreeSet::new();
+        for group in &self.groups {
+            rule_ids.extend(self.expand_group(group)?);
+        }
+        for (rule_id, setting) in &self.rules {
+            if setting.enabled {
+                rule_ids.insert(rule_id.clone());
+            } else {
+                rule_ids.remove(rule_id);
+            }
+        }
+        Ok(EffectiveRuleSelection {
+            source: RuleSelectionSource::Config,
+            rule_ids,
         })
     }
 
     /// Load configured plugins into detector objects.
-    ///
-    /// Returns `Err` if plugin resolution fails, manifest loading fails, or any
-    /// enabled plugin script cannot be loaded.
     #[must_use = "load plugin detectors and handle failures before linting"]
-    pub fn load_plugin_detectors(&self) -> Result<Vec<Box<dyn Detector>>, ConfigError> {
+    pub fn load_plugin_detectors(
+        &self,
+        selection: &EffectiveRuleSelection,
+    ) -> Result<Vec<Box<dyn Detector>>, ConfigError> {
         let mut detectors: Vec<Box<dyn Detector>> = Vec::new();
         for plugin in &self.plugins {
             let package_dir = self.resolve_plugin_package(plugin)?;
             let manifest = read_plugin_manifest(plugin, &package_dir)?;
             let namespace = plugin_namespace(plugin);
 
-            for (rule_name, rule_id, setting) in self.enabled_rules_for_namespace(&namespace) {
-                let Some(rule_path) = manifest.rules.get(rule_name) else {
+            for (rule_name, rule_id, setting) in
+                self.plugin_rules_to_load(plugin, &namespace, selection)
+            {
+                let Some(rule_path) = manifest.rules.get(&rule_name) else {
                     return Err(ConfigError::MissingPluginRule {
                         plugin: plugin.to_string(),
-                        rule: rule_name.to_string(),
+                        rule: rule_name,
                         package_json: package_dir.join("package.json"),
                     });
                 };
@@ -247,36 +342,36 @@ impl LintConfig {
                     detectors::script::load_script_with_options(&script_path, &setting.options)
                         .map_err(|source| ConfigError::RuleLoadFailed {
                             plugin: plugin.to_string(),
-                            rule: rule_name.to_string(),
+                            rule: rule_name.clone(),
                             path: script_path.clone(),
                             source: Box::new(source),
                         })?;
                 if detector.name() != rule_name {
                     return Err(ConfigError::RuleNameMismatch {
                         plugin: plugin.to_string(),
-                        rule: rule_name.to_string(),
+                        rule: rule_name,
                         script: script_path,
                         name: detector.name().to_string(),
                     });
                 }
-                detectors.push(Box::new(ConfiguredDetector::with_name(
-                    detector,
-                    rule_id.to_string(),
-                )));
+                detectors.push(Box::new(ConfiguredDetector::with_name(detector, rule_id)));
             }
         }
         Ok(detectors)
     }
 
-    /// Apply configuration-level severity/enablement overrides to detectors in
-    /// declaration order.
+    /// Apply configuration-level severity overrides to detectors in declaration order.
     #[must_use]
-    pub fn apply_rule_settings(&self, detectors: Vec<Box<dyn Detector>>) -> Vec<Box<dyn Detector>> {
+    pub fn apply_rule_settings(
+        &self,
+        detectors: Vec<Box<dyn Detector>>,
+        respect_disabled: bool,
+    ) -> Vec<Box<dyn Detector>> {
         detectors
             .into_iter()
             .filter_map(|detector| {
                 let setting = self.rules.get(detector.name());
-                if setting.is_some_and(|setting| !setting.enabled) {
+                if respect_disabled && setting.is_some_and(|setting| !setting.enabled) {
                     return None;
                 }
                 let severity = setting.and_then(|setting| setting.severity);
@@ -291,10 +386,44 @@ impl LintConfig {
             .collect()
     }
 
+    /// Filter detectors to the resolved selection when one is active.
+    #[must_use]
+    pub fn filter_by_selection(
+        &self,
+        detectors: Vec<Box<dyn Detector>>,
+        selection: &EffectiveRuleSelection,
+    ) -> Vec<Box<dyn Detector>> {
+        if selection.source == RuleSelectionSource::Default {
+            return detectors;
+        }
+        detectors
+            .into_iter()
+            .filter(|detector| selection.rule_ids.contains(detector.name()))
+            .collect()
+    }
+
+    /// Validate that every selected rule id exists in the loaded detector set.
+    #[must_use = "handle unknown selected rules before scanning"]
+    pub fn validate_selection_against_detectors(
+        selection: &EffectiveRuleSelection,
+        detectors: &[Box<dyn Detector>],
+    ) -> Result<(), ConfigError> {
+        if selection.source == RuleSelectionSource::Default {
+            return Ok(());
+        }
+        let detector_names: BTreeSet<&str> =
+            detectors.iter().map(|detector| detector.name()).collect();
+        for rule_id in &selection.rule_ids {
+            if !detector_names.contains(rule_id.as_str()) {
+                return Err(ConfigError::UnknownRuleId {
+                    rule_id: rule_id.clone(),
+                });
+            }
+        }
+        Ok(())
+    }
+
     /// Validate every enabled rule-id in config against the concrete detector set.
-    ///
-    /// Returns `Err` when the config references a rule-id that does not exist in
-    /// `detectors`.
     #[must_use = "handle configuration validation errors before scanning"]
     pub fn validate_rule_settings(
         &self,
@@ -318,23 +447,98 @@ impl LintConfig {
                 .map_err(|source| ConfigError::MissingCurrentDir { source })?,
             plugin_paths: Vec::new(),
             plugins: Vec::new(),
+            groups: Vec::new(),
             rules: BTreeMap::new(),
         })
     }
 
-    fn enabled_rules_for_namespace(
+    fn expand_group(&self, group: &str) -> Result<BTreeSet<String>, ConfigError> {
+        if let Some(rule_ids) = expand_builtin_group(group) {
+            return Ok(rule_ids);
+        }
+
+        let Some((plugin, group_name)) = group.split_once('/') else {
+            return Err(ConfigError::UnknownGroupId {
+                group_id: group.to_string(),
+            });
+        };
+
+        let package_dir = self.resolve_plugin_package(plugin)?;
+        let manifest = read_plugin_manifest(plugin, &package_dir)?;
+        let Some(rule_names) = manifest.groups.get(group_name) else {
+            return Err(ConfigError::MissingPluginGroup {
+                plugin: plugin.to_string(),
+                group: group_name.to_string(),
+                package_json: package_dir.join("package.json"),
+            });
+        };
+
+        let namespace = plugin_namespace(plugin);
+        Ok(rule_names
+            .iter()
+            .map(|rule_name| format!("{namespace}/{rule_name}"))
+            .collect())
+    }
+
+    fn plugin_rules_to_load(
         &self,
+        _plugin: &str,
         namespace: &str,
-    ) -> impl Iterator<Item = (&str, &str, &RuleSetting)> {
+        selection: &EffectiveRuleSelection,
+    ) -> Vec<(String, String, RuleSetting)> {
         let prefix = format!("{namespace}/");
-        self.rules.iter().filter_map(move |(rule_id, setting)| {
-            if !setting.enabled {
-                return None;
-            }
-            rule_id
-                .strip_prefix(&prefix)
-                .map(|rule_name| (rule_name, rule_id.as_str(), setting))
-        })
+        match selection.source {
+            RuleSelectionSource::Default => self
+                .rules
+                .iter()
+                .filter_map(|(rule_id, setting)| {
+                    if !setting.enabled {
+                        return None;
+                    }
+                    let rule_name = rule_id.strip_prefix(&prefix)?;
+                    Some((rule_name.to_string(), rule_id.clone(), setting.clone()))
+                })
+                .collect(),
+            RuleSelectionSource::Config => selection
+                .rule_ids
+                .iter()
+                .filter_map(|rule_id| {
+                    let rule_name = rule_id.strip_prefix(&prefix)?;
+                    let setting = self
+                        .rules
+                        .get(rule_id)
+                        .cloned()
+                        .unwrap_or_else(|| RuleSetting {
+                            enabled: true,
+                            severity: None,
+                            options: empty_options(),
+                        });
+                    if setting.enabled {
+                        Some((rule_name.to_string(), rule_id.clone(), setting))
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+            RuleSelectionSource::Cli => selection
+                .rule_ids
+                .iter()
+                .filter_map(|rule_id| {
+                    let rule_name = rule_id.strip_prefix(&prefix)?;
+                    let mut setting =
+                        self.rules
+                            .get(rule_id)
+                            .cloned()
+                            .unwrap_or_else(|| RuleSetting {
+                                enabled: true,
+                                severity: None,
+                                options: empty_options(),
+                            });
+                    setting.enabled = true;
+                    Some((rule_name.to_string(), rule_id.clone(), setting))
+                })
+                .collect(),
+        }
     }
 
     fn resolve_plugin_package(&self, plugin: &str) -> Result<PathBuf, ConfigError> {
@@ -367,13 +571,26 @@ impl LintConfig {
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct DamlToolsFile {
+    #[serde(rename = "daml-tools")]
+    daml_tools: Option<DamlToolsRoot>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DamlToolsRoot {
+    lint: Option<RawLintConfig>,
+}
+
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RawConfig {
+#[serde(rename_all = "kebab-case")]
+struct RawLintConfig {
     #[serde(default)]
     plugin_paths: Vec<PathBuf>,
     #[serde(default)]
     plugins: Vec<String>,
+    #[serde(default)]
+    groups: Vec<String>,
     #[serde(default)]
     rules: BTreeMap<String, RuleSetting>,
 }
@@ -460,6 +677,8 @@ struct PackageJson {
 #[derive(Debug, Deserialize)]
 struct PluginManifest {
     rules: BTreeMap<String, PathBuf>,
+    #[serde(default)]
+    groups: BTreeMap<String, Vec<String>>,
 }
 
 fn find_config_path(explicit_path: Option<&Path>) -> Result<Option<PathBuf>, ConfigError> {
@@ -467,10 +686,15 @@ fn find_config_path(explicit_path: Option<&Path>) -> Result<Option<PathBuf>, Con
         return Ok(Some(path.to_path_buf()));
     }
 
-    let path = std::env::current_dir()
-        .map_err(|source| ConfigError::MissingCurrentDir { source })?
-        .join(".daml-lint.json");
-    Ok(path.is_file().then_some(path))
+    let cwd =
+        std::env::current_dir().map_err(|source| ConfigError::MissingCurrentDir { source })?;
+    for name in ["daml.yaml", "daml.yml"] {
+        let path = cwd.join(name);
+        if path.is_file() {
+            return Ok(Some(path));
+        }
+    }
+    Ok(None)
 }
 
 fn resolve_config_path(base_dir: &Path, path: PathBuf) -> PathBuf {
@@ -603,7 +827,7 @@ mod tests {
     #[test]
     fn config_error_exposes_recoverable_source_errors() {
         let read = ConfigError::ReadConfig {
-            path: PathBuf::from(".daml-lint.json"),
+            path: PathBuf::from("daml.yaml"),
             source: std::io::Error::new(std::io::ErrorKind::PermissionDenied, "no access"),
         };
         assert!(std::error::Error::source(&read)
@@ -627,5 +851,24 @@ mod tests {
             rule_id: "unknown-rule".to_string(),
         };
         assert!(std::error::Error::source(&err).is_none());
+    }
+
+    #[test]
+    fn yaml_lint_section_parses_kebab_case_fields() {
+        let yaml = r"
+daml-tools:
+  lint:
+    plugin-paths: [./plugins]
+    plugins: [template]
+    groups: [recommended]
+    rules:
+      missing-ensure-decimal: off
+";
+        let raw: DamlToolsFile = serde_yaml::from_str(yaml).unwrap();
+        let lint = raw.daml_tools.unwrap().lint.unwrap();
+        assert_eq!(lint.plugin_paths, vec![PathBuf::from("./plugins")]);
+        assert_eq!(lint.plugins, vec!["template".to_string()]);
+        assert_eq!(lint.groups, vec!["recommended".to_string()]);
+        assert!(!lint.rules.get("missing-ensure-decimal").unwrap().enabled);
     }
 }

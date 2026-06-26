@@ -1,7 +1,8 @@
 # daml-lint custom rule contract
 
 This page describes the custom rule interface loaded by `daml-lint --rules`
-and by installed plugin packages configured in `.daml-lint.json`.
+and by installed plugin packages configured in `daml.yaml` under
+`daml-tools.lint`.
 
 ## Runtime file
 
@@ -75,18 +76,19 @@ reports.
 
 ## Project config
 
-`daml-lint` reads `.daml-lint.json` from the current directory by default. Use
-`--config <FILE>` to load a different file.
+`daml-lint` reads `daml-tools.lint` from `./daml.yaml` then `./daml.yml` in the
+current directory by default. Use `--config <FILE>` to load a different YAML
+file. Legacy `.daml-lint.json` is not discovered.
 
-```json
-{
-  "plugins": ["template"],
-  "pluginPaths": ["./local-plugins"],
-  "rules": {
-    "missing-ensure-decimal": "off",
-    "template/template-requires-ensure": ["medium", { "allowEmptyEnsure": false }]
-  }
-}
+```yaml
+daml-tools:
+  lint:
+    plugins: [template]
+    plugin-paths: [./local-plugins]
+    groups: [recommended]
+    rules:
+      missing-ensure-decimal: off
+      template/template-requires-ensure: [medium, { allowEmptyEnsure: false }]
 ```
 
 Fields:
@@ -94,7 +96,8 @@ Fields:
 | Field | Shape | Meaning |
 |-------|-------|---------|
 | `plugins` | string array | Plugin package names or short names. `template` resolves to `daml-lint-plugin-template`. |
-| `pluginPaths` | string array | Additional package search roots, resolved relative to the config file. |
+| `plugin-paths` | string array | Additional package search roots, resolved relative to the config file. |
+| `groups` | string array | Built-in groups (`recommended`, `all`, `off`) or plugin groups (`plugin/group`). |
 | `rules` | object | Built-in rule IDs or plugin-qualified rule IDs mapped to settings. |
 
 Rule IDs for plugin packages use `plugin/rule`, following the same namespace
@@ -164,6 +167,9 @@ Installed plugin packages expose their rules through `package.json`:
   "damlLint": {
     "rules": {
       "template-requires-ensure": "dist/template-requires-ensure.js"
+    },
+    "groups": {
+      "recommended": ["template-requires-ensure"]
     }
   }
 }

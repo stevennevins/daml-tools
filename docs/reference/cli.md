@@ -73,25 +73,45 @@ warning. If no `.daml` files are found, the command exits `2`.
 | `-f`, `--format <FORMAT>` | Output format. Accepted values: `markdown`, `md`, `json`, `sarif`. Default: `markdown`. |
 | `-o`, `--output <FILE>` | Write the report to a file instead of stdout. |
 | `--fail-on <SEVERITY>` | Minimum finding severity that causes exit `1`. Accepted values: `critical`, `high`, `medium`, `low`, `info`. Default: `high`. |
-| `-c`, `--config <FILE>` | Load a JSON config file with plugins and rule settings. Default discovery: `.daml-lint.json` in the current directory. Requires the `custom-rules` feature. |
+| `-c`, `--config <FILE>` | Load a YAML config file with `daml-tools.lint` settings. Default discovery: `./daml.yaml` then `./daml.yml` in the current directory. Requires the `custom-rules` feature. |
+| `--rule <ID>` | Run a built-in or plugin rule by id. Repeatable. Replaces config rule/group selection. Requires the `custom-rules` feature. |
+| `--group <GROUP>` | Run a built-in or plugin rule group (`recommended`, `all`, `off`, or `plugin/group`). Repeatable. Replaces config rule/group selection. Requires the `custom-rules` feature. |
 | `--rules <FILE>` | Load a JavaScript custom rule file. Repeatable. Requires the `custom-rules` feature. |
 | `-h`, `--help` | Show clap-generated help. |
 | `-V`, `--version` | Show the crate version. |
 
 ### Config file
 
-`.daml-lint.json` can enable installed plugin rules, disable rules, and override
-rule severities:
+`daml.yaml` / `daml.yml` can configure linting under top-level `daml-tools.lint`.
+`daml-lint` discovers `./daml.yaml` then `./daml.yml` in the current directory.
+Legacy `.daml-lint.json` is not read.
 
-```json
-{
-  "plugins": ["template"],
-  "rules": {
-    "missing-ensure-decimal": "off",
-    "template/template-requires-ensure": ["medium", { "allowEmptyEnsure": false }]
-  }
-}
+```yaml
+daml-tools:
+  lint:
+    plugins: [template]
+    plugin-paths: [./local-plugins]
+    groups: [recommended, template/recommended]
+    rules:
+      missing-ensure-decimal: off
+      template/template-requires-ensure: [medium, { allowEmptyEnsure: false }]
 ```
+
+Built-in groups:
+
+| Group | Rules |
+|-------|-------|
+| `recommended` | All built-in detectors (default when no config or CLI selection). |
+| `all` | Same as `recommended`. |
+| `off` | No built-in detectors. |
+
+Plugin groups use `plugin/group` ids and are declared in the plugin package
+`package.json` under `damlLint.groups`.
+
+When `--rule` or `--group` is passed on the CLI, that selection replaces config
+`groups` and config rule enablement. Config severities and per-rule options still
+apply to selected rules. `--rules <FILE>` continues to load ad hoc JavaScript
+rule files and is separate from `--rule <ID>`.
 
 Plugin names resolve to npm packages with the `daml-lint-plugin-` prefix, so
 `template` resolves to `daml-lint-plugin-template`. Configured plugin rules are
@@ -133,7 +153,7 @@ formatted output. Each diagnostic carries a stable category tag such as
 `properties.category`, markdown report headings). A scan with parse errors exits
 `3`, even if no detector findings meet the `--fail-on` threshold.
 
-Rule settings in `.daml-lint.json` accept only canonical severities:
+Rule settings in `daml-tools.lint.rules` accept only canonical severities:
 `off`, `critical`, `high`, `medium`, `low`, and `info`. Legacy aliases such as
 `warn`/`error` and numeric shortcuts are rejected.
 

@@ -105,24 +105,40 @@ validate, but it does not replace the current runtime discovery contract.
 
 ## Run installed plugin rules
 
-Install a plugin package in the project and enable its rules from
-`.daml-lint.json`:
+Install a plugin package in the project and enable its rules from `daml.yaml`:
 
 ```sh
 npm install --save-dev daml-lint-plugin-template
-cat > .daml-lint.json <<'JSON'
-{
-  "plugins": ["template"],
-  "rules": {
-    "template/template-requires-ensure": "medium"
-  }
-}
-JSON
+cat > daml.yaml <<'YAML'
+daml-tools:
+  lint:
+    plugins: [template]
+    groups: [template/recommended]
+    rules:
+      template/template-requires-ensure: medium
+YAML
 daml-lint ./daml/ --fail-on medium
 ```
 
 Use `[severity, options]` when a rule accepts configuration. The options value
 is available to the rule as global `CONFIG`.
+
+## Select rules from the CLI
+
+Run one built-in rule:
+
+```sh
+daml-lint ./daml/ --rule missing-ensure-decimal
+```
+
+Run a built-in group:
+
+```sh
+daml-lint ./daml/ --group recommended
+```
+
+`--rule` selects rule ids; `--rules` loads JavaScript rule files. They are
+different flags.
 
 ## Use in CI
 
