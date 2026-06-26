@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used, dead_code)]
 
+use daml_lint::detector::Finding;
 use std::path::{Path, PathBuf};
 
 pub fn golden_path(name: &str) -> PathBuf {
@@ -188,4 +189,70 @@ pub fn normalize_cli_stderr(text: &str) -> String {
 
 pub fn normalize_cli_stdout(text: &str) -> String {
     normalize_markdown(text)
+}
+
+fn escape_summary_field(value: &str) -> String {
+    value.replace('|', "\\|").replace('\n', "\\n")
+}
+
+pub fn compact_builtin_finding_summary(finding: &Finding) -> String {
+    let file = finding
+        .file
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(normalize_path_string)
+        .unwrap_or_else(|| "<PATH>".to_string());
+    format!(
+        "{}|{}|{}|{}|{}|{}|{}",
+        finding.detector,
+        finding.severity,
+        file,
+        usize::from(finding.line),
+        usize::from(finding.column),
+        escape_summary_field(&finding.message),
+        escape_summary_field(&finding.evidence),
+    )
+}
+
+pub fn compact_builtin_findings_summary(findings: &[Finding]) -> String {
+    let mut lines: Vec<String> = findings
+        .iter()
+        .map(compact_builtin_finding_summary)
+        .collect();
+    lines.sort();
+    lines.join("\n")
+}
+
+pub fn builtin_summary_golden_name(rule_name: &str, case_name: &str) -> String {
+    let slug = case_name
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .fold(String::new(), |mut slug, ch| {
+            if ch == '_' && slug.ends_with('_') {
+                return slug;
+            }
+            slug.push(ch);
+            slug
+        })
+        .trim_matches('_')
+        .to_string();
+    format!("builtin_{rule_name}_{slug}.txt")
+}
+
+pub fn assert_builtin_summary_golden(rule_name: &str, case_name: &str, findings: &[Finding]) {
+    let golden_name = builtin_summary_golden_name(rule_name, case_name);
+    let actual = compact_builtin_findings_summary(findings);
+    if std::env::var_os("UPDATE_BUILTIN_GOLDENS").is_some() {
+        std::fs::write(golden_path(&golden_name), format!("{actual}\n")).unwrap_or_else(|e| {
+            panic!("failed to write builtin summary golden {golden_name}: {e}")
+        });
+        return;
+    }
+    assert_golden_normalized(&golden_name, &actual, |text| text.to_string());
 }

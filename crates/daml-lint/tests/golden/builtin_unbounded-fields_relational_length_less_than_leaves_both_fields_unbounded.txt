@@ -1,0 +1,1 @@
+unbounded-fields|MEDIUM|UnboundedFields.daml|3|1|Template 'T' has unbounded fields 'a', 'b' with no ensure clause bounding their length.|Fields without size bounds: a, b

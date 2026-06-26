@@ -1,0 +1,1 @@
+unguarded-division|HIGH|UnguardedDivision.daml|2|1|Unguarded division by '(y + 1)' — no prior > 0 check found in function 'f'.|x / y + 1

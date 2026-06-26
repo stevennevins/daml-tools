@@ -1,0 +1,1 @@
+head-of-list-query|MEDIUM|HeadOfListQuery.daml|5|1|Single-element list pattern '[(rulesCid, _)]' on query result in function 'getTransferFactory'. Crashes on 0 or 2+ results.|[(rulesCid, _)]

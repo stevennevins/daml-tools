@@ -1,0 +1,1 @@
+head-of-list-query|MEDIUM|HeadOfListQuery.daml|5|1|Head-of-list pattern '(:: (rightCid, _) _)' on query result in function 'getFeaturedAppRight'. Query results have non-deterministic order.|(:: (rightCid, _) _)

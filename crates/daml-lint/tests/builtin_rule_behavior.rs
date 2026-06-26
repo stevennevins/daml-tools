@@ -3,6 +3,9 @@
 #![cfg(feature = "js-runtime")]
 #![allow(clippy::unwrap_used)]
 
+mod common;
+
+use common::assert_builtin_summary_golden;
 use daml_lint::detector::{Detector, Severity};
 use daml_lint::detectors::create_builtin_detectors;
 use daml_lint::parser::parse_daml_with_diagnostics;
@@ -49,6 +52,7 @@ fn assert_rule_findings(
             script_detector.name()
         );
     }
+    assert_builtin_summary_golden(script_detector.name(), case_name, &findings);
 }
 
 fn expected_severity(rule_name: &str) -> Severity {

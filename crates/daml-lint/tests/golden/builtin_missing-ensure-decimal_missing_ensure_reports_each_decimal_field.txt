@@ -1,0 +1,2 @@
+missing-ensure-decimal|HIGH|MissingEnsureDecimal.daml|3|1|Template 'OpenMiningRound' has Decimal field 'amuletPrice' with no positivity bound (e.g. `amuletPrice > 0`) in its ensure clause.|amuletPrice : Decimal  -- no ensure clause found
+missing-ensure-decimal|HIGH|MissingEnsureDecimal.daml|3|1|Template 'OpenMiningRound' has Decimal field 'tickDuration' with no positivity bound (e.g. `tickDuration > 0`) in its ensure clause.|tickDuration : Decimal  -- no ensure clause found

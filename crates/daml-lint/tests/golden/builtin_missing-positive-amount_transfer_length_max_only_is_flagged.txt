@@ -1,0 +1,1 @@
+missing-positive-amount|HIGH|MissingPositiveAmount.daml|10|5|Choice 'Execute' checks max input count but not min. Empty inputs allowed.|Bounds 'transfer.inputHoldingCids' from above but never asserts it is non-empty

@@ -1,0 +1,1 @@
+unbounded-fields|MEDIUM|UnboundedFields.daml|3|1|Template 'BuyTrafficRequest' has unbounded fields 'trackingId', 'memberId', 'synchronizerId', 'reason' with no ensure clause bounding their length.|Fields without size bounds: trackingId, memberId, synchronizerId, reason

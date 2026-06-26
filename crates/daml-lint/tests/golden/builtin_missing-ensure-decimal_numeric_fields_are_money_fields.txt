@@ -1,0 +1,1 @@
+missing-ensure-decimal|HIGH|MissingEnsureDecimal.daml|3|1|Template 'Round' has Decimal field 'price' with no positivity bound (e.g. `price > 0`) in its ensure clause.|price : Decimal  -- no ensure clause found
