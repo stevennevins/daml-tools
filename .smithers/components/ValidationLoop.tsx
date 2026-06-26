@@ -26,6 +26,7 @@ export type ValidationLoopProps = {
   feedback?: string | null;
   done?: boolean;
   maxIterations?: number;
+  validationRetries?: number;
 };
 
 export function ValidationLoop({
@@ -37,6 +38,7 @@ export function ValidationLoop({
   feedback,
   done = false,
   maxIterations = 3,
+  validationRetries = 2,
 }: ValidationLoopProps) {
   const promptText = typeof prompt === "string" ? prompt : JSON.stringify(prompt ?? null);
   return (
@@ -49,7 +51,7 @@ export function ValidationLoop({
         </Task>
         <Task id={`${idPrefix}:validate`} output={validateOutputSchema} agent={validateAgents && validateAgents.length > 0
           ? validateAgents
-          : implementAgents} timeoutMs={1_800_000} heartbeatTimeoutMs={600_000}>
+          : implementAgents} retries={validationRetries} timeoutMs={1_800_000} heartbeatTimeoutMs={600_000}>
           <ValidatePrompt prompt={promptText} />
         </Task>
         <Review idPrefix={`${idPrefix}:review`} prompt={promptText} agents={reviewAgents} />
