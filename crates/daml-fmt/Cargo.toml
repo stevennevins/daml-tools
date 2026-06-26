@@ -47,6 +47,8 @@ workspace = true
 # daml-fmt depends on parser/syntax only. It must never pull in daml-lint.
 daml-parser.workspace = true
 daml-syntax.workspace = true
+serde.workspace = true
+serde_yaml.workspace = true
 
 [features]
 # The corpus-harness bins below are dev tools (they read the unpublished

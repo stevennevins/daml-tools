@@ -22,6 +22,18 @@ fn temp_file(name: &str, contents: &str) -> std::path::PathBuf {
     path
 }
 
+fn temp_dir(name: &str) -> std::path::PathBuf {
+    let id = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!(
+        "daml-fmt-cli-{}-{}-{}",
+        std::process::id(),
+        id,
+        name
+    ));
+    std::fs::create_dir_all(&path).unwrap();
+    path
+}
+
 #[test]
 fn help_exits_successfully() {
     let output = cmd().arg("--help").output().unwrap();
@@ -77,6 +89,105 @@ fn preserve_import_order_disables_import_organization() {
 
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stdout), input);
+}
+
+#[test]
+fn rule_flag_runs_only_selected_formatter_rule() {
+    let input = "module M where\n\nimport DA.Optional\nimport DA.List\n\nfoo : Int\nfoo = 1\n";
+    let output = cmd()
+        .arg("--rule")
+        .arg("imports")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            child.stdin.as_mut().unwrap().write_all(input.as_bytes())?;
+            child.wait_with_output()
+        })
+        .unwrap();
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "module M where\n\nimport DA.List\nimport DA.Optional\n\nfoo : Int\nfoo = 1\n"
+    );
+}
+
+#[test]
+fn daml_yaml_can_disable_formatter_rule() {
+    let project = temp_dir("config-project");
+    std::fs::write(
+        project.join("daml.yaml"),
+        r#"daml-tools:
+  fmt:
+    groups: [all]
+    rules:
+      imports: off
+"#,
+    )
+    .unwrap();
+    let input = "module M where\n\nimport DA.Optional\nimport DA.List\n\nfoo : Int\nfoo = 1\n";
+
+    let output = cmd()
+        .current_dir(&project)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            child.stdin.as_mut().unwrap().write_all(input.as_bytes())?;
+            child.wait_with_output()
+        })
+        .unwrap();
+    std::fs::remove_dir_all(&project).ok();
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "module M where\n\nimport DA.Optional\nimport DA.List\n\nfoo: Int\nfoo = 1\n"
+    );
+}
+
+#[test]
+fn cli_rule_selection_overrides_daml_yaml_selection() {
+    let project = temp_dir("cli-over-config-project");
+    std::fs::write(
+        project.join("daml.yaml"),
+        r#"daml-tools:
+  fmt:
+    rules:
+      imports: off
+"#,
+    )
+    .unwrap();
+    let input = "module M where\n\nimport DA.Optional\nimport DA.List\n\nfoo : Int\nfoo = 1\n";
+
+    let output = cmd()
+        .current_dir(&project)
+        .arg("--rule")
+        .arg("imports")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            child.stdin.as_mut().unwrap().write_all(input.as_bytes())?;
+            child.wait_with_output()
+        })
+        .unwrap();
+    std::fs::remove_dir_all(&project).ok();
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "module M where\n\nimport DA.List\nimport DA.Optional\n\nfoo : Int\nfoo = 1\n"
+    );
+}
+
+#[test]
+fn unknown_formatter_rule_exits_two() {
+    let output = cmd().arg("--rule").arg("unknown-rule").output().unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unknown-rule"));
 }
 
 #[test]

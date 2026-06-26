@@ -35,7 +35,7 @@
 //! Final whitespace + colon-spacing normalization remains token-gated
 //! (`crate::normalize_gaps`).
 
-use crate::ImportOrder;
+use crate::{FormatRule, ImportOrder};
 use daml_parser::ast::{
     ChoiceDecl, Decl, DoStmt, Expr, FieldAssign, Module, Span, TemplateBodyDecl, TypeAnnotation,
 };
@@ -147,27 +147,39 @@ pub fn format_ast(src: &str, options: crate::FormatOptions) -> String {
         return src.to_string();
     }
 
+    let rules = options.rules();
+
     // Step 1: structural reindent, each family as its own gated pass.
-    let mut base = run_structural_passes(src);
+    let mut base = if rules.contains(FormatRule::Layout) {
+        run_structural_passes(src)
+    } else {
+        src.to_string()
+    };
 
     // Step 2: layout-organizing rewrites that intentionally change layout
     // tokens while preserving the non-layout token stream. Import organization
     // is controlled separately because it reorders import declarations.
-    if options.import_order() == ImportOrder::Organize {
+    if rules.contains(FormatRule::Imports) && options.import_order() == ImportOrder::Organize {
         base = organize_imports(&base);
     }
-    base = rewrite_layout_forms(&base);
-    base = run_structural_passes(&base);
+    if rules.contains(FormatRule::SyntaxNormalization) {
+        base = rewrite_layout_forms(&base);
+        if rules.contains(FormatRule::Layout) {
+            base = run_structural_passes(&base);
+        }
+    }
 
     // Step 3: whitespace + colon normalization on top, gated vs `base`.
     // same_tokens keeps this final spacing step from changing `base`'s parse.
-    let full = crate::normalize_gaps(&base, crate::ColonSpacingMode::Canonical);
-    if same_tokens(&base, &full) {
-        return full;
-    }
-    let ws_only = crate::normalize_gaps(&base, crate::ColonSpacingMode::Preserve);
-    if same_tokens(&base, &ws_only) {
-        return ws_only;
+    if rules.contains(FormatRule::Spacing) {
+        let full = crate::normalize_gaps(&base, crate::ColonSpacingMode::Canonical);
+        if same_tokens(&base, &full) {
+            return full;
+        }
+        let ws_only = crate::normalize_gaps(&base, crate::ColonSpacingMode::Preserve);
+        if same_tokens(&base, &ws_only) {
+            return ws_only;
+        }
     }
     base
 }

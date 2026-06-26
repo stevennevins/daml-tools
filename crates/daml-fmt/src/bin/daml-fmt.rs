@@ -50,12 +50,31 @@ enum Mode {
     Check,
 }
 
+fn resolve_options(
+    config_path: Option<&std::path::Path>,
+    cli_rules: &[String],
+    cli_groups: &[String],
+) -> Result<FormatOptions, daml_fmt::config::FormatConfigError> {
+    let mut options = FormatOptions::default();
+    if let Some(config) = daml_fmt::config::FormatConfig::load(config_path)? {
+        options = options.with_rules(config.rules()?);
+    }
+    if let Some(rules) = daml_fmt::config::rules_from_cli(cli_rules, cli_groups)? {
+        options = options.with_rules(rules);
+    }
+    Ok(options)
+}
+
 fn main() {
     let mut mode = Mode::Print;
-    let mut options = FormatOptions::default();
     let mut files: Vec<PathBuf> = Vec::new();
+    let mut config_path: Option<PathBuf> = None;
+    let mut cli_rules: Vec<String> = Vec::new();
+    let mut cli_groups: Vec<String> = Vec::new();
+    let mut preserve_import_order = false;
     let mut mode_conflict = false;
-    for a in std::env::args().skip(1) {
+    let mut args = std::env::args().skip(1);
+    while let Some(a) = args.next() {
         match a.as_str() {
             "-w" | "--write" => {
                 if mode == Mode::Check {
@@ -74,7 +93,28 @@ fn main() {
                 }
             }
             "--preserve-import-order" => {
-                options = options.with_import_order(ImportOrder::Preserve);
+                preserve_import_order = true;
+            }
+            "--config" => {
+                let Some(path) = args.next() else {
+                    eprintln!("daml-fmt: --config requires a path");
+                    exit(2);
+                };
+                config_path = Some(path.into());
+            }
+            "--group" => {
+                let Some(group) = args.next() else {
+                    eprintln!("daml-fmt: --group requires a rule group");
+                    exit(2);
+                };
+                cli_groups.push(group);
+            }
+            "--rule" => {
+                let Some(rule) = args.next() else {
+                    eprintln!("daml-fmt: --rule requires a rule id");
+                    exit(2);
+                };
+                cli_rules.push(rule);
             }
             "-h" | "--help" => usage(0),
             "-v" | "--version" => {
@@ -87,6 +127,16 @@ fn main() {
             }
             s => files.push(s.into()),
         }
+    }
+    let mut options = match resolve_options(config_path.as_deref(), &cli_rules, &cli_groups) {
+        Ok(options) => options,
+        Err(error) => {
+            eprintln!("daml-fmt: {error}");
+            exit(2);
+        }
+    };
+    if preserve_import_order {
+        options = options.with_import_order(ImportOrder::Preserve);
     }
     if mode_conflict {
         eprintln!("daml-fmt: --write and --check are mutually exclusive");
