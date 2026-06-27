@@ -3,6 +3,8 @@
 mod common;
 
 use common::{assert_golden_normalized, normalize_cli_stderr, normalize_cli_stdout};
+#[cfg(unix)]
+use std::os::unix::{fs::PermissionsExt, process::CommandExt};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -10,6 +12,39 @@ static NEXT_TEMP: AtomicUsize = AtomicUsize::new(0);
 
 fn cmd() -> Command {
     Command::new(env!("CARGO_BIN_EXE_daml-lint"))
+}
+
+#[cfg(unix)]
+fn effective_uid() -> Option<u32> {
+    let output = Command::new("id").arg("-u").output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout).trim().parse().ok()
+}
+
+#[cfg(unix)]
+fn permission_denied_cmd() -> (Command, Option<std::path::PathBuf>) {
+    if effective_uid() != Some(0) {
+        return (cmd(), None);
+    }
+
+    // act runs Linux jobs as root, but these regression tests need the CLI
+    // child process to experience ordinary user permission failures.
+    let id = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!(
+        "daml-lint-cli-{}-{}-permission-bin",
+        std::process::id(),
+        id
+    ));
+    std::fs::copy(env!("CARGO_BIN_EXE_daml-lint"), &path).unwrap();
+    let mut perms = std::fs::metadata(&path).unwrap().permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&path, perms).unwrap();
+
+    let mut command = Command::new(&path);
+    command.uid(65534).gid(65534);
+    (command, Some(path))
 }
 
 fn temp_file(name: &str, contents: &str) -> std::path::PathBuf {
@@ -349,12 +384,17 @@ f = ()"#,
 f = 1"#,
     );
     let parent = bad.parent().unwrap().to_path_buf();
+    let original_good = std::fs::metadata(&good).unwrap().permissions();
+    let mut good_perm = original_good.clone();
+    good_perm.set_mode(0o644);
+    std::fs::set_permissions(&good, good_perm).unwrap();
     let original_bad = std::fs::metadata(&bad).unwrap().permissions();
     let mut bad_perm = original_bad.clone();
     bad_perm.set_mode(0o000);
     std::fs::set_permissions(&bad, bad_perm).unwrap();
 
-    let output = cmd()
+    let (mut command, permission_bin) = permission_denied_cmd();
+    let output = command
         .current_dir(&parent)
         .arg(&good)
         .arg(&bad)
@@ -362,8 +402,12 @@ f = 1"#,
         .unwrap();
 
     std::fs::set_permissions(&bad, original_bad).unwrap();
+    std::fs::set_permissions(&good, original_good).unwrap();
     std::fs::remove_file(&bad).ok();
     std::fs::remove_file(&good).ok();
+    if let Some(path) = permission_bin {
+        std::fs::remove_file(path).ok();
+    }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert_eq!(output.status.code(), Some(2));
@@ -380,16 +424,29 @@ fn unreadable_subdirectory_exits_two() {
     let root = temp_dir("unreadable-dir-project");
     let unreadable = root.join("unreadable");
     std::fs::create_dir(&unreadable).unwrap();
+    let original_root = std::fs::metadata(&root).unwrap().permissions();
+    let mut root_perm = original_root.clone();
+    root_perm.set_mode(0o755);
+    std::fs::set_permissions(&root, root_perm).unwrap();
     let original_dir = std::fs::metadata(&unreadable).unwrap().permissions();
     let mut dir_perm = original_dir.clone();
     dir_perm.set_mode(0o000);
     std::fs::set_permissions(&unreadable, dir_perm).unwrap();
 
-    let output = cmd().current_dir(&root).arg("unreadable").output().unwrap();
+    let (mut command, permission_bin) = permission_denied_cmd();
+    let output = command
+        .current_dir(&root)
+        .arg("unreadable")
+        .output()
+        .unwrap();
 
     std::fs::set_permissions(&unreadable, original_dir).unwrap();
+    std::fs::set_permissions(&root, original_root).unwrap();
     std::fs::remove_dir_all(&unreadable).ok();
     std::fs::remove_dir_all(&root).ok();
+    if let Some(path) = permission_bin {
+        std::fs::remove_file(path).ok();
+    }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert_eq!(output.status.code(), Some(2));
