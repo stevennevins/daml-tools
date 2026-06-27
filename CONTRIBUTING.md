@@ -78,6 +78,14 @@ in CI instead.
 The formatter `npm test` command runs `node test/diff.js`, the same 924-file
 differential test used by the pre-push hook.
 
+Maintainers applying required PR signoffs should use the locked mise and act
+workflow in [`docs/how-to/local-ci.md`](docs/how-to/local-ci.md). That guide maps
+each required `signoff/...` context to the GitHub Actions job to run with
+`MISE_LOCKED=1 mise x -- act` and the matching status command to create with
+`MISE_LOCKED=1 mise x -- gh signoff`. Do not use `gh signoff install` or
+`gh signoff uninstall` on the real repo; preserve branch protection through the
+runbook in that guide instead.
+
 ## Run focused checks
 
 When changing shipped lint rules or rule generation, check the generated rules:

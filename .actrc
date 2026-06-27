@@ -1,0 +1,5 @@
+--action-cache-path=.act/action-cache
+--cache-server-path=.act/cache-server
+--artifact-server-path=.act/artifacts
+-P ubuntu-latest=catthehacker/ubuntu@sha256:5523ae08b8014721216e0e3a966e1b64b61b57382362282504ee59d27092a2d2
+-P ubuntu-22.04=catthehacker/ubuntu@sha256:a1aa77d0719bf8f5c1b93b856bec6539d2b68102267a0dc27a4d8c01b6bc7e97

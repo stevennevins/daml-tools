@@ -27,13 +27,20 @@ concurrency:
   group: docs-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  MISE_LOCKED: "1"
+
 jobs:
   docs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: jdx/mise-action@v4.2.0
+        with:
+          install: false
+      - name: Install locked tools
+        run: mise install rust@1.96.0 lychee@0.24.2
       - name: docs and version checks
         shell: bash
         run: |
@@ -91,17 +98,14 @@ jobs:
 
           echo "docs/version checks passed"
       - name: markdown link check
-        uses: lycheeverse/lychee-action@v2
-        with:
-          args: >-
-            --offline
-            --no-progress
-            './README.md'
-            './CONTRIBUTING.md'
-            './docs/**/*.md'
-            './crates/daml-parser/README.md'
-            './crates/daml-syntax/README.md'
-            './crates/daml-lint/README.md'
-            './crates/daml-fmt/README.md'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          lychee
+          --offline
+          --no-progress
+          './README.md'
+          './CONTRIBUTING.md'
+          './docs/**/*.md'
+          './crates/daml-parser/README.md'
+          './crates/daml-syntax/README.md'
+          './crates/daml-lint/README.md'
+          './crates/daml-fmt/README.md'
