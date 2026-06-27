@@ -115,7 +115,7 @@ function on_template(template) {
 fn dts_exposes_structured_only_contract() {
     let dts = std::fs::read_to_string(manifest_path("examples/daml-lint.d.ts"))
         .expect("read daml-lint.d.ts");
-    assert!(dts.contains("ir_version: 4"));
+    assert!(dts.contains("ir_version: 8"));
     assert!(
         dts.contains("| { Lit: { kind:"),
         "daml-lint.d.ts must expose TypeNode.Lit for type-level literals"
@@ -173,7 +173,7 @@ function field(template, name) {
 }
 
 function check(m) {
-  if (m.ir_version !== 4) report(1, `expected ir_version 4, got ${m.ir_version}`);
+  if (m.ir_version !== 8) report(1, `expected ir_version 8, got ${m.ir_version}`);
   const t = m.templates[0];
   checkNoOldFields("template", t, ["signatories", "observers"]);
   if (typeof t.key_type === "string") report(1, "template key_type is still a string");
@@ -331,6 +331,7 @@ fn every_node_kind_reaches_scripts() {
     let probe = r#"module Probe where
 
 import qualified DA.Map as Map
+import "probe-pkg" DA.Internal
 import DA.Time
 
 template Probe
@@ -380,6 +381,7 @@ template Probe
 
     interface instance Probeable for Probe where
       view = ProbeView owner
+      getProbeOwner = owner
 
 interface Probeable where
   viewtype ProbeView
@@ -422,8 +424,18 @@ function exprKinds(e, seen) {
     if (Array.isArray(v)) {
       for (const item of v) {
         if (item && typeof item === "object") {
-          if ("body" in item && "pattern" in item) exprKinds(item.body, seen);
-          else if ("value" in item && "name" in item) {
+          if ("body" in item && "pattern" in item) {
+            exprKinds(item.body, seen);
+            if (Array.isArray(item.branches)) {
+              for (const branch of item.branches) {
+                for (const guard of branch.guards ?? []) exprKinds(guard, seen);
+                exprKinds(branch.body, seen);
+              }
+            }
+            if (Array.isArray(item.where_bindings)) {
+              for (const binding of item.where_bindings) exprKinds(binding.value, seen);
+            }
+          } else if ("value" in item && "name" in item) {
             if (item.value !== null) exprKinds(item.value, seen);
           } else if (Object.keys(item).length === 1) {
             if (k === "DoBlock") stmtKinds([item], seen);
@@ -505,6 +517,7 @@ function check(m) {
     if (t.signatory_exprs.length > 0) seen.add("SignatoryExpr");
     if (t.interface_instances.length > 0) {
       seen.add("InterfaceInstance");
+      if (t.interface_instances[0].view_expr !== null) seen.add("InstanceView");
       if (t.interface_instances[0].methods.length > 0) seen.add("InstanceMethod");
     }
     for (const f of t.fields) {
@@ -527,6 +540,7 @@ function check(m) {
   }
   for (const i of m.imports) {
     if (i.qualified === "qualified" && i.alias !== null) seen.add("QualifiedAlias");
+    if (i.package_label !== null) seen.add("PackageLabel");
   }
   for (const fn of m.functions) {
     seen.add("Function");
@@ -564,6 +578,7 @@ function check(m) {
         "Exercise",
         "TryCatch",
         "QualifiedAlias",
+        "PackageLabel",
         "Function",
         "Binder",
         "KeyExpr",
@@ -573,6 +588,7 @@ function check(m) {
         "ControllerExpr",
         "ChoiceObserver",
         "InterfaceInstance",
+        "InstanceView",
         "InstanceMethod",
         "Interface",
         "Viewtype",

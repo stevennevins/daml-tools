@@ -405,3 +405,178 @@ template T
                 )
     ));
 }
+
+#[test]
+fn choice_authority_metadata_is_exposed_in_ir() {
+    let source = r#"module Test where
+
+template ProposeConsortiumAuthority
+  with
+    proposer: Party
+    accepted: [Party]
+    obs: [Party]
+    consortiumParty: Party
+  where
+    signatory proposer
+
+    choice Ratify2 : ContractId HasAuthority
+      where
+        controller accepted
+        authority consortiumParty
+      do
+        create HasAuthority with party = consortiumParty
+"#;
+    let module = parse_module(source, Path::new("TestChoiceAuthority.daml"));
+    let choice = &module.templates[0].choices[0];
+    assert_eq!(choice.name, "Ratify2");
+    assert!(matches!(
+        &choice.controller_exprs[0],
+        Expr::Var { name, .. } if name == "accepted"
+    ));
+    assert!(matches!(
+        &choice.authority_exprs[0],
+        Expr::Var { name, .. } if name == "consortiumParty"
+    ));
+    assert!(choice
+        .body
+        .iter()
+        .any(|s| matches!(s, Statement::Create { .. })));
+}
+
+#[test]
+fn case_alternative_guards_and_where_are_exposed_in_ir() {
+    let source = r#"module Test where
+
+template T
+  with
+    p : Party
+  where
+    signatory p
+    ensure case p of
+      alice
+        | alice == p
+        , y <- Some p
+        -> True
+      v -> helper v where helper z = z
+"#;
+    let module = parse_module(source, Path::new("TestCaseGuards.daml"));
+    let Expr::Case { alts, .. } = &module.templates[0]
+        .ensure_clause
+        .as_ref()
+        .expect("ensure clause")
+        .expr
+    else {
+        panic!("expected case expression in ensure clause");
+    };
+    assert_eq!(alts.len(), 2);
+
+    let left = &alts[0];
+    assert_eq!(left.branches.len(), 1);
+    assert_eq!(left.branches[0].guards.len(), 2);
+    assert!(matches!(
+        &left.branches[0].guards[0],
+        daml_lint::ir::CaseGuard::Bool { .. }
+    ));
+    assert!(matches!(
+        &left.branches[0].guards[1],
+        daml_lint::ir::CaseGuard::Pattern { pattern, .. } if pattern == "y"
+    ));
+
+    let v = &alts[1];
+    assert_eq!(v.where_bindings.len(), 1);
+    assert_eq!(v.where_bindings[0].name, "helper z");
+}
+
+#[test]
+fn interface_instance_view_is_exposed_in_ir() {
+    let source = r#"module Test where
+
+template Asset
+  with
+    owner : Party
+  where
+    signatory owner
+    interface instance Token for Asset where
+      view = EmptyInterfaceView
+      getOwner = owner
+"#;
+    let module = parse_module(source, Path::new("TestInterfaceInstanceView.daml"));
+    let instance = &module.templates[0].interface_instances[0];
+    assert_eq!(instance.interface_name, "Token");
+    assert!(matches!(
+        instance.view_expr.as_ref(),
+        Some(Expr::Con { name, .. }) if name == "EmptyInterfaceView"
+    ));
+    assert_eq!(instance.methods, vec!["getOwner"]);
+}
+
+#[test]
+fn package_qualified_import_label_is_exposed_in_ir() {
+    let source = r#"module Test where
+
+import "my-package-id" Lib.Core
+import qualified "other-pkg" Lib.Alt as AltLib
+"#;
+    let module = parse_module(source, Path::new("TestPackageImport.daml"));
+    assert_eq!(module.imports.len(), 2);
+    assert_eq!(
+        module.imports[0].package_label.as_deref(),
+        Some("my-package-id")
+    );
+    assert_eq!(module.imports[0].module_name, "Lib.Core");
+    assert_eq!(module.imports[0].qualified, ImportStyle::Unqualified);
+    assert_eq!(
+        module.imports[1].package_label.as_deref(),
+        Some("other-pkg")
+    );
+    assert_eq!(module.imports[1].module_name, "Lib.Alt");
+    assert_eq!(module.imports[1].qualified, ImportStyle::Qualified);
+    assert_eq!(module.imports[1].alias.as_deref(), Some("AltLib"));
+}
+
+#[test]
+fn try_catch_guarded_handler_preserves_all_branch_bodies_in_ir() {
+    let source = r#"module Test where
+
+template T
+  with
+    p : Party
+  where
+    signatory p
+
+    choice Run : ()
+      controller p
+      do
+        try do
+          pure ()
+        catch
+          err
+            | err == "a" -> create AssetA with owner = p
+            | err == "b" -> create AssetB with owner = p
+"#;
+    let module = parse_module(source, Path::new("TestTryCatchBranches.daml"));
+    let choice = &module.templates[0].choices[0];
+    let try_catch = choice
+        .body
+        .iter()
+        .find(|s| matches!(s, Statement::TryCatch { .. }))
+        .expect("expected TryCatch statement in choice body");
+    let Statement::TryCatch { catch_body, .. } = try_catch else {
+        panic!("expected TryCatch statement");
+    };
+    let create_names: Vec<&str> = catch_body
+        .iter()
+        .filter_map(|s| match s {
+            Statement::Create { template_name, .. } => Some(template_name.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        create_names.contains(&"AssetA"),
+        "catch_body should include first guarded branch create, got {create_names:?}"
+    );
+    assert!(
+        create_names.contains(&"AssetB"),
+        "catch_body should include second guarded branch create, got {create_names:?}"
+    );
+}

@@ -176,6 +176,13 @@ fn inline_case_alts_are_expanded() {
 }
 
 #[test]
+fn inline_guarded_case_alts_are_preserved() {
+    let src = "f x = case x of n | n > 0 -> 1 | n <= 0 -> 0\n";
+    assert_eq!(format_source(src), src);
+    assert_eq!(format_source(&format_source(src)), format_source(src));
+}
+
+#[test]
 fn nested_case_rides_outer_shift() {
     // Inner case (an alt body) rides the outer alt block's uniform shift; the
     // inner alts stay aligned relative to their own `case`.

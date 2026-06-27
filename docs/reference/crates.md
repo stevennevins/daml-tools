@@ -47,7 +47,7 @@ workspace MSRV so `cargo install` and CI stay aligned.
 
 | Crate | Version | Kind | Package description |
 |-------|---------|------|---------------------|
-| [`daml-parser`](../../crates/daml-parser) | `0.9.0` | library | Lossless lexer, layout resolver, and parser for the Daml smart-contract language. |
+| [`daml-parser`](../../crates/daml-parser) | `0.10.0` | library | Lossless lexer, layout resolver, and parser for the Daml smart-contract language. |
 | [`daml-syntax`](../../crates/daml-syntax) | `0.8.0` | library | Shared parsed-source surface for Daml tools. |
 | [`daml-lint`](../../crates/daml-lint) | `0.9.0` | library and CLI | Static analysis scanner for Daml smart contracts. |
 | [`daml-fmt`](../../crates/daml-fmt) | `0.7.0` | library and CLI | Canonical code formatter for the Daml smart-contract language, built on shared syntax. |
@@ -84,6 +84,23 @@ by `daml-syntax`.
 
 The normal construction path is parser-created AST values. The AST modules are
 public for inspection by tools.
+
+`ChoiceDecl.authority_exprs` and braced/layout `where` metadata blocks preserve
+source choice `controller`, `observer`, and `authority` clauses; lint IR
+`Choice.authority_exprs` exposes them (`ir_version: 5`). `InterfaceInstanceDecl.items`
+is a source-ordered `InterfaceInstanceBodyItem` list that distinguishes
+`view = ...` from method implementations; lint `InterfaceInstance.view_expr`
+is separate from `methods` (`ir_version: 6`). `Alt` case alternatives retain
+source-ordered `branches` with boolean/pattern guards and alternative-local
+`where_bindings`; lint `CaseAlt` mirrors that shape (`ir_version: 7`).
+Module-level `Decl::Fixity` declarations drive in-module expression grouping
+(imported fixity is out of scope). `Pat::Record` models brace/`with` record
+pattern fields while positional `Pat::Con` patterns stay unchanged. `ImportDecl.package_label`
+preserves package-qualified import string literals from source; lint
+`Import.package_label` mirrors the decoded label (`ir_version: 8`).
+
+`daml-parser` does not model LF package metadata, `NameMap`s, qualified
+`PackageId`s, Update/internal expression nodes, or compiler desugaring.
 
 ## `daml-syntax`
 

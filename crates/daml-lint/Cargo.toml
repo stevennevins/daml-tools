@@ -44,7 +44,7 @@ custom = { engines = { node = ">=18" }, publishConfig = { access = "public" } }
 workspace = true
 
 [dependencies]
-# Requires daml-parser >=0.9.0 for the typed clean-break AST/diagnostic API.
+# Requires daml-parser >=0.10.0 for the typed clean-break AST/diagnostic API.
 daml-parser.workspace = true
 daml-syntax.workspace = true
 serde.workspace = true

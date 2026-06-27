@@ -428,8 +428,40 @@ pub enum Expr {
 pub struct CaseAlt {
     /// Pattern rendered to source text (`Some x`, `[]`, `_`).
     pub pattern: String,
-    /// Alternative body expression.
+    /// First branch body for convenience.
     pub body: Expr,
+    /// Source-ordered guarded/unguarded branches for this alternative.
+    pub branches: Vec<CaseBranch>,
+    /// `where` helper bindings attached to this alternative.
+    pub where_bindings: Vec<LetBinding>,
+}
+
+/// One guarded or unguarded branch of a case alternative.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct CaseBranch {
+    /// Guard qualifiers before `->`; empty for unguarded branches.
+    pub guards: Vec<CaseGuard>,
+    /// Branch body after `->`.
+    pub body: Expr,
+}
+
+/// Boolean or pattern guard in a case alternative branch.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CaseGuard {
+    /// Boolean guard expression.
+    Bool {
+        /// Guard expression.
+        expr: Expr,
+    },
+    /// Pattern guard `pattern <- expr`.
+    Pattern {
+        /// Rendered pattern text.
+        pattern: String,
+        /// Source expression on the right of `<-`.
+        expr: Expr,
+    },
 }
 
 /// A `let` binding inside an expression.
@@ -498,6 +530,8 @@ pub struct Template {
 pub struct InterfaceInstance {
     /// Implemented interface name.
     pub interface_name: String,
+    /// `view = <expr>` when declared in the instance body.
+    pub view_expr: Option<Expr>,
     /// Implemented method names, in declaration order.
     pub methods: Vec<String>,
     /// Interface instance declaration location.
@@ -526,6 +560,8 @@ pub struct Choice {
     pub controller_exprs: Vec<Expr>,
     /// Choice observers, if declared.
     pub observer_exprs: Vec<Expr>,
+    /// Choice authority expressions from `authority` metadata clauses.
+    pub authority_exprs: Vec<Expr>,
     /// Choice parameters in declaration order.
     pub parameters: Vec<Field>,
     /// Return type, if declared and successfully lowered.
@@ -707,6 +743,11 @@ pub struct Import {
     pub qualified: ImportStyle,
     /// Import alias from `as`, if present.
     pub alias: Option<String>,
+    /// Source package label from `import "pkg" Module` when present.
+    ///
+    /// This is decoded literal text from source syntax, not a resolved LF
+    /// package id.
+    pub package_label: Option<String>,
     /// Import declaration location.
     pub span: Span,
 }

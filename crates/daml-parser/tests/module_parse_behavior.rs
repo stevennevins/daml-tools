@@ -222,6 +222,156 @@ f >=> g = \\x -> f x >>= g
     );
 }
 
+fn get_template<'a>(module: &'a Module, name: &str) -> &'a TemplateDecl {
+    module
+        .decls
+        .iter()
+        .find_map(|d| match d {
+            Decl::Template(t) if t.name.as_str() == name => Some(t),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("missing template declaration {name}"))
+}
+
+fn get_template_choice<'a>(module: &'a Module, template: &str, choice: &str) -> &'a ChoiceDecl {
+    get_template(module, template)
+        .body
+        .iter()
+        .find_map(|d| match d {
+            TemplateBodyDecl::Choice(c) if c.name.as_str() == choice => Some(c),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("missing choice {choice} on template {template}"))
+}
+
+const fn expr_var_name(expr: &Expr) -> Option<&str> {
+    match expr {
+        Expr::Var { name, .. } => Some(name.as_str()),
+        _ => None,
+    }
+}
+
+#[test]
+fn choice_metadata_supports_direct_where_and_authority_clauses() {
+    let (module, diagnostics) = parse(
+        "module M where
+template T
+  with
+    p: Party
+  where
+    signatory p
+
+    choice OldDirect : ()
+      observer obs
+      controller ctrl
+      do pure ()
+
+    choice BracedWhere : () where { controller ctrl } do pure ()
+
+    choice LayoutWhere : ()
+      where
+        controller ctrl
+      do pure ()
+
+    choice WithAuthority : ()
+      where
+        authority auth
+        controller ctrl
+        observer obs
+      do pure ()
+
+    choice BracedAuthority : () where { observer obs; authority auth; controller ctrl } do pure ()
+",
+    );
+
+    assert!(
+        diagnostics.is_empty(),
+        "unexpected diagnostics: {diagnostics:?}"
+    );
+
+    let old = get_template_choice(&module, "T", "OldDirect");
+    assert_eq!(old.observers.len(), 1);
+    assert_eq!(expr_var_name(&old.observers[0]), Some("obs"));
+    assert_eq!(old.controllers.len(), 1);
+    assert_eq!(expr_var_name(&old.controllers[0]), Some("ctrl"));
+    assert!(old.authority_exprs.is_empty());
+    assert!(matches!(old.body.as_ref(), Some(Expr::Do { .. })));
+    assert!(old.span.is_valid());
+
+    let braced = get_template_choice(&module, "T", "BracedWhere");
+    assert_eq!(braced.controllers.len(), 1);
+    assert_eq!(expr_var_name(&braced.controllers[0]), Some("ctrl"));
+    assert!(braced.observers.is_empty());
+    assert!(matches!(braced.body.as_ref(), Some(Expr::Do { .. })));
+
+    let layout = get_template_choice(&module, "T", "LayoutWhere");
+    assert_eq!(layout.controllers.len(), 1);
+    assert_eq!(expr_var_name(&layout.controllers[0]), Some("ctrl"));
+    assert!(matches!(layout.body.as_ref(), Some(Expr::Do { .. })));
+
+    let authority = get_template_choice(&module, "T", "WithAuthority");
+    assert_eq!(expr_var_name(&authority.authority_exprs[0]), Some("auth"));
+    assert_eq!(expr_var_name(&authority.controllers[0]), Some("ctrl"));
+    assert_eq!(expr_var_name(&authority.observers[0]), Some("obs"));
+    assert!(matches!(authority.body.as_ref(), Some(Expr::Do { .. })));
+
+    let braced_auth = get_template_choice(&module, "T", "BracedAuthority");
+    assert_eq!(expr_var_name(&braced_auth.observers[0]), Some("obs"));
+    assert_eq!(expr_var_name(&braced_auth.authority_exprs[0]), Some("auth"));
+    assert_eq!(expr_var_name(&braced_auth.controllers[0]), Some("ctrl"));
+}
+
+#[test]
+fn case_alternatives_preserve_guards_and_where_bindings() {
+    let (module, diagnostics) = parse(
+        "module M where
+f x = case x of
+  Left cmd
+    | cmd.name == \"Submit\"
+    , Some y <- cmd.detail
+    -> y
+  n | n > 0 -> \"pos\"
+    | n <= 0 -> \"zero\"
+  v -> helper v where helper z = z + 1
+  _ -> 0
+",
+    );
+
+    assert!(diagnostics.is_empty());
+    let Expr::Case { alts, .. } = get_first_equation_body(&module, "f") else {
+        panic!("expected case expression");
+    };
+    assert_eq!(alts.len(), 4);
+
+    let left = &alts[0];
+    assert_eq!(left.branches.len(), 1);
+    assert_eq!(left.branches[0].guards.len(), 2);
+    assert!(matches!(
+        &left.branches[0].guards[0],
+        GuardQualifier::Bool { .. }
+    ));
+    assert!(matches!(
+        &left.branches[0].guards[1],
+        GuardQualifier::Pattern { .. }
+    ));
+
+    let n = &alts[1];
+    assert_eq!(n.branches.len(), 2);
+    assert_eq!(n.branches[0].guards.len(), 1);
+    assert_eq!(n.branches[1].guards.len(), 1);
+
+    let v = &alts[2];
+    assert_eq!(v.branches.len(), 1);
+    assert!(v.branches[0].guards.is_empty());
+    assert_eq!(v.where_bindings.len(), 1);
+    assert!(matches!(
+        &v.where_bindings[0].pat,
+        Pat::Var { name, .. } if name.as_str() == "helper"
+    ));
+
+    assert!(alts[3].branches[0].guards.is_empty());
+}
+
 #[test]
 fn pattern_synonyms_are_explicit_unsupported_syntax() {
     let (module, diagnostics) = parse(
@@ -241,5 +391,55 @@ pattern Nil = []
     assert!(
         diagnostics.is_empty(),
         "explicit unsupported AST nodes should not make lossless corpus files diagnostically invalid"
+    );
+}
+
+#[test]
+fn alt_branch_pos_and_span_anchor_at_branch_delimiters() {
+    let src = "module M where
+f x = case x of
+  n | n > 0 -> \"pos\"
+  v -> \"plain\"
+";
+    let (module, diagnostics) = parse(src);
+    assert!(diagnostics.is_empty());
+    let Expr::Case { alts, .. } = get_first_equation_body(&module, "f") else {
+        panic!("expected case expression");
+    };
+    assert_eq!(alts.len(), 2);
+
+    let guarded = &alts[0].branches[0];
+    let guarded_span = guarded.span.get(src).expect("guarded branch span");
+    assert!(
+        guarded_span.starts_with('|'),
+        "guarded branch span should start with '|', got {guarded_span:?}"
+    );
+    let guarded_line = src
+        .lines()
+        .nth(guarded.pos.line - 1)
+        .expect("guarded branch position line should exist");
+    assert_eq!(
+        guarded_line
+            .as_bytes()
+            .get(guarded.pos.column - 1)
+            .map(|b| *b as char),
+        Some('|'),
+        "guarded branch pos should point at '|'"
+    );
+
+    let unguarded = &alts[1].branches[0];
+    let unguarded_span = unguarded.span.get(src).expect("unguarded branch span");
+    assert!(
+        unguarded_span.starts_with("->"),
+        "unguarded branch span should start with '->', got {unguarded_span:?}"
+    );
+    let unguarded_line = src
+        .lines()
+        .nth(unguarded.pos.line - 1)
+        .expect("unguarded branch position line should exist");
+    assert_eq!(
+        &unguarded_line[unguarded.pos.column - 1..unguarded.pos.column - 1 + 2],
+        "->",
+        "unguarded branch pos should point at '->'"
     );
 }

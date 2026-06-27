@@ -37,7 +37,8 @@
 
 use crate::{FormatRule, ImportOrder};
 use daml_parser::ast::{
-    ChoiceDecl, Decl, DoStmt, Expr, FieldAssign, Module, Span, TemplateBodyDecl, TypeAnnotation,
+    Alt, ChoiceDecl, Decl, DoStmt, Expr, FieldAssign, GuardQualifier, Module, Span,
+    TemplateBodyDecl, TypeAnnotation,
 };
 use daml_parser::lexer::TriviaKind;
 use daml_syntax::{SourceFile, SourceTokens};
@@ -758,6 +759,39 @@ enum RewriteLeadMode {
     InlineOnly,
 }
 
+fn case_alts_are_simple_inline(alts: &[Alt]) -> bool {
+    alts.iter().all(|alt| {
+        alt.branches.len() == 1
+            && alt.branches[0].guards.is_empty()
+            && alt.where_bindings.is_empty()
+    })
+}
+
+fn collect_case_alt_rewrites(
+    src: &str,
+    alts: &[Alt],
+    indent: usize,
+    rewrite_mode: RewriteLeadMode,
+    replacements: &mut Vec<Replacement>,
+) {
+    for alt in alts {
+        for branch in &alt.branches {
+            for guard in &branch.guards {
+                match guard {
+                    GuardQualifier::Bool { expr, .. } | GuardQualifier::Pattern { expr, .. } => {
+                        collect_expr_rewrite(src, expr, indent, rewrite_mode, replacements)
+                    }
+                    _ => {}
+                }
+            }
+            collect_expr_rewrite(src, &branch.body, indent, rewrite_mode, replacements);
+        }
+        for wb in &alt.where_bindings {
+            collect_expr_rewrite(src, &wb.expr, indent, rewrite_mode, replacements);
+        }
+    }
+}
+
 fn collect_expr_rewrite(
     src: &str,
     expr: &Expr,
@@ -804,7 +838,8 @@ fn collect_expr_rewrite(
             scrutinee, alts, ..
         } if rewrite_mode == RewriteLeadMode::LeadCandidate
             && same_line_span(src, span)
-            && !alts.is_empty() =>
+            && !alts.is_empty()
+            && case_alts_are_simple_inline(alts) =>
         {
             let ind = " ".repeat(indent);
             let mut text = String::from("case ");
@@ -979,15 +1014,13 @@ fn collect_expr_rewrite(
                         RewriteLeadMode::InlineOnly,
                         replacements,
                     );
-                    for alt in alts {
-                        collect_expr_rewrite(
-                            src,
-                            &alt.body,
-                            child_indent,
-                            RewriteLeadMode::InlineOnly,
-                            replacements,
-                        );
-                    }
+                    collect_case_alt_rewrites(
+                        src,
+                        alts,
+                        child_indent,
+                        RewriteLeadMode::InlineOnly,
+                        replacements,
+                    );
                 }
                 Expr::LetIn { bindings, body, .. } => {
                     for binding in bindings {
@@ -1576,7 +1609,21 @@ fn walk_expression(expr: &Expr, f: &mut impl FnMut(&Expr)) {
             scrutinee, alts, ..
         } => {
             walk_expression(scrutinee, f);
-            alts.iter().for_each(|alt| walk_expression(&alt.body, f));
+            for alt in alts {
+                for branch in &alt.branches {
+                    for guard in &branch.guards {
+                        match guard {
+                            GuardQualifier::Bool { expr, .. }
+                            | GuardQualifier::Pattern { expr, .. } => walk_expression(expr, f),
+                            _ => {}
+                        }
+                    }
+                    walk_expression(&branch.body, f);
+                }
+                for wb in &alt.where_bindings {
+                    walk_expression(&wb.expr, f);
+                }
+            }
         }
         Expr::Do { stmts, .. } => {
             for s in stmts {
@@ -1608,9 +1655,21 @@ fn walk_expression(expr: &Expr, f: &mut impl FnMut(&Expr)) {
         }
         Expr::Try { body, handlers, .. } => {
             walk_expression(body, f);
-            handlers
-                .iter()
-                .for_each(|handler| walk_expression(&handler.body, f));
+            for handler in handlers {
+                for branch in &handler.branches {
+                    for guard in &branch.guards {
+                        match guard {
+                            GuardQualifier::Bool { expr, .. }
+                            | GuardQualifier::Pattern { expr, .. } => walk_expression(expr, f),
+                            _ => {}
+                        }
+                    }
+                    walk_expression(&branch.body, f);
+                }
+                for wb in &handler.where_bindings {
+                    walk_expression(&wb.expr, f);
+                }
+            }
         }
         Expr::LeftSection { operand, .. } | Expr::RightSection { operand, .. } => {
             walk_expression(operand, f);
@@ -2381,6 +2440,24 @@ fn choice_edits(src: &str, module: &Module) -> Vec<Edit> {
                 c.span.start_usize(),
                 first.span().start_usize(),
                 "controller",
+                &comments,
+            ) {
+                push_span_block_edit(
+                    &mut edits,
+                    &line_starts,
+                    src,
+                    k,
+                    last.span().end_usize(),
+                    clause_target,
+                );
+            }
+        }
+        if let (Some(first), Some(last)) = (c.authority_exprs.first(), c.authority_exprs.last()) {
+            if let Some(k) = find_keyword(
+                src,
+                c.span.start_usize(),
+                first.span().start_usize(),
+                "authority",
                 &comments,
             ) {
                 push_span_block_edit(

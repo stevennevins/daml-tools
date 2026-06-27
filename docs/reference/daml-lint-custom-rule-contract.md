@@ -119,18 +119,18 @@ severity, `CONFIG` is an array of those values.
 ## Node shapes
 
 The rule-facing IR is versioned by `DamlModule.ir_version`. Current rules see
-`ir_version: 4`.
+`ir_version: 8`.
 
 Important node families:
 
 | Type | Purpose |
 |------|---------|
 | `DamlModule` | File-level imports, templates, interfaces, functions, and source text. |
-| `Template` | Fields, signatories, observers, ensure clause, key, choices, interface instances. |
-| `Choice` | Controllers, observers, parameters, return type, body statements, and `consuming` (`"consuming"` or `"non-consuming"`). |
+| `Template` | Fields, signatories, observers, ensure clause, key, choices, interface instances (with optional `view_expr`). |
+| `Choice` | Controllers, observers, authority expressions, parameters, return type, body statements, and `consuming` (`"consuming"` or `"non-consuming"`). |
 | `Statement` | Tagged union for `Let`, `Assert`, `Fetch`, `Archive`, `Create`, `Exercise`, `TryCatch`, `Branch`, and `Other`. |
-| `Import` | Module imports and `qualified` style (`"qualified"` or `"unqualified"`). |
-| `Expr` | Tagged union for variables, constructors, literals, applications, binary operations, conditionals, records, tuples, lists, and unknown expressions. |
+| `Import` | Module imports, `qualified` style (`"qualified"` or `"unqualified"`), and optional `package_label` source string from `import "pkg" Module`. |
+| `Expr` | Tagged union for variables, constructors, literals, applications, binary operations, conditionals, case alternatives (with guarded branches and alternative-local `where` bindings), records, tuples, lists, and unknown expressions. |
 | `TypeNode` | Structured Daml type tree with source spans. |
 
 Removed v1/v2 raw fields such as `body_raw`, `raw_text`, `controllers`,

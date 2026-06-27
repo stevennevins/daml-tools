@@ -93,7 +93,21 @@ export interface CaseAlt {
   /** Pattern rendered to source text: "Some x", "[]", "_". */
   pattern: string;
   body: Expr;
+  /** Source-ordered guarded/unguarded branches for this alternative. */
+  branches: CaseBranch[];
+  /** `where` helper bindings attached to this alternative. */
+  where_bindings: LetBinding[];
 }
+
+export interface CaseBranch {
+  /** Guard qualifiers before `->`; empty for unguarded branches. */
+  guards: CaseGuard[];
+  body: Expr;
+}
+
+export type CaseGuard =
+  | { Bool: { expr: Expr } }
+  | { Pattern: { pattern: string; expr: Expr } };
 
 export interface LetBinding {
   /** Bound name; for function bindings includes parameters ("go x"). */
@@ -194,6 +208,8 @@ export interface Choice {
   controller_exprs: Expr[];
   /** Choice observers, if declared. */
   observer_exprs: Expr[];
+  /** Choice authority expressions from `authority` metadata clauses. */
+  authority_exprs: Expr[];
   parameters: Field[];
   return_type: TypeNode | null;
   body: Statement[];
@@ -202,6 +218,8 @@ export interface Choice {
 
 export interface InterfaceInstance {
   interface_name: string;
+  /** `view = <expr>` when declared in the instance body. */
+  view_expr: Expr | null;
   /** Implemented method names, in declaration order. */
   methods: string[];
   span: Span;
@@ -252,11 +270,13 @@ export interface Import {
   module_name: string;
   qualified: ImportStyle;
   alias: string | null;
+  /** Source package label from `import "pkg" Module`, not a resolved package id. */
+  package_label: string | null;
   span: Span;
 }
 
 export interface DamlModule {
-  ir_version: 4;
+  ir_version: 8;
   name: string;
   file: string;
   imports: Import[];

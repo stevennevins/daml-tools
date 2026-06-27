@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- *(parser)* [**breaking**] `ChoiceDecl.authority_exprs` and braced/layout `where` metadata blocks for choice `controller`, `observer`, and `authority` clauses.
+- *(parser)* [**breaking**] `InterfaceInstanceDecl.items` (`View` / `Method`) replaces flat `methods`; `view = ...` is a distinct source item.
+- *(parser)* [**breaking**] `Alt.branches`, `AltBranch.guards`, `GuardQualifier`, and alternative-local `where_bindings` preserve guarded case alternatives.
+- *(parser)* module-level declared fixity (`infix` / `infixl` / `infixr`) now drives expression grouping for the whole module regardless of declaration order.
+- *(parser)* [**breaking**] `Pat::Record` with `PatFieldAssign` and `RecordPatternSyntax` for brace/`with` constructor record patterns.
+- *(parser)* [**breaking**] `ImportDecl.package_label` (`ImportPackageLabel`) preserves package-qualified import string literals without LF resolution.
+
+### Changed
+
+- *(parser)* expression infix grouping consults declared fixity with static defaults as fallback; later duplicate declarations win.
+
 ## [0.9.1](https://github.com/stevennevins/daml-tools/compare/daml-parser-v0.9.0...daml-parser-v0.9.1) - 2026-06-25
 
 ### Added

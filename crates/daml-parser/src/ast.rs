@@ -194,12 +194,71 @@ impl FieldAssign {
     }
 }
 
+/// Boolean or pattern guard qualifier in a guarded case alternative branch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum GuardQualifier {
+    /// Boolean guard expression.
+    Bool {
+        /// Guard expression.
+        expr: Expr,
+        /// Position of the guard's first token.
+        pos: Pos,
+        /// Span of the guard qualifier.
+        span: Span,
+    },
+    /// Pattern guard `pat <- expr`.
+    Pattern {
+        /// Pattern bound by the guard.
+        pat: Pat,
+        /// Source expression on the right of `<-`.
+        expr: Expr,
+        /// Position of the pattern guard's first token.
+        pos: Pos,
+        /// Span of the pattern guard qualifier.
+        span: Span,
+    },
+}
+
+impl GuardQualifier {
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        match self {
+            Self::Bool { span, .. } | Self::Pattern { span, .. } => *span,
+        }
+    }
+
+    #[must_use]
+    pub const fn pos(&self) -> Pos {
+        match self {
+            Self::Bool { pos, .. } | Self::Pattern { pos, .. } => *pos,
+        }
+    }
+}
+
+/// One guarded or unguarded branch of a case/`try` alternative.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AltBranch {
+    /// Comma-separated guard qualifiers before `->`; empty for unguarded branches.
+    pub guards: Vec<GuardQualifier>,
+    /// Branch body after `->`.
+    pub body: Expr,
+    /// Position of the branch's first token (`|` or `->`).
+    pub pos: Pos,
+    /// Span of the whole branch.
+    pub span: Span,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Alt {
-    /// Pattern to match before `->`.
+    /// Pattern to match before `->` or the first `|`.
     pub pat: Pat,
-    /// Alternative body after `->`.
+    /// First branch body for convenience; mirrors `branches[0].body`.
     pub body: Expr,
+    /// Source-ordered guarded/unguarded branches for this alternative.
+    pub branches: Vec<AltBranch>,
+    /// `where` helper bindings attached to this alternative.
+    pub where_bindings: Vec<Binding>,
     /// Position of the alternative's first token.
     pub pos: Pos,
     /// Span of the whole alternative.
@@ -218,6 +277,74 @@ pub struct Binding {
     pub pos: Pos,
     /// Span of the whole binding.
     pub span: Span,
+}
+
+/// Record-pattern field syntax: explicit braces or layout `with`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RecordPatternSyntax {
+    /// `Foo { field = pat; .. }`.
+    Braces,
+    /// `Foo with field; nested = pat`.
+    With,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PatFieldAssign {
+    /// Explicit record-pattern assignment: `field = pattern`.
+    Assign {
+        /// Field being matched.
+        name: Identifier,
+        /// Pattern bound to the field.
+        pat: Pat,
+        /// Position of the field name.
+        pos: Pos,
+        /// Span of the whole `field = pattern` assignment.
+        span: Span,
+    },
+    /// Record-pattern pun: `field`, meaning `field = field`.
+    Pun {
+        /// Punned field name.
+        name: Identifier,
+        /// Position of the field name.
+        pos: Pos,
+        /// Span of the field name.
+        span: Span,
+    },
+    /// Record-pattern wildcard: `..`.
+    Wildcard {
+        /// Position of the `..` token.
+        pos: Pos,
+        /// Span of the `..` token.
+        span: Span,
+    },
+}
+
+impl PatFieldAssign {
+    #[must_use]
+    pub const fn pos(&self) -> Pos {
+        match self {
+            Self::Assign { pos, .. } | Self::Pun { pos, .. } | Self::Wildcard { pos, .. } => *pos,
+        }
+    }
+
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        match self {
+            Self::Assign { span, .. } | Self::Pun { span, .. } | Self::Wildcard { span, .. } => {
+                *span
+            }
+        }
+    }
+
+    #[must_use]
+    pub const fn name(&self) -> Option<&Identifier> {
+        match self {
+            Self::Assign { name, .. } | Self::Pun { name, .. } => Some(name),
+            Self::Wildcard { .. } => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -250,6 +377,21 @@ pub enum Pat {
         /// Position of the constructor token.
         pos: Pos,
         /// Span of the whole constructor pattern.
+        span: Span,
+    },
+    /// Constructor record pattern with source-ordered fields.
+    Record {
+        /// Optional module qualifier before the constructor name.
+        qualifier: Option<ModuleName>,
+        /// Constructor name.
+        name: Identifier,
+        /// Whether fields used `{..}` or `with`.
+        syntax: RecordPatternSyntax,
+        /// Field patterns in source order.
+        fields: Vec<PatFieldAssign>,
+        /// Position of the constructor token.
+        pos: Pos,
+        /// Span of the whole record pattern.
         span: Span,
     },
     /// Tuple pattern with source-ordered items.
@@ -740,6 +882,8 @@ pub struct ChoiceDecl {
     pub controllers: Vec<Expr>,
     /// Choice observers, if any.
     pub observers: Vec<Expr>,
+    /// Choice authority expressions from `authority` metadata clauses.
+    pub authority_exprs: Vec<Expr>,
     /// Choice body after `do`; `None` when the parser did not find one.
     pub body: Option<Expr>,
     /// Position of the `choice` token.
@@ -813,6 +957,23 @@ pub enum TemplateBodyDecl {
     },
 }
 
+/// One item in an `interface instance ... where` body, in source order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum InterfaceInstanceBodyItem {
+    /// `view = <expr>` binding for the interface view implementation.
+    View {
+        /// View expression.
+        expr: Expr,
+        /// Position of the `view` token.
+        pos: Pos,
+        /// Span of the whole `view = ...` item.
+        span: Span,
+    },
+    /// An ordinary interface method implementation.
+    Method(Binding),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InterfaceInstanceDecl {
     /// Interface being implemented (`Disclosure.I`).
@@ -820,8 +981,8 @@ pub struct InterfaceInstanceDecl {
     /// Explicit template from `for Foo`; `None` when omitted (the enclosing
     /// template when declared inside one).
     pub for_template: Option<ModuleName>,
-    /// Method implementations: name → bound expression.
-    pub methods: Vec<Binding>,
+    /// View and method implementations in source order.
+    pub items: Vec<InterfaceInstanceBodyItem>,
     /// Position of the `interface instance` clause.
     pub pos: Pos,
     /// Span of the whole interface instance declaration.
@@ -924,6 +1085,18 @@ pub struct FixityDecl {
     pub span: Span,
 }
 
+/// Source package label on a package-qualified import (`import "pkg" Module`).
+///
+/// Holds the decoded string literal value and its source span. This is source
+/// syntax only; it is not resolved to an LF `PackageId`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportPackageLabel {
+    /// Decoded package label text from the string literal.
+    pub value: String,
+    /// Span of the string literal token, including quotes.
+    pub span: Span,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImportDecl {
     /// Imported module path.
@@ -932,6 +1105,8 @@ pub struct ImportDecl {
     pub style: ImportStyle,
     /// Optional module alias from `as`.
     pub alias: Option<ModuleName>,
+    /// Optional package label from `import "pkg" Module` source syntax.
+    pub package_label: Option<ImportPackageLabel>,
     /// Position of the `import` token.
     pub pos: Pos,
     /// Span of the whole import declaration.
@@ -1328,10 +1503,7 @@ impl Expr {
             Self::Case {
                 scrutinee, alts, ..
             } => {
-                let arms: Vec<String> = alts
-                    .iter()
-                    .map(|a| format!("{} -> {}", a.pat.render(), a.body.render()))
-                    .collect();
+                let arms: Vec<String> = alts.iter().map(render_alt).collect();
                 format!("case {} of {}", scrutinee.render(), arms.join("; "))
             }
             Self::Do { stmts, .. } => {
@@ -1364,10 +1536,7 @@ impl Expr {
                 format!("[{}]", xs.join(", "))
             }
             Self::Try { body, handlers, .. } => {
-                let hs: Vec<String> = handlers
-                    .iter()
-                    .map(|a| format!("{} -> {}", a.pat.render(), a.body.render()))
-                    .collect();
+                let hs: Vec<String> = handlers.iter().map(render_alt).collect();
                 format!("try {} catch {}", body.render(), hs.join("; "))
             }
             Self::OperatorRef { op, .. } => format!("({op})"),
@@ -1416,6 +1585,38 @@ impl Expr {
     }
 }
 
+fn render_guard_qualifier(guard: &GuardQualifier) -> String {
+    match guard {
+        GuardQualifier::Bool { expr, .. } => expr.render(),
+        GuardQualifier::Pattern { pat, expr, .. } => {
+            format!("{} <- {}", pat.render(), expr.render())
+        }
+    }
+}
+
+fn render_alt(alt: &Alt) -> String {
+    let mut rendered = if alt.branches.len() == 1 && alt.branches[0].guards.is_empty() {
+        format!("{} -> {}", alt.pat.render(), alt.branches[0].body.render())
+    } else {
+        let mut parts = vec![alt.pat.render()];
+        for branch in &alt.branches {
+            let guards: Vec<String> = branch.guards.iter().map(render_guard_qualifier).collect();
+            parts.push(format!(
+                "| {} -> {}",
+                guards.join(", "),
+                branch.body.render()
+            ));
+        }
+        parts.join(" ")
+    };
+    if !alt.where_bindings.is_empty() {
+        use std::fmt::Write;
+        let bindings: Vec<String> = alt.where_bindings.iter().map(render_binding).collect();
+        let _ = write!(rendered, " where {}", bindings.join("; "));
+    }
+    rendered
+}
+
 fn render_do_stmt(s: &DoStmt) -> String {
     match s {
         DoStmt::Bind { pat, expr, .. } => format!("{} <- {}", pat.render(), expr.render()),
@@ -1443,6 +1644,7 @@ impl Pat {
             Self::Var { pos, .. }
             | Self::Wild { pos, .. }
             | Self::Con { pos, .. }
+            | Self::Record { pos, .. }
             | Self::Tuple { pos, .. }
             | Self::List { pos, .. }
             | Self::Lit { pos, .. }
@@ -1458,6 +1660,7 @@ impl Pat {
             Self::Var { span, .. }
             | Self::Wild { span, .. }
             | Self::Con { span, .. }
+            | Self::Record { span, .. }
             | Self::Tuple { span, .. }
             | Self::List { span, .. }
             | Self::Lit { span, .. }
@@ -1488,6 +1691,31 @@ impl Pat {
                 } else {
                     let parts: Vec<String> = args.iter().map(|p| p.render()).collect();
                     format!("({} {})", head, parts.join(" "))
+                }
+            }
+            Self::Record {
+                qualifier,
+                name,
+                syntax,
+                fields,
+                ..
+            } => {
+                let head = qualifier
+                    .as_ref()
+                    .map_or_else(|| name.to_string(), |q| format!("{q}.{name}"));
+                let fs: Vec<String> = fields
+                    .iter()
+                    .map(|f| match f {
+                        PatFieldAssign::Assign { name, pat, .. } => {
+                            format!("{} = {}", name, pat.render())
+                        }
+                        PatFieldAssign::Pun { name, .. } => name.to_string(),
+                        PatFieldAssign::Wildcard { .. } => "..".to_string(),
+                    })
+                    .collect();
+                match syntax {
+                    RecordPatternSyntax::Braces => format!("{} {{ {} }}", head, fs.join(", ")),
+                    RecordPatternSyntax::With => format!("{} with {}", head, fs.join("; ")),
                 }
             }
             Self::Tuple { items, .. } => {

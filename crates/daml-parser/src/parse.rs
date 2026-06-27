@@ -5,12 +5,13 @@
 //! virtual semicolon. The parser never panics and never aborts the file.
 
 use crate::ast::{
-    Alt, Binding, ChoiceDecl, Consuming, Decl, DoStmt, Equation, ExpectedToken, Expr, FieldAssign,
-    FieldDecl, FixityAssoc, FixityDecl, FixityTarget, FunctionDecl, Identifier, ImportDecl,
-    ImportStyle, InterfaceDecl, InterfaceInstanceDecl, LitKind, MalformedSyntaxKind, Module,
-    ModuleName, Operator, ParseDiagnostic, ParseDiagnosticKind, Pat, SkippedDeclarationReason,
-    Span, TemplateBodyDecl, TemplateDecl, Type, TypeAnnotation, TypeAnnotationContext,
-    UnsupportedSyntaxKind,
+    Alt, AltBranch, Binding, ChoiceDecl, Consuming, Decl, DoStmt, Equation, ExpectedToken, Expr,
+    FieldAssign, FieldDecl, FixityAssoc, FixityDecl, FixityTarget, FunctionDecl, GuardQualifier,
+    Identifier, ImportDecl, ImportPackageLabel, ImportStyle, InterfaceDecl,
+    InterfaceInstanceBodyItem, InterfaceInstanceDecl, LitKind, MalformedSyntaxKind, Module,
+    ModuleName, Operator, ParseDiagnostic, ParseDiagnosticKind, Pat, PatFieldAssign,
+    RecordPatternSyntax, SkippedDeclarationReason, Span, TemplateBodyDecl, TemplateDecl, Type,
+    TypeAnnotation, TypeAnnotationContext, UnsupportedSyntaxKind,
 };
 use crate::layout::resolve_layout;
 use crate::lexer::{lex, Pos, Token, TokenKind};
@@ -161,6 +162,7 @@ pub fn parse_module(source: &str) -> ParseModuleResult {
         src_len: source.len(),
         i: 0,
         depth: 0,
+        fixity_env: HashMap::new(),
         diags: lex_errors
             .into_iter()
             .map(|e| {
@@ -222,6 +224,9 @@ struct Parser {
     /// Expression/pattern recursion depth; bounded so hostile inputs
     /// (thousands of nested parens) cannot overflow the stack.
     depth: u32,
+    /// Module-level fixity overrides keyed by operator text (including
+    /// backtick-wrapped names such as `` `foo` ``).
+    fixity_env: HashMap<String, (u8, bool)>,
 }
 
 impl Parser {
@@ -556,6 +561,7 @@ impl Parser {
         // is unused: the loop below terminates on the matching close brace or
         // end-of-input regardless of whether the block was braced.
         let _ = self.eat(&TokenKind::VLBrace) || self.eat(&TokenKind::LBrace);
+        self.fixity_env = scan_module_fixity_env(&self.toks, self.i);
         loop {
             while self.eat(&TokenKind::VSemi) || self.eat(&TokenKind::Semi) {}
             match self.peek() {
@@ -832,9 +838,15 @@ impl Parser {
             ImportStyle::Unqualified
         };
         // Package-qualified import: `import qualified "pkg-name" Main as V1`.
-        if matches!(self.peek(), Some(TokenKind::StringLit(_))) {
-            self.bump();
-        }
+        let package_label = if let Some(TokenKind::StringLit(value)) = self.peek().cloned() {
+            let tok = self.bump().expect("string literal peeked");
+            Some(ImportPackageLabel {
+                value,
+                span: crate::ast::Span::from_usize(tok.start, tok.end),
+            })
+        } else {
+            None
+        };
         let module_name = match self.peek().cloned() {
             Some(TokenKind::UpperId { qualifier, name }) => {
                 self.bump();
@@ -870,6 +882,7 @@ impl Parser {
             module_name,
             style,
             alias,
+            package_label,
             pos,
             span: self.node_span(start_i),
         })
@@ -1193,6 +1206,52 @@ impl Parser {
         }
     }
 
+    fn parse_choice_metadata_item(
+        &mut self,
+        observers: &mut Vec<Expr>,
+        controllers: &mut Vec<Expr>,
+        authority_exprs: &mut Vec<Expr>,
+    ) -> bool {
+        if self.eat_keyword("observer") {
+            *observers = self.expr_comma_list_no_do();
+            true
+        } else if self.eat_keyword("controller") {
+            *controllers = self.expr_comma_list_no_do();
+            true
+        } else if self.eat_keyword("authority") {
+            *authority_exprs = self.expr_comma_list_no_do();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn choice_metadata_block(
+        &mut self,
+        observers: &mut Vec<Expr>,
+        controllers: &mut Vec<Expr>,
+        authority_exprs: &mut Vec<Expr>,
+    ) {
+        loop {
+            while self.eat(&TokenKind::VSemi) || self.eat(&TokenKind::Semi) {}
+            match self.peek() {
+                None => break,
+                Some(TokenKind::VRBrace | TokenKind::RBrace) => {
+                    self.bump();
+                    break;
+                }
+                Some(TokenKind::RParen | TokenKind::RBracket) => {
+                    self.bump();
+                    continue;
+                }
+                _ => {}
+            }
+            if !self.parse_choice_metadata_item(observers, controllers, authority_exprs) {
+                self.skip_to_item_end();
+            }
+        }
+    }
+
     fn choice_decl(&mut self) -> Option<ChoiceDecl> {
         let pos = self.pos();
         let start_i = self.i;
@@ -1230,19 +1289,26 @@ impl Parser {
         };
         let mut observers = Vec::new();
         let mut controllers = Vec::new();
-        loop {
-            // Inside a dangling (empty) with-block the controller/observer/
-            // do clauses sit at the block's column, so layout separates
-            // them with virtual semicolons — consume those.
-            if dangling {
-                while self.eat(&TokenKind::VSemi) {}
+        let mut authority_exprs = Vec::new();
+        if self.eat_keyword("where") {
+            if self.eat(&TokenKind::VLBrace) || self.eat(&TokenKind::LBrace) {
+                self.choice_metadata_block(&mut observers, &mut controllers, &mut authority_exprs);
             }
-            if self.eat_keyword("observer") {
-                observers = self.expr_comma_list_no_do();
-            } else if self.eat_keyword("controller") {
-                controllers = self.expr_comma_list_no_do();
-            } else {
-                break;
+        } else {
+            loop {
+                // Inside a dangling (empty) with-block the controller/observer/
+                // do clauses sit at the block's column, so layout separates
+                // them with virtual semicolons — consume those.
+                if dangling {
+                    while self.eat(&TokenKind::VSemi) {}
+                }
+                if !self.parse_choice_metadata_item(
+                    &mut observers,
+                    &mut controllers,
+                    &mut authority_exprs,
+                ) {
+                    break;
+                }
             }
         }
         if dangling {
@@ -1272,6 +1338,7 @@ impl Parser {
             params,
             controllers,
             observers,
+            authority_exprs,
             body,
             pos,
             span: self.node_span(start_i),
@@ -1297,7 +1364,7 @@ impl Parser {
                 _ if brackets == 0
                     && matches!(
                         t.keyword(),
-                        Some("with" | "controller" | "observer" | "do" | "where")
+                        Some("with" | "controller" | "observer" | "authority" | "do" | "where")
                     ) =>
                 {
                     return
@@ -1420,7 +1487,7 @@ impl Parser {
         })
     }
 
-    /// `interface instance I for T where { method-bindings }`
+    /// `interface instance I for T where { view/method bindings }`
     fn interface_instance_decl(&mut self) -> Option<InterfaceInstanceDecl> {
         let pos = self.pos();
         let start_i = self.i;
@@ -1443,7 +1510,7 @@ impl Parser {
         } else {
             None
         };
-        let mut methods = Vec::new();
+        let mut items = Vec::new();
         if self.eat_keyword("where")
             && (self.eat(&TokenKind::VLBrace) || self.eat(&TokenKind::LBrace))
         {
@@ -1462,8 +1529,8 @@ impl Parser {
                     }
                     _ => {}
                 }
-                if let Some(b) = self.binding() {
-                    methods.push(b);
+                if let Some(item) = self.interface_instance_body_item() {
+                    items.push(item);
                 } else {
                     self.skip_to_item_end();
                 }
@@ -1472,10 +1539,28 @@ impl Parser {
         Some(InterfaceInstanceDecl {
             interface_name,
             for_template,
-            methods,
+            items,
             pos,
             span: self.node_span(start_i),
         })
+    }
+
+    /// One `view = expr` or method binding inside an interface instance body.
+    fn interface_instance_body_item(&mut self) -> Option<InterfaceInstanceBodyItem> {
+        let pos = self.pos();
+        let start_i = self.i;
+        if self.at_keyword("view") && self.peek_at(1).is_some_and(|t| t.is_op("=")) {
+            self.bump(); // view
+            self.bump(); // =
+            let expr = self.expr();
+            self.skip_to_item_end();
+            return Some(InterfaceInstanceBodyItem::View {
+                expr,
+                pos,
+                span: self.node_span(start_i),
+            });
+        }
+        self.binding().map(InterfaceInstanceBodyItem::Method)
     }
 
     // ----- functions -----------------------------------------------------
@@ -2057,12 +2142,10 @@ impl Parser {
             }
             Some(TokenKind::UpperId { qualifier, name }) => {
                 self.bump();
-                // Record pattern `Foo {..}` / `Foo {x = y}` /
-                // `Foo with claim; tag`.
-                if self.at(&TokenKind::LBrace) {
-                    self.skip_balanced_braces();
-                } else if self.eat_keyword("with") {
-                    let _ = self.record_fields();
+                if let Some(record) =
+                    self.try_parse_record_pattern(qualifier.clone(), name.clone(), pos, start_i)
+                {
+                    return Some(record);
                 }
                 Some(Pat::Con {
                     qualifier,
@@ -2227,32 +2310,20 @@ impl Parser {
         let first = match self.peek().cloned() {
             Some(TokenKind::UpperId { qualifier, name }) => {
                 self.bump();
-                if self.at(&TokenKind::LBrace) || self.at_keyword("with") {
-                    if self.eat_keyword("with") {
-                        let _ = self.record_fields();
-                    } else {
-                        self.skip_balanced_braces();
-                    }
-                    Pat::Con {
-                        qualifier,
-                        name,
-                        args: Vec::new(),
-                        pos,
-                        span: self.node_span(start_i),
-                    }
-                } else {
-                    let mut args = Vec::new();
-                    while let Some(a) = self.try_pattern_atom() {
-                        args.push(a);
-                    }
-                    Pat::Con {
-                        qualifier,
-                        name,
-                        args,
-                        pos,
-                        span: self.node_span(start_i),
-                    }
-                }
+                self.try_parse_record_pattern(qualifier.clone(), name.clone(), pos, start_i)
+                    .unwrap_or_else(|| {
+                        let mut args = Vec::new();
+                        while let Some(a) = self.try_pattern_atom() {
+                            args.push(a);
+                        }
+                        Pat::Con {
+                            qualifier,
+                            name,
+                            args,
+                            pos,
+                            span: self.node_span(start_i),
+                        }
+                    })
             }
             _ => self.pattern_atom()?,
         };
@@ -2285,27 +2356,6 @@ impl Parser {
                 | TokenKind::LBracket,
             ) => self.pattern_atom(),
             _ => None,
-        }
-    }
-
-    fn skip_balanced_braces(&mut self) {
-        let mut depth = 0usize;
-        while let Some(t) = self.peek() {
-            match t {
-                TokenKind::LBrace => depth += 1,
-                TokenKind::RBrace => {
-                    if depth == 0 {
-                        return;
-                    }
-                    depth -= 1;
-                    if depth == 0 {
-                        self.i += 1;
-                        return;
-                    }
-                }
-                _ => {}
-            }
-            self.i += 1;
         }
     }
 
@@ -2400,7 +2450,7 @@ impl Parser {
                         }
                         break;
                     }
-                    let (p, r) = fixity(&o);
+                    let (p, r) = self.lookup_fixity(&o);
                     (o, p, r)
                 }
                 Some(TokenKind::Backtick) => {
@@ -2417,7 +2467,9 @@ impl Parser {
                     if self.peek_at(2) != Some(&TokenKind::Backtick) {
                         break;
                     }
-                    (format!("`{name}`").into(), 9, false)
+                    let op_key = format!("`{name}`");
+                    let (p, r) = self.fixity_env.get(&op_key).copied().unwrap_or((9, false));
+                    (op_key.into(), p, r)
                 }
                 _ => break,
             };
@@ -2609,6 +2661,111 @@ impl Parser {
             } else {
                 // Pun: `Foo with owner`.
                 fields.push(FieldAssign::Pun {
+                    name,
+                    pos,
+                    span: self.node_span(start_i),
+                });
+            }
+        }
+        fields
+    }
+
+    fn try_parse_record_pattern(
+        &mut self,
+        qualifier: Option<ModuleName>,
+        name: Identifier,
+        pos: Pos,
+        start_i: usize,
+    ) -> Option<Pat> {
+        let syntax = if self.at(&TokenKind::LBrace) {
+            RecordPatternSyntax::Braces
+        } else if self.at_keyword("with") {
+            self.bump();
+            RecordPatternSyntax::With
+        } else {
+            return None;
+        };
+        let fields = self.record_pattern_fields(syntax);
+        Some(Pat::Record {
+            qualifier,
+            name,
+            syntax,
+            fields,
+            pos,
+            span: self.node_span(start_i),
+        })
+    }
+
+    /// `{ f = p ; g ; .. }` or layout `with` block for record patterns.
+    fn record_pattern_fields(&mut self, syntax: RecordPatternSyntax) -> Vec<PatFieldAssign> {
+        let mut fields = Vec::new();
+        let explicit = matches!(syntax, RecordPatternSyntax::Braces) || self.at(&TokenKind::LBrace);
+        if !(self.eat(&TokenKind::VLBrace) || self.eat(&TokenKind::LBrace)) {
+            return fields;
+        }
+        loop {
+            while self.eat(&TokenKind::VSemi)
+                || self.eat(&TokenKind::Semi)
+                || self.eat(&TokenKind::Comma)
+            {}
+            if self.at_op("->") || self.at_op("|") {
+                break;
+            }
+            match self.peek() {
+                None => break,
+                Some(TokenKind::VRBrace) if !explicit => {
+                    self.bump();
+                    break;
+                }
+                Some(TokenKind::RBrace) => {
+                    self.bump();
+                    break;
+                }
+                Some(TokenKind::RParen | TokenKind::RBracket) => {
+                    self.bump();
+                    continue;
+                }
+                _ => {}
+            }
+            let pos = self.pos();
+            let start_i = self.i;
+            if self.at_op("..") {
+                self.bump();
+                fields.push(PatFieldAssign::Wildcard {
+                    pos,
+                    span: self.node_span(start_i),
+                });
+                continue;
+            }
+            let name = match self.peek().cloned() {
+                Some(TokenKind::LowerId {
+                    qualifier: None,
+                    name,
+                }) => {
+                    self.bump();
+                    name
+                }
+                _ => {
+                    if self.at_op("->") || self.at_op("|") {
+                        break;
+                    }
+                    self.skip_to_item_end();
+                    continue;
+                }
+            };
+            if self.eat_op("=") {
+                let Some(pat) = self.pattern() else {
+                    self.skip_to_item_end();
+                    continue;
+                };
+                fields.push(PatFieldAssign::Assign {
+                    name,
+                    pat,
+                    pos,
+                    span: self.node_span(start_i),
+                });
+            } else {
+                fields.push(PatFieldAssign::Pun {
                     name,
                     pos,
                     span: self.node_span(start_i),
@@ -2879,13 +3036,15 @@ impl Parser {
                     }
                     _ => {}
                 }
-                // An alternative can carry a `where` block for its body.
-                if self.eat_keyword("where") {
-                    let _ = self.binding_block();
-                    continue;
-                }
+                let alt_start = self.i;
                 match self.case_alt() {
-                    Some(a) => alts.push(a),
+                    Some(mut alt) => {
+                        if self.eat_keyword("where") {
+                            alt.where_bindings = self.binding_block();
+                        }
+                        alt.span = self.node_span(alt_start);
+                        alts.push(alt);
+                    }
                     None => self.skip_to_item_end(),
                 }
             }
@@ -2898,21 +3057,44 @@ impl Parser {
         })
     }
 
+    fn guard_qualifier(&mut self) -> GuardQualifier {
+        let pos = self.pos();
+        let start_i = self.i;
+        let snapshot = self.i;
+        if let Some(pat) = self.try_bind_pattern() {
+            if self.at_op("<-") {
+                self.bump();
+                let expr = self.expr();
+                return GuardQualifier::Pattern {
+                    pat,
+                    expr,
+                    pos,
+                    span: self.node_span(start_i),
+                };
+            }
+        }
+        self.i = snapshot;
+        let expr = self.expr();
+        GuardQualifier::Bool {
+            expr,
+            pos,
+            span: self.node_span(start_i),
+        }
+    }
+
     fn case_alt(&mut self) -> Option<Alt> {
         let pos = self.pos();
         let start_i = self.i;
         let pat = self.pattern()?;
+        let mut branches = Vec::new();
         if self.at_op("|") {
-            // Guarded alternative(s): take the first body, consume all.
-            // Each guard is comma-separated qualifiers, each a boolean
-            // expression or a pattern guard `pat <- expr`.
-            let mut first: Option<Expr> = None;
-            while self.eat_op("|") {
+            while self.at_op("|") {
+                let branch_pos = self.pos();
+                let branch_start = self.i;
+                self.eat_op("|");
+                let mut guards = Vec::new();
                 loop {
-                    let _guard = self.expr();
-                    if self.eat_op("<-") {
-                        let _ = self.expr();
-                    }
+                    guards.push(self.guard_qualifier());
                     if !self.eat(&TokenKind::Comma) {
                         break;
                     }
@@ -2925,28 +3107,44 @@ impl Parser {
                     return None;
                 }
                 let body = self.expr();
-                if first.is_none() {
-                    first = Some(body);
-                }
+                branches.push(AltBranch {
+                    guards,
+                    body,
+                    pos: branch_pos,
+                    span: self.node_span(branch_start),
+                });
             }
-            return Some(Alt {
-                pat,
-                body: first?,
-                pos,
-                span: self.node_span(start_i),
+        } else {
+            if !self.at_op("->") {
+                self.diag_expected(
+                    ExpectedToken::ArrowInCaseAlternative,
+                    "expected '->' in case alternative",
+                );
+                return None;
+            }
+            let branch_pos = self.pos();
+            let branch_start = self.i;
+            if !self.eat_op("->") {
+                self.diag_expected(
+                    ExpectedToken::ArrowInCaseAlternative,
+                    "expected '->' in case alternative",
+                );
+                return None;
+            }
+            let body = self.expr();
+            branches.push(AltBranch {
+                guards: Vec::new(),
+                body,
+                pos: branch_pos,
+                span: self.node_span(branch_start),
             });
         }
-        if !self.eat_op("->") {
-            self.diag_expected(
-                ExpectedToken::ArrowInCaseAlternative,
-                "expected '->' in case alternative",
-            );
-            return None;
-        }
-        let body = self.expr();
+        let body = branches.first()?.body.clone();
         Some(Alt {
             pat,
             body,
+            branches,
+            where_bindings: Vec::new(),
             pos,
             span: self.node_span(start_i),
         })
@@ -3089,8 +3287,15 @@ impl Parser {
                         }
                         _ => {}
                     }
+                    let alt_start = self.i;
                     match self.case_alt() {
-                        Some(a) => handlers.push(a),
+                        Some(mut alt) => {
+                            if self.eat_keyword("where") {
+                                alt.where_bindings = self.binding_block();
+                            }
+                            alt.span = self.node_span(alt_start);
+                            handlers.push(alt);
+                        }
                         None => self.skip_to_item_end(),
                     }
                 }
@@ -3129,8 +3334,15 @@ impl Parser {
                         }
                         _ => {}
                     }
+                    let alt_start = self.i;
                     match self.case_alt() {
-                        Some(a) => alts.push(a),
+                        Some(mut alt) => {
+                            if self.eat_keyword("where") {
+                                alt.where_bindings = self.binding_block();
+                            }
+                            alt.span = self.node_span(alt_start);
+                            alts.push(alt);
+                        }
                         None => self.skip_to_item_end(),
                     }
                 }
@@ -3326,6 +3538,12 @@ impl Parser {
             span: self.node_span(start_i),
         })
     }
+    fn lookup_fixity(&self, op: &str) -> (u8, bool) {
+        self.fixity_env
+            .get(op)
+            .copied()
+            .unwrap_or_else(|| default_fixity(op))
+    }
 }
 
 /// Operators that structure declarations and can never be expression infix
@@ -3334,9 +3552,148 @@ fn is_reserved_op(op: &str) -> bool {
     matches!(op, "=" | "<-" | "->" | "|" | ":" | "=>" | "@" | "\\" | "..")
 }
 
+const fn fixity_assoc_right(assoc: FixityAssoc) -> bool {
+    matches!(assoc, FixityAssoc::InfixR)
+}
+
+fn fixity_target_key(target: &FixityTarget) -> String {
+    match target {
+        FixityTarget::Operator(op) => op.as_str().to_string(),
+        FixityTarget::Backtick(name) => format!("`{name}`"),
+    }
+}
+
+fn apply_fixity_decl(env: &mut HashMap<String, (u8, bool)>, decl: &FixityDecl) {
+    let right_assoc = fixity_assoc_right(decl.assoc);
+    for target in &decl.operators {
+        env.insert(fixity_target_key(target), (decl.precedence, right_assoc));
+    }
+}
+
+fn skip_to_item_end_at(toks: &[Token], i: &mut usize) {
+    let mut depth = 0usize;
+    let mut brackets = 0usize;
+    while let Some(t) = toks.get(*i).map(|t| &t.kind) {
+        match t {
+            TokenKind::VLBrace => depth += 1,
+            TokenKind::VRBrace => {
+                if depth == 0 {
+                    return;
+                }
+                depth -= 1;
+            }
+            TokenKind::VSemi if depth == 0 && brackets == 0 => return,
+            TokenKind::LParen | TokenKind::LBracket | TokenKind::LBrace => brackets += 1,
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                if brackets == 0 {
+                    return;
+                }
+                brackets -= 1;
+            }
+            _ => {}
+        }
+        *i += 1;
+    }
+}
+
+fn try_parse_fixity_at(
+    toks: &[Token],
+    i: &mut usize,
+) -> Option<(FixityAssoc, u8, Vec<FixityTarget>)> {
+    let assoc = match toks.get(*i).map(|t| &t.kind) {
+        Some(k) if k.is_keyword("infixr") => FixityAssoc::InfixR,
+        Some(k) if k.is_keyword("infixl") => FixityAssoc::InfixL,
+        Some(k) if k.is_keyword("infix") => FixityAssoc::Infix,
+        _ => return None,
+    };
+    *i += 1;
+    let precedence = match toks.get(*i).map(|t| &t.kind) {
+        Some(TokenKind::IntLit(n)) => n.parse().ok()?,
+        _ => return None,
+    };
+    *i += 1;
+    let mut operators = Vec::new();
+    loop {
+        match toks.get(*i).map(|t| t.kind.clone()) {
+            Some(TokenKind::Backtick) => {
+                *i += 1;
+                let name = match toks.get(*i).map(|t| &t.kind) {
+                    Some(
+                        TokenKind::LowerId {
+                            qualifier: None,
+                            name,
+                        }
+                        | TokenKind::UpperId {
+                            qualifier: None,
+                            name,
+                        },
+                    ) => name.clone(),
+                    _ => return None,
+                };
+                *i += 1;
+                if toks.get(*i).map(|t| &t.kind) != Some(&TokenKind::Backtick) {
+                    return None;
+                }
+                *i += 1;
+                operators.push(FixityTarget::Backtick(name));
+            }
+            Some(TokenKind::Op(op)) if !is_reserved_op(&op) => {
+                *i += 1;
+                operators.push(FixityTarget::Operator(op));
+            }
+            _ => break,
+        }
+        if toks.get(*i).map(|t| &t.kind) != Some(&TokenKind::Comma) {
+            break;
+        }
+        *i += 1;
+    }
+    if operators.is_empty() {
+        return None;
+    }
+    Some((assoc, precedence, operators))
+}
+
+/// Collect top-level fixity declarations in source order. Later declarations
+/// override earlier ones for the same operator key.
+fn scan_module_fixity_env(toks: &[Token], start: usize) -> HashMap<String, (u8, bool)> {
+    let mut env = HashMap::new();
+    let mut i = start;
+    loop {
+        while matches!(
+            toks.get(i).map(|t| &t.kind),
+            Some(TokenKind::VSemi | TokenKind::Semi)
+        ) {
+            i += 1;
+        }
+        match toks.get(i).map(|t| &t.kind) {
+            None | Some(TokenKind::VRBrace | TokenKind::RBrace) => break,
+            _ => {}
+        }
+        let before = i;
+        if let Some((assoc, precedence, operators)) = try_parse_fixity_at(toks, &mut i) {
+            let decl = FixityDecl {
+                assoc,
+                precedence,
+                operators,
+                pos: toks[before].pos,
+                span: Span::from_usize(toks[before].start, toks[i.saturating_sub(1)].end),
+            };
+            apply_fixity_decl(&mut env, &decl);
+        } else {
+            i = before;
+        }
+        skip_to_item_end_at(toks, &mut i);
+        if i == before {
+            i += 1;
+        }
+    }
+    env
+}
+
 /// (precedence, right-assoc) — Haskell defaults; unknown operators get
 /// infixl 9.
-fn fixity(op: &str) -> (u8, bool) {
+fn default_fixity(op: &str) -> (u8, bool) {
     match op {
         "$" | "$!" => (1, true),
         ">>=" | ">>" | "=<<" | "<&>" => (2, false),

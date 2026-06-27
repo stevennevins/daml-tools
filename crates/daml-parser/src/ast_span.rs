@@ -11,8 +11,9 @@
 //! token's bytes from every node span, or produced an overlap, fails here.
 
 use crate::ast::{
-    Alt, Binding, ChoiceDecl, Decl, DoStmt, Equation, Expr, FieldAssign, FixityDecl, Module, Pat,
-    Span, TemplateBodyDecl, Type, TypeAnnotation,
+    Alt, Binding, ChoiceDecl, Decl, DoStmt, Equation, Expr, FieldAssign, FixityDecl,
+    GuardQualifier, InterfaceInstanceBodyItem, Module, Pat, PatFieldAssign, Span, TemplateBodyDecl,
+    Type, TypeAnnotation,
 };
 use crate::lexer::{Trivia, TriviaKind};
 
@@ -317,6 +318,9 @@ fn collect_module(module: &Module, spans: &mut Vec<Span>) {
     }
     for import in &module.imports {
         spans.push(import.span);
+        if let Some(label) = &import.package_label {
+            spans.push(label.span);
+        }
     }
     for decl in &module.decls {
         collect_decl(decl, spans);
@@ -394,8 +398,14 @@ fn collect_tbody(template_body_decl: &TemplateBodyDecl, spans: &mut Vec<Span>) {
         TemplateBodyDecl::Choice(choice) => collect_choice(choice, spans),
         TemplateBodyDecl::InterfaceInstance(interface_instance) => {
             spans.push(interface_instance.span);
-            for method in &interface_instance.methods {
-                collect_binding(method, spans);
+            for item in &interface_instance.items {
+                match item {
+                    InterfaceInstanceBodyItem::View { expr, span, .. } => {
+                        spans.push(*span);
+                        collect_expr(expr, spans);
+                    }
+                    InterfaceInstanceBodyItem::Method(method) => collect_binding(method, spans),
+                }
             }
         }
         TemplateBodyDecl::Other { span, .. } => spans.push(*span),
@@ -415,6 +425,9 @@ fn collect_choice(choice: &ChoiceDecl, spans: &mut Vec<Span>) {
     }
     for observer in &choice.observers {
         collect_expr(observer, spans);
+    }
+    for authority in &choice.authority_exprs {
+        collect_expr(authority, spans);
     }
     if let Some(body) = &choice.body {
         collect_expr(body, spans);
@@ -477,6 +490,14 @@ fn collect_pat(pattern: &Pat, spans: &mut Vec<Span>) {
         Pat::Con { args, .. } => {
             for arg in args {
                 collect_pat(arg, spans);
+            }
+        }
+        Pat::Record { fields, .. } => {
+            for field in fields {
+                spans.push(field.span());
+                if let PatFieldAssign::Assign { pat, .. } = field {
+                    collect_pat(pat, spans);
+                }
             }
         }
         Pat::Tuple { items, .. } | Pat::List { items, .. } => {
@@ -566,10 +587,30 @@ fn collect_expr(expr: &Expr, spans: &mut Vec<Span>) {
     }
 }
 
+fn collect_guard_qualifier(guard: &GuardQualifier, spans: &mut Vec<Span>) {
+    spans.push(guard.span());
+    match guard {
+        GuardQualifier::Bool { expr, .. } => collect_expr(expr, spans),
+        GuardQualifier::Pattern { pat, expr, .. } => {
+            collect_pat(pat, spans);
+            collect_expr(expr, spans);
+        }
+    }
+}
+
 fn collect_alt(alt: &Alt, spans: &mut Vec<Span>) {
     spans.push(alt.span);
     collect_pat(&alt.pat, spans);
-    collect_expr(&alt.body, spans);
+    for branch in &alt.branches {
+        spans.push(branch.span);
+        for guard in &branch.guards {
+            collect_guard_qualifier(guard, spans);
+        }
+        collect_expr(&branch.body, spans);
+    }
+    for where_binding in &alt.where_bindings {
+        collect_binding(where_binding, spans);
+    }
 }
 
 fn collect_field_assign(field_assign: &FieldAssign, spans: &mut Vec<Span>) {

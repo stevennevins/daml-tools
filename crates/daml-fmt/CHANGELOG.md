@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- *(layout)* choice `authority` metadata reindent; case alternative guards/branches and interface-instance `view` walkers consume updated parser AST shapes.
+
 ## [0.7.2](https://github.com/stevennevins/daml-tools/compare/daml-fmt-v0.7.1...daml-fmt-v0.7.2) - 2026-06-26
 
 ### Added

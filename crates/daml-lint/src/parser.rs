@@ -6,9 +6,9 @@
 //! payloads carry the actual parse tree.
 
 use crate::ir::{
-    BranchArm, CaseAlt, Choice, Consuming, DamlModule, EnsureClause, Expr, Field, Function, Import,
-    ImportStyle, Interface, InterfaceInstance, InterfaceMethod, LetBinding, LiteralKind,
-    RecordField, Span, SrcPos, Statement, Template, TypeNode,
+    BranchArm, CaseAlt, CaseBranch, CaseGuard, Choice, Consuming, DamlModule, EnsureClause, Expr,
+    Field, Function, Import, ImportStyle, Interface, InterfaceInstance, InterfaceMethod,
+    LetBinding, LiteralKind, RecordField, Span, SrcPos, Statement, Template, TypeNode,
 };
 use daml_parser::ast::{
     self, Consuming as ParserConsuming, Decl, DiagnosticCategory as ParserDiagnosticCategory,
@@ -176,6 +176,7 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> ParseResult {
                 ImportStyle::Unqualified
             },
             alias: i.alias.clone().map(|alias| alias.to_string()),
+            package_label: i.package_label.as_ref().map(|label| label.value.clone()),
             span: span_at(file, i.pos),
         })
         .collect();
@@ -199,7 +200,7 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> ParseResult {
     }
 
     let module = DamlModule {
-        ir_version: 4,
+        ir_version: 8,
         name: module.name.to_string(),
         file: file.to_path_buf(),
         source: source.to_string(),
@@ -245,6 +246,47 @@ const fn src_pos(pos: ast::Pos) -> SrcPos {
 }
 
 // ----- expressions -------------------------------------------------------
+
+fn lower_case_guard(guard: &ast::GuardQualifier) -> CaseGuard {
+    match guard {
+        ast::GuardQualifier::Bool { expr, .. } => CaseGuard::Bool {
+            expr: lower_expr(expr),
+        },
+        ast::GuardQualifier::Pattern { pat, expr, .. } => CaseGuard::Pattern {
+            pattern: pat.render(),
+            expr: lower_expr(expr),
+        },
+        _ => CaseGuard::Bool {
+            expr: Expr::Unknown {
+                raw: String::new(),
+                span: src_pos(guard.pos()),
+            },
+        },
+    }
+}
+
+fn lower_case_alt(alt: &ast::Alt) -> CaseAlt {
+    CaseAlt {
+        pattern: alt.pat.render(),
+        body: lower_expr(&alt.body),
+        branches: alt
+            .branches
+            .iter()
+            .map(|branch| CaseBranch {
+                guards: branch.guards.iter().map(lower_case_guard).collect(),
+                body: lower_expr(&branch.body),
+            })
+            .collect(),
+        where_bindings: alt
+            .where_bindings
+            .iter()
+            .map(|b| LetBinding {
+                name: binding_name(b),
+                value: lower_expr(&b.expr),
+            })
+            .collect(),
+    }
+}
 
 fn lower_expr(e: &ast::Expr) -> Expr {
     let span = src_pos(e.pos());
@@ -308,13 +350,7 @@ fn lower_expr(e: &ast::Expr) -> Expr {
             scrutinee, alts, ..
         } => Expr::Case {
             scrutinee: Box::new(lower_expr(scrutinee)),
-            alts: alts
-                .iter()
-                .map(|a| CaseAlt {
-                    pattern: a.pat.render(),
-                    body: lower_expr(&a.body),
-                })
-                .collect(),
+            alts: alts.iter().map(lower_case_alt).collect(),
             span,
         },
         ast::Expr::Do { stmts, .. } => Expr::DoBlock {
@@ -433,9 +469,23 @@ fn lower_template(t: &ast::TemplateDecl, file: &Path, source_file: &SourceFile) 
             }
             TemplateBodyDecl::Choice(c) => choices.push(lower_choice(c, file, source_file)),
             TemplateBodyDecl::InterfaceInstance(ii) => {
+                let mut methods = Vec::new();
+                let mut view_expr = None;
+                for item in &ii.items {
+                    match item {
+                        ast::InterfaceInstanceBodyItem::View { expr, .. } => {
+                            view_expr = Some(lower_expr(expr));
+                        }
+                        ast::InterfaceInstanceBodyItem::Method(binding) => {
+                            methods.push(binding_name(binding));
+                        }
+                        _ => {}
+                    }
+                }
                 interface_instances.push(InterfaceInstance {
                     interface_name: ii.interface_name.to_string(),
-                    methods: ii.methods.iter().map(binding_name).collect(),
+                    view_expr,
+                    methods,
                     span: span_at(file, ii.pos),
                 });
             }
@@ -511,6 +561,7 @@ fn lower_choice(c: &ast::ChoiceDecl, file: &Path, source_file: &SourceFile) -> C
         },
         controller_exprs: c.controllers.iter().map(lower_expr).collect(),
         observer_exprs: c.observers.iter().map(lower_expr).collect(),
+        authority_exprs: c.authority_exprs.iter().map(lower_expr).collect(),
         parameters,
         return_type: c
             .return_ty
@@ -882,7 +933,9 @@ fn collect_actions_inner(
             let try_body = statements_of_expr(body);
             let mut catch_body = Vec::new();
             for h in handlers {
-                catch_body.extend(statements_of_expr(&h.body));
+                for branch in &h.branches {
+                    catch_body.extend(statements_of_expr(&branch.body));
+                }
             }
             out.push(Statement::TryCatch {
                 try_body,
@@ -919,13 +972,22 @@ fn collect_actions_inner(
             scrutinee, alts, ..
         } => {
             if stmt_pos {
-                let bodies: Vec<&ast::Expr> = alts.iter().map(|a| &a.body).collect();
-                let patterns: Vec<Option<String>> =
-                    alts.iter().map(|a| Some(a.pat.render())).collect();
+                let bodies: Vec<&ast::Expr> = alts
+                    .iter()
+                    .flat_map(|a| a.branches.iter().map(|b| &b.body))
+                    .collect();
+                let patterns: Vec<Option<String>> = alts
+                    .iter()
+                    .flat_map(|a| {
+                        std::iter::repeat_n(Some(a.pat.render()), a.branches.len().max(1))
+                    })
+                    .collect();
                 push_branch(Some(scrutinee), &bodies, &patterns, expr, out);
             } else {
-                for a in alts {
-                    collect_actions_inner(&a.body, None, out, false, conditional);
+                for alt in alts {
+                    for branch in &alt.branches {
+                        collect_actions_inner(&branch.body, None, out, false, conditional);
+                    }
                 }
             }
         }

@@ -89,6 +89,66 @@ interface I where
 }
 
 #[test]
+fn interface_instance_view_is_distinct_from_methods() {
+    let src = r#"module M where
+template Asset
+  with
+    owner : Party
+    amount : Int
+  where
+    signatory owner
+    interface instance Token for Asset where
+      view = EmptyInterfaceView
+      getOwner = owner
+      splitImpl x | x > 0 = amount
+"#;
+    let (module, diagnostics) = parse_module(src).into_parts();
+    assert!(
+        diagnostics.is_empty(),
+        "expected no diagnostics, got {diagnostics:?}"
+    );
+    let template = match &module.decls[0] {
+        Decl::Template(t) => t,
+        other => panic!("expected template, got {other:?}"),
+    };
+    let instance = template
+        .body
+        .iter()
+        .find_map(|decl| match decl {
+            TemplateBodyDecl::InterfaceInstance(ii) => Some(ii),
+            _ => None,
+        })
+        .expect("template body should contain an interface instance");
+    assert_eq!(instance.items.len(), 3);
+    match &instance.items[0] {
+        InterfaceInstanceBodyItem::View { expr, span, .. } => {
+            assert!(matches!(expr, Expr::Con { .. }));
+            assert!(span.start < span.end);
+        }
+        other => panic!("expected View item first, got {other:?}"),
+    }
+    match &instance.items[1] {
+        InterfaceInstanceBodyItem::Method(binding) => {
+            assert!(matches!(
+                &binding.pat,
+                Pat::Var { name, .. } if name.as_str() == "getOwner"
+            ));
+        }
+        other => panic!("expected Method item, got {other:?}"),
+    }
+    match &instance.items[2] {
+        InterfaceInstanceBodyItem::Method(binding) => {
+            assert!(matches!(
+                &binding.pat,
+                Pat::Var { name, .. } if name.as_str() == "splitImpl"
+            ));
+            assert_eq!(binding.params.len(), 1);
+        }
+        other => panic!("expected guarded Method item, got {other:?}"),
+    }
+}
+
+#[test]
 fn interface_instance_with_for_sets_explicit_template() {
     let src = r#"module M where
 template Account
