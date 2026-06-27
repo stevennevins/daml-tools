@@ -37,8 +37,8 @@
 
 use crate::{FormatRule, ImportOrder};
 use daml_parser::ast::{
-    ChoiceDecl, Decl, DoStmt, Expr, FieldAssign, GuardQualifier, Module, Span, TemplateBodyDecl,
-    TypeAnnotation,
+    Alt, ChoiceDecl, Decl, DoStmt, Expr, FieldAssign, GuardQualifier, Module, Span,
+    TemplateBodyDecl, TypeAnnotation,
 };
 use daml_parser::lexer::TriviaKind;
 use daml_syntax::{SourceFile, SourceTokens};
@@ -759,6 +759,39 @@ enum RewriteLeadMode {
     InlineOnly,
 }
 
+fn case_alts_are_simple_inline(alts: &[Alt]) -> bool {
+    alts.iter().all(|alt| {
+        alt.branches.len() == 1
+            && alt.branches[0].guards.is_empty()
+            && alt.where_bindings.is_empty()
+    })
+}
+
+fn collect_case_alt_rewrites(
+    src: &str,
+    alts: &[Alt],
+    indent: usize,
+    rewrite_mode: RewriteLeadMode,
+    replacements: &mut Vec<Replacement>,
+) {
+    for alt in alts {
+        for branch in &alt.branches {
+            for guard in &branch.guards {
+                match guard {
+                    GuardQualifier::Bool { expr, .. } | GuardQualifier::Pattern { expr, .. } => {
+                        collect_expr_rewrite(src, expr, indent, rewrite_mode, replacements)
+                    }
+                    _ => {}
+                }
+            }
+            collect_expr_rewrite(src, &branch.body, indent, rewrite_mode, replacements);
+        }
+        for wb in &alt.where_bindings {
+            collect_expr_rewrite(src, &wb.expr, indent, rewrite_mode, replacements);
+        }
+    }
+}
+
 fn collect_expr_rewrite(
     src: &str,
     expr: &Expr,
@@ -805,7 +838,8 @@ fn collect_expr_rewrite(
             scrutinee, alts, ..
         } if rewrite_mode == RewriteLeadMode::LeadCandidate
             && same_line_span(src, span)
-            && !alts.is_empty() =>
+            && !alts.is_empty()
+            && case_alts_are_simple_inline(alts) =>
         {
             let ind = " ".repeat(indent);
             let mut text = String::from("case ");
@@ -980,15 +1014,13 @@ fn collect_expr_rewrite(
                         RewriteLeadMode::InlineOnly,
                         replacements,
                     );
-                    for alt in alts {
-                        collect_expr_rewrite(
-                            src,
-                            &alt.body,
-                            child_indent,
-                            RewriteLeadMode::InlineOnly,
-                            replacements,
-                        );
-                    }
+                    collect_case_alt_rewrites(
+                        src,
+                        alts,
+                        child_indent,
+                        RewriteLeadMode::InlineOnly,
+                        replacements,
+                    );
                 }
                 Expr::LetIn { bindings, body, .. } => {
                     for binding in bindings {
