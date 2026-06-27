@@ -85,6 +85,11 @@ by `daml-syntax`.
 The normal construction path is parser-created AST values. The AST modules are
 public for inspection by tools.
 
+`InterfaceInstanceDecl.items` is a source-ordered `InterfaceInstanceBodyItem`
+list that distinguishes `view = ...` from method implementations. Lint IR
+`InterfaceInstance.view_expr` exposes the view expression separately from
+`methods` (`ir_version: 6`).
+
 ## `daml-syntax`
 
 Manifest: [`crates/daml-syntax/Cargo.toml`](../../crates/daml-syntax/Cargo.toml)

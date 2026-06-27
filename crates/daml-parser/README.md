@@ -305,6 +305,10 @@ resolution, type checking, scenario/script execution, or authorization analysis.
 Consumers that need those concepts should derive them above the syntax layer or
 delegate them to the Daml toolchain.
 
+`InterfaceInstanceDecl` exposes a source-ordered `items` list (`View` and
+`Method` variants) instead of a flat `methods` vector, so `view = ...` bindings
+are distinguishable from ordinary method implementations.
+
 ## License
 
 AGPL-3.0-only. See [LICENSE](LICENSE).

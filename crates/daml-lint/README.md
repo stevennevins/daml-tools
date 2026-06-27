@@ -251,6 +251,7 @@ Removed v1/v2 compatibility fields and their structured replacements:
 | `stmt.Exercise.raw` | `cid` + `choice_name` + `argument` (`Expr`) | `argument` is the choice argument, if present. |
 | `choice.controllers` | `controller_exprs` (`Expr[]`) | Flatten list expressions in the rule if you want list-literal party semantics. |
 | `choice.authorities` | `authority_exprs` (`Expr[]`) | Source-level `authority` metadata clauses on choices. |
+| `interface_instance.view` | `view_expr` (`Expr \| null`) | Source-level `view = ...` on interface instances, distinct from method names. |
 | `template.signatories`, `template.observers` | `signatory_exprs`, `observer_exprs` (`Expr[]`) | Structured party expressions only. |
 
 `stmt.Other.raw` and the `Unknown` expression's `raw` are deliberate raw-source

@@ -115,7 +115,7 @@ function on_template(template) {
 fn dts_exposes_structured_only_contract() {
     let dts = std::fs::read_to_string(manifest_path("examples/daml-lint.d.ts"))
         .expect("read daml-lint.d.ts");
-    assert!(dts.contains("ir_version: 5"));
+    assert!(dts.contains("ir_version: 6"));
     assert!(
         dts.contains("| { Lit: { kind:"),
         "daml-lint.d.ts must expose TypeNode.Lit for type-level literals"
@@ -173,7 +173,7 @@ function field(template, name) {
 }
 
 function check(m) {
-  if (m.ir_version !== 5) report(1, `expected ir_version 5, got ${m.ir_version}`);
+  if (m.ir_version !== 6) report(1, `expected ir_version 6, got ${m.ir_version}`);
   const t = m.templates[0];
   checkNoOldFields("template", t, ["signatories", "observers"]);
   if (typeof t.key_type === "string") report(1, "template key_type is still a string");
@@ -380,6 +380,7 @@ template Probe
 
     interface instance Probeable for Probe where
       view = ProbeView owner
+      getProbeOwner = owner
 
 interface Probeable where
   viewtype ProbeView
@@ -505,6 +506,7 @@ function check(m) {
     if (t.signatory_exprs.length > 0) seen.add("SignatoryExpr");
     if (t.interface_instances.length > 0) {
       seen.add("InterfaceInstance");
+      if (t.interface_instances[0].view_expr !== null) seen.add("InstanceView");
       if (t.interface_instances[0].methods.length > 0) seen.add("InstanceMethod");
     }
     for (const f of t.fields) {
@@ -573,6 +575,7 @@ function check(m) {
         "ControllerExpr",
         "ChoiceObserver",
         "InterfaceInstance",
+        "InstanceView",
         "InstanceMethod",
         "Interface",
         "Viewtype",

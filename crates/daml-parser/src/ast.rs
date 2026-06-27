@@ -815,6 +815,23 @@ pub enum TemplateBodyDecl {
     },
 }
 
+/// One item in an `interface instance ... where` body, in source order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum InterfaceInstanceBodyItem {
+    /// `view = <expr>` binding for the interface view implementation.
+    View {
+        /// View expression.
+        expr: Expr,
+        /// Position of the `view` token.
+        pos: Pos,
+        /// Span of the whole `view = ...` item.
+        span: Span,
+    },
+    /// An ordinary interface method implementation.
+    Method(Binding),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InterfaceInstanceDecl {
     /// Interface being implemented (`Disclosure.I`).
@@ -822,8 +839,8 @@ pub struct InterfaceInstanceDecl {
     /// Explicit template from `for Foo`; `None` when omitted (the enclosing
     /// template when declared inside one).
     pub for_template: Option<ModuleName>,
-    /// Method implementations: name → bound expression.
-    pub methods: Vec<Binding>,
+    /// View and method implementations in source order.
+    pub items: Vec<InterfaceInstanceBodyItem>,
     /// Position of the `interface instance` clause.
     pub pos: Pos,
     /// Span of the whole interface instance declaration.

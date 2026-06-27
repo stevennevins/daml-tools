@@ -11,8 +11,8 @@
 //! token's bytes from every node span, or produced an overlap, fails here.
 
 use crate::ast::{
-    Alt, Binding, ChoiceDecl, Decl, DoStmt, Equation, Expr, FieldAssign, FixityDecl, Module, Pat,
-    Span, TemplateBodyDecl, Type, TypeAnnotation,
+    Alt, Binding, ChoiceDecl, Decl, DoStmt, Equation, Expr, FieldAssign, FixityDecl,
+    InterfaceInstanceBodyItem, Module, Pat, Span, TemplateBodyDecl, Type, TypeAnnotation,
 };
 use crate::lexer::{Trivia, TriviaKind};
 
@@ -394,8 +394,14 @@ fn collect_tbody(template_body_decl: &TemplateBodyDecl, spans: &mut Vec<Span>) {
         TemplateBodyDecl::Choice(choice) => collect_choice(choice, spans),
         TemplateBodyDecl::InterfaceInstance(interface_instance) => {
             spans.push(interface_instance.span);
-            for method in &interface_instance.methods {
-                collect_binding(method, spans);
+            for item in &interface_instance.items {
+                match item {
+                    InterfaceInstanceBodyItem::View { expr, span, .. } => {
+                        spans.push(*span);
+                        collect_expr(expr, spans);
+                    }
+                    InterfaceInstanceBodyItem::Method(method) => collect_binding(method, spans),
+                }
             }
         }
         TemplateBodyDecl::Other { span, .. } => spans.push(*span),

@@ -7,10 +7,10 @@
 use crate::ast::{
     Alt, Binding, ChoiceDecl, Consuming, Decl, DoStmt, Equation, ExpectedToken, Expr, FieldAssign,
     FieldDecl, FixityAssoc, FixityDecl, FixityTarget, FunctionDecl, Identifier, ImportDecl,
-    ImportStyle, InterfaceDecl, InterfaceInstanceDecl, LitKind, MalformedSyntaxKind, Module,
-    ModuleName, Operator, ParseDiagnostic, ParseDiagnosticKind, Pat, SkippedDeclarationReason,
-    Span, TemplateBodyDecl, TemplateDecl, Type, TypeAnnotation, TypeAnnotationContext,
-    UnsupportedSyntaxKind,
+    ImportStyle, InterfaceDecl, InterfaceInstanceBodyItem, InterfaceInstanceDecl, LitKind,
+    MalformedSyntaxKind, Module, ModuleName, Operator, ParseDiagnostic, ParseDiagnosticKind, Pat,
+    SkippedDeclarationReason, Span, TemplateBodyDecl, TemplateDecl, Type, TypeAnnotation,
+    TypeAnnotationContext, UnsupportedSyntaxKind,
 };
 use crate::layout::resolve_layout;
 use crate::lexer::{lex, Pos, Token, TokenKind};
@@ -1474,7 +1474,7 @@ impl Parser {
         })
     }
 
-    /// `interface instance I for T where { method-bindings }`
+    /// `interface instance I for T where { view/method bindings }`
     fn interface_instance_decl(&mut self) -> Option<InterfaceInstanceDecl> {
         let pos = self.pos();
         let start_i = self.i;
@@ -1497,7 +1497,7 @@ impl Parser {
         } else {
             None
         };
-        let mut methods = Vec::new();
+        let mut items = Vec::new();
         if self.eat_keyword("where")
             && (self.eat(&TokenKind::VLBrace) || self.eat(&TokenKind::LBrace))
         {
@@ -1516,8 +1516,8 @@ impl Parser {
                     }
                     _ => {}
                 }
-                if let Some(b) = self.binding() {
-                    methods.push(b);
+                if let Some(item) = self.interface_instance_body_item() {
+                    items.push(item);
                 } else {
                     self.skip_to_item_end();
                 }
@@ -1526,10 +1526,28 @@ impl Parser {
         Some(InterfaceInstanceDecl {
             interface_name,
             for_template,
-            methods,
+            items,
             pos,
             span: self.node_span(start_i),
         })
+    }
+
+    /// One `view = expr` or method binding inside an interface instance body.
+    fn interface_instance_body_item(&mut self) -> Option<InterfaceInstanceBodyItem> {
+        let pos = self.pos();
+        let start_i = self.i;
+        if self.at_keyword("view") && self.peek_at(1).is_some_and(|t| t.is_op("=")) {
+            self.bump(); // view
+            self.bump(); // =
+            let expr = self.expr();
+            self.skip_to_item_end();
+            return Some(InterfaceInstanceBodyItem::View {
+                expr,
+                pos,
+                span: self.node_span(start_i),
+            });
+        }
+        self.binding().map(InterfaceInstanceBodyItem::Method)
     }
 
     // ----- functions -----------------------------------------------------

@@ -498,6 +498,8 @@ pub struct Template {
 pub struct InterfaceInstance {
     /// Implemented interface name.
     pub interface_name: String,
+    /// `view = <expr>` when declared in the instance body.
+    pub view_expr: Option<Expr>,
     /// Implemented method names, in declaration order.
     pub methods: Vec<String>,
     /// Interface instance declaration location.

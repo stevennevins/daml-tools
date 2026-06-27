@@ -442,3 +442,26 @@ template ProposeConsortiumAuthority
         .iter()
         .any(|s| matches!(s, Statement::Create { .. })));
 }
+
+#[test]
+fn interface_instance_view_is_exposed_in_ir() {
+    let source = r#"module Test where
+
+template Asset
+  with
+    owner : Party
+  where
+    signatory owner
+    interface instance Token for Asset where
+      view = EmptyInterfaceView
+      getOwner = owner
+"#;
+    let module = parse_module(source, Path::new("TestInterfaceInstanceView.daml"));
+    let instance = &module.templates[0].interface_instances[0];
+    assert_eq!(instance.interface_name, "Token");
+    assert!(matches!(
+        instance.view_expr.as_ref(),
+        Some(Expr::Con { name, .. }) if name == "EmptyInterfaceView"
+    ));
+    assert_eq!(instance.methods, vec!["getOwner"]);
+}

@@ -119,14 +119,14 @@ severity, `CONFIG` is an array of those values.
 ## Node shapes
 
 The rule-facing IR is versioned by `DamlModule.ir_version`. Current rules see
-`ir_version: 5`.
+`ir_version: 6`.
 
 Important node families:
 
 | Type | Purpose |
 |------|---------|
 | `DamlModule` | File-level imports, templates, interfaces, functions, and source text. |
-| `Template` | Fields, signatories, observers, ensure clause, key, choices, interface instances. |
+| `Template` | Fields, signatories, observers, ensure clause, key, choices, interface instances (with optional `view_expr`). |
 | `Choice` | Controllers, observers, authority expressions, parameters, return type, body statements, and `consuming` (`"consuming"` or `"non-consuming"`). |
 | `Statement` | Tagged union for `Let`, `Assert`, `Fetch`, `Archive`, `Create`, `Exercise`, `TryCatch`, `Branch`, and `Other`. |
 | `Import` | Module imports and `qualified` style (`"qualified"` or `"unqualified"`). |

@@ -204,6 +204,8 @@ export interface Choice {
 
 export interface InterfaceInstance {
   interface_name: string;
+  /** `view = <expr>` when declared in the instance body. */
+  view_expr: Expr | null;
   /** Implemented method names, in declaration order. */
   methods: string[];
   span: Span;
@@ -258,7 +260,7 @@ export interface Import {
 }
 
 export interface DamlModule {
-  ir_version: 5;
+  ir_version: 6;
   name: string;
   file: string;
   imports: Import[];

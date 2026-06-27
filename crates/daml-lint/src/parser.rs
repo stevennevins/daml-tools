@@ -199,7 +199,7 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> ParseResult {
     }
 
     let module = DamlModule {
-        ir_version: 5,
+        ir_version: 6,
         name: module.name.to_string(),
         file: file.to_path_buf(),
         source: source.to_string(),
@@ -433,9 +433,23 @@ fn lower_template(t: &ast::TemplateDecl, file: &Path, source_file: &SourceFile) 
             }
             TemplateBodyDecl::Choice(c) => choices.push(lower_choice(c, file, source_file)),
             TemplateBodyDecl::InterfaceInstance(ii) => {
+                let mut methods = Vec::new();
+                let mut view_expr = None;
+                for item in &ii.items {
+                    match item {
+                        ast::InterfaceInstanceBodyItem::View { expr, .. } => {
+                            view_expr = Some(lower_expr(expr));
+                        }
+                        ast::InterfaceInstanceBodyItem::Method(binding) => {
+                            methods.push(binding_name(binding));
+                        }
+                        _ => {}
+                    }
+                }
                 interface_instances.push(InterfaceInstance {
                     interface_name: ii.interface_name.to_string(),
-                    methods: ii.methods.iter().map(binding_name).collect(),
+                    view_expr,
+                    methods,
                     span: span_at(file, ii.pos),
                 });
             }
