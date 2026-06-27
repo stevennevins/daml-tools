@@ -100,12 +100,12 @@ not require the full SDK desugar sweep on every merge. Treat the desugar oracle 
 an explicit formatter release gate:
 
 ```sh
-bash scripts/check-desugar.sh              # curated subset when SDK is present
-bash scripts/check-desugar.sh --desugar    # full 924-file sweep before risky fmt releases
+bash crates/daml-fmt/tools/verify-rust.sh              # idempotence + curated desugar subset
+bash crates/daml-fmt/tools/verify-rust.sh --desugar    # full 924-file sweep before risky fmt releases
 ```
 
-`scripts/check-desugar.sh` skips loudly when `daml` is absent; install Daml SDK
-3.4.11 before running it for a release candidate.
+Install Daml SDK 3.4.11 (`daml` on PATH) before running the desugar oracle for
+a release candidate.
 
 ## Merge the release PR
 

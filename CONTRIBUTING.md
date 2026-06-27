@@ -60,7 +60,6 @@ for package in daml-parser daml-syntax daml-lint daml-fmt; do
   cargo semver-checks check-release --package "$package"
 done
 bash scripts/check-package.sh
-bash scripts/check-docs.sh
 ```
 
 `scripts/check-package.sh` runs `cargo package --verify` for every published
@@ -68,6 +67,13 @@ crate. `daml-parser` always verifies because it has no internal registry
 dependencies. Downstream crates verify only after the workspace `daml-parser`
 version is on crates.io, so a raised parser lower bound is published before
 `daml-lint` or `daml-fmt` package verification can pass.
+
+Doc and version consistency checks run in `.github/workflows/docs.yml` on
+doc/README/version-metadata changes. That workflow checks crate versions in
+`docs/reference/crates.md`, crate README dependency snippets, and
+`crates/daml-fmt/package.json`, plus offline markdown link checking with
+lychee. `daml-lint` npm package versions are checked by `npm run check:rules`
+in CI instead.
 
 The formatter `npm test` command runs `node test/diff.js`, the same 924-file
 differential test used by the pre-push hook.

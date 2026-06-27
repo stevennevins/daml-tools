@@ -1,0 +1,107 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "README.md"
+      - "CONTRIBUTING.md"
+      - "crates/*/README.md"
+      - "Cargo.toml"
+      - "crates/*/Cargo.toml"
+      - "crates/daml-fmt/package.json"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "README.md"
+      - "CONTRIBUTING.md"
+      - "crates/*/README.md"
+      - "Cargo.toml"
+      - "crates/*/Cargo.toml"
+      - "crates/daml-fmt/package.json"
+      - ".github/workflows/docs.yml"
+
+concurrency:
+  group: docs-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: docs and version checks
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          fail() {
+            echo "$1" >&2
+            exit 1
+          }
+
+          crate_version() {
+            local package="$1"
+            cargo metadata --no-deps --format-version=1 --locked \
+              | jq -r --arg package "${package}" '.packages[] | select(.name == $package) | .version'
+          }
+
+          assert_contains() {
+            local file="$1"
+            local needle="$2"
+            local label="$3"
+            [[ -f "${file}" ]] || fail "missing file: ${file}"
+            grep -Fq "${needle}" "${file}" || fail "${label}: expected ${file} to contain '${needle}'"
+          }
+
+          assert_not_contains() {
+            local file="$1"
+            local needle="$2"
+            local label="$3"
+            [[ -f "${file}" ]] || fail "missing file: ${file}"
+            if grep -Fq "${needle}" "${file}"; then
+              fail "${label}: ${file} still contains stale '${needle}'"
+            fi
+          }
+
+          parser_version="$(crate_version daml-parser)"
+          syntax_version="$(crate_version daml-syntax)"
+          lint_version="$(crate_version daml-lint)"
+          fmt_version="$(crate_version daml-fmt)"
+
+          crates_doc="docs/reference/crates.md"
+          assert_contains "${crates_doc}" "| [\`daml-parser\`](../../crates/daml-parser) | \`${parser_version}\` |" "crate versions"
+          assert_contains "${crates_doc}" "| [\`daml-syntax\`](../../crates/daml-syntax) | \`${syntax_version}\` |" "crate versions"
+          assert_contains "${crates_doc}" "| [\`daml-lint\`](../../crates/daml-lint) | \`${lint_version}\` |" "crate versions"
+          assert_contains "${crates_doc}" "| [\`daml-fmt\`](../../crates/daml-fmt) | \`${fmt_version}\` |" "crate versions"
+
+          assert_contains "crates/daml-parser/README.md" "daml-parser = \"${parser_version}\"" "parser README dependency snippet"
+          assert_contains "crates/daml-lint/README.md" "daml-lint = \"${lint_version}\"" "lint README dependency snippet"
+          assert_contains "crates/daml-lint/README.md" "daml-lint = { version = \"${lint_version}\", default-features = false }" "lint README no-default-features snippet"
+          assert_contains "crates/daml-lint/README.md" "current 0.9.x line" "lint README API stability line"
+          assert_not_contains "crates/daml-lint/README.md" "current 0.8 line" "stale lint README API stability line"
+
+          actual_fmt_package_version="$(jq -r '.version' crates/daml-fmt/package.json)"
+          [[ "${actual_fmt_package_version}" == "${fmt_version}" ]] || \
+            fail "daml-fmt package.json: expected ${fmt_version}, got ${actual_fmt_package_version}"
+
+          echo "docs/version checks passed"
+      - name: markdown link check
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --offline
+            --no-progress
+            './README.md'
+            './CONTRIBUTING.md'
+            './docs/**/*.md'
+            './crates/daml-parser/README.md'
+            './crates/daml-syntax/README.md'
+            './crates/daml-lint/README.md'
+            './crates/daml-fmt/README.md'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
