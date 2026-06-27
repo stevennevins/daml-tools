@@ -68,7 +68,7 @@ files. It always returns a [`ParseModuleResult`] with a [`Module`] and a
 Use **`parse::parse_module_strict`** or [`ParseModuleResult::into_result`] when
 any diagnostic should stop the caller — CI gates, batch analysis, or other
 fail-fast paths. Both are thin wrappers over tolerant parsing: they call
-`parse_module` and return [`Err`](`ParseModuleError`) when diagnostics are
+`parse_module` and return `Err(ParseModuleError)` when diagnostics are
 non-empty. The error carries the same diagnostics and partial module tree for
 inspection.
 
