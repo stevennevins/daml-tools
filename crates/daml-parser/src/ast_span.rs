@@ -416,6 +416,9 @@ fn collect_choice(choice: &ChoiceDecl, spans: &mut Vec<Span>) {
     for observer in &choice.observers {
         collect_expr(observer, spans);
     }
+    for authority in &choice.authority_exprs {
+        collect_expr(authority, spans);
+    }
     if let Some(body) = &choice.body {
         collect_expr(body, spans);
     }

@@ -199,7 +199,7 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> ParseResult {
     }
 
     let module = DamlModule {
-        ir_version: 4,
+        ir_version: 5,
         name: module.name.to_string(),
         file: file.to_path_buf(),
         source: source.to_string(),
@@ -511,6 +511,7 @@ fn lower_choice(c: &ast::ChoiceDecl, file: &Path, source_file: &SourceFile) -> C
         },
         controller_exprs: c.controllers.iter().map(lower_expr).collect(),
         observer_exprs: c.observers.iter().map(lower_expr).collect(),
+        authority_exprs: c.authority_exprs.iter().map(lower_expr).collect(),
         parameters,
         return_type: c
             .return_ty

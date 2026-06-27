@@ -1193,6 +1193,52 @@ impl Parser {
         }
     }
 
+    fn parse_choice_metadata_item(
+        &mut self,
+        observers: &mut Vec<Expr>,
+        controllers: &mut Vec<Expr>,
+        authority_exprs: &mut Vec<Expr>,
+    ) -> bool {
+        if self.eat_keyword("observer") {
+            *observers = self.expr_comma_list_no_do();
+            true
+        } else if self.eat_keyword("controller") {
+            *controllers = self.expr_comma_list_no_do();
+            true
+        } else if self.eat_keyword("authority") {
+            *authority_exprs = self.expr_comma_list_no_do();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn choice_metadata_block(
+        &mut self,
+        observers: &mut Vec<Expr>,
+        controllers: &mut Vec<Expr>,
+        authority_exprs: &mut Vec<Expr>,
+    ) {
+        loop {
+            while self.eat(&TokenKind::VSemi) || self.eat(&TokenKind::Semi) {}
+            match self.peek() {
+                None => break,
+                Some(TokenKind::VRBrace | TokenKind::RBrace) => {
+                    self.bump();
+                    break;
+                }
+                Some(TokenKind::RParen | TokenKind::RBracket) => {
+                    self.bump();
+                    continue;
+                }
+                _ => {}
+            }
+            if !self.parse_choice_metadata_item(observers, controllers, authority_exprs) {
+                self.skip_to_item_end();
+            }
+        }
+    }
+
     fn choice_decl(&mut self) -> Option<ChoiceDecl> {
         let pos = self.pos();
         let start_i = self.i;
@@ -1230,19 +1276,26 @@ impl Parser {
         };
         let mut observers = Vec::new();
         let mut controllers = Vec::new();
-        loop {
-            // Inside a dangling (empty) with-block the controller/observer/
-            // do clauses sit at the block's column, so layout separates
-            // them with virtual semicolons — consume those.
-            if dangling {
-                while self.eat(&TokenKind::VSemi) {}
+        let mut authority_exprs = Vec::new();
+        if self.eat_keyword("where") {
+            if self.eat(&TokenKind::VLBrace) || self.eat(&TokenKind::LBrace) {
+                self.choice_metadata_block(&mut observers, &mut controllers, &mut authority_exprs);
             }
-            if self.eat_keyword("observer") {
-                observers = self.expr_comma_list_no_do();
-            } else if self.eat_keyword("controller") {
-                controllers = self.expr_comma_list_no_do();
-            } else {
-                break;
+        } else {
+            loop {
+                // Inside a dangling (empty) with-block the controller/observer/
+                // do clauses sit at the block's column, so layout separates
+                // them with virtual semicolons — consume those.
+                if dangling {
+                    while self.eat(&TokenKind::VSemi) {}
+                }
+                if !self.parse_choice_metadata_item(
+                    &mut observers,
+                    &mut controllers,
+                    &mut authority_exprs,
+                ) {
+                    break;
+                }
             }
         }
         if dangling {
@@ -1272,6 +1325,7 @@ impl Parser {
             params,
             controllers,
             observers,
+            authority_exprs,
             body,
             pos,
             span: self.node_span(start_i),
@@ -1297,7 +1351,7 @@ impl Parser {
                 _ if brackets == 0
                     && matches!(
                         t.keyword(),
-                        Some("with" | "controller" | "observer" | "do" | "where")
+                        Some("with" | "controller" | "observer" | "authority" | "do" | "where")
                     ) =>
                 {
                     return

@@ -194,6 +194,8 @@ export interface Choice {
   controller_exprs: Expr[];
   /** Choice observers, if declared. */
   observer_exprs: Expr[];
+  /** Choice authority expressions from `authority` metadata clauses. */
+  authority_exprs: Expr[];
   parameters: Field[];
   return_type: TypeNode | null;
   body: Statement[];
@@ -256,7 +258,7 @@ export interface Import {
 }
 
 export interface DamlModule {
-  ir_version: 4;
+  ir_version: 5;
   name: string;
   file: string;
   imports: Import[];

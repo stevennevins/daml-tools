@@ -740,6 +740,8 @@ pub struct ChoiceDecl {
     pub controllers: Vec<Expr>,
     /// Choice observers, if any.
     pub observers: Vec<Expr>,
+    /// Choice authority expressions from `authority` metadata clauses.
+    pub authority_exprs: Vec<Expr>,
     /// Choice body after `do`; `None` when the parser did not find one.
     pub body: Option<Expr>,
     /// Position of the `choice` token.

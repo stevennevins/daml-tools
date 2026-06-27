@@ -405,3 +405,40 @@ template T
                 )
     ));
 }
+
+#[test]
+fn choice_authority_metadata_is_exposed_in_ir() {
+    let source = r#"module Test where
+
+template ProposeConsortiumAuthority
+  with
+    proposer: Party
+    accepted: [Party]
+    obs: [Party]
+    consortiumParty: Party
+  where
+    signatory proposer
+
+    choice Ratify2 : ContractId HasAuthority
+      where
+        controller accepted
+        authority consortiumParty
+      do
+        create HasAuthority with party = consortiumParty
+"#;
+    let module = parse_module(source, Path::new("TestChoiceAuthority.daml"));
+    let choice = &module.templates[0].choices[0];
+    assert_eq!(choice.name, "Ratify2");
+    assert!(matches!(
+        &choice.controller_exprs[0],
+        Expr::Var { name, .. } if name == "accepted"
+    ));
+    assert!(matches!(
+        &choice.authority_exprs[0],
+        Expr::Var { name, .. } if name == "consortiumParty"
+    ));
+    assert!(choice
+        .body
+        .iter()
+        .any(|s| matches!(s, Statement::Create { .. })));
+}

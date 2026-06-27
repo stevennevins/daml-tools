@@ -2393,6 +2393,24 @@ fn choice_edits(src: &str, module: &Module) -> Vec<Edit> {
                 );
             }
         }
+        if let (Some(first), Some(last)) = (c.authority_exprs.first(), c.authority_exprs.last()) {
+            if let Some(k) = find_keyword(
+                src,
+                c.span.start_usize(),
+                first.span().start_usize(),
+                "authority",
+                &comments,
+            ) {
+                push_span_block_edit(
+                    &mut edits,
+                    &line_starts,
+                    src,
+                    k,
+                    last.span().end_usize(),
+                    clause_target,
+                );
+            }
+        }
 
         if let Some(body) = &c.body {
             push_span_block_edit(

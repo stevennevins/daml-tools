@@ -526,6 +526,8 @@ pub struct Choice {
     pub controller_exprs: Vec<Expr>,
     /// Choice observers, if declared.
     pub observer_exprs: Vec<Expr>,
+    /// Choice authority expressions from `authority` metadata clauses.
+    pub authority_exprs: Vec<Expr>,
     /// Choice parameters in declaration order.
     pub parameters: Vec<Field>,
     /// Return type, if declared and successfully lowered.

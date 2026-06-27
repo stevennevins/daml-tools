@@ -222,6 +222,105 @@ f >=> g = \\x -> f x >>= g
     );
 }
 
+fn get_template<'a>(module: &'a Module, name: &str) -> &'a TemplateDecl {
+    module
+        .decls
+        .iter()
+        .find_map(|d| match d {
+            Decl::Template(t) if t.name.as_str() == name => Some(t),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("missing template declaration {name}"))
+}
+
+fn get_template_choice<'a>(module: &'a Module, template: &str, choice: &str) -> &'a ChoiceDecl {
+    get_template(module, template)
+        .body
+        .iter()
+        .find_map(|d| match d {
+            TemplateBodyDecl::Choice(c) if c.name.as_str() == choice => Some(c),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("missing choice {choice} on template {template}"))
+}
+
+const fn expr_var_name(expr: &Expr) -> Option<&str> {
+    match expr {
+        Expr::Var { name, .. } => Some(name.as_str()),
+        _ => None,
+    }
+}
+
+#[test]
+fn choice_metadata_supports_direct_where_and_authority_clauses() {
+    let (module, diagnostics) = parse(
+        "module M where
+template T
+  with
+    p: Party
+  where
+    signatory p
+
+    choice OldDirect : ()
+      observer obs
+      controller ctrl
+      do pure ()
+
+    choice BracedWhere : () where { controller ctrl } do pure ()
+
+    choice LayoutWhere : ()
+      where
+        controller ctrl
+      do pure ()
+
+    choice WithAuthority : ()
+      where
+        authority auth
+        controller ctrl
+        observer obs
+      do pure ()
+
+    choice BracedAuthority : () where { observer obs; authority auth; controller ctrl } do pure ()
+",
+    );
+
+    assert!(
+        diagnostics.is_empty(),
+        "unexpected diagnostics: {diagnostics:?}"
+    );
+
+    let old = get_template_choice(&module, "T", "OldDirect");
+    assert_eq!(old.observers.len(), 1);
+    assert_eq!(expr_var_name(&old.observers[0]), Some("obs"));
+    assert_eq!(old.controllers.len(), 1);
+    assert_eq!(expr_var_name(&old.controllers[0]), Some("ctrl"));
+    assert!(old.authority_exprs.is_empty());
+    assert!(matches!(old.body.as_ref(), Some(Expr::Do { .. })));
+    assert!(old.span.is_valid());
+
+    let braced = get_template_choice(&module, "T", "BracedWhere");
+    assert_eq!(braced.controllers.len(), 1);
+    assert_eq!(expr_var_name(&braced.controllers[0]), Some("ctrl"));
+    assert!(braced.observers.is_empty());
+    assert!(matches!(braced.body.as_ref(), Some(Expr::Do { .. })));
+
+    let layout = get_template_choice(&module, "T", "LayoutWhere");
+    assert_eq!(layout.controllers.len(), 1);
+    assert_eq!(expr_var_name(&layout.controllers[0]), Some("ctrl"));
+    assert!(matches!(layout.body.as_ref(), Some(Expr::Do { .. })));
+
+    let authority = get_template_choice(&module, "T", "WithAuthority");
+    assert_eq!(expr_var_name(&authority.authority_exprs[0]), Some("auth"));
+    assert_eq!(expr_var_name(&authority.controllers[0]), Some("ctrl"));
+    assert_eq!(expr_var_name(&authority.observers[0]), Some("obs"));
+    assert!(matches!(authority.body.as_ref(), Some(Expr::Do { .. })));
+
+    let braced_auth = get_template_choice(&module, "T", "BracedAuthority");
+    assert_eq!(expr_var_name(&braced_auth.observers[0]), Some("obs"));
+    assert_eq!(expr_var_name(&braced_auth.authority_exprs[0]), Some("auth"));
+    assert_eq!(expr_var_name(&braced_auth.controllers[0]), Some("ctrl"));
+}
+
 #[test]
 fn pattern_synonyms_are_explicit_unsupported_syntax() {
     let (module, diagnostics) = parse(
