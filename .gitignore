@@ -15,3 +15,5 @@ node_modules/
 /smithers.sqlite
 /smithers.sqlite-shm
 /smithers.sqlite-wal
+# Local act runtime state
+/.act/
