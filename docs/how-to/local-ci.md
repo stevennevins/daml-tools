@@ -95,7 +95,10 @@ that the worktree `.git` file resolves correctly:
 git_common="$(git rev-parse --path-format=absolute --git-common-dir)"
 ```
 
-Run one local job per required signoff context:
+Run one local job per required signoff context. The npm packaging job validates
+the current Linux container platform (`linux-x64` on x86_64 hosts or
+`linux-arm64` on ARM hosts); release workflows still produce the full
+cross-platform set.
 
 | Required PR context | Validate with act | Create the status |
 |---------------------|-------------------|-------------------|
