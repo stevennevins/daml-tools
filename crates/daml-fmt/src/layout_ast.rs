@@ -37,7 +37,8 @@
 
 use crate::{FormatRule, ImportOrder};
 use daml_parser::ast::{
-    ChoiceDecl, Decl, DoStmt, Expr, FieldAssign, Module, Span, TemplateBodyDecl, TypeAnnotation,
+    ChoiceDecl, Decl, DoStmt, Expr, FieldAssign, GuardQualifier, Module, Span, TemplateBodyDecl,
+    TypeAnnotation,
 };
 use daml_parser::lexer::TriviaKind;
 use daml_syntax::{SourceFile, SourceTokens};
@@ -1576,7 +1577,21 @@ fn walk_expression(expr: &Expr, f: &mut impl FnMut(&Expr)) {
             scrutinee, alts, ..
         } => {
             walk_expression(scrutinee, f);
-            alts.iter().for_each(|alt| walk_expression(&alt.body, f));
+            for alt in alts {
+                for branch in &alt.branches {
+                    for guard in &branch.guards {
+                        match guard {
+                            GuardQualifier::Bool { expr, .. }
+                            | GuardQualifier::Pattern { expr, .. } => walk_expression(expr, f),
+                            _ => {}
+                        }
+                    }
+                    walk_expression(&branch.body, f);
+                }
+                for wb in &alt.where_bindings {
+                    walk_expression(&wb.expr, f);
+                }
+            }
         }
         Expr::Do { stmts, .. } => {
             for s in stmts {
@@ -1608,9 +1623,21 @@ fn walk_expression(expr: &Expr, f: &mut impl FnMut(&Expr)) {
         }
         Expr::Try { body, handlers, .. } => {
             walk_expression(body, f);
-            handlers
-                .iter()
-                .for_each(|handler| walk_expression(&handler.body, f));
+            for handler in handlers {
+                for branch in &handler.branches {
+                    for guard in &branch.guards {
+                        match guard {
+                            GuardQualifier::Bool { expr, .. }
+                            | GuardQualifier::Pattern { expr, .. } => walk_expression(expr, f),
+                            _ => {}
+                        }
+                    }
+                    walk_expression(&branch.body, f);
+                }
+                for wb in &handler.where_bindings {
+                    walk_expression(&wb.expr, f);
+                }
+            }
         }
         Expr::LeftSection { operand, .. } | Expr::RightSection { operand, .. } => {
             walk_expression(operand, f);

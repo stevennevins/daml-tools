@@ -194,12 +194,71 @@ impl FieldAssign {
     }
 }
 
+/// Boolean or pattern guard qualifier in a guarded case alternative branch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum GuardQualifier {
+    /// Boolean guard expression.
+    Bool {
+        /// Guard expression.
+        expr: Expr,
+        /// Position of the guard's first token.
+        pos: Pos,
+        /// Span of the guard qualifier.
+        span: Span,
+    },
+    /// Pattern guard `pat <- expr`.
+    Pattern {
+        /// Pattern bound by the guard.
+        pat: Pat,
+        /// Source expression on the right of `<-`.
+        expr: Expr,
+        /// Position of the pattern guard's first token.
+        pos: Pos,
+        /// Span of the pattern guard qualifier.
+        span: Span,
+    },
+}
+
+impl GuardQualifier {
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        match self {
+            Self::Bool { span, .. } | Self::Pattern { span, .. } => *span,
+        }
+    }
+
+    #[must_use]
+    pub const fn pos(&self) -> Pos {
+        match self {
+            Self::Bool { pos, .. } | Self::Pattern { pos, .. } => *pos,
+        }
+    }
+}
+
+/// One guarded or unguarded branch of a case/`try` alternative.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AltBranch {
+    /// Comma-separated guard qualifiers before `->`; empty for unguarded branches.
+    pub guards: Vec<GuardQualifier>,
+    /// Branch body after `->`.
+    pub body: Expr,
+    /// Position of the branch's first token (`|` or `->`).
+    pub pos: Pos,
+    /// Span of the whole branch.
+    pub span: Span,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Alt {
-    /// Pattern to match before `->`.
+    /// Pattern to match before `->` or the first `|`.
     pub pat: Pat,
-    /// Alternative body after `->`.
+    /// First branch body for convenience; mirrors `branches[0].body`.
     pub body: Expr,
+    /// Source-ordered guarded/unguarded branches for this alternative.
+    pub branches: Vec<AltBranch>,
+    /// `where` helper bindings attached to this alternative.
+    pub where_bindings: Vec<Binding>,
     /// Position of the alternative's first token.
     pub pos: Pos,
     /// Span of the whole alternative.
@@ -1347,10 +1406,7 @@ impl Expr {
             Self::Case {
                 scrutinee, alts, ..
             } => {
-                let arms: Vec<String> = alts
-                    .iter()
-                    .map(|a| format!("{} -> {}", a.pat.render(), a.body.render()))
-                    .collect();
+                let arms: Vec<String> = alts.iter().map(render_alt).collect();
                 format!("case {} of {}", scrutinee.render(), arms.join("; "))
             }
             Self::Do { stmts, .. } => {
@@ -1383,10 +1439,7 @@ impl Expr {
                 format!("[{}]", xs.join(", "))
             }
             Self::Try { body, handlers, .. } => {
-                let hs: Vec<String> = handlers
-                    .iter()
-                    .map(|a| format!("{} -> {}", a.pat.render(), a.body.render()))
-                    .collect();
+                let hs: Vec<String> = handlers.iter().map(render_alt).collect();
                 format!("try {} catch {}", body.render(), hs.join("; "))
             }
             Self::OperatorRef { op, .. } => format!("({op})"),
@@ -1433,6 +1486,38 @@ impl Expr {
             _ => &[],
         }
     }
+}
+
+fn render_guard_qualifier(guard: &GuardQualifier) -> String {
+    match guard {
+        GuardQualifier::Bool { expr, .. } => expr.render(),
+        GuardQualifier::Pattern { pat, expr, .. } => {
+            format!("{} <- {}", pat.render(), expr.render())
+        }
+    }
+}
+
+fn render_alt(alt: &Alt) -> String {
+    let mut rendered = if alt.branches.len() == 1 && alt.branches[0].guards.is_empty() {
+        format!("{} -> {}", alt.pat.render(), alt.branches[0].body.render())
+    } else {
+        let mut parts = vec![alt.pat.render()];
+        for branch in &alt.branches {
+            let guards: Vec<String> = branch.guards.iter().map(render_guard_qualifier).collect();
+            parts.push(format!(
+                "| {} -> {}",
+                guards.join(", "),
+                branch.body.render()
+            ));
+        }
+        parts.join(" ")
+    };
+    if !alt.where_bindings.is_empty() {
+        use std::fmt::Write;
+        let bindings: Vec<String> = alt.where_bindings.iter().map(render_binding).collect();
+        let _ = write!(rendered, " where {}", bindings.join("; "));
+    }
+    rendered
 }
 
 fn render_do_stmt(s: &DoStmt) -> String {

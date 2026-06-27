@@ -115,7 +115,7 @@ function on_template(template) {
 fn dts_exposes_structured_only_contract() {
     let dts = std::fs::read_to_string(manifest_path("examples/daml-lint.d.ts"))
         .expect("read daml-lint.d.ts");
-    assert!(dts.contains("ir_version: 6"));
+    assert!(dts.contains("ir_version: 7"));
     assert!(
         dts.contains("| { Lit: { kind:"),
         "daml-lint.d.ts must expose TypeNode.Lit for type-level literals"
@@ -173,7 +173,7 @@ function field(template, name) {
 }
 
 function check(m) {
-  if (m.ir_version !== 6) report(1, `expected ir_version 6, got ${m.ir_version}`);
+  if (m.ir_version !== 7) report(1, `expected ir_version 7, got ${m.ir_version}`);
   const t = m.templates[0];
   checkNoOldFields("template", t, ["signatories", "observers"]);
   if (typeof t.key_type === "string") report(1, "template key_type is still a string");
@@ -423,8 +423,18 @@ function exprKinds(e, seen) {
     if (Array.isArray(v)) {
       for (const item of v) {
         if (item && typeof item === "object") {
-          if ("body" in item && "pattern" in item) exprKinds(item.body, seen);
-          else if ("value" in item && "name" in item) {
+          if ("body" in item && "pattern" in item) {
+            exprKinds(item.body, seen);
+            if (Array.isArray(item.branches)) {
+              for (const branch of item.branches) {
+                for (const guard of branch.guards ?? []) exprKinds(guard, seen);
+                exprKinds(branch.body, seen);
+              }
+            }
+            if (Array.isArray(item.where_bindings)) {
+              for (const binding of item.where_bindings) exprKinds(binding.value, seen);
+            }
+          } else if ("value" in item && "name" in item) {
             if (item.value !== null) exprKinds(item.value, seen);
           } else if (Object.keys(item).length === 1) {
             if (k === "DoBlock") stmtKinds([item], seen);

@@ -433,7 +433,7 @@ mod configured_detector_tests {
         ));
         assert_eq!(detector.name(), "rewrite");
         let module = crate::ir::DamlModule {
-            ir_version: 6,
+            ir_version: 7,
             name: String::from("Main"),
             file: PathBuf::from("named.daml"),
             source: String::new(),
@@ -486,7 +486,7 @@ mod configured_detector_tests {
         ));
         assert_eq!(detector.severity(), Severity::Info);
         let module = crate::ir::DamlModule {
-            ir_version: 6,
+            ir_version: 7,
             name: String::from("Main"),
             file: PathBuf::from("severity.daml"),
             source: String::new(),
@@ -535,7 +535,7 @@ mod configured_detector_tests {
             "configured-name",
         ));
         let module = crate::ir::DamlModule {
-            ir_version: 6,
+            ir_version: 7,
             name: String::from("Main"),
             file: PathBuf::from("failing.daml"),
             source: String::new(),

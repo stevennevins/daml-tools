@@ -322,6 +322,57 @@ template T
 }
 
 #[test]
+fn case_alternatives_preserve_guards_and_where_bindings() {
+    let (module, diagnostics) = parse(
+        "module M where
+f x = case x of
+  Left cmd
+    | cmd.name == \"Submit\"
+    , Some y <- cmd.detail
+    -> y
+  n | n > 0 -> \"pos\"
+    | n <= 0 -> \"zero\"
+  v -> helper v where helper z = z + 1
+  _ -> 0
+",
+    );
+
+    assert!(diagnostics.is_empty());
+    let Expr::Case { alts, .. } = get_first_equation_body(&module, "f") else {
+        panic!("expected case expression");
+    };
+    assert_eq!(alts.len(), 4);
+
+    let left = &alts[0];
+    assert_eq!(left.branches.len(), 1);
+    assert_eq!(left.branches[0].guards.len(), 2);
+    assert!(matches!(
+        &left.branches[0].guards[0],
+        GuardQualifier::Bool { .. }
+    ));
+    assert!(matches!(
+        &left.branches[0].guards[1],
+        GuardQualifier::Pattern { .. }
+    ));
+
+    let n = &alts[1];
+    assert_eq!(n.branches.len(), 2);
+    assert_eq!(n.branches[0].guards.len(), 1);
+    assert_eq!(n.branches[1].guards.len(), 1);
+
+    let v = &alts[2];
+    assert_eq!(v.branches.len(), 1);
+    assert!(v.branches[0].guards.is_empty());
+    assert_eq!(v.where_bindings.len(), 1);
+    assert!(matches!(
+        &v.where_bindings[0].pat,
+        Pat::Var { name, .. } if name.as_str() == "helper"
+    ));
+
+    assert!(alts[3].branches[0].guards.is_empty());
+}
+
+#[test]
 fn pattern_synonyms_are_explicit_unsupported_syntax() {
     let (module, diagnostics) = parse(
         "module M where

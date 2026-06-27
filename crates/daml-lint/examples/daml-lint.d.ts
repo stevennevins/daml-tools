@@ -93,7 +93,21 @@ export interface CaseAlt {
   /** Pattern rendered to source text: "Some x", "[]", "_". */
   pattern: string;
   body: Expr;
+  /** Source-ordered guarded/unguarded branches for this alternative. */
+  branches: CaseBranch[];
+  /** `where` helper bindings attached to this alternative. */
+  where_bindings: LetBinding[];
 }
+
+export interface CaseBranch {
+  /** Guard qualifiers before `->`; empty for unguarded branches. */
+  guards: CaseGuard[];
+  body: Expr;
+}
+
+export type CaseGuard =
+  | { Bool: { expr: Expr } }
+  | { Pattern: { pattern: string; expr: Expr } };
 
 export interface LetBinding {
   /** Bound name; for function bindings includes parameters ("go x"). */
@@ -260,7 +274,7 @@ export interface Import {
 }
 
 export interface DamlModule {
-  ir_version: 6;
+  ir_version: 7;
   name: string;
   file: string;
   imports: Import[];

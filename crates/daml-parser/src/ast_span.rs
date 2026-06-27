@@ -12,7 +12,8 @@
 
 use crate::ast::{
     Alt, Binding, ChoiceDecl, Decl, DoStmt, Equation, Expr, FieldAssign, FixityDecl,
-    InterfaceInstanceBodyItem, Module, Pat, Span, TemplateBodyDecl, Type, TypeAnnotation,
+    GuardQualifier, InterfaceInstanceBodyItem, Module, Pat, Span, TemplateBodyDecl, Type,
+    TypeAnnotation,
 };
 use crate::lexer::{Trivia, TriviaKind};
 
@@ -575,10 +576,30 @@ fn collect_expr(expr: &Expr, spans: &mut Vec<Span>) {
     }
 }
 
+fn collect_guard_qualifier(guard: &GuardQualifier, spans: &mut Vec<Span>) {
+    spans.push(guard.span());
+    match guard {
+        GuardQualifier::Bool { expr, .. } => collect_expr(expr, spans),
+        GuardQualifier::Pattern { pat, expr, .. } => {
+            collect_pat(pat, spans);
+            collect_expr(expr, spans);
+        }
+    }
+}
+
 fn collect_alt(alt: &Alt, spans: &mut Vec<Span>) {
     spans.push(alt.span);
     collect_pat(&alt.pat, spans);
-    collect_expr(&alt.body, spans);
+    for branch in &alt.branches {
+        spans.push(branch.span);
+        for guard in &branch.guards {
+            collect_guard_qualifier(guard, spans);
+        }
+        collect_expr(&branch.body, spans);
+    }
+    for where_binding in &alt.where_bindings {
+        collect_binding(where_binding, spans);
+    }
 }
 
 fn collect_field_assign(field_assign: &FieldAssign, spans: &mut Vec<Span>) {

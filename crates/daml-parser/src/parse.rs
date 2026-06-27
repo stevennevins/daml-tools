@@ -5,12 +5,12 @@
 //! virtual semicolon. The parser never panics and never aborts the file.
 
 use crate::ast::{
-    Alt, Binding, ChoiceDecl, Consuming, Decl, DoStmt, Equation, ExpectedToken, Expr, FieldAssign,
-    FieldDecl, FixityAssoc, FixityDecl, FixityTarget, FunctionDecl, Identifier, ImportDecl,
-    ImportStyle, InterfaceDecl, InterfaceInstanceBodyItem, InterfaceInstanceDecl, LitKind,
-    MalformedSyntaxKind, Module, ModuleName, Operator, ParseDiagnostic, ParseDiagnosticKind, Pat,
-    SkippedDeclarationReason, Span, TemplateBodyDecl, TemplateDecl, Type, TypeAnnotation,
-    TypeAnnotationContext, UnsupportedSyntaxKind,
+    Alt, AltBranch, Binding, ChoiceDecl, Consuming, Decl, DoStmt, Equation, ExpectedToken, Expr,
+    FieldAssign, FieldDecl, FixityAssoc, FixityDecl, FixityTarget, FunctionDecl, GuardQualifier,
+    Identifier, ImportDecl, ImportStyle, InterfaceDecl, InterfaceInstanceBodyItem,
+    InterfaceInstanceDecl, LitKind, MalformedSyntaxKind, Module, ModuleName, Operator,
+    ParseDiagnostic, ParseDiagnosticKind, Pat, SkippedDeclarationReason, Span, TemplateBodyDecl,
+    TemplateDecl, Type, TypeAnnotation, TypeAnnotationContext, UnsupportedSyntaxKind,
 };
 use crate::layout::resolve_layout;
 use crate::lexer::{lex, Pos, Token, TokenKind};
@@ -2951,13 +2951,15 @@ impl Parser {
                     }
                     _ => {}
                 }
-                // An alternative can carry a `where` block for its body.
-                if self.eat_keyword("where") {
-                    let _ = self.binding_block();
-                    continue;
-                }
+                let alt_start = self.i;
                 match self.case_alt() {
-                    Some(a) => alts.push(a),
+                    Some(mut alt) => {
+                        if self.eat_keyword("where") {
+                            alt.where_bindings = self.binding_block();
+                        }
+                        alt.span = self.node_span(alt_start);
+                        alts.push(alt);
+                    }
                     None => self.skip_to_item_end(),
                 }
             }
@@ -2970,21 +2972,43 @@ impl Parser {
         })
     }
 
+    fn guard_qualifier(&mut self) -> GuardQualifier {
+        let pos = self.pos();
+        let start_i = self.i;
+        let snapshot = self.i;
+        if let Some(pat) = self.try_bind_pattern() {
+            if self.at_op("<-") {
+                self.bump();
+                let expr = self.expr();
+                return GuardQualifier::Pattern {
+                    pat,
+                    expr,
+                    pos,
+                    span: self.node_span(start_i),
+                };
+            }
+        }
+        self.i = snapshot;
+        let expr = self.expr();
+        GuardQualifier::Bool {
+            expr,
+            pos,
+            span: self.node_span(start_i),
+        }
+    }
+
     fn case_alt(&mut self) -> Option<Alt> {
         let pos = self.pos();
         let start_i = self.i;
         let pat = self.pattern()?;
+        let mut branches = Vec::new();
         if self.at_op("|") {
-            // Guarded alternative(s): take the first body, consume all.
-            // Each guard is comma-separated qualifiers, each a boolean
-            // expression or a pattern guard `pat <- expr`.
-            let mut first: Option<Expr> = None;
             while self.eat_op("|") {
+                let branch_pos = self.pos();
+                let branch_start = self.i;
+                let mut guards = Vec::new();
                 loop {
-                    let _guard = self.expr();
-                    if self.eat_op("<-") {
-                        let _ = self.expr();
-                    }
+                    guards.push(self.guard_qualifier());
                     if !self.eat(&TokenKind::Comma) {
                         break;
                     }
@@ -2997,28 +3021,35 @@ impl Parser {
                     return None;
                 }
                 let body = self.expr();
-                if first.is_none() {
-                    first = Some(body);
-                }
+                branches.push(AltBranch {
+                    guards,
+                    body,
+                    pos: branch_pos,
+                    span: self.node_span(branch_start),
+                });
             }
-            return Some(Alt {
-                pat,
-                body: first?,
+        } else {
+            if !self.eat_op("->") {
+                self.diag_expected(
+                    ExpectedToken::ArrowInCaseAlternative,
+                    "expected '->' in case alternative",
+                );
+                return None;
+            }
+            let body = self.expr();
+            branches.push(AltBranch {
+                guards: Vec::new(),
+                body,
                 pos,
                 span: self.node_span(start_i),
             });
         }
-        if !self.eat_op("->") {
-            self.diag_expected(
-                ExpectedToken::ArrowInCaseAlternative,
-                "expected '->' in case alternative",
-            );
-            return None;
-        }
-        let body = self.expr();
+        let body = branches.first()?.body.clone();
         Some(Alt {
             pat,
             body,
+            branches,
+            where_bindings: Vec::new(),
             pos,
             span: self.node_span(start_i),
         })
@@ -3161,8 +3192,15 @@ impl Parser {
                         }
                         _ => {}
                     }
+                    let alt_start = self.i;
                     match self.case_alt() {
-                        Some(a) => handlers.push(a),
+                        Some(mut alt) => {
+                            if self.eat_keyword("where") {
+                                alt.where_bindings = self.binding_block();
+                            }
+                            alt.span = self.node_span(alt_start);
+                            handlers.push(alt);
+                        }
                         None => self.skip_to_item_end(),
                     }
                 }
@@ -3201,8 +3239,15 @@ impl Parser {
                         }
                         _ => {}
                     }
+                    let alt_start = self.i;
                     match self.case_alt() {
-                        Some(a) => alts.push(a),
+                        Some(mut alt) => {
+                            if self.eat_keyword("where") {
+                                alt.where_bindings = self.binding_block();
+                            }
+                            alt.span = self.node_span(alt_start);
+                            alts.push(alt);
+                        }
                         None => self.skip_to_item_end(),
                     }
                 }

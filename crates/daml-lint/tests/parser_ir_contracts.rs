@@ -444,6 +444,50 @@ template ProposeConsortiumAuthority
 }
 
 #[test]
+fn case_alternative_guards_and_where_are_exposed_in_ir() {
+    let source = r#"module Test where
+
+template T
+  with
+    p : Party
+  where
+    signatory p
+    ensure case p of
+      alice
+        | alice == p
+        , y <- Some p
+        -> True
+      v -> helper v where helper z = z
+"#;
+    let module = parse_module(source, Path::new("TestCaseGuards.daml"));
+    let Expr::Case { alts, .. } = &module.templates[0]
+        .ensure_clause
+        .as_ref()
+        .expect("ensure clause")
+        .expr
+    else {
+        panic!("expected case expression in ensure clause");
+    };
+    assert_eq!(alts.len(), 2);
+
+    let left = &alts[0];
+    assert_eq!(left.branches.len(), 1);
+    assert_eq!(left.branches[0].guards.len(), 2);
+    assert!(matches!(
+        &left.branches[0].guards[0],
+        daml_lint::ir::CaseGuard::Bool { .. }
+    ));
+    assert!(matches!(
+        &left.branches[0].guards[1],
+        daml_lint::ir::CaseGuard::Pattern { pattern, .. } if pattern == "y"
+    ));
+
+    let v = &alts[1];
+    assert_eq!(v.where_bindings.len(), 1);
+    assert_eq!(v.where_bindings[0].name, "helper z");
+}
+
+#[test]
 fn interface_instance_view_is_exposed_in_ir() {
     let source = r#"module Test where
 

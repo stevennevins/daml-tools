@@ -88,7 +88,9 @@ public for inspection by tools.
 `InterfaceInstanceDecl.items` is a source-ordered `InterfaceInstanceBodyItem`
 list that distinguishes `view = ...` from method implementations. Lint IR
 `InterfaceInstance.view_expr` exposes the view expression separately from
-`methods` (`ir_version: 6`).
+`methods` (`ir_version: 6`). `Alt` case alternatives retain source-ordered
+`branches` with boolean/pattern guards and alternative-local `where_bindings`;
+lint `CaseAlt` mirrors that shape (`ir_version: 7`).
 
 ## `daml-syntax`
 
