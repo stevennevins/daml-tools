@@ -140,7 +140,7 @@ dependencies = [
 
 [[package]]
 name = "daml-parser"
-version = "0.9.1"
+version = "0.10.0"
 
 [[package]]
 name = "daml-syntax"
