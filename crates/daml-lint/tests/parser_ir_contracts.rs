@@ -488,6 +488,74 @@ template T
 }
 
 #[test]
+fn function_case_alt_where_bindings_are_exposed_in_ir() {
+    let source = r#"module Test where
+
+ratio p x y =
+  case p of
+    v -> helper v where helper z = x / y
+"#;
+    let module = parse_module(source, Path::new("TestCaseWhere.daml"));
+    let func = &module.functions[0];
+    let Statement::Branch { arms, .. } = &func.body[0] else {
+        panic!("expected branch statement, got {:?}", func.body);
+    };
+    let Statement::Let { value, .. } = &arms[0].body[1] else {
+        panic!("expected where binding statement, got {:?}", arms[0].body);
+    };
+    assert!(matches!(value, Expr::BinOp { .. }));
+}
+
+#[test]
+fn function_case_alt_where_bindings_are_not_duplicated_across_guarded_branches() {
+    let source = r#"module Test where
+
+ratio p x y n =
+  case n of
+    v | v > 0 -> 1
+      | otherwise -> helper v where helper z = x / y
+"#;
+    let module = parse_module(source, Path::new("TestCaseWhereDup.daml"));
+    let func = &module.functions[0];
+    let Statement::Branch { arms, .. } = &func.body[0] else {
+        panic!("expected branch statement, got {:?}", func.body);
+    };
+    assert_eq!(arms.len(), 2);
+    let where_let_count = arms
+        .iter()
+        .flat_map(|arm| arm.body.iter())
+        .filter(|stmt| matches!(stmt, Statement::Let { .. }))
+        .count();
+    assert_eq!(
+        where_let_count, 1,
+        "alt-level where bindings must surface once, not once per guarded branch"
+    );
+}
+
+#[test]
+fn function_case_alt_guard_expressions_are_exposed_in_branch_ir() {
+    let source = r#"module Test where
+
+ratio p x y =
+  case p of
+    v | x / y > 0 -> 1
+    | otherwise -> 0
+"#;
+    let module = parse_module(source, Path::new("TestCaseGuard.daml"));
+    let func = &module.functions[0];
+    let Statement::Branch { arms, .. } = &func.body[0] else {
+        panic!("expected branch statement, got {:?}", func.body);
+    };
+    let Statement::Other { expr, .. } = &arms[0].body[0] else {
+        panic!(
+            "expected guard expression statement, got {:?}",
+            arms[0].body
+        );
+    };
+    assert!(matches!(expr, Expr::BinOp { .. }));
+}
+
+#[test]
 fn interface_instance_view_is_exposed_in_ir() {
     let source = r#"module Test where
 

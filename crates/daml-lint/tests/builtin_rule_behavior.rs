@@ -218,6 +218,12 @@ fn expected_count(rule_name: &str, case_name: &str) -> usize {
         ("unguarded-division", "unguarded division triggers") => 1,
         ("unguarded-division", "when gated guard does not suppress") => 1,
         ("unguarded-division", "zero literal denominator flags") => 1,
+        ("unguarded-division", "case alt where binding division is flagged") => 1,
+        ("unguarded-division", "case alt guard division is flagged") => 1,
+        (
+            "unguarded-division",
+            "case alt where binding is not duplicated across guarded branches",
+        ) => 1,
         other => panic!("missing expected finding count for {other:?}"),
     }
 }
@@ -1794,6 +1800,35 @@ f flag x y =
         (
             "parenthesized denominator reported whole",
             "module T where\nf x y = x / (y + 1)\n",
+        ),
+        (
+            "case alt where binding division is flagged",
+            r#"module Test where
+
+ratio p x y =
+  case p of
+    v -> helper v where helper z = x / y
+"#,
+        ),
+        (
+            "case alt guard division is flagged",
+            r#"module Test where
+
+ratio p x y =
+  case p of
+    v | x / y > 0 -> 1
+    | otherwise -> 0
+"#,
+        ),
+        (
+            "case alt where binding is not duplicated across guarded branches",
+            r#"module Test where
+
+ratio p x y n =
+  case n of
+    v | v > 0 -> 1
+      | otherwise -> helper v where helper z = x / y
+"#,
         ),
     ];
 

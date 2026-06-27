@@ -624,6 +624,27 @@ fn write_reports_parser_diagnostics_and_does_not_modify_input() {
 }
 
 #[test]
+fn check_reports_parser_diagnostics_inside_cpp_conditionals_and_exits_two() {
+    let path = temp_file(
+        "parser-diagnostic-cpp-check.daml",
+        "module M where\n#if defined(foo)\nfoo = if x then 1\n#endif\n",
+    );
+    let output = cmd().arg("--check").arg(&path).output().unwrap();
+    let source = std::fs::read_to_string(&path).unwrap();
+    std::fs::remove_file(&path).ok();
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains(&format!("daml-fmt: {}:", path.display())));
+    assert!(stderr.contains("[malformed]"));
+    assert!(stderr.contains("expected 'else'"));
+    assert_eq!(
+        source,
+        "module M where\n#if defined(foo)\nfoo = if x then 1\n#endif\n"
+    );
+}
+
+#[test]
 fn write_reformats_file_in_place_with_exit_zero() {
     let path = temp_file(
         "write-formatted.daml",

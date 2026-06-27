@@ -11,7 +11,9 @@ on:
       - "LICENSE"
   pull_request:
     paths-ignore:
+      - "**/*.md"
       - "docs/**"
+      - ".smithers/**"
       - "AGENTS.md"
       - "CONTRIBUTING.md"
       - "LICENSE"

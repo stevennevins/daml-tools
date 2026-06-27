@@ -133,13 +133,25 @@ function statementExprs(statement) {
   if ("Branch" in statement) return statement.Branch.scrutinee === null ? [] : [statement.Branch.scrutinee];
   return [];
 }
+function caseAltExprs(alt) {
+  const branchBodies = alt.branches.length > 0 ? alt.branches.flatMap((branch) => [
+    ...branch.guards.flatMap((guard) => "Bool" in guard ? [guard.Bool.expr] : [guard.Pattern.expr]),
+    branch.body
+  ]) : [alt.body];
+  return [...branchBodies, ...alt.where_bindings.map((binding) => binding.value)];
+}
 function childExprs(expr) {
   if ("App" in expr) return [expr.App.func, ...expr.App.args];
   if ("BinOp" in expr) return [expr.BinOp.lhs, expr.BinOp.rhs];
   if ("Neg" in expr) return [expr.Neg.expr];
   if ("Lambda" in expr) return [expr.Lambda.body];
   if ("If" in expr) return [expr.If.cond, expr.If.then_branch, expr.If.else_branch];
-  if ("Case" in expr) return [expr.Case.scrutinee, ...expr.Case.alts.map((alt) => alt.body)];
+  if ("Case" in expr) {
+    return [
+      expr.Case.scrutinee,
+      ...expr.Case.alts.flatMap((alt) => caseAltExprs(alt))
+    ];
+  }
   if ("LetIn" in expr) return [...expr.LetIn.bindings.map((binding) => binding.value), expr.LetIn.body];
   if ("Record" in expr) return [expr.Record.base, ...expr.Record.fields.flatMap((field) => field.value === null ? [] : [field.value])];
   if ("Tuple" in expr) return expr.Tuple.items;

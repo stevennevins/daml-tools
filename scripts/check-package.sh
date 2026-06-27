@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${repo_root}"
+
 workspace_package_version() {
   local package="$1"
-  cargo metadata --no-deps --format-version=1 \
+  cargo metadata --no-deps --format-version=1 --locked \
     | jq -r --arg package "${package}" '.packages[] | select(.name == $package) | .version'
 }
 
@@ -15,10 +18,50 @@ crates_io_probe_status() {
     "https://crates.io/api/v1/crates/${crate}/${version}"
 }
 
+package_flags=()
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  if [[ "${ALLOW_DIRTY_PACKAGE:-}" != "1" ]]; then
+    echo "Working tree is dirty; refusing cargo package verification." >&2
+    echo "Commit changes or set ALLOW_DIRTY_PACKAGE=1 for an intentional local-only check." >&2
+    exit 1
+  fi
+  echo "Working tree is dirty; continuing with cargo package --allow-dirty (ALLOW_DIRTY_PACKAGE=1)." >&2
+  package_flags+=(--allow-dirty)
+fi
+
 verify_package() {
   local package="$1"
   echo "Verifying ${package} against crates.io dependencies..."
-  cargo package -p "${package}" --allow-dirty --locked
+  cargo package -p "${package}" --locked "${package_flags[@]}"
+}
+
+verify_packaged_tests() {
+  local package="$1"
+  local version="$2"
+  local extracted="target/package/${package}-${version}"
+
+  echo "Running packaged tests for ${package} ${version}..."
+  cargo package -p "${package}" --locked "${package_flags[@]}" >/dev/null
+  rm -rf "${extracted}"
+  local tarball
+  tarball="$(ls -1t "target/package/${package}-"*.crate | head -1)"
+  mkdir -p "${extracted}"
+  tar -xf "${tarball}" -C "${extracted}" --strip-components=1
+  (
+    cd "${extracted}"
+    # Run the package-relevant tests explicitly. `cargo test --all-features`
+    # would also run the workspace-only SDK corpus oracle, but that corpus is
+    # intentionally excluded from the published crate. The full workspace CI
+    # test job still covers it from the repository checkout.
+    cargo test --all-features --locked \
+      --lib \
+      --bins \
+      --test cli \
+      --test coverage \
+      --test layout_fixtures \
+      --test library_behavior
+    cargo test --all-features --locked --doc
+  )
 }
 
 check_published_internal_dependency_metadata() {
@@ -139,6 +182,8 @@ case "${syntax_probe_status}" in
     for package in daml-lint daml-fmt; do
       verify_package "${package}"
     done
+    fmt_version="$(workspace_package_version daml-fmt)"
+    verify_packaged_tests daml-fmt "${fmt_version}"
     ;;
   404)
     echo "daml-syntax ${syntax_version} is not on crates.io yet (HTTP 404)."

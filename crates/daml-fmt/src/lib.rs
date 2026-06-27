@@ -169,18 +169,27 @@ pub fn lex_diagnostics(src: &str) -> Vec<FormatDiagnostic> {
 ///
 /// CPP-conditional source is treated specially: Daml SDK sources can contain
 /// both active and inactive `#if`/`#else` module branches. The parser does not
-/// preprocess those branches, so parser recovery diagnostics there are not a
-/// reliable signal that formatter input is malformed. Lexical diagnostics are
-/// still reported.
+/// preprocess those branches, so skipped-declaration recovery there is not a
+/// reliable signal that formatter input is malformed. Active malformed parser
+/// diagnostics and lexical diagnostics are still reported.
 #[must_use]
 pub fn source_diagnostics(src: &str) -> Vec<FormatDiagnostic> {
-    if has_cpp_conditionals(src) {
-        return lex_diagnostics(src);
-    }
+    let cpp_module_header_ranges = cpp_conditional_module_header_ranges(src);
+    let suppress_cpp_recovery = has_cpp_conditionals(src);
+    let source_line_count = src.lines().count();
 
     SourceFile::parse(src)
         .diagnostics()
         .iter()
+        .filter(|diagnostic| {
+            !suppress_cpp_recovery
+                || !is_cpp_suppressed_parser_diagnostic(
+                    diagnostic,
+                    src,
+                    &cpp_module_header_ranges,
+                    source_line_count,
+                )
+        })
         .map(|diagnostic| FormatDiagnostic {
             line: diagnostic.line(),
             column: diagnostic.column(),
@@ -206,8 +215,118 @@ fn collect_lex_diagnostics(src: &str) -> Vec<FormatDiagnostic> {
 fn has_cpp_conditionals(src: &str) -> bool {
     src.lines().any(|line| {
         let line = line.trim_start();
-        line.starts_with("#if") || line.starts_with("#else") || line.starts_with("#endif")
+        line.starts_with("#if")
+            || line.starts_with("#elif")
+            || line.starts_with("#else")
+            || line.starts_with("#endif")
     })
+}
+
+fn cpp_conditional_module_header_ranges(src: &str) -> Vec<std::ops::RangeInclusive<usize>> {
+    let mut ranges = Vec::new();
+    let mut cpp_depth = 0usize;
+    let mut module_header_start = None;
+
+    for (index, line) in src.lines().enumerate() {
+        let line_no = index + 1;
+        let trimmed = line.trim_start();
+
+        if let Some(start) = module_header_start {
+            if is_cpp_branch_boundary(trimmed) {
+                ranges.push(start..=line_no.saturating_sub(1));
+                module_header_start = None;
+            } else if module_header_ends(trimmed) {
+                ranges.push(start..=line_no);
+                module_header_start = None;
+                continue;
+            } else {
+                continue;
+            }
+        }
+
+        if trimmed.starts_with("#if") {
+            cpp_depth += 1;
+            continue;
+        }
+        if trimmed.starts_with("#endif") {
+            cpp_depth = cpp_depth.saturating_sub(1);
+            continue;
+        }
+
+        if cpp_depth > 0 && trimmed.starts_with("module ") {
+            if module_header_ends(trimmed) {
+                ranges.push(line_no..=line_no);
+            } else {
+                module_header_start = Some(line_no);
+            }
+        }
+    }
+
+    if let Some(start) = module_header_start {
+        let end = src.lines().count().max(start);
+        ranges.push(start..=end);
+    }
+
+    ranges
+}
+
+fn is_cpp_branch_boundary(line: &str) -> bool {
+    line.starts_with("#elif") || line.starts_with("#else") || line.starts_with("#endif")
+}
+
+fn module_header_ends(line: &str) -> bool {
+    line.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '\''))
+        .any(|token| token == "where")
+}
+
+fn is_cpp_suppressed_parser_diagnostic(
+    diagnostic: &daml_syntax::Diagnostic,
+    src: &str,
+    cpp_module_header_ranges: &[std::ops::RangeInclusive<usize>],
+    source_line_count: usize,
+) -> bool {
+    if diagnostic.category() == DiagnosticCategory::SkippedDecl {
+        let line = diagnostic.line().get();
+        return cpp_module_header_ranges
+            .iter()
+            .any(|range| range.contains(&line));
+    }
+    if diagnostic.category() == DiagnosticCategory::Malformed {
+        let line = diagnostic.line().get();
+        let in_cpp_module_header = cpp_module_header_ranges
+            .iter()
+            .any(|range| range.contains(&line));
+        let eof_recovery_artifact = line > source_line_count;
+        if in_cpp_module_header || eof_recovery_artifact {
+            return matches!(
+                diagnostic.message(),
+                "bad parameter pattern in 'module'" | "bad parameter pattern in 'where'"
+            );
+        }
+        let Some(source_line) = src.lines().nth(line.saturating_sub(1)) else {
+            return matches!(
+                diagnostic.message(),
+                "bad parameter pattern in 'module'" | "bad parameter pattern in 'where'"
+            );
+        };
+        match diagnostic.message() {
+            "bad parameter pattern in 'module'" => !looks_like_module_declaration(source_line),
+            "bad parameter pattern in 'where'" => !contains_where_keyword(source_line),
+            _ => false,
+        }
+    } else {
+        false
+    }
+}
+
+fn looks_like_module_declaration(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with("module ")
+}
+
+fn contains_where_keyword(line: &str) -> bool {
+    line.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '\''))
+        .any(|token| token == "where")
 }
 
 /// Import ordering strategy for formatter output.
@@ -331,8 +450,10 @@ pub fn format_source_with_options(src: &str, options: FormatOptions) -> String {
 ///
 /// Returns [`FormatError`] with typed [`FormatDiagnostic`] entries when
 /// [`source_diagnostics`] reports lexical or parser diagnostics. CPP-conditional
-/// parser recovery diagnostics are ignored by [`source_diagnostics`], while
-/// lexical diagnostics are still rejected.
+/// skipped-declaration recovery diagnostics and alternate `module` declarations
+/// inside inactive CPP branches are ignored by [`source_diagnostics`], while
+/// active malformed parser diagnostics and lexical diagnostics are still
+/// rejected.
 ///
 /// # Errors
 ///

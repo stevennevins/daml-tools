@@ -81,7 +81,7 @@ The default features build the published CLI and custom-rule engine:
 
 ```toml
 [dependencies]
-daml-lint = "0.8"
+daml-lint = "0.9.3"
 ```
 
 Library consumers that only need parser lowering and the rule-facing IR can
@@ -89,7 +89,7 @@ avoid the CLI parser and QuickJS runtime:
 
 ```toml
 [dependencies]
-daml-lint = { version = "0.8", default-features = false }
+daml-lint = { version = "0.9.3", default-features = false }
 ```
 
 Rust-facing finding locations, parser diagnostics, and IR spans use the
@@ -341,7 +341,7 @@ provenance and licensing.
 ## Public API Stability
 
 `daml-lint` is pre-1.0. The CLI exit codes and documented feature flags are the
-stable user contract for the current 0.8 line. The rule-facing IR is
+stable user contract for the current 0.9.x line. The rule-facing IR is
 intentionally public for custom rules and library users, but it may gain
 structure in 0.x minor releases;
 custom rules should check `ir_version` and match typed nodes rather than raw

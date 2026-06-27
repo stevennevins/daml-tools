@@ -13,7 +13,7 @@
     "check:types": "npm run check:lint-plugin-version && npm run check:lint-plugin-types && tsc -p tsconfig.json --noEmit && tsc -p lint-plugin/tsconfig.json --noEmit",
     "check:examples-clean": "node -e \"const fs=require('fs');const files=fs.readdirSync('examples').filter((f)=>f.endsWith('.js'));if(files.length){console.error('Top-level generated example JS belongs in examples/dist: '+files.join(', '));process.exit(1);}\"",
     "check:lint-plugin-package": "cd lint-plugin && npm pack --dry-run",
-    "check:rules": "npm run check:types && npm run build:rules && npm run build:examples && npm run check:examples-clean && npm run check:lint-plugin-package && git diff --exit-code -- rules examples lint-plugin tools package.json package-lock.json tsconfig.json"
+    "check:rules": "node tools/check-rules.mjs"
   },
   "devDependencies": {
     "esbuild": "0.28.1",

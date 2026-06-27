@@ -38,19 +38,19 @@ workspace MSRV so `cargo install` and CI stay aligned.
 
 | Crate | `exclude` highlights | Notes |
 |-------|----------------------|-------|
-| `daml-parser` | _(none)_ | Ships `LICENSE`, `README.md`, `CHANGELOG.md`, and `src/`. |
-| `daml-syntax` | _(none)_ | Ships `LICENSE`, `README.md`, `CHANGELOG.md`, and `src/`. |
+| `daml-parser` | _(none)_ | Ships `LICENSE`, `README.md`, `CHANGELOG.md`, `src/`, integration tests, fixtures, and goldens. |
+| `daml-syntax` | _(none)_ | Ships `LICENSE`, `README.md`, `CHANGELOG.md`, `src/`, and integration tests. |
 | `daml-lint` | `tests/fixtures/`, `docs/`, `tools/`, `lint-plugin/`, npm metadata, `rules/*.ts` | Keeps `examples/` and compiled `rules/*.js` (embedded via `include_str!`). |
-| `daml-fmt` | corpus, `tests/fixtures/`, differential-test trees, dev scripts | Keeps the published `daml-fmt` binary and integration tests. |
+| `daml-fmt` | corpus, differential-test trees, dev scripts | Keeps the published `daml-fmt` binary, integration tests, layout fixtures, and goldens. |
 
 ## Workspace members
 
 | Crate | Version | Kind | Package description |
 |-------|---------|------|---------------------|
 | [`daml-parser`](../../crates/daml-parser) | `0.10.0` | library | Lossless lexer, layout resolver, and parser for the Daml smart-contract language. |
-| [`daml-syntax`](../../crates/daml-syntax) | `0.8.0` | library | Shared parsed-source surface for Daml tools. |
-| [`daml-lint`](../../crates/daml-lint) | `0.9.0` | library and CLI | Static analysis scanner for Daml smart contracts. |
-| [`daml-fmt`](../../crates/daml-fmt) | `0.7.0` | library and CLI | Canonical code formatter for the Daml smart-contract language, built on shared syntax. |
+| [`daml-syntax`](../../crates/daml-syntax) | `0.9.0` | library | Shared parsed-source surface for Daml tools. |
+| [`daml-lint`](../../crates/daml-lint) | `0.9.3` | library and CLI | Static analysis scanner for Daml smart contracts. |
+| [`daml-fmt`](../../crates/daml-fmt) | `0.7.3` | library and CLI | Canonical code formatter for the Daml smart-contract language, built on shared syntax. |
 
 ### Per-crate docs.rs URLs
 
@@ -234,10 +234,11 @@ file arguments with `daml-tools.fmt.ignore` or repeatable
 `--ignore-path <FILE>` ignore files. Formatter config discovery is cwd-only: it
 checks exactly `./daml.yaml` unless `--config <FILE>` is supplied.
 
-`source_diagnostics` intentionally suppresses parser recovery diagnostics for
-CPP-conditional sources because inactive `#if`/`#else` module branches are not
-preprocessed before parsing. Lexical diagnostics are still returned and still
-cause `try_format_source*` and `coverage` to fail.
+`source_diagnostics` intentionally suppresses skipped-declaration parser recovery
+and alternate `module` declarations inside inactive CPP branches because those
+branches are not preprocessed before parsing. Active malformed parser
+diagnostics and lexical diagnostics are still returned and still cause
+`try_format_source*` and `coverage` to fail.
 
 ### Binaries
 
