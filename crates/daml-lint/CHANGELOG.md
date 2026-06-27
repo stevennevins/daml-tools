@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3](https://github.com/stevennevins/daml-tools/compare/daml-lint-v0.9.2...daml-lint-v0.9.3) - 2026-06-27
+
+### Added
+
+- *(parser)* implement source parser audit gaps
+
+### Other
+
+- *(p0)* add corpus and fixture safety coverage ([#118](https://github.com/stevennevins/daml-tools/pull/118))
+
 ### Added
 
 - *(ir)* [**breaking**] `Choice.authority_exprs` (`ir_version: 5`).
