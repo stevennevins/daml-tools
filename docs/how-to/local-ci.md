@@ -87,6 +87,14 @@ pushed to the PR branch, and the matching act job exits successfully. Each
 `gh signoff` command creates a GitHub commit status for `HEAD`; do not sign off
 for a job that failed, was skipped, or was run with a different toolchain.
 
+The package verification job runs `git diff` to reject dirty packages. When act
+runs from a git worktree, mount the git common directory into the container so
+that the worktree `.git` file resolves correctly:
+
+```sh
+git_common="$(git rev-parse --path-format=absolute --git-common-dir)"
+```
+
 Run one local job per required signoff context:
 
 | Required PR context | Validate with act | Create the status |
@@ -94,7 +102,7 @@ Run one local job per required signoff context:
 | `signoff/test` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j test` | `MISE_LOCKED=1 mise x -- gh signoff test` |
 | `signoff/msrv` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j msrv` | `MISE_LOCKED=1 mise x -- gh signoff msrv` |
 | `signoff/npm-package` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j npm-package` | `MISE_LOCKED=1 mise x -- gh signoff npm-package` |
-| `signoff/package` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j package` | `MISE_LOCKED=1 mise x -- gh signoff package` |
+| `signoff/package` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j package --container-options "--mount type=bind,source=${git_common},target=${git_common},readonly"` | `MISE_LOCKED=1 mise x -- gh signoff package` |
 | `signoff/cargo-deny` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j cargo-deny` | `MISE_LOCKED=1 mise x -- gh signoff cargo-deny` |
 | `signoff/semver` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j semver` | `MISE_LOCKED=1 mise x -- gh signoff semver` |
 | `signoff/build-linux-x64` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j build-pr --container-architecture linux/amd64` | `MISE_LOCKED=1 mise x -- gh signoff build-linux-x64` |
@@ -102,6 +110,9 @@ Run one local job per required signoff context:
 
 The partial name passed to `gh signoff` omits the `signoff/` prefix; the
 extension adds that prefix when it creates the commit status.
+
+Use Docker `--mount` rather than `--volume` for the git common directory so a
+missing host path fails loudly instead of creating an empty directory.
 
 Do not use local signoff for release-only guarantees that Linux Docker cannot
 honestly provide. macOS and Windows platform builds stay on GitHub-hosted
