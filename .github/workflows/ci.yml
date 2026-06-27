@@ -127,8 +127,9 @@ jobs:
           done
 
   # Prove published crate tarballs compile against crates.io dependency versions.
-  # daml-parser always verifies; downstream crates verify once the workspace
-  # parser version is on crates.io (see scripts/check-package.sh).
+  # Already-published crate versions must keep the same internal daml-* dependency
+  # requirements; downstream tool crates verify once parser/syntax releases exist
+  # on crates.io (see scripts/check-package.sh).
   package:
     runs-on: ubuntu-latest
     timeout-minutes: 10
