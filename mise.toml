@@ -1,0 +1,17 @@
+# Pinned toolchain for local signoff, act, and GitHub CI.
+# Use MISE_LOCKED=1 in signoff workflows only; do not set locked=true here.
+
+[tools]
+rust = [
+  { version = "1.96.0", components = "rustfmt,clippy" },
+  "1.87.0",
+]
+node = "22.23.1"
+npm = "10.9.8"
+"cargo:cargo-deny" = "0.19.9"
+"cargo:cargo-semver-checks" = "0.48.0"
+"cargo:cargo-npm" = "0.1.2"
+actionlint = "1.7.12"
+lychee = "0.24.2"
+act = "0.2.89"
+gh = "2.95.0"
