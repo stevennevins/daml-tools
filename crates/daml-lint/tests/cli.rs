@@ -47,6 +47,24 @@ fn permission_denied_cmd() -> (Command, Option<std::path::PathBuf>) {
     (command, Some(path))
 }
 
+#[cfg(unix)]
+fn output_with_executable_busy_retry(command: &mut Command) -> std::process::Output {
+    // In act's root-run Linux container, the copied helper binary can rarely
+    // return ETXTBSY immediately after creation. Retry that transient exec
+    // failure without weakening the CLI assertions these tests make.
+    const LINUX_ETXTBSY: i32 = 26;
+    for attempt in 0..5 {
+        match command.output() {
+            Ok(output) => return output,
+            Err(err) if err.raw_os_error() == Some(LINUX_ETXTBSY) && attempt < 4 => {
+                std::thread::sleep(std::time::Duration::from_millis(25 * (attempt + 1)));
+            }
+            Err(err) => panic!("failed to execute daml-lint: {err}"),
+        }
+    }
+    unreachable!("retry loop always returns or panics");
+}
+
 fn temp_file(name: &str, contents: &str) -> std::path::PathBuf {
     let id = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
     let path = std::env::temp_dir().join(format!(
@@ -394,12 +412,8 @@ f = 1"#,
     std::fs::set_permissions(&bad, bad_perm).unwrap();
 
     let (mut command, permission_bin) = permission_denied_cmd();
-    let output = command
-        .current_dir(&parent)
-        .arg(&good)
-        .arg(&bad)
-        .output()
-        .unwrap();
+    let output =
+        output_with_executable_busy_retry(command.current_dir(&parent).arg(&good).arg(&bad));
 
     std::fs::set_permissions(&bad, original_bad).unwrap();
     std::fs::set_permissions(&good, original_good).unwrap();
@@ -434,11 +448,7 @@ fn unreadable_subdirectory_exits_two() {
     std::fs::set_permissions(&unreadable, dir_perm).unwrap();
 
     let (mut command, permission_bin) = permission_denied_cmd();
-    let output = command
-        .current_dir(&root)
-        .arg("unreadable")
-        .output()
-        .unwrap();
+    let output = output_with_executable_busy_retry(command.current_dir(&root).arg("unreadable"));
 
     std::fs::set_permissions(&unreadable, original_dir).unwrap();
     std::fs::set_permissions(&root, original_root).unwrap();
