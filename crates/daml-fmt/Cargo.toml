@@ -19,7 +19,6 @@ exclude = [
     "original/",
     "expected/",
     "corpus/",
-    "tests/fixtures/",
     "test/",
     "tools/",
     "docs/",

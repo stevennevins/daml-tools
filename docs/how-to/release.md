@@ -92,10 +92,20 @@ Before merging the release PR, verify:
   `daml-lint` is being released.
 - The starter template depends on the new `@daml-tools/lint-plugin` version.
 - CI is green, including the `npm CLI packaging` job.
+- Formatter release candidates also pass the optional compiler desugar oracle when
+  the Daml SDK is available locally.
 
-CI runs `cargo npm generate --infer-targets` for both CLI crates, validates the
-generated wrapper `bin`, `engines`, and optional dependencies, installs the
-generated host package, and runs the generated binary.
+CI runs the formatter's 924-file differential test (`node test/diff.js`) and does
+not require the full SDK desugar sweep on every merge. Treat the desugar oracle as
+an explicit formatter release gate:
+
+```sh
+bash scripts/check-desugar.sh              # curated subset when SDK is present
+bash scripts/check-desugar.sh --desugar    # full 924-file sweep before risky fmt releases
+```
+
+`scripts/check-desugar.sh` skips loudly when `daml` is absent; install Daml SDK
+3.4.11 before running it for a release candidate.
 
 ## Merge the release PR
 
@@ -130,11 +140,11 @@ Use a prerelease to test CLI npm distribution under `next` without moving
 `latest`. This does not publish crates to crates.io and does not run
 release-plz.
 
-1. Choose a never-published version, such as `0.2.6-rc.0`.
+1. Choose a never-published version, such as `0.7.4-rc.0`.
 2. On a branch, bump exactly the crate being tested and refresh `Cargo.lock`:
 
    ```sh
-   cargo set-version -p daml-fmt 0.2.6-rc.0
+   cargo set-version -p daml-fmt 0.7.4-rc.0
    cargo build
    cargo build --locked
    ```
@@ -153,9 +163,9 @@ release-plz.
    and push the tag:
 
    ```sh
-   git tag daml-fmt-v0.2.6-rc.0
+   git tag daml-fmt-v0.7.4-rc.0
    git push origin HEAD
-   git push origin daml-fmt-v0.2.6-rc.0
+   git push origin daml-fmt-v0.7.4-rc.0
    ```
 
 5. If trusted publishing cannot create a first-time package, manually dispatch
@@ -163,8 +173,8 @@ release-plz.
 
    ```sh
    gh workflow run npm-publish.yml --repo stevennevins/daml-tools \
-     --ref daml-fmt-v0.2.6-rc.0 \
-     -f tag=daml-fmt-v0.2.6-rc.0 \
+     --ref daml-fmt-v0.7.4-rc.0 \
+     -f tag=daml-fmt-v0.7.4-rc.0 \
      -f use_npm_token=true
    ```
 
@@ -176,7 +186,7 @@ Verify the prerelease:
 
 ```sh
 npm view @daml-tools/daml-fmt dist-tags --prefer-online
-npm view @daml-tools/daml-fmt-linux-x64@0.2.6-rc.0 version --prefer-online
+npm view @daml-tools/daml-fmt-linux-x64@0.7.4-rc.0 version --prefer-online
 tmp="$(mktemp -d)" && cd "$tmp"
 npm init -y >/dev/null
 npm install --save-dev @daml-tools/daml-fmt@next --prefer-online

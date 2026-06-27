@@ -56,10 +56,11 @@ Run the heavier gates before pushing:
 ```sh
 cargo test --workspace --all-features --locked
 (cd crates/daml-fmt && npm test)
-for package in daml-parser daml-lint daml-fmt; do
+for package in daml-parser daml-syntax daml-lint daml-fmt; do
   cargo semver-checks check-release --package "$package"
 done
 bash scripts/check-package.sh
+bash scripts/check-docs.sh
 ```
 
 `scripts/check-package.sh` runs `cargo package --verify` for every published
@@ -80,10 +81,10 @@ bash scripts/check-lint-rules.sh
 ```
 
 `scripts/check-lint-rules.sh` runs `npm run check:rules` from `crates/daml-lint`.
-The npm gate ends with `git diff --exit-code` over generated rule artifacts, so the
-wrapper temporarily stages those paths before the diff and restores the index on
-exit. That proves TypeScript custom-rule contracts and regenerated outputs are in
-sync during review even when `examples/daml-lint.d.ts` and
+The npm gate snapshots generated rule artifacts before rebuilding them and fails
+if the rebuild changes any bytes, so the wrapper does not stage paths or disturb
+a partially staged index. That proves TypeScript custom-rule contracts and
+regenerated outputs are in sync during review even when `examples/daml-lint.d.ts` and
 `lint-plugin/dist/index.d.ts` are intentionally uncommitted.
 
 When changing `daml-lint` feature flags or optional runtime code, run the
@@ -128,7 +129,7 @@ be resolved before merging. While the crates are pre-1.0, intentional breaking
 public API changes use 0.x minor bumps and patch releases stay compatible.
 
 Releases are driven by [release-plz](release-plz.toml) in dependency order:
-`daml-parser` first, then `daml-lint` and `daml-fmt`. The GitHub workflow
+`daml-parser` first, then `daml-syntax`, then `daml-lint` and `daml-fmt`. The GitHub workflow
 expects a crates.io `CARGO_REGISTRY_TOKEN`; set `RELEASE_PLZ_TOKEN` to a PAT if
 release PRs or tags must trigger follow-on workflows.
 

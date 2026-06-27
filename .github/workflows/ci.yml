@@ -3,19 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - ".smithers/**"
-      - "AGENTS.md"
-      - "LICENSE"
   pull_request:
-    paths-ignore:
-      - "docs/**"
-      - "AGENTS.md"
-      - "CONTRIBUTING.md"
-      - "LICENSE"
-      - "README.md"
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -139,6 +127,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: package verification
         run: bash scripts/check-package.sh
+      - name: docs and version checks
+        run: bash scripts/check-docs.sh
 
   # License + advisory policy (see deny.toml).
   cargo-deny:

@@ -1,0 +1,1 @@
+unguarded-division|HIGH|UnguardedDivision.daml|5|1|Unguarded division by 'y' — no prior > 0 check found in function 'ratio'.|x / y

@@ -121,7 +121,69 @@ fn parser_diagnostics_are_reported() {
 #[test]
 fn cpp_conditionals_do_not_surface_parser_recovery_diagnostics() {
     let src = "module A where\n#if defined(foo)\nmodule B where\n#else\nmodule C where\n#endif\n";
+    let diags = source_diagnostics(src);
+    assert!(diags.is_empty());
+}
+
+#[test]
+fn cpp_conditionals_do_not_surface_module_export_branch_recovery_diagnostics() {
+    let src = r"{-# LANGUAGE CPP #-}
+#ifndef DAML_BIGNUMERIC
+module DA.BigNumeric where
+#else
+module DA.BigNumeric (
+   BigNumeric
+ , RoundingMode(..)
+ , scale
+ ) where
+#endif
+";
     assert!(source_diagnostics(src).is_empty());
+}
+
+#[test]
+fn cpp_conditionals_still_surface_active_malformed_parser_diagnostics() {
+    let src = "module M where\n#if defined(foo)\nfoo = if x then 1\n#endif\n";
+    assert!(!source_diagnostics(src).is_empty());
+}
+
+#[test]
+fn cpp_conditionals_still_surface_bad_parameter_pattern_malformed_diagnostics() {
+    let src = "module M where\n#if defined(foo)\nfoo @ = 1\n#endif\n";
+    assert!(!source_diagnostics(src).is_empty());
+}
+
+#[test]
+fn cpp_conditionals_suppress_spurious_where_recovery_on_non_where_lines() {
+    let src = r"{-# LANGUAGE CPP #-}
+#ifndef DAML_BIGNUMERIC
+module DA.BigNumeric where
+#else
+module DA.BigNumeric (
+   BigNumeric
+ ) where
+import GHC.Types (primitive)
+#endif
+";
+    assert!(source_diagnostics(src).is_empty());
+}
+
+#[test]
+fn cpp_conditionals_still_surface_active_malformed_declarations_after_endif() {
+    let src = "module M where\n#if defined(foo)\nbar = 1\n#endif\nmodule @ = 1\n";
+    assert!(!source_diagnostics(src).is_empty());
+}
+
+#[test]
+fn cpp_conditionals_still_surface_active_malformed_after_incomplete_branch_module_header() {
+    let src = "module M where\n#if defined(foo)\nmodule B (\n#endif\n@@@\n";
+    assert!(!source_diagnostics(src).is_empty());
+}
+
+#[test]
+fn cpp_conditionals_still_surface_active_skipped_decl_diagnostics() {
+    let src = "module M where\n#if defined(foo)\n@@@\n#endif\n";
+    assert!(!source_diagnostics(src).is_empty());
 }
 
 #[test]

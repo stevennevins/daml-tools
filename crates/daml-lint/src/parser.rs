@@ -633,6 +633,21 @@ fn other_statement(expr: &ast::Expr, binder: Option<&ast::Pat>) -> Statement {
     }
 }
 
+fn case_branch_guard_statements(branch: &ast::AltBranch) -> Vec<Statement> {
+    branch
+        .guards
+        .iter()
+        .filter_map(|guard| {
+            let (ast::GuardQualifier::Bool { expr, .. }
+            | ast::GuardQualifier::Pattern { expr, .. }) = guard
+            else {
+                return None;
+            };
+            Some(other_statement(expr, None))
+        })
+        .collect()
+}
+
 fn lower_do(stmts: &[DoStmt]) -> Vec<Statement> {
     let mut out = Vec::new();
     let mut helpers: std::collections::HashMap<String, Helper<'_>> =
@@ -972,21 +987,57 @@ fn collect_actions_inner(
             scrutinee, alts, ..
         } => {
             if stmt_pos {
-                let bodies: Vec<&ast::Expr> = alts
+                let arms: Vec<BranchArm> = alts
                     .iter()
-                    .flat_map(|a| a.branches.iter().map(|b| &b.body))
-                    .collect();
-                let patterns: Vec<Option<String>> = alts
-                    .iter()
-                    .flat_map(|a| {
-                        std::iter::repeat_n(Some(a.pat.render()), a.branches.len().max(1))
+                    .flat_map(|alt| {
+                        let where_body: Vec<Statement> = alt
+                            .where_bindings
+                            .iter()
+                            .map(|b| Statement::Let {
+                                name: binding_name(b),
+                                value: lower_expr(&b.expr),
+                                span: src_pos(b.pos),
+                            })
+                            .collect();
+                        if alt.branches.is_empty() {
+                            let mut arm_body = statements_of_expr(&alt.body);
+                            arm_body.extend(where_body);
+                            vec![BranchArm {
+                                pattern: Some(alt.pat.render()),
+                                body: arm_body,
+                            }]
+                        } else {
+                            let branch_count = alt.branches.len();
+                            alt.branches
+                                .iter()
+                                .enumerate()
+                                .map(|(index, branch)| {
+                                    let mut arm_body = case_branch_guard_statements(branch);
+                                    arm_body.extend(statements_of_expr(&branch.body));
+                                    if index + 1 == branch_count {
+                                        arm_body.extend(where_body.clone());
+                                    }
+                                    BranchArm {
+                                        pattern: Some(alt.pat.render()),
+                                        body: arm_body,
+                                    }
+                                })
+                                .collect()
+                        }
                     })
                     .collect();
-                push_branch(Some(scrutinee), &bodies, &patterns, expr, out);
+                out.push(Statement::Branch {
+                    scrutinee: Some(lower_expr(scrutinee)),
+                    arms,
+                    span: src_pos(expr.pos()),
+                });
             } else {
                 for alt in alts {
                     for branch in &alt.branches {
                         collect_actions_inner(&branch.body, None, out, false, conditional);
+                    }
+                    for b in &alt.where_bindings {
+                        collect_actions_inner(&b.expr, None, out, false, conditional);
                     }
                 }
             }
