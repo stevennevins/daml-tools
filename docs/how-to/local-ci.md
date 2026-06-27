@@ -10,6 +10,11 @@ workflow jobs through act instead of a bespoke CI wrapper. Use `MISE_LOCKED=1`
 locally, matching the GitHub workflows, so drift from `mise.toml` and
 `mise.lock` fails loudly.
 
+The CI and Docs workflows intentionally do not run on GitHub-hosted
+`pull_request` events. They keep `push` triggers for `main` and
+`workflow_dispatch` triggers so act can execute the same YAML locally for PR
+signoff without spending hosted runner minutes on every PR update.
+
 Install tools from the committed lockfile before running act or gh-signoff:
 
 ```sh
@@ -102,14 +107,14 @@ cross-platform set.
 
 | Required PR context | Validate with act | Create the status |
 |---------------------|-------------------|-------------------|
-| `signoff/test` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j test` | `MISE_LOCKED=1 mise x -- gh signoff test` |
-| `signoff/msrv` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j msrv` | `MISE_LOCKED=1 mise x -- gh signoff msrv` |
-| `signoff/npm-package` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j npm-package` | `MISE_LOCKED=1 mise x -- gh signoff npm-package` |
-| `signoff/package` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j package --container-options "--mount type=bind,source=${git_common},target=${git_common},readonly"` | `MISE_LOCKED=1 mise x -- gh signoff package` |
-| `signoff/cargo-deny` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j cargo-deny` | `MISE_LOCKED=1 mise x -- gh signoff cargo-deny` |
-| `signoff/semver` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j semver` | `MISE_LOCKED=1 mise x -- gh signoff semver` |
-| `signoff/build-linux-x64` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j build-pr` | `MISE_LOCKED=1 mise x -- gh signoff build-linux-x64` |
-| `signoff/docs` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/docs.yml -j docs` | `MISE_LOCKED=1 mise x -- gh signoff docs` |
+| `signoff/test` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/ci.yml -j test` | `MISE_LOCKED=1 mise x -- gh signoff test` |
+| `signoff/msrv` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/ci.yml -j msrv` | `MISE_LOCKED=1 mise x -- gh signoff msrv` |
+| `signoff/npm-package` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/ci.yml -j npm-package` | `MISE_LOCKED=1 mise x -- gh signoff npm-package` |
+| `signoff/package` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/ci.yml -j package --container-options "--mount type=bind,source=${git_common},target=${git_common},readonly"` | `MISE_LOCKED=1 mise x -- gh signoff package` |
+| `signoff/cargo-deny` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/ci.yml -j cargo-deny` | `MISE_LOCKED=1 mise x -- gh signoff cargo-deny` |
+| `signoff/semver` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/ci.yml -j semver` | `MISE_LOCKED=1 mise x -- gh signoff semver` |
+| `signoff/build-linux-x64` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/ci.yml -j build-pr` | `MISE_LOCKED=1 mise x -- gh signoff build-linux-x64` |
+| `signoff/docs` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/docs.yml -j docs` | `MISE_LOCKED=1 mise x -- gh signoff docs` |
 
 The partial name passed to `gh signoff` omits the `signoff/` prefix; the
 extension adds that prefix when it creates the commit status.
@@ -240,7 +245,7 @@ When you intentionally want newer runner images:
 
 3. Update the matching `-P ubuntu-…=catthehacker/ubuntu@sha256:…` lines in `.actrc`.
 
-4. Re-run `MISE_LOCKED=1 mise x -- act -l` and at least one non-publishing job, such as `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/docs.yml -j docs`, to confirm act still parses and executes workflows with the new pins.
+4. Re-run `MISE_LOCKED=1 mise x -- act -l` and at least one non-publishing job, such as `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/docs.yml -j docs`, to confirm act still parses and executes workflows with the new pins.
 
 Commit digest updates separately from unrelated CI changes so image drift is easy to review.
 
