@@ -139,8 +139,9 @@ protection settings through the GitHub UI or the branch-protection API instead.
 
 ### API update path
 
-Prefer the narrower required-status-checks endpoint over a full branch
-protection replacement. Review the generated payload before sending the PATCH:
+Prefer the required-status-check contexts endpoint over a full branch-protection
+replacement. This preserves existing app-specific GitHub Actions checks while
+adding generic commit-status contexts created by gh-signoff.
 
 ```sh
 owner=stevennevins
@@ -151,32 +152,19 @@ gh api \
   "repos/${owner}/${repo}/branches/${branch}/protection/required_status_checks" \
   > required-status-checks.before.json
 
-jq --argjson required '[
-  "signoff/test",
-  "signoff/msrv",
-  "signoff/npm-package",
-  "signoff/package",
-  "signoff/cargo-deny",
-  "signoff/semver",
-  "signoff/build-linux-x64",
-  "signoff/docs"
-]' '
-  {
-    strict: (.strict // true),
-    contexts: (((.contexts // []) + $required) | unique),
-    checks: (.checks // [])
-  }
-' required-status-checks.before.json > required-status-checks.after.json
-
-cat required-status-checks.after.json
-
-# Run only after the reviewed payload preserves the existing status-check policy.
 gh api \
-  --method PATCH \
+  --method POST \
   -H "Accept: application/vnd.github+json" \
   -H "X-GitHub-Api-Version: 2022-11-28" \
-  "repos/${owner}/${repo}/branches/${branch}/protection/required_status_checks" \
-  --input required-status-checks.after.json
+  "repos/${owner}/${repo}/branches/${branch}/protection/required_status_checks/contexts" \
+  -f "contexts[]=signoff/test" \
+  -f "contexts[]=signoff/msrv" \
+  -f "contexts[]=signoff/npm-package" \
+  -f "contexts[]=signoff/package" \
+  -f "contexts[]=signoff/cargo-deny" \
+  -f "contexts[]=signoff/semver" \
+  -f "contexts[]=signoff/build-linux-x64" \
+  -f "contexts[]=signoff/docs"
 ```
 
 After the update, verify the required contexts:
@@ -187,9 +175,10 @@ gh api \
   --jq '.contexts'
 ```
 
-If the narrow endpoint is not available because required status checks are not
-enabled yet, use the UI path or prepare a full branch-protection payload from a
-fresh GET response. Do not use `gh signoff install` as a shortcut.
+The signoff contexts should also appear in `.checks` with `"app_id": null`.
+If required status checks are not enabled yet, use the UI path or prepare a full
+branch-protection payload from a fresh GET response. Do not use
+`gh signoff install` as a shortcut.
 
 ## Trust model
 
