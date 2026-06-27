@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- *(ir)* [**breaking**] `Choice.authority_exprs` (`ir_version: 5`).
+- *(ir)* [**breaking**] `InterfaceInstance.view_expr` distinct from `methods` (`ir_version: 6`).
+- *(ir)* [**breaking**] `CaseAlt.branches`, `CaseBranch.guards`, `CaseGuard`, and `where_bindings` (`ir_version: 7`).
+- *(ir)* [**breaking**] `Import.package_label` for package-qualified imports (`ir_version: 8`).
+
 ## [0.9.2](https://github.com/stevennevins/daml-tools/compare/daml-lint-v0.9.1...daml-lint-v0.9.2) - 2026-06-26
 
 ### Added

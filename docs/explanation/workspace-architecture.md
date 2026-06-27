@@ -100,3 +100,14 @@ abstraction. New Daml tooling should start by asking whether it needs parser
 internals, source-facing syntax, policy, or layout. Parser internals belong in
 `daml-parser`; shared source-facing syntax belongs in `daml-syntax`; policy
 belongs in a tool such as `daml-lint`; layout belongs in `daml-fmt`.
+
+## Parser scope and non-goals
+
+`daml-parser` is source-oriented: it models Daml syntax, byte spans, and
+tolerant recovery — not the LF AST or compiler internals. Downstream crates
+lower or walk that tree for their own needs (`daml-lint` for rule IR,
+`daml-fmt` for layout). The parser deliberately does **not** introduce LF
+package metadata, `NameMap`s, qualified `PackageId` resolution, Update/internal
+expression nodes, imported fixity resolution, or compiler desugaring. When a
+feature is LF-only or requires name/type semantics, it belongs above the parser
+layer or in the official Daml toolchain.

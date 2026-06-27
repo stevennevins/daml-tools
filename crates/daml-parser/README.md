@@ -305,9 +305,26 @@ resolution, type checking, scenario/script execution, or authorization analysis.
 Consumers that need those concepts should derive them above the syntax layer or
 delegate them to the Daml toolchain.
 
-`InterfaceInstanceDecl` exposes a source-ordered `items` list (`View` and
-`Method` variants) instead of a flat `methods` vector, so `view = ...` bindings
-are distinguishable from ordinary method implementations.
+Recent public AST changes (see [CHANGELOG](CHANGELOG.md)):
+
+- `ChoiceDecl.authority_exprs` plus braced/layout `where` metadata blocks model
+  source `controller`, `observer`, and `authority` clauses without LF choice
+  metadata.
+- `InterfaceInstanceDecl.items` (`View` / `Method`) replaces flat `methods` so
+  `view = ...` is distinguishable from method implementations.
+- `Alt.branches`, guard qualifiers, and alternative-local `where_bindings`
+  preserve guarded case alternatives instead of collapsing to the first body.
+- Module-level `Decl::Fixity` declarations drive expression grouping for the
+  whole module; imported fixity resolution is out of scope.
+- `Pat::Record` models brace and `with` constructor record pattern fields;
+  positional `Pat::Con` patterns are unchanged.
+- `ImportDecl.package_label` stores decoded package string literals from
+  `import "pkg" Module` without resolving to an LF `PackageId`.
+
+Explicit non-goals: LF package metadata, `NameMap`s, qualified `PackageId`s,
+Update/internal expression nodes, imported fixity resolution, and compiler
+desugaring belong above `daml-parser` or in the Daml toolchain — not in this
+crate.
 
 ## License
 

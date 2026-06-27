@@ -254,6 +254,7 @@ Removed v1/v2 compatibility fields and their structured replacements:
 | `interface_instance.view` | `view_expr` (`Expr \| null`) | Source-level `view = ...` on interface instances, distinct from method names. |
 | `case_alt.guards` | `branches[].guards` (`CaseGuard[]`) | Boolean and pattern guards on case alternative branches. |
 | `case_alt.where` | `where_bindings` (`LetBinding[]`) | Alternative-local `where` helper bindings on case alternatives. |
+| `import.package` | `package_label` (`string \| null`) | Decoded package string from `import "pkg" Module`; not an LF `PackageId`. |
 | `template.signatories`, `template.observers` | `signatory_exprs`, `observer_exprs` (`Expr[]`) | Structured party expressions only. |
 
 `stmt.Other.raw` and the `Unknown` expression's `raw` are deliberate raw-source

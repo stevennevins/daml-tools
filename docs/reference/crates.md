@@ -85,13 +85,22 @@ by `daml-syntax`.
 The normal construction path is parser-created AST values. The AST modules are
 public for inspection by tools.
 
-`InterfaceInstanceDecl.items` is a source-ordered `InterfaceInstanceBodyItem`
-list that distinguishes `view = ...` from method implementations. Lint IR
-`InterfaceInstance.view_expr` exposes the view expression separately from
-`methods` (`ir_version: 6`). `Alt` case alternatives retain source-ordered
-`branches` with boolean/pattern guards and alternative-local `where_bindings`;
-lint `CaseAlt` mirrors that shape (`ir_version: 7`). `Import.package_label`
-preserves package-qualified import string literals from source (`ir_version: 8`).
+`ChoiceDecl.authority_exprs` and braced/layout `where` metadata blocks preserve
+source choice `controller`, `observer`, and `authority` clauses; lint IR
+`Choice.authority_exprs` exposes them (`ir_version: 5`). `InterfaceInstanceDecl.items`
+is a source-ordered `InterfaceInstanceBodyItem` list that distinguishes
+`view = ...` from method implementations; lint `InterfaceInstance.view_expr`
+is separate from `methods` (`ir_version: 6`). `Alt` case alternatives retain
+source-ordered `branches` with boolean/pattern guards and alternative-local
+`where_bindings`; lint `CaseAlt` mirrors that shape (`ir_version: 7`).
+Module-level `Decl::Fixity` declarations drive in-module expression grouping
+(imported fixity is out of scope). `Pat::Record` models brace/`with` record
+pattern fields while positional `Pat::Con` patterns stay unchanged. `ImportDecl.package_label`
+preserves package-qualified import string literals from source; lint
+`Import.package_label` mirrors the decoded label (`ir_version: 8`).
+
+`daml-parser` does not model LF package metadata, `NameMap`s, qualified
+`PackageId`s, Update/internal expression nodes, or compiler desugaring.
 
 ## `daml-syntax`
 
