@@ -9,7 +9,7 @@ map in [`docs/`](docs/).
 
 Install:
 
-- Rust 1.87.0 or newer
+- Rust 1.96.0 or newer
 - the Rust `rustfmt` and `clippy` components
 - Node.js 18 or newer
 - `uv`, for installing `prek`
@@ -80,9 +80,9 @@ differential test used by the pre-push hook.
 
 Maintainers applying required PR signoffs should use the locked mise and act
 workflow in [`docs/how-to/local-ci.md`](docs/how-to/local-ci.md). That guide maps
-each required `signoff/...` context to the GitHub Actions job to run with
-`MISE_LOCKED=1 mise x -- act` and the matching status command to create with
-`MISE_LOCKED=1 mise x -- gh signoff`. Do not use `gh signoff install` or
+each required `signoff/...` context to a `MISE_LOCKED=1 mise run signoff:*` task.
+Those tasks run the matching GitHub Actions YAML job through act and then create
+the corresponding `gh signoff` status. Do not use `gh signoff install` or
 `gh signoff uninstall` on the real repo; preserve branch protection through the
 runbook in that guide instead.
 

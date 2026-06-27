@@ -30,7 +30,7 @@ jobs:
         with:
           install: false
       - name: Install locked tools
-        run: mise install rust@1.96.0 node@22.23.1 npm@10.9.8
+        run: mise install rust node npm
       - uses: Swatinem/rust-cache@v2
       - name: rustfmt
         run: cargo fmt --all --check
@@ -57,33 +57,6 @@ jobs:
         working-directory: crates/daml-fmt
         run: node test/diff.js
 
-  # Build on the declared MSRV so a dependency bump that raises it fails loudly.
-  msrv:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      MISE_RUST_VERSION: "1.87.0"
-    steps:
-      - uses: actions/checkout@v6
-      - uses: jdx/mise-action@v4.2.0
-        with:
-          install: false
-      - name: Install locked tools
-        run: mise install rust@1.87.0
-      - uses: Swatinem/rust-cache@v2
-      - name: workspace all targets and features
-        run: cargo check --workspace --all-targets --all-features --locked
-      - name: daml-lint library without optional features
-        run: cargo check -p daml-lint --no-default-features --locked
-      - name: daml-lint JS runtime feature only
-        run: cargo check -p daml-lint --no-default-features --features js-runtime --locked
-      - name: daml-lint custom-rules feature only
-        run: cargo check -p daml-lint --no-default-features --features custom-rules --locked
-      - name: daml-lint CLI without custom rules
-        run: cargo check -p daml-lint --no-default-features --features cli,js-runtime --locked
-      - name: daml-lint CLI with custom rules
-        run: cargo check -p daml-lint --no-default-features --features cli,js-runtime,custom-rules --locked
-
   # cargo-npm CLI packaging stays valid: generate the wrapper + host platform
   # package from [package.metadata.npm] and prove the binary runs. The full
   # cross-platform publish is exercised at release time by npm-publish.yml.
@@ -98,8 +71,7 @@ jobs:
           install: false
       - name: Install locked tools
         run: |
-          mise install rust@1.96.0 node@22.23.1 npm@10.9.8
-          mise install cargo:cargo-npm@0.1.2
+          mise install rust node npm cargo:cargo-npm
       - uses: Swatinem/rust-cache@v2
       - name: Generate and validate npm packages
         shell: bash
@@ -134,7 +106,7 @@ jobs:
         with:
           install: false
       - name: Install locked tools
-        run: mise install rust@1.96.0
+        run: mise install rust
       - uses: Swatinem/rust-cache@v2
       - name: package verification
         run: bash scripts/check-package.sh
@@ -150,8 +122,7 @@ jobs:
           install: false
       - name: Install locked tools
         run: |
-          mise install rust@1.96.0
-          mise install cargo:cargo-deny@0.19.9
+          mise install rust cargo:cargo-deny
       - name: cargo deny
         run: cargo deny check
 
@@ -172,15 +143,14 @@ jobs:
           install: false
       - name: Install locked tools
         run: |
-          mise install rust@1.96.0
-          mise install cargo:cargo-semver-checks@0.48.0
+          mise install rust cargo:cargo-semver-checks
       - name: cargo semver checks
         run: cargo semver-checks --package ${{ matrix.package }}
 
   # Native Linux x64 smoke build for local signoff. Release assets are produced
   # by release-artifacts.yml when a CLI tag is published.
-  build-pr:
-    name: build (x86_64-unknown-linux-gnu)
+  build-linux-x64:
+    name: build-linux-x64
     if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 20
@@ -193,7 +163,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mise install rust@1.96.0
+          mise install rust
           rustup target add x86_64-unknown-linux-gnu
           if [[ "$(uname -m)" != "x86_64" ]]; then
             apt_get() {
@@ -233,7 +203,7 @@ jobs:
           install: false
       - name: Install locked tools
         run: |
-          mise install rust@1.96.0
+          mise install rust
           rustup target add ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
       - name: build CLIs

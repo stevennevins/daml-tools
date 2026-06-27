@@ -134,10 +134,6 @@ url = "https://registry.npmjs.org/npm/-/npm-10.9.8.tgz"
 url = "https://registry.npmjs.org/npm/-/npm-10.9.8.tgz"
 
 [[tools.rust]]
-version = "1.87.0"
-backend = "core:rust"
-
-[[tools.rust]]
 version = "1.96.0"
 backend = "core:rust"
 
