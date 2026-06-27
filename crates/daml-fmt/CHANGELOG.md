@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.4](https://github.com/stevennevins/daml-tools/compare/daml-fmt-v0.7.3...daml-fmt-v0.7.4) - 2026-06-27
+
+### Fixed
+
+- *(release)* address pre-public blockers
+
 ## [0.7.3](https://github.com/stevennevins/daml-tools/compare/daml-fmt-v0.7.2...daml-fmt-v0.7.3) - 2026-06-27
 
 ### Added

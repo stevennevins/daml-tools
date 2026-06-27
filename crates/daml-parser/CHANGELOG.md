@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1](https://github.com/stevennevins/daml-tools/compare/daml-parser-v0.10.0...daml-parser-v0.10.1) - 2026-06-27
+
+### Fixed
+
+- *(release)* address pre-public blockers
+
 ### Added
 
 - *(parser)* [**breaking**] `ChoiceDecl.authority_exprs` and braced/layout `where` metadata blocks for choice `controller`, `observer`, and `authority` clauses.

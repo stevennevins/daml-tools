@@ -47,7 +47,7 @@ parser, one lossless tree, many consumers.
 
 ```toml
 [dependencies]
-daml-parser = "0.10.0"
+daml-parser = "0.10.1"
 ```
 
 ```rust
