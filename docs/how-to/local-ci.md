@@ -10,6 +10,11 @@ workflow jobs through act instead of a bespoke CI wrapper. Use `MISE_LOCKED=1`
 locally, matching the GitHub workflows, so drift from `mise.toml` and
 `mise.lock` fails loudly.
 
+The CI and Docs workflows intentionally do not run on GitHub-hosted
+`pull_request` events. They keep `push` triggers for `main` and
+`workflow_dispatch` triggers so act can execute the same YAML locally for PR
+signoff without spending hosted runner minutes on every PR update.
+
 Install tools from the committed lockfile before running act or gh-signoff:
 
 ```sh
@@ -87,21 +92,35 @@ pushed to the PR branch, and the matching act job exits successfully. Each
 `gh signoff` command creates a GitHub commit status for `HEAD`; do not sign off
 for a job that failed, was skipped, or was run with a different toolchain.
 
-Run one local job per required signoff context:
+The package verification job runs `git diff` to reject dirty packages. When act
+runs from a git worktree, mount the git common directory into the container so
+that the worktree `.git` file resolves correctly:
+
+```sh
+git_common="$(git rev-parse --path-format=absolute --git-common-dir)"
+```
+
+Run one local job per required signoff context. The npm packaging job validates
+the current Linux container platform (`linux-x64` on x86_64 hosts or
+`linux-arm64` on ARM hosts); release workflows still produce the full
+cross-platform set.
 
 | Required PR context | Validate with act | Create the status |
 |---------------------|-------------------|-------------------|
-| `signoff/test` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j test` | `MISE_LOCKED=1 mise x -- gh signoff test` |
-| `signoff/msrv` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j msrv` | `MISE_LOCKED=1 mise x -- gh signoff msrv` |
-| `signoff/npm-package` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j npm-package` | `MISE_LOCKED=1 mise x -- gh signoff npm-package` |
-| `signoff/package` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j package` | `MISE_LOCKED=1 mise x -- gh signoff package` |
-| `signoff/cargo-deny` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j cargo-deny` | `MISE_LOCKED=1 mise x -- gh signoff cargo-deny` |
-| `signoff/semver` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j semver` | `MISE_LOCKED=1 mise x -- gh signoff semver` |
-| `signoff/build-linux-x64` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j build-pr --container-architecture linux/amd64` | `MISE_LOCKED=1 mise x -- gh signoff build-linux-x64` |
-| `signoff/docs` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/docs.yml -j docs` | `MISE_LOCKED=1 mise x -- gh signoff docs` |
+| `signoff/test` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/ci.yml -j test` | `MISE_LOCKED=1 mise x -- gh signoff test` |
+| `signoff/msrv` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/ci.yml -j msrv` | `MISE_LOCKED=1 mise x -- gh signoff msrv` |
+| `signoff/npm-package` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/ci.yml -j npm-package` | `MISE_LOCKED=1 mise x -- gh signoff npm-package` |
+| `signoff/package` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/ci.yml -j package --container-options "--mount type=bind,source=${git_common},target=${git_common},readonly"` | `MISE_LOCKED=1 mise x -- gh signoff package` |
+| `signoff/cargo-deny` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/ci.yml -j cargo-deny` | `MISE_LOCKED=1 mise x -- gh signoff cargo-deny` |
+| `signoff/semver` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/ci.yml -j semver` | `MISE_LOCKED=1 mise x -- gh signoff semver` |
+| `signoff/build-linux-x64` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/ci.yml -j build-pr` | `MISE_LOCKED=1 mise x -- gh signoff build-linux-x64` |
+| `signoff/docs` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/docs.yml -j docs` | `MISE_LOCKED=1 mise x -- gh signoff docs` |
 
 The partial name passed to `gh signoff` omits the `signoff/` prefix; the
 extension adds that prefix when it creates the commit status.
+
+Use Docker `--mount` rather than `--volume` for the git common directory so a
+missing host path fails loudly instead of creating an empty directory.
 
 Do not use local signoff for release-only guarantees that Linux Docker cannot
 honestly provide. macOS and Windows platform builds stay on GitHub-hosted
@@ -139,8 +158,9 @@ protection settings through the GitHub UI or the branch-protection API instead.
 
 ### API update path
 
-Prefer the narrower required-status-checks endpoint over a full branch
-protection replacement. Review the generated payload before sending the PATCH:
+Prefer the required-status-check contexts endpoint over a full branch-protection
+replacement. This preserves existing app-specific GitHub Actions checks while
+adding generic commit-status contexts created by gh-signoff.
 
 ```sh
 owner=stevennevins
@@ -151,32 +171,19 @@ gh api \
   "repos/${owner}/${repo}/branches/${branch}/protection/required_status_checks" \
   > required-status-checks.before.json
 
-jq --argjson required '[
-  "signoff/test",
-  "signoff/msrv",
-  "signoff/npm-package",
-  "signoff/package",
-  "signoff/cargo-deny",
-  "signoff/semver",
-  "signoff/build-linux-x64",
-  "signoff/docs"
-]' '
-  {
-    strict: (.strict // true),
-    contexts: (((.contexts // []) + $required) | unique),
-    checks: (.checks // [])
-  }
-' required-status-checks.before.json > required-status-checks.after.json
-
-cat required-status-checks.after.json
-
-# Run only after the reviewed payload preserves the existing status-check policy.
 gh api \
-  --method PATCH \
+  --method POST \
   -H "Accept: application/vnd.github+json" \
   -H "X-GitHub-Api-Version: 2022-11-28" \
-  "repos/${owner}/${repo}/branches/${branch}/protection/required_status_checks" \
-  --input required-status-checks.after.json
+  "repos/${owner}/${repo}/branches/${branch}/protection/required_status_checks/contexts" \
+  -f "contexts[]=signoff/test" \
+  -f "contexts[]=signoff/msrv" \
+  -f "contexts[]=signoff/npm-package" \
+  -f "contexts[]=signoff/package" \
+  -f "contexts[]=signoff/cargo-deny" \
+  -f "contexts[]=signoff/semver" \
+  -f "contexts[]=signoff/build-linux-x64" \
+  -f "contexts[]=signoff/docs"
 ```
 
 After the update, verify the required contexts:
@@ -187,9 +194,10 @@ gh api \
   --jq '.contexts'
 ```
 
-If the narrow endpoint is not available because required status checks are not
-enabled yet, use the UI path or prepare a full branch-protection payload from a
-fresh GET response. Do not use `gh signoff install` as a shortcut.
+The signoff contexts should also appear in `.checks` with `"app_id": null`.
+If required status checks are not enabled yet, use the UI path or prepare a full
+branch-protection payload from a fresh GET response. Do not use
+`gh signoff install` as a shortcut.
 
 ## Trust model
 
@@ -212,7 +220,10 @@ maintainers.
 macOS and Windows matrix jobs are not mapped in `.actrc`. Those platform builds stay on
 GitHub-hosted runners until real macOS and Windows hosts exist for local signoff.
 
-`signoff/build-linux-x64` is the exception: it must run as `linux/amd64`. Prefer a Linux `x86_64` host. ARM hosts may use Docker binfmt/QEMU with `--container-architecture linux/amd64`, but if emulation cannot run the pinned toolchain reliably, do not create the `signoff/build-linux-x64` status from that machine.
+`signoff/build-linux-x64` compiles the Linux x64 smoke binary. On Linux
+`x86_64` hosts it builds natively. On ARM hosts, run the job with the normal
+host-architecture act container; the workflow installs the Linux x64 Rust target
+and linker instead of relying on Docker/QEMU amd64 emulation for the whole job.
 
 ## Refresh runner image digests
 
@@ -234,7 +245,7 @@ When you intentionally want newer runner images:
 
 3. Update the matching `-P ubuntu-…=catthehacker/ubuntu@sha256:…` lines in `.actrc`.
 
-4. Re-run `MISE_LOCKED=1 mise x -- act -l` and at least one non-publishing job, such as `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/docs.yml -j docs`, to confirm act still parses and executes workflows with the new pins.
+4. Re-run `MISE_LOCKED=1 mise x -- act -l` and at least one non-publishing job, such as `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/docs.yml -j docs`, to confirm act still parses and executes workflows with the new pins.
 
 Commit digest updates separately from unrelated CI changes so image drift is easy to review.
 

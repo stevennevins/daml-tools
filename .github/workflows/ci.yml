@@ -9,19 +9,11 @@ on:
       - ".smithers/**"
       - "AGENTS.md"
       - "LICENSE"
-  pull_request:
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - ".smithers/**"
-      - "AGENTS.md"
-      - "CONTRIBUTING.md"
-      - "LICENSE"
-      - "README.md"
+  workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -114,12 +106,17 @@ jobs:
         run: |
           set -euo pipefail
           target="$(rustc -vV | sed -n 's/^host: //p')"
+          case "${target}" in
+            x86_64-unknown-linux-gnu) npm_platform="linux-x64" ;;
+            aarch64-unknown-linux-gnu) npm_platform="linux-arm64" ;;
+            *) echo "unsupported npm package smoke target: ${target}" >&2; exit 1 ;;
+          esac
           cargo build --release --locked --target "${target}" --bin daml-lint --bin daml-fmt
           for tool in daml-lint daml-fmt; do
             out="target/npm-ci/${tool}"
             cargo npm generate -p "${tool}" --infer-targets --out-dir "${out}" --clean
             node -e "const p=require('./'+process.argv[1]); if(!p.bin||!p.optionalDependencies||!Object.keys(p.optionalDependencies).length)throw new Error('wrapper missing bin/optionalDependencies')" "${out}/@daml-tools/${tool}/package.json"
-            bin="${out}/@daml-tools/${tool}-linux-x64/${tool}"
+            bin="${out}/@daml-tools/${tool}-${npm_platform}/${tool}"
             test -x "${bin}"
             "${bin}" --version
           done
@@ -180,12 +177,11 @@ jobs:
       - name: cargo semver checks
         run: cargo semver-checks --package ${{ matrix.package }}
 
-  # Native CLI binaries per OS — the per-PR "it still builds a runnable CLI"
-  # gate. Release assets are produced by release-artifacts.yml when a CLI tag is
-  # published.
+  # Native Linux x64 smoke build for local signoff. Release assets are produced
+  # by release-artifacts.yml when a CLI tag is published.
   build-pr:
     name: build (x86_64-unknown-linux-gnu)
-    if: ${{ github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
@@ -194,34 +190,32 @@ jobs:
         with:
           install: false
       - name: Install locked tools
+        shell: bash
         run: |
+          set -euo pipefail
           mise install rust@1.96.0
           rustup target add x86_64-unknown-linux-gnu
+          if [[ "$(uname -m)" != "x86_64" ]]; then
+            apt_get() {
+              if [[ "$(id -u)" -eq 0 ]]; then
+                apt-get "$@"
+              else
+                sudo apt-get "$@"
+              fi
+            }
+            apt_get update
+            apt_get install -y --no-install-recommends \
+              gcc-x86-64-linux-gnu \
+              libc6-dev-amd64-cross
+            echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-linux-gnu-gcc" >> "${GITHUB_ENV}"
+          fi
       - uses: Swatinem/rust-cache@v2
       - name: build CLIs
         run: cargo build --release --locked --target x86_64-unknown-linux-gnu --bin daml-lint --bin daml-fmt
 
-  build-required-pr:
-    name: build (${{ matrix.target }})
-    if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    strategy:
-      fail-fast: false
-      matrix:
-        target:
-          - aarch64-unknown-linux-gnu
-          - aarch64-apple-darwin
-          - x86_64-pc-windows-msvc
-    steps:
-      - name: Full native build runs after merge
-        run: |
-          echo "PRs build the Linux x64 CLI smoke target only to control CI cost."
-          echo "The full native ${{ matrix.target }} release build runs on main and release tags."
-
   build:
     name: build (${{ matrix.target }})
-    if: ${{ github.event_name != 'pull_request' }}
+    if: ${{ github.event_name == 'push' }}
     strategy:
       fail-fast: false
       matrix:
