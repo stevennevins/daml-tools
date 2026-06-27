@@ -25,9 +25,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # Pinned cargo-npm (CLI npm packaging). Keep in sync with
-  # .github/workflows/npm-publish.yml and CONTRIBUTING.md.
-  CARGO_NPM_VERSION: "0.1.2"
+  MISE_LOCKED: "1"
 
 jobs:
   # fmt + clippy + the whole test suite + the formatter's 924-file differential.
@@ -36,13 +34,12 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: jdx/mise-action@v4.2.0
         with:
-          components: rustfmt, clippy
+          install: false
+      - name: Install locked tools
+        run: mise install rust@1.96.0 node@22.23.1 npm@10.9.8
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
       - name: rustfmt
         run: cargo fmt --all --check
       - name: clippy
@@ -72,9 +69,15 @@ jobs:
   msrv:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      MISE_RUST_VERSION: "1.87.0"
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@1.87.0
+      - uses: jdx/mise-action@v4.2.0
+        with:
+          install: false
+      - name: Install locked tools
+        run: mise install rust@1.87.0
       - uses: Swatinem/rust-cache@v2
       - name: workspace all targets and features
         run: cargo check --workspace --all-targets --all-features --locked
@@ -98,21 +101,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-node@v6
+      - uses: jdx/mise-action@v4.2.0
         with:
-          node-version: 22
-      - name: Cache cargo-npm
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/bin/cargo-npm
-          key: cargo-npm-${{ env.CARGO_NPM_VERSION }}-${{ runner.os }}
-      - name: Install cargo-npm
+          install: false
+      - name: Install locked tools
         run: |
-          if ! cargo install --list | grep -F "cargo-npm v${CARGO_NPM_VERSION}:" >/dev/null; then
-            cargo install cargo-npm --version "${CARGO_NPM_VERSION}" --locked --force
-          fi
+          mise install rust@1.96.0 node@22.23.1 npm@10.9.8
+          mise install cargo:cargo-npm@0.1.2
+      - uses: Swatinem/rust-cache@v2
       - name: Generate and validate npm packages
         shell: bash
         run: |
@@ -137,7 +133,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: jdx/mise-action@v4.2.0
+        with:
+          install: false
+      - name: Install locked tools
+        run: mise install rust@1.96.0
       - uses: Swatinem/rust-cache@v2
       - name: package verification
         run: bash scripts/check-package.sh
@@ -148,9 +148,15 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: jdx/mise-action@v4.2.0
         with:
-          command: check
+          install: false
+      - name: Install locked tools
+        run: |
+          mise install rust@1.96.0
+          mise install cargo:cargo-deny@0.19.9
+      - name: cargo deny
+        run: cargo deny check
 
   # Block public API compatibility regressions for every published library
   # target. A failed cargo-semver-checks run must fail the PR rather than
@@ -164,9 +170,15 @@ jobs:
         package: [daml-parser, daml-syntax, daml-lint, daml-fmt]
     steps:
       - uses: actions/checkout@v6
-      - uses: obi1kenobi/cargo-semver-checks-action@v2
+      - uses: jdx/mise-action@v4.2.0
         with:
-          package: ${{ matrix.package }}
+          install: false
+      - name: Install locked tools
+        run: |
+          mise install rust@1.96.0
+          mise install cargo:cargo-semver-checks@0.48.0
+      - name: cargo semver checks
+        run: cargo semver-checks --package ${{ matrix.package }}
 
   # Native CLI binaries per OS — the per-PR "it still builds a runnable CLI"
   # gate. Release assets are produced by release-artifacts.yml when a CLI tag is
@@ -178,9 +190,13 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: jdx/mise-action@v4.2.0
         with:
-          targets: x86_64-unknown-linux-gnu
+          install: false
+      - name: Install locked tools
+        run: |
+          mise install rust@1.96.0
+          rustup target add x86_64-unknown-linux-gnu
       - uses: Swatinem/rust-cache@v2
       - name: build CLIs
         run: cargo build --release --locked --target x86_64-unknown-linux-gnu --bin daml-lint --bin daml-fmt
@@ -218,9 +234,13 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: jdx/mise-action@v4.2.0
         with:
-          targets: ${{ matrix.target }}
+          install: false
+      - name: Install locked tools
+        run: |
+          mise install rust@1.96.0
+          rustup target add ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
       - name: build CLIs
         run: cargo build --release --locked --target ${{ matrix.target }} --bin daml-lint --bin daml-fmt
