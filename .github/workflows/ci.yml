@@ -199,9 +199,25 @@ jobs:
         with:
           install: false
       - name: Install locked tools
+        shell: bash
         run: |
+          set -euo pipefail
           mise install rust@1.96.0
           rustup target add x86_64-unknown-linux-gnu
+          if [[ "$(uname -m)" != "x86_64" ]]; then
+            apt_get() {
+              if [[ "$(id -u)" -eq 0 ]]; then
+                apt-get "$@"
+              else
+                sudo apt-get "$@"
+              fi
+            }
+            apt_get update
+            apt_get install -y --no-install-recommends \
+              gcc-x86-64-linux-gnu \
+              libc6-dev-amd64-cross
+            echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-linux-gnu-gcc" >> "${GITHUB_ENV}"
+          fi
       - uses: Swatinem/rust-cache@v2
       - name: build CLIs
         run: cargo build --release --locked --target x86_64-unknown-linux-gnu --bin daml-lint --bin daml-fmt

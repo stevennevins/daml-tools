@@ -108,7 +108,7 @@ cross-platform set.
 | `signoff/package` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j package --container-options "--mount type=bind,source=${git_common},target=${git_common},readonly"` | `MISE_LOCKED=1 mise x -- gh signoff package` |
 | `signoff/cargo-deny` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j cargo-deny` | `MISE_LOCKED=1 mise x -- gh signoff cargo-deny` |
 | `signoff/semver` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j semver` | `MISE_LOCKED=1 mise x -- gh signoff semver` |
-| `signoff/build-linux-x64` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j build-pr --container-architecture linux/amd64` | `MISE_LOCKED=1 mise x -- gh signoff build-linux-x64` |
+| `signoff/build-linux-x64` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/ci.yml -j build-pr` | `MISE_LOCKED=1 mise x -- gh signoff build-linux-x64` |
 | `signoff/docs` | `MISE_LOCKED=1 mise x -- act pull_request -W .github/workflows/docs.yml -j docs` | `MISE_LOCKED=1 mise x -- gh signoff docs` |
 
 The partial name passed to `gh signoff` omits the `signoff/` prefix; the
@@ -215,7 +215,10 @@ maintainers.
 macOS and Windows matrix jobs are not mapped in `.actrc`. Those platform builds stay on
 GitHub-hosted runners until real macOS and Windows hosts exist for local signoff.
 
-`signoff/build-linux-x64` is the exception: it must run as `linux/amd64`. Prefer a Linux `x86_64` host. ARM hosts may use Docker binfmt/QEMU with `--container-architecture linux/amd64`, but if emulation cannot run the pinned toolchain reliably, do not create the `signoff/build-linux-x64` status from that machine.
+`signoff/build-linux-x64` compiles the Linux x64 smoke binary. On Linux
+`x86_64` hosts it builds natively. On ARM hosts, run the job with the normal
+host-architecture act container; the workflow installs the Linux x64 Rust target
+and linker instead of relying on Docker/QEMU amd64 emulation for the whole job.
 
 ## Refresh runner image digests
 
