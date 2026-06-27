@@ -533,3 +533,50 @@ import qualified "other-pkg" Lib.Alt as AltLib
     assert_eq!(module.imports[1].qualified, ImportStyle::Qualified);
     assert_eq!(module.imports[1].alias.as_deref(), Some("AltLib"));
 }
+
+#[test]
+fn try_catch_guarded_handler_preserves_all_branch_bodies_in_ir() {
+    let source = r#"module Test where
+
+template T
+  with
+    p : Party
+  where
+    signatory p
+
+    choice Run : ()
+      controller p
+      do
+        try do
+          pure ()
+        catch
+          err
+            | err == "a" -> create AssetA with owner = p
+            | err == "b" -> create AssetB with owner = p
+"#;
+    let module = parse_module(source, Path::new("TestTryCatchBranches.daml"));
+    let choice = &module.templates[0].choices[0];
+    let try_catch = choice
+        .body
+        .iter()
+        .find(|s| matches!(s, Statement::TryCatch { .. }))
+        .expect("expected TryCatch statement in choice body");
+    let Statement::TryCatch { catch_body, .. } = try_catch else {
+        panic!("expected TryCatch statement");
+    };
+    let create_names: Vec<&str> = catch_body
+        .iter()
+        .filter_map(|s| match s {
+            Statement::Create { template_name, .. } => Some(template_name.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        create_names.contains(&"AssetA"),
+        "catch_body should include first guarded branch create, got {create_names:?}"
+    );
+    assert!(
+        create_names.contains(&"AssetB"),
+        "catch_body should include second guarded branch create, got {create_names:?}"
+    );
+}

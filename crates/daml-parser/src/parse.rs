@@ -3088,9 +3088,10 @@ impl Parser {
         let pat = self.pattern()?;
         let mut branches = Vec::new();
         if self.at_op("|") {
-            while self.eat_op("|") {
+            while self.at_op("|") {
                 let branch_pos = self.pos();
                 let branch_start = self.i;
+                self.eat_op("|");
                 let mut guards = Vec::new();
                 loop {
                     guards.push(self.guard_qualifier());
@@ -3114,6 +3115,15 @@ impl Parser {
                 });
             }
         } else {
+            if !self.at_op("->") {
+                self.diag_expected(
+                    ExpectedToken::ArrowInCaseAlternative,
+                    "expected '->' in case alternative",
+                );
+                return None;
+            }
+            let branch_pos = self.pos();
+            let branch_start = self.i;
             if !self.eat_op("->") {
                 self.diag_expected(
                     ExpectedToken::ArrowInCaseAlternative,
@@ -3125,8 +3135,8 @@ impl Parser {
             branches.push(AltBranch {
                 guards: Vec::new(),
                 body,
-                pos,
-                span: self.node_span(start_i),
+                pos: branch_pos,
+                span: self.node_span(branch_start),
             });
         }
         let body = branches.first()?.body.clone();

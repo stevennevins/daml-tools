@@ -933,7 +933,9 @@ fn collect_actions_inner(
             let try_body = statements_of_expr(body);
             let mut catch_body = Vec::new();
             for h in handlers {
-                catch_body.extend(statements_of_expr(&h.body));
+                for branch in &h.branches {
+                    catch_body.extend(statements_of_expr(&branch.body));
+                }
             }
             out.push(Statement::TryCatch {
                 try_body,

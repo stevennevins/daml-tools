@@ -393,3 +393,53 @@ pattern Nil = []
         "explicit unsupported AST nodes should not make lossless corpus files diagnostically invalid"
     );
 }
+
+#[test]
+fn alt_branch_pos_and_span_anchor_at_branch_delimiters() {
+    let src = "module M where
+f x = case x of
+  n | n > 0 -> \"pos\"
+  v -> \"plain\"
+";
+    let (module, diagnostics) = parse(src);
+    assert!(diagnostics.is_empty());
+    let Expr::Case { alts, .. } = get_first_equation_body(&module, "f") else {
+        panic!("expected case expression");
+    };
+    assert_eq!(alts.len(), 2);
+
+    let guarded = &alts[0].branches[0];
+    let guarded_span = guarded.span.get(src).expect("guarded branch span");
+    assert!(
+        guarded_span.starts_with('|'),
+        "guarded branch span should start with '|', got {guarded_span:?}"
+    );
+    let guarded_line = src
+        .lines()
+        .nth(guarded.pos.line - 1)
+        .expect("guarded branch position line should exist");
+    assert_eq!(
+        guarded_line
+            .as_bytes()
+            .get(guarded.pos.column - 1)
+            .map(|b| *b as char),
+        Some('|'),
+        "guarded branch pos should point at '|'"
+    );
+
+    let unguarded = &alts[1].branches[0];
+    let unguarded_span = unguarded.span.get(src).expect("unguarded branch span");
+    assert!(
+        unguarded_span.starts_with("->"),
+        "unguarded branch span should start with '->', got {unguarded_span:?}"
+    );
+    let unguarded_line = src
+        .lines()
+        .nth(unguarded.pos.line - 1)
+        .expect("unguarded branch position line should exist");
+    assert_eq!(
+        &unguarded_line[unguarded.pos.column - 1..unguarded.pos.column - 1 + 2],
+        "->",
+        "unguarded branch pos should point at '->'"
+    );
+}
