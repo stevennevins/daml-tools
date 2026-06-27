@@ -1,4 +1,5 @@
 [workspace]
+# Temporary signoff gate verification change; do not merge this PR.
 resolver = "2"
 members = [
     "crates/daml-parser",
