@@ -49,7 +49,18 @@ verify_packaged_tests() {
   tar -xf "${tarball}" -C "${extracted}" --strip-components=1
   (
     cd "${extracted}"
-    cargo test --all-features --locked
+    # Run the package-relevant tests explicitly. `cargo test --all-features`
+    # would also run the workspace-only SDK corpus oracle, but that corpus is
+    # intentionally excluded from the published crate. The full workspace CI
+    # test job still covers it from the repository checkout.
+    cargo test --all-features --locked \
+      --lib \
+      --bins \
+      --test cli \
+      --test coverage \
+      --test layout_fixtures \
+      --test library_behavior
+    cargo test --all-features --locked --doc
   )
 }
 
