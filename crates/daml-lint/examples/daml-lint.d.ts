@@ -270,11 +270,13 @@ export interface Import {
   module_name: string;
   qualified: ImportStyle;
   alias: string | null;
+  /** Source package label from `import "pkg" Module`, not a resolved package id. */
+  package_label: string | null;
   span: Span;
 }
 
 export interface DamlModule {
-  ir_version: 7;
+  ir_version: 8;
   name: string;
   file: string;
   imports: Import[];

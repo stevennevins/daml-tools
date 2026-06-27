@@ -743,6 +743,11 @@ pub struct Import {
     pub qualified: ImportStyle,
     /// Import alias from `as`, if present.
     pub alias: Option<String>,
+    /// Source package label from `import "pkg" Module` when present.
+    ///
+    /// This is decoded literal text from source syntax, not a resolved LF
+    /// package id.
+    pub package_label: Option<String>,
     /// Import declaration location.
     pub span: Span,
 }

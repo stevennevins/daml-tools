@@ -115,7 +115,7 @@ function on_template(template) {
 fn dts_exposes_structured_only_contract() {
     let dts = std::fs::read_to_string(manifest_path("examples/daml-lint.d.ts"))
         .expect("read daml-lint.d.ts");
-    assert!(dts.contains("ir_version: 7"));
+    assert!(dts.contains("ir_version: 8"));
     assert!(
         dts.contains("| { Lit: { kind:"),
         "daml-lint.d.ts must expose TypeNode.Lit for type-level literals"
@@ -173,7 +173,7 @@ function field(template, name) {
 }
 
 function check(m) {
-  if (m.ir_version !== 7) report(1, `expected ir_version 7, got ${m.ir_version}`);
+  if (m.ir_version !== 8) report(1, `expected ir_version 8, got ${m.ir_version}`);
   const t = m.templates[0];
   checkNoOldFields("template", t, ["signatories", "observers"]);
   if (typeof t.key_type === "string") report(1, "template key_type is still a string");
@@ -331,6 +331,7 @@ fn every_node_kind_reaches_scripts() {
     let probe = r#"module Probe where
 
 import qualified DA.Map as Map
+import "probe-pkg" DA.Internal
 import DA.Time
 
 template Probe
@@ -539,6 +540,7 @@ function check(m) {
   }
   for (const i of m.imports) {
     if (i.qualified === "qualified" && i.alias !== null) seen.add("QualifiedAlias");
+    if (i.package_label !== null) seen.add("PackageLabel");
   }
   for (const fn of m.functions) {
     seen.add("Function");
@@ -576,6 +578,7 @@ function check(m) {
         "Exercise",
         "TryCatch",
         "QualifiedAlias",
+        "PackageLabel",
         "Function",
         "Binder",
         "KeyExpr",

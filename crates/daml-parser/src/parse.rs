@@ -7,11 +7,11 @@
 use crate::ast::{
     Alt, AltBranch, Binding, ChoiceDecl, Consuming, Decl, DoStmt, Equation, ExpectedToken, Expr,
     FieldAssign, FieldDecl, FixityAssoc, FixityDecl, FixityTarget, FunctionDecl, GuardQualifier,
-    Identifier, ImportDecl, ImportStyle, InterfaceDecl, InterfaceInstanceBodyItem,
-    InterfaceInstanceDecl, LitKind, MalformedSyntaxKind, Module, ModuleName, Operator,
-    ParseDiagnostic, ParseDiagnosticKind, Pat, PatFieldAssign, RecordPatternSyntax,
-    SkippedDeclarationReason, Span, TemplateBodyDecl, TemplateDecl, Type, TypeAnnotation,
-    TypeAnnotationContext, UnsupportedSyntaxKind,
+    Identifier, ImportDecl, ImportPackageLabel, ImportStyle, InterfaceDecl,
+    InterfaceInstanceBodyItem, InterfaceInstanceDecl, LitKind, MalformedSyntaxKind, Module,
+    ModuleName, Operator, ParseDiagnostic, ParseDiagnosticKind, Pat, PatFieldAssign,
+    RecordPatternSyntax, SkippedDeclarationReason, Span, TemplateBodyDecl, TemplateDecl, Type,
+    TypeAnnotation, TypeAnnotationContext, UnsupportedSyntaxKind,
 };
 use crate::layout::resolve_layout;
 use crate::lexer::{lex, Pos, Token, TokenKind};
@@ -838,9 +838,15 @@ impl Parser {
             ImportStyle::Unqualified
         };
         // Package-qualified import: `import qualified "pkg-name" Main as V1`.
-        if matches!(self.peek(), Some(TokenKind::StringLit(_))) {
-            self.bump();
-        }
+        let package_label = if let Some(TokenKind::StringLit(value)) = self.peek().cloned() {
+            let tok = self.bump().expect("string literal peeked");
+            Some(ImportPackageLabel {
+                value,
+                span: crate::ast::Span::from_usize(tok.start, tok.end),
+            })
+        } else {
+            None
+        };
         let module_name = match self.peek().cloned() {
             Some(TokenKind::UpperId { qualifier, name }) => {
                 self.bump();
@@ -876,6 +882,7 @@ impl Parser {
             module_name,
             style,
             alias,
+            package_label,
             pos,
             span: self.node_span(start_i),
         })

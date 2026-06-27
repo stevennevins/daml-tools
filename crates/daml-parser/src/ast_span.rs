@@ -318,6 +318,9 @@ fn collect_module(module: &Module, spans: &mut Vec<Span>) {
     }
     for import in &module.imports {
         spans.push(import.span);
+        if let Some(label) = &import.package_label {
+            spans.push(label.span);
+        }
     }
     for decl in &module.decls {
         collect_decl(decl, spans);

@@ -176,6 +176,7 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> ParseResult {
                 ImportStyle::Unqualified
             },
             alias: i.alias.clone().map(|alias| alias.to_string()),
+            package_label: i.package_label.as_ref().map(|label| label.value.clone()),
             span: span_at(file, i.pos),
         })
         .collect();
@@ -199,7 +200,7 @@ pub fn parse_daml_with_diagnostics(source: &str, file: &Path) -> ParseResult {
     }
 
     let module = DamlModule {
-        ir_version: 7,
+        ir_version: 8,
         name: module.name.to_string(),
         file: file.to_path_buf(),
         source: source.to_string(),

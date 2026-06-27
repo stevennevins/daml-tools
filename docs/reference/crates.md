@@ -90,7 +90,8 @@ list that distinguishes `view = ...` from method implementations. Lint IR
 `InterfaceInstance.view_expr` exposes the view expression separately from
 `methods` (`ir_version: 6`). `Alt` case alternatives retain source-ordered
 `branches` with boolean/pattern guards and alternative-local `where_bindings`;
-lint `CaseAlt` mirrors that shape (`ir_version: 7`).
+lint `CaseAlt` mirrors that shape (`ir_version: 7`). `Import.package_label`
+preserves package-qualified import string literals from source (`ir_version: 8`).
 
 ## `daml-syntax`
 

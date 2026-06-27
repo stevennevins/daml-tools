@@ -509,3 +509,27 @@ template Asset
     ));
     assert_eq!(instance.methods, vec!["getOwner"]);
 }
+
+#[test]
+fn package_qualified_import_label_is_exposed_in_ir() {
+    let source = r#"module Test where
+
+import "my-package-id" Lib.Core
+import qualified "other-pkg" Lib.Alt as AltLib
+"#;
+    let module = parse_module(source, Path::new("TestPackageImport.daml"));
+    assert_eq!(module.imports.len(), 2);
+    assert_eq!(
+        module.imports[0].package_label.as_deref(),
+        Some("my-package-id")
+    );
+    assert_eq!(module.imports[0].module_name, "Lib.Core");
+    assert_eq!(module.imports[0].qualified, ImportStyle::Unqualified);
+    assert_eq!(
+        module.imports[1].package_label.as_deref(),
+        Some("other-pkg")
+    );
+    assert_eq!(module.imports[1].module_name, "Lib.Alt");
+    assert_eq!(module.imports[1].qualified, ImportStyle::Qualified);
+    assert_eq!(module.imports[1].alias.as_deref(), Some("AltLib"));
+}

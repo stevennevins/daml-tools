@@ -1085,6 +1085,18 @@ pub struct FixityDecl {
     pub span: Span,
 }
 
+/// Source package label on a package-qualified import (`import "pkg" Module`).
+///
+/// Holds the decoded string literal value and its source span. This is source
+/// syntax only; it is not resolved to an LF `PackageId`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportPackageLabel {
+    /// Decoded package label text from the string literal.
+    pub value: String,
+    /// Span of the string literal token, including quotes.
+    pub span: Span,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImportDecl {
     /// Imported module path.
@@ -1093,6 +1105,8 @@ pub struct ImportDecl {
     pub style: ImportStyle,
     /// Optional module alias from `as`.
     pub alias: Option<ModuleName>,
+    /// Optional package label from `import "pkg" Module` source syntax.
+    pub package_label: Option<ImportPackageLabel>,
     /// Position of the `import` token.
     pub pos: Pos,
     /// Span of the whole import declaration.
