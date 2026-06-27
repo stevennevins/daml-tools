@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3](https://github.com/stevennevins/daml-tools/compare/daml-fmt-v0.7.2...daml-fmt-v0.7.3) - 2026-06-27
+
+### Added
+
+- *(parser)* implement source parser audit gaps
+
+### Other
+
+- *(p0)* add corpus and fixture safety coverage ([#118](https://github.com/stevennevins/daml-tools/pull/118))
+
 ### Changed
 
 - *(layout)* choice `authority` metadata reindent; case alternative guards/branches and interface-instance `view` walkers consume updated parser AST shapes.
