@@ -16,6 +16,58 @@ Install tools from the committed lockfile before running act or gh-signoff:
 MISE_LOCKED=1 mise install
 ```
 
+## Activate mise for interactive shells
+
+Use `mise x -- ...` in documented commands and automation so the toolchain is
+explicit and shell-independent. For day-to-day interactive work, you can also
+activate mise in your shell so pinned tools such as `cargo`, `node`, `act`, and
+`gh` are placed on `PATH` automatically when you enter the repo.
+
+Activate mise for the current shell session:
+
+```sh
+eval "$(mise activate zsh)"
+```
+
+For bash, fish, or PowerShell, replace `zsh` with the matching shell:
+
+- bash:
+
+  ```sh
+  eval "$(mise activate bash)"
+  ```
+
+- fish:
+
+  ```fish
+  mise activate fish | source
+  ```
+
+- PowerShell:
+
+  ```powershell
+  (& mise activate pwsh) | Out-String | Invoke-Expression
+  ```
+
+To make activation permanent, add the matching command to your shell startup
+file after `mise` is installed and available on `PATH`:
+
+```sh
+echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
+```
+
+After activation, install the locked tools once per checkout and verify that
+commands resolve through mise:
+
+```sh
+MISE_LOCKED=1 mise install
+mise which cargo
+mise which act
+```
+
+If mise asks whether to trust this repo, review `mise.toml` and `mise.lock`
+before running `mise trust`.
+
 List workflows act can run:
 
 ```sh
