@@ -6,6 +6,27 @@ package, cargo-npm CLI packages, and GitHub release artifacts.
 `daml-parser` releases publish the Rust crate and release notes only. They do
 not publish npm packages or GitHub binary assets.
 
+## Keep the release boundary hosted
+
+Use [local CI](local-ci.md) and `gh-signoff` only as the PR merge gate before a
+release PR lands. Required `signoff/...` commit statuses are maintainer
+assertions over the GitHub Actions jobs that can be run honestly with locked
+mise and act.
+
+Keep the tag-triggered release flow on GitHub-hosted runners:
+
+- Release-plz stays GitHub-hosted because it writes release PRs, tags, GitHub
+  releases, and crates.io publishes from `main`.
+- npm trusted publishing stays GitHub-hosted because npm depends on the GitHub
+  Actions OIDC `id-token` flow for that trust decision.
+- macOS and Windows release binaries stay GitHub-hosted because act runs Linux
+  Docker containers; it cannot validate macOS or Windows runner behavior.
+
+Do not run `release-plz.yml`, `npm-publish.yml`, or `release-artifacts.yml`
+through act as a substitute for the hosted release workflows. Local signoff can
+gate the release PR; it does not publish packages, mutate release tags, or prove
+the macOS and Windows artifacts.
+
 ## Check release authentication
 
 Confirm the required GitHub secrets exist:
@@ -91,6 +112,8 @@ Before merging the release PR, verify:
 - The lint-plugin package files above match the `daml-lint` crate version when
   `daml-lint` is being released.
 - The starter template depends on the new `@daml-tools/lint-plugin` version.
+- The required local `signoff/...` contexts from [local CI](local-ci.md) are
+  present on the release PR commit.
 - CI is green, including the `npm CLI packaging` job.
 - Formatter release candidates also pass the optional compiler desugar oracle when
   the Daml SDK is available locally.
