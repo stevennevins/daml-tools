@@ -81,7 +81,7 @@ The default features build the published CLI and custom-rule engine:
 
 ```toml
 [dependencies]
-daml-lint = "0.9.3"
+daml-lint = "0.9.4"
 ```
 
 Library consumers that only need parser lowering and the rule-facing IR can
@@ -89,7 +89,7 @@ avoid the CLI parser and QuickJS runtime:
 
 ```toml
 [dependencies]
-daml-lint = { version = "0.9.3", default-features = false }
+daml-lint = { version = "0.9.4", default-features = false }
 ```
 
 Rust-facing finding locations, parser diagnostics, and IR spans use the
