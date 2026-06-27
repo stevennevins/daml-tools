@@ -161,6 +161,7 @@ pub fn parse_module(source: &str) -> ParseModuleResult {
         src_len: source.len(),
         i: 0,
         depth: 0,
+        fixity_env: HashMap::new(),
         diags: lex_errors
             .into_iter()
             .map(|e| {
@@ -222,6 +223,9 @@ struct Parser {
     /// Expression/pattern recursion depth; bounded so hostile inputs
     /// (thousands of nested parens) cannot overflow the stack.
     depth: u32,
+    /// Module-level fixity overrides keyed by operator text (including
+    /// backtick-wrapped names such as `` `foo` ``).
+    fixity_env: HashMap<String, (u8, bool)>,
 }
 
 impl Parser {
@@ -556,6 +560,7 @@ impl Parser {
         // is unused: the loop below terminates on the matching close brace or
         // end-of-input regardless of whether the block was braced.
         let _ = self.eat(&TokenKind::VLBrace) || self.eat(&TokenKind::LBrace);
+        self.fixity_env = scan_module_fixity_env(&self.toks, self.i);
         loop {
             while self.eat(&TokenKind::VSemi) || self.eat(&TokenKind::Semi) {}
             match self.peek() {
@@ -2472,7 +2477,7 @@ impl Parser {
                         }
                         break;
                     }
-                    let (p, r) = fixity(&o);
+                    let (p, r) = self.lookup_fixity(&o);
                     (o, p, r)
                 }
                 Some(TokenKind::Backtick) => {
@@ -2489,7 +2494,9 @@ impl Parser {
                     if self.peek_at(2) != Some(&TokenKind::Backtick) {
                         break;
                     }
-                    (format!("`{name}`").into(), 9, false)
+                    let op_key = format!("`{name}`");
+                    let (p, r) = self.fixity_env.get(&op_key).copied().unwrap_or((9, false));
+                    (op_key.into(), p, r)
                 }
                 _ => break,
             };
@@ -3443,6 +3450,12 @@ impl Parser {
             span: self.node_span(start_i),
         })
     }
+    fn lookup_fixity(&self, op: &str) -> (u8, bool) {
+        self.fixity_env
+            .get(op)
+            .copied()
+            .unwrap_or_else(|| default_fixity(op))
+    }
 }
 
 /// Operators that structure declarations and can never be expression infix
@@ -3451,9 +3464,148 @@ fn is_reserved_op(op: &str) -> bool {
     matches!(op, "=" | "<-" | "->" | "|" | ":" | "=>" | "@" | "\\" | "..")
 }
 
+const fn fixity_assoc_right(assoc: FixityAssoc) -> bool {
+    matches!(assoc, FixityAssoc::InfixR)
+}
+
+fn fixity_target_key(target: &FixityTarget) -> String {
+    match target {
+        FixityTarget::Operator(op) => op.as_str().to_string(),
+        FixityTarget::Backtick(name) => format!("`{name}`"),
+    }
+}
+
+fn apply_fixity_decl(env: &mut HashMap<String, (u8, bool)>, decl: &FixityDecl) {
+    let right_assoc = fixity_assoc_right(decl.assoc);
+    for target in &decl.operators {
+        env.insert(fixity_target_key(target), (decl.precedence, right_assoc));
+    }
+}
+
+fn skip_to_item_end_at(toks: &[Token], i: &mut usize) {
+    let mut depth = 0usize;
+    let mut brackets = 0usize;
+    while let Some(t) = toks.get(*i).map(|t| &t.kind) {
+        match t {
+            TokenKind::VLBrace => depth += 1,
+            TokenKind::VRBrace => {
+                if depth == 0 {
+                    return;
+                }
+                depth -= 1;
+            }
+            TokenKind::VSemi if depth == 0 && brackets == 0 => return,
+            TokenKind::LParen | TokenKind::LBracket | TokenKind::LBrace => brackets += 1,
+            TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
+                if brackets == 0 {
+                    return;
+                }
+                brackets -= 1;
+            }
+            _ => {}
+        }
+        *i += 1;
+    }
+}
+
+fn try_parse_fixity_at(
+    toks: &[Token],
+    i: &mut usize,
+) -> Option<(FixityAssoc, u8, Vec<FixityTarget>)> {
+    let assoc = match toks.get(*i).map(|t| &t.kind) {
+        Some(k) if k.is_keyword("infixr") => FixityAssoc::InfixR,
+        Some(k) if k.is_keyword("infixl") => FixityAssoc::InfixL,
+        Some(k) if k.is_keyword("infix") => FixityAssoc::Infix,
+        _ => return None,
+    };
+    *i += 1;
+    let precedence = match toks.get(*i).map(|t| &t.kind) {
+        Some(TokenKind::IntLit(n)) => n.parse().ok()?,
+        _ => return None,
+    };
+    *i += 1;
+    let mut operators = Vec::new();
+    loop {
+        match toks.get(*i).map(|t| t.kind.clone()) {
+            Some(TokenKind::Backtick) => {
+                *i += 1;
+                let name = match toks.get(*i).map(|t| &t.kind) {
+                    Some(
+                        TokenKind::LowerId {
+                            qualifier: None,
+                            name,
+                        }
+                        | TokenKind::UpperId {
+                            qualifier: None,
+                            name,
+                        },
+                    ) => name.clone(),
+                    _ => return None,
+                };
+                *i += 1;
+                if toks.get(*i).map(|t| &t.kind) != Some(&TokenKind::Backtick) {
+                    return None;
+                }
+                *i += 1;
+                operators.push(FixityTarget::Backtick(name));
+            }
+            Some(TokenKind::Op(op)) if !is_reserved_op(&op) => {
+                *i += 1;
+                operators.push(FixityTarget::Operator(op));
+            }
+            _ => break,
+        }
+        if toks.get(*i).map(|t| &t.kind) != Some(&TokenKind::Comma) {
+            break;
+        }
+        *i += 1;
+    }
+    if operators.is_empty() {
+        return None;
+    }
+    Some((assoc, precedence, operators))
+}
+
+/// Collect top-level fixity declarations in source order. Later declarations
+/// override earlier ones for the same operator key.
+fn scan_module_fixity_env(toks: &[Token], start: usize) -> HashMap<String, (u8, bool)> {
+    let mut env = HashMap::new();
+    let mut i = start;
+    loop {
+        while matches!(
+            toks.get(i).map(|t| &t.kind),
+            Some(TokenKind::VSemi | TokenKind::Semi)
+        ) {
+            i += 1;
+        }
+        match toks.get(i).map(|t| &t.kind) {
+            None | Some(TokenKind::VRBrace | TokenKind::RBrace) => break,
+            _ => {}
+        }
+        let before = i;
+        if let Some((assoc, precedence, operators)) = try_parse_fixity_at(toks, &mut i) {
+            let decl = FixityDecl {
+                assoc,
+                precedence,
+                operators,
+                pos: toks[before].pos,
+                span: Span::from_usize(toks[before].start, toks[i.saturating_sub(1)].end),
+            };
+            apply_fixity_decl(&mut env, &decl);
+        } else {
+            i = before;
+        }
+        skip_to_item_end_at(toks, &mut i);
+        if i == before {
+            i += 1;
+        }
+    }
+    env
+}
+
 /// (precedence, right-assoc) — Haskell defaults; unknown operators get
 /// infixl 9.
-fn fixity(op: &str) -> (u8, bool) {
+fn default_fixity(op: &str) -> (u8, bool) {
     match op {
         "$" | "$!" => (1, true),
         ">>=" | ">>" | "=<<" | "<&>" => (2, false),
