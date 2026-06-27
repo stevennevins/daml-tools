@@ -12,8 +12,8 @@
 
 use crate::ast::{
     Alt, Binding, ChoiceDecl, Decl, DoStmt, Equation, Expr, FieldAssign, FixityDecl,
-    GuardQualifier, InterfaceInstanceBodyItem, Module, Pat, Span, TemplateBodyDecl, Type,
-    TypeAnnotation,
+    GuardQualifier, InterfaceInstanceBodyItem, Module, Pat, PatFieldAssign, Span, TemplateBodyDecl,
+    Type, TypeAnnotation,
 };
 use crate::lexer::{Trivia, TriviaKind};
 
@@ -487,6 +487,14 @@ fn collect_pat(pattern: &Pat, spans: &mut Vec<Span>) {
         Pat::Con { args, .. } => {
             for arg in args {
                 collect_pat(arg, spans);
+            }
+        }
+        Pat::Record { fields, .. } => {
+            for field in fields {
+                spans.push(field.span());
+                if let PatFieldAssign::Assign { pat, .. } = field {
+                    collect_pat(pat, spans);
+                }
             }
         }
         Pat::Tuple { items, .. } | Pat::List { items, .. } => {

@@ -9,8 +9,9 @@ use crate::ast::{
     FieldAssign, FieldDecl, FixityAssoc, FixityDecl, FixityTarget, FunctionDecl, GuardQualifier,
     Identifier, ImportDecl, ImportStyle, InterfaceDecl, InterfaceInstanceBodyItem,
     InterfaceInstanceDecl, LitKind, MalformedSyntaxKind, Module, ModuleName, Operator,
-    ParseDiagnostic, ParseDiagnosticKind, Pat, SkippedDeclarationReason, Span, TemplateBodyDecl,
-    TemplateDecl, Type, TypeAnnotation, TypeAnnotationContext, UnsupportedSyntaxKind,
+    ParseDiagnostic, ParseDiagnosticKind, Pat, PatFieldAssign, RecordPatternSyntax,
+    SkippedDeclarationReason, Span, TemplateBodyDecl, TemplateDecl, Type, TypeAnnotation,
+    TypeAnnotationContext, UnsupportedSyntaxKind,
 };
 use crate::layout::resolve_layout;
 use crate::lexer::{lex, Pos, Token, TokenKind};
@@ -2134,12 +2135,10 @@ impl Parser {
             }
             Some(TokenKind::UpperId { qualifier, name }) => {
                 self.bump();
-                // Record pattern `Foo {..}` / `Foo {x = y}` /
-                // `Foo with claim; tag`.
-                if self.at(&TokenKind::LBrace) {
-                    self.skip_balanced_braces();
-                } else if self.eat_keyword("with") {
-                    let _ = self.record_fields();
+                if let Some(record) =
+                    self.try_parse_record_pattern(qualifier.clone(), name.clone(), pos, start_i)
+                {
+                    return Some(record);
                 }
                 Some(Pat::Con {
                     qualifier,
@@ -2304,32 +2303,20 @@ impl Parser {
         let first = match self.peek().cloned() {
             Some(TokenKind::UpperId { qualifier, name }) => {
                 self.bump();
-                if self.at(&TokenKind::LBrace) || self.at_keyword("with") {
-                    if self.eat_keyword("with") {
-                        let _ = self.record_fields();
-                    } else {
-                        self.skip_balanced_braces();
-                    }
-                    Pat::Con {
-                        qualifier,
-                        name,
-                        args: Vec::new(),
-                        pos,
-                        span: self.node_span(start_i),
-                    }
-                } else {
-                    let mut args = Vec::new();
-                    while let Some(a) = self.try_pattern_atom() {
-                        args.push(a);
-                    }
-                    Pat::Con {
-                        qualifier,
-                        name,
-                        args,
-                        pos,
-                        span: self.node_span(start_i),
-                    }
-                }
+                self.try_parse_record_pattern(qualifier.clone(), name.clone(), pos, start_i)
+                    .unwrap_or_else(|| {
+                        let mut args = Vec::new();
+                        while let Some(a) = self.try_pattern_atom() {
+                            args.push(a);
+                        }
+                        Pat::Con {
+                            qualifier,
+                            name,
+                            args,
+                            pos,
+                            span: self.node_span(start_i),
+                        }
+                    })
             }
             _ => self.pattern_atom()?,
         };
@@ -2362,27 +2349,6 @@ impl Parser {
                 | TokenKind::LBracket,
             ) => self.pattern_atom(),
             _ => None,
-        }
-    }
-
-    fn skip_balanced_braces(&mut self) {
-        let mut depth = 0usize;
-        while let Some(t) = self.peek() {
-            match t {
-                TokenKind::LBrace => depth += 1,
-                TokenKind::RBrace => {
-                    if depth == 0 {
-                        return;
-                    }
-                    depth -= 1;
-                    if depth == 0 {
-                        self.i += 1;
-                        return;
-                    }
-                }
-                _ => {}
-            }
-            self.i += 1;
         }
     }
 
@@ -2688,6 +2654,111 @@ impl Parser {
             } else {
                 // Pun: `Foo with owner`.
                 fields.push(FieldAssign::Pun {
+                    name,
+                    pos,
+                    span: self.node_span(start_i),
+                });
+            }
+        }
+        fields
+    }
+
+    fn try_parse_record_pattern(
+        &mut self,
+        qualifier: Option<ModuleName>,
+        name: Identifier,
+        pos: Pos,
+        start_i: usize,
+    ) -> Option<Pat> {
+        let syntax = if self.at(&TokenKind::LBrace) {
+            RecordPatternSyntax::Braces
+        } else if self.at_keyword("with") {
+            self.bump();
+            RecordPatternSyntax::With
+        } else {
+            return None;
+        };
+        let fields = self.record_pattern_fields(syntax);
+        Some(Pat::Record {
+            qualifier,
+            name,
+            syntax,
+            fields,
+            pos,
+            span: self.node_span(start_i),
+        })
+    }
+
+    /// `{ f = p ; g ; .. }` or layout `with` block for record patterns.
+    fn record_pattern_fields(&mut self, syntax: RecordPatternSyntax) -> Vec<PatFieldAssign> {
+        let mut fields = Vec::new();
+        let explicit = matches!(syntax, RecordPatternSyntax::Braces) || self.at(&TokenKind::LBrace);
+        if !(self.eat(&TokenKind::VLBrace) || self.eat(&TokenKind::LBrace)) {
+            return fields;
+        }
+        loop {
+            while self.eat(&TokenKind::VSemi)
+                || self.eat(&TokenKind::Semi)
+                || self.eat(&TokenKind::Comma)
+            {}
+            if self.at_op("->") || self.at_op("|") {
+                break;
+            }
+            match self.peek() {
+                None => break,
+                Some(TokenKind::VRBrace) if !explicit => {
+                    self.bump();
+                    break;
+                }
+                Some(TokenKind::RBrace) => {
+                    self.bump();
+                    break;
+                }
+                Some(TokenKind::RParen | TokenKind::RBracket) => {
+                    self.bump();
+                    continue;
+                }
+                _ => {}
+            }
+            let pos = self.pos();
+            let start_i = self.i;
+            if self.at_op("..") {
+                self.bump();
+                fields.push(PatFieldAssign::Wildcard {
+                    pos,
+                    span: self.node_span(start_i),
+                });
+                continue;
+            }
+            let name = match self.peek().cloned() {
+                Some(TokenKind::LowerId {
+                    qualifier: None,
+                    name,
+                }) => {
+                    self.bump();
+                    name
+                }
+                _ => {
+                    if self.at_op("->") || self.at_op("|") {
+                        break;
+                    }
+                    self.skip_to_item_end();
+                    continue;
+                }
+            };
+            if self.eat_op("=") {
+                let Some(pat) = self.pattern() else {
+                    self.skip_to_item_end();
+                    continue;
+                };
+                fields.push(PatFieldAssign::Assign {
+                    name,
+                    pat,
+                    pos,
+                    span: self.node_span(start_i),
+                });
+            } else {
+                fields.push(PatFieldAssign::Pun {
                     name,
                     pos,
                     span: self.node_span(start_i),

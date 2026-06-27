@@ -279,6 +279,74 @@ pub struct Binding {
     pub span: Span,
 }
 
+/// Record-pattern field syntax: explicit braces or layout `with`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RecordPatternSyntax {
+    /// `Foo { field = pat; .. }`.
+    Braces,
+    /// `Foo with field; nested = pat`.
+    With,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PatFieldAssign {
+    /// Explicit record-pattern assignment: `field = pattern`.
+    Assign {
+        /// Field being matched.
+        name: Identifier,
+        /// Pattern bound to the field.
+        pat: Pat,
+        /// Position of the field name.
+        pos: Pos,
+        /// Span of the whole `field = pattern` assignment.
+        span: Span,
+    },
+    /// Record-pattern pun: `field`, meaning `field = field`.
+    Pun {
+        /// Punned field name.
+        name: Identifier,
+        /// Position of the field name.
+        pos: Pos,
+        /// Span of the field name.
+        span: Span,
+    },
+    /// Record-pattern wildcard: `..`.
+    Wildcard {
+        /// Position of the `..` token.
+        pos: Pos,
+        /// Span of the `..` token.
+        span: Span,
+    },
+}
+
+impl PatFieldAssign {
+    #[must_use]
+    pub const fn pos(&self) -> Pos {
+        match self {
+            Self::Assign { pos, .. } | Self::Pun { pos, .. } | Self::Wildcard { pos, .. } => *pos,
+        }
+    }
+
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        match self {
+            Self::Assign { span, .. } | Self::Pun { span, .. } | Self::Wildcard { span, .. } => {
+                *span
+            }
+        }
+    }
+
+    #[must_use]
+    pub const fn name(&self) -> Option<&Identifier> {
+        match self {
+            Self::Assign { name, .. } | Self::Pun { name, .. } => Some(name),
+            Self::Wildcard { .. } => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Pat {
@@ -309,6 +377,21 @@ pub enum Pat {
         /// Position of the constructor token.
         pos: Pos,
         /// Span of the whole constructor pattern.
+        span: Span,
+    },
+    /// Constructor record pattern with source-ordered fields.
+    Record {
+        /// Optional module qualifier before the constructor name.
+        qualifier: Option<ModuleName>,
+        /// Constructor name.
+        name: Identifier,
+        /// Whether fields used `{..}` or `with`.
+        syntax: RecordPatternSyntax,
+        /// Field patterns in source order.
+        fields: Vec<PatFieldAssign>,
+        /// Position of the constructor token.
+        pos: Pos,
+        /// Span of the whole record pattern.
         span: Span,
     },
     /// Tuple pattern with source-ordered items.
@@ -1547,6 +1630,7 @@ impl Pat {
             Self::Var { pos, .. }
             | Self::Wild { pos, .. }
             | Self::Con { pos, .. }
+            | Self::Record { pos, .. }
             | Self::Tuple { pos, .. }
             | Self::List { pos, .. }
             | Self::Lit { pos, .. }
@@ -1562,6 +1646,7 @@ impl Pat {
             Self::Var { span, .. }
             | Self::Wild { span, .. }
             | Self::Con { span, .. }
+            | Self::Record { span, .. }
             | Self::Tuple { span, .. }
             | Self::List { span, .. }
             | Self::Lit { span, .. }
@@ -1592,6 +1677,31 @@ impl Pat {
                 } else {
                     let parts: Vec<String> = args.iter().map(|p| p.render()).collect();
                     format!("({} {})", head, parts.join(" "))
+                }
+            }
+            Self::Record {
+                qualifier,
+                name,
+                syntax,
+                fields,
+                ..
+            } => {
+                let head = qualifier
+                    .as_ref()
+                    .map_or_else(|| name.to_string(), |q| format!("{q}.{name}"));
+                let fs: Vec<String> = fields
+                    .iter()
+                    .map(|f| match f {
+                        PatFieldAssign::Assign { name, pat, .. } => {
+                            format!("{} = {}", name, pat.render())
+                        }
+                        PatFieldAssign::Pun { name, .. } => name.to_string(),
+                        PatFieldAssign::Wildcard { .. } => "..".to_string(),
+                    })
+                    .collect();
+                match syntax {
+                    RecordPatternSyntax::Braces => format!("{} {{ {} }}", head, fs.join(", ")),
+                    RecordPatternSyntax::With => format!("{} with {}", head, fs.join("; ")),
                 }
             }
             Self::Tuple { items, .. } => {
