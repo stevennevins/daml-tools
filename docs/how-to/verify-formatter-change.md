@@ -71,10 +71,10 @@ npm run audit -- --no-desugar
 ```
 
 The audit output is written to `target/daml-fmt-audit`. See the formatter
-[audit workflow](../../crates/daml-fmt/docs/audit-workflow.md) for the packet
+[audit workflow](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-fmt/docs/audit-workflow.md) for the packet
 layout and reviewer responsibilities.
 
 ## Related
 
 - [Formatter verification model](../explanation/formatter-verification.md)
-- [`daml-fmt` crate README](../../crates/daml-fmt/README.md)
+- [`daml-fmt` crate README](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-fmt/README.md)

@@ -182,7 +182,8 @@ scan again.
 
 ## Related
 
-- [`daml-lint` crate README](../../crates/daml-lint/README.md)
+- [`daml-lint` crate README](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-lint/README.md)
+- [`daml-lint` API on docs.rs](https://docs.rs/daml-lint)
 - [Write a custom rule](../tutorials/write-a-daml-lint-custom-rule.md)
 - [Custom rule contract](../reference/daml-lint-custom-rule-contract.md)
 - [CLI reference](../reference/cli.md)

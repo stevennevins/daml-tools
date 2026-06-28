@@ -7,20 +7,24 @@ artifacts do not get committed. We intentionally avoid `.git/act/` because this 
 
 GitHub Actions YAML remains the source of truth. Local signoff runs the same
 workflow jobs through act instead of a bespoke CI wrapper. The `signoff:*` mise
-tasks in [`mise.toml`](../../mise.toml) are thin wrappers around
+tasks in [`mise.toml`](https://github.com/stevennevins/daml-tools/blob/main/mise.toml) are thin wrappers around
 `act workflow_dispatch -W ... -j ...` plus the matching `gh signoff` status; they
 do not duplicate CI logic. Use `MISE_LOCKED=1` locally, matching the GitHub
 workflows, so drift from `mise.toml` and `mise.lock` fails loudly.
 
-The CI and Docs workflows intentionally do not run on GitHub-hosted
-`pull_request` or `push` events. They keep `workflow_dispatch` triggers so act
-can execute the same YAML locally for PR signoff without spending hosted runner
-minutes on every PR update or every merge to `main`. They also expose
-`workflow_call` so the nightly release workflow can run the same jobs on
-GitHub-hosted runners before release-plz publishes crates or updates release
-PRs. Local `workflow_dispatch` uses the Linux x64 signoff smoke by default; the
-nightly release gate passes `run-release-builds: true` so hosted runners also
-exercise the full release build matrix.
+The CI workflow intentionally does not run on GitHub-hosted `pull_request` or
+`push` events. It keeps `workflow_dispatch` triggers so act can execute the
+same YAML locally for PR signoff without spending hosted runner minutes on
+every PR update. It also exposes `workflow_call` so the nightly release
+workflow can run the same jobs on GitHub-hosted runners before release-plz
+publishes crates or updates release PRs. Local `workflow_dispatch` uses the
+Linux x64 signoff smoke by default; the nightly release gate passes
+`run-release-builds: true` so hosted runners also exercise the full release
+build matrix.
+
+The Docs workflow follows the same `workflow_dispatch` and `workflow_call`
+pattern for local signoff, but it also runs on `push` to `main` so the VitePress
+site builds and deploys to GitHub Pages automatically after merge.
 
 ## Install and activate mise, then install locked tools
 

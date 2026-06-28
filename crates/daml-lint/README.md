@@ -18,21 +18,24 @@ that fail to parse degrade to partial structure with a diagnostic on stderr
 
 ## Documentation
 
-The workspace docs split task guides, reference, and design background:
+The workspace docs site is at
+[https://stevennevins.github.io/daml-tools/](https://stevennevins.github.io/daml-tools/):
 
-- [Scan Daml source](https://github.com/stevennevins/daml-tools/blob/main/docs/how-to/scan-daml.md) for CLI usage patterns
-- [Write a custom rule](https://github.com/stevennevins/daml-tools/blob/main/docs/tutorials/write-a-daml-lint-custom-rule.md)
+- [Scan Daml source](https://stevennevins.github.io/daml-tools/how-to/scan-daml.html) for CLI usage patterns
+- [Write a custom rule](https://stevennevins.github.io/daml-tools/tutorials/write-a-daml-lint-custom-rule.html)
   for a guided first external rule
-- [Custom rule contract](https://github.com/stevennevins/daml-tools/blob/main/docs/reference/daml-lint-custom-rule-contract.md)
+- [Custom rule contract](https://stevennevins.github.io/daml-tools/reference/daml-lint-custom-rule-contract.html)
   for the JavaScript runtime contract and TypeScript types
-- [CLI reference](https://github.com/stevennevins/daml-tools/blob/main/docs/reference/cli.md) for options, output formats, and
+- [CLI reference](https://stevennevins.github.io/daml-tools/reference/cli.html) for options, output formats, and
   exit codes
-- [Crate reference](https://github.com/stevennevins/daml-tools/blob/main/docs/reference/crates.md) for features and public
+- [Crate reference](https://stevennevins.github.io/daml-tools/reference/crates.html) for features and public
   modules
-- [Rule authoring model](https://github.com/stevennevins/daml-tools/blob/main/docs/explanation/daml-lint-rule-authoring.md)
+- [Rule authoring model](https://stevennevins.github.io/daml-tools/explanation/daml-lint-rule-authoring.html)
   for why TypeScript authoring is bundled to JavaScript
-- [Workspace architecture](https://github.com/stevennevins/daml-tools/blob/main/docs/explanation/workspace-architecture.md)
+- [Workspace architecture](https://stevennevins.github.io/daml-tools/explanation/workspace-architecture.html)
   for how `daml-lint` uses `daml-parser`
+
+Rust API documentation: [docs.rs/daml-lint](https://docs.rs/daml-lint)
 
 ## Detectors
 
@@ -54,8 +57,8 @@ npm install --save-dev @daml-tools/daml-lint
 npx daml-lint ./daml
 ```
 
-Cargo installs require [Rust](https://rustup.rs/) 1.87+ (the `rquickjs`
-dependency needs rustc 1.87).
+Cargo installs require [Rust](https://rustup.rs/) 1.96.0 or newer (the workspace
+`rust-version` and `rquickjs` dependency).
 
 ```sh
 cargo install daml-lint
