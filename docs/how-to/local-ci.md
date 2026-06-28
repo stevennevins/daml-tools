@@ -6,16 +6,18 @@ digest-pinned, multi-architecture Docker images and keeps act runtime state unde
 artifacts do not get committed. We intentionally avoid `.git/act/` because this repo is often used from git worktrees where `.git` is a file, not a directory.
 
 GitHub Actions YAML remains the source of truth. Local signoff runs the same
-workflow jobs through act instead of a bespoke CI wrapper. Use `MISE_LOCKED=1`
-locally, matching the GitHub workflows, so drift from `mise.toml` and
-`mise.lock` fails loudly.
+workflow jobs through act instead of a bespoke CI wrapper. The `signoff:*` mise
+tasks in [`mise.toml`](../../mise.toml) are thin wrappers around
+`act workflow_dispatch -W ... -j ...` plus the matching `gh signoff` status; they
+do not duplicate CI logic. Use `MISE_LOCKED=1` locally, matching the GitHub
+workflows, so drift from `mise.toml` and `mise.lock` fails loudly.
 
 The CI and Docs workflows intentionally do not run on GitHub-hosted
 `pull_request` events. They keep `push` triggers for `main` and
 `workflow_dispatch` triggers so act can execute the same YAML locally for PR
 signoff without spending hosted runner minutes on every PR update.
 
-Install tools from the committed lockfile before running act or gh-signoff:
+Install tools from the committed lockfile before running signoff tasks:
 
 ```sh
 MISE_LOCKED=1 mise install
@@ -23,7 +25,8 @@ MISE_LOCKED=1 mise install
 
 ## Activate mise for interactive shells
 
-Use `mise x -- ...` in documented commands and automation so the toolchain is
+Use `mise run signoff:*` for the documented PR signoff commands. For ad hoc
+commands that need a pinned tool, use `mise x -- ...` so the toolchain is
 explicit and shell-independent. For day-to-day interactive work, you can also
 activate mise in your shell so pinned tools such as `cargo`, `node`, `act`, and
 `gh` are placed on `PATH` automatically when you enter the repo.
@@ -87,40 +90,43 @@ Install the gh-signoff extension once for the GitHub CLI managed by mise:
 MISE_LOCKED=1 mise x -- gh extension install basecamp/gh-signoff
 ```
 
-Before signing off, make sure the checkout is clean, the current commit is
-pushed to the PR branch, and the matching act job exits successfully. Each
-`gh signoff` command creates a GitHub commit status for `HEAD`; do not sign off
+Before signing off, make sure the checkout is clean and the current commit is
+pushed to the PR branch. Each `mise run signoff:*` task first runs the matching
+act job and only then creates a GitHub commit status for `HEAD`; do not sign off
 for a job that failed, was skipped, or was run with a different toolchain.
 
-The package verification job runs `git diff` to reject dirty packages. When act
-runs from a git worktree, mount the git common directory into the container so
-that the worktree `.git` file resolves correctly:
-
-```sh
-git_common="$(git rev-parse --path-format=absolute --git-common-dir)"
-```
-
-Run one local job per required signoff context. The npm packaging job validates
+Run one local task per required signoff context. The npm packaging job validates
 the current Linux container platform (`linux-x64` on x86_64 hosts or
 `linux-arm64` on ARM hosts); release workflows still produce the full
 cross-platform set.
 
-| Required PR context | Validate with act | Create the status |
-|---------------------|-------------------|-------------------|
-| `signoff/test` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/ci.yml -j test` | `MISE_LOCKED=1 mise x -- gh signoff test` |
-| `signoff/msrv` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/ci.yml -j msrv` | `MISE_LOCKED=1 mise x -- gh signoff msrv` |
-| `signoff/npm-package` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/ci.yml -j npm-package` | `MISE_LOCKED=1 mise x -- gh signoff npm-package` |
-| `signoff/package` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/ci.yml -j package --container-options "--mount type=bind,source=${git_common},target=${git_common},readonly"` | `MISE_LOCKED=1 mise x -- gh signoff package` |
-| `signoff/cargo-deny` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/ci.yml -j cargo-deny` | `MISE_LOCKED=1 mise x -- gh signoff cargo-deny` |
-| `signoff/semver` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/ci.yml -j semver` | `MISE_LOCKED=1 mise x -- gh signoff semver` |
-| `signoff/build-linux-x64` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/ci.yml -j build-pr` | `MISE_LOCKED=1 mise x -- gh signoff build-linux-x64` |
-| `signoff/docs` | `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/docs.yml -j docs` | `MISE_LOCKED=1 mise x -- gh signoff docs` |
+| Required PR context | Run this task | Underlying act job |
+|---------------------|---------------|--------------------|
+| `signoff/test` | `MISE_LOCKED=1 mise run signoff:test` | `.github/workflows/ci.yml` job `test` |
+| `signoff/npm-package` | `MISE_LOCKED=1 mise run signoff:npm-package` | `.github/workflows/ci.yml` job `npm-package` |
+| `signoff/package` | `MISE_LOCKED=1 mise run signoff:package` | `.github/workflows/ci.yml` job `package` |
+| `signoff/cargo-deny` | `MISE_LOCKED=1 mise run signoff:cargo-deny` | `.github/workflows/ci.yml` job `cargo-deny` |
+| `signoff/semver` | `MISE_LOCKED=1 mise run signoff:semver` | `.github/workflows/ci.yml` job `semver` |
+| `signoff/build-linux-x64` | `MISE_LOCKED=1 mise run signoff:build-linux-x64` | `.github/workflows/ci.yml` job `build-linux-x64` |
+| `signoff/docs` | `MISE_LOCKED=1 mise run signoff:docs` | `.github/workflows/docs.yml` job `docs` |
 
-The partial name passed to `gh signoff` omits the `signoff/` prefix; the
-extension adds that prefix when it creates the commit status.
+To run every required signoff task in sequence:
 
-Use Docker `--mount` rather than `--volume` for the git common directory so a
-missing host path fails loudly instead of creating an empty directory.
+```sh
+MISE_LOCKED=1 mise run signoff:all
+```
+
+The package verification job runs `git diff` to reject dirty packages. When act
+runs from a git worktree, the `signoff:package` task mounts the git common
+directory into the container so that the worktree `.git` file resolves
+correctly.
+
+The signoff tasks pass partial names to `gh signoff` without the `signoff/`
+prefix; the extension adds that prefix when it creates the commit status.
+
+The `signoff:package` task uses Docker `--mount` rather than `--volume` for the
+git common directory so a missing host path fails loudly instead of creating an
+empty directory.
 
 Do not use local signoff for release-only guarantees that Linux Docker cannot
 honestly provide. macOS and Windows platform builds stay on GitHub-hosted
@@ -132,7 +138,6 @@ GitHub-hosted because its OIDC `id-token` flow depends on GitHub Actions.
 The PR merge gate should require these commit-status contexts on `main`:
 
 - `signoff/test`
-- `signoff/msrv`
 - `signoff/npm-package`
 - `signoff/package`
 - `signoff/cargo-deny`
@@ -149,7 +154,7 @@ protection settings through the GitHub UI or the branch-protection API instead.
 
 1. Open GitHub repository settings.
 2. Go to **Branches** and edit the existing rule that protects `main`.
-3. Under **Require status checks to pass before merging**, add the eight
+3. Under **Require status checks to pass before merging**, add the seven
    `signoff/...` contexts listed above.
 4. Leave existing review, admin, linear-history, signed-commit, restriction,
    conversation-resolution, and other protection settings unchanged.
@@ -177,7 +182,6 @@ gh api \
   -H "X-GitHub-Api-Version: 2022-11-28" \
   "repos/${owner}/${repo}/branches/${branch}/protection/required_status_checks/contexts" \
   -f "contexts[]=signoff/test" \
-  -f "contexts[]=signoff/msrv" \
   -f "contexts[]=signoff/npm-package" \
   -f "contexts[]=signoff/package" \
   -f "contexts[]=signoff/cargo-deny" \
@@ -245,7 +249,7 @@ When you intentionally want newer runner images:
 
 3. Update the matching `-P ubuntu-…=catthehacker/ubuntu@sha256:…` lines in `.actrc`.
 
-4. Re-run `MISE_LOCKED=1 mise x -- act -l` and at least one non-publishing job, such as `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/docs.yml -j docs`, to confirm act still parses and executes workflows with the new pins.
+4. Re-run `MISE_LOCKED=1 mise x -- act -l` and at least one non-publishing job, such as `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/docs.yml -j docs`, to confirm act still parses and executes workflows with the new pins. Use raw `act` here because this is a runner-image smoke, not a PR signoff that should create a `signoff/...` status.
 
 Commit digest updates separately from unrelated CI changes so image drift is easy to review.
 

@@ -11,7 +11,9 @@ not publish npm packages or GitHub binary assets.
 Use [local CI](local-ci.md) and `gh-signoff` only as the PR merge gate before a
 release PR lands. Required `signoff/...` commit statuses are maintainer
 assertions over the GitHub Actions jobs that can be run honestly with locked
-mise and act.
+mise and act. Create those statuses through the `MISE_LOCKED=1 mise run
+signoff:*` tasks so the same GitHub Actions YAML remains the validation source
+of truth.
 
 Keep the tag-triggered release flow on GitHub-hosted runners:
 
@@ -113,8 +115,7 @@ Before merging the release PR, verify:
   `daml-lint` is being released.
 - The starter template depends on the new `@daml-tools/lint-plugin` version.
 - The required local `signoff/...` contexts from [local CI](local-ci.md) are
-  present on the release PR commit.
-- CI is green, including the `npm CLI packaging` job.
+  present on the release PR commit, including `signoff/npm-package`.
 - Formatter release candidates also pass the optional compiler desugar oracle when
   the Daml SDK is available locally.
 

@@ -2,10 +2,7 @@
 # Use MISE_LOCKED=1 in signoff workflows only; do not set locked=true here.
 
 [tools]
-rust = [
-  { version = "1.96.0", components = "rustfmt,clippy" },
-  "1.87.0",
-]
+rust = { version = "1.96.0", components = "rustfmt,clippy" }
 node = "22.23.1"
 npm = "10.9.8"
 "cargo:cargo-deny" = "0.19.9"
@@ -15,3 +12,74 @@ actionlint = "1.7.12"
 lychee = "0.24.2"
 act = "0.2.89"
 gh = "2.95.0"
+
+[tasks."signoff:test"]
+description = "Run the CI test job through act and create signoff/test."
+env = { MISE_LOCKED = "1" }
+run = [
+  "act workflow_dispatch -W .github/workflows/ci.yml -j test",
+  "gh signoff test",
+]
+
+[tasks."signoff:npm-package"]
+description = "Run the CI npm-package job through act and create signoff/npm-package."
+env = { MISE_LOCKED = "1" }
+run = [
+  "act workflow_dispatch -W .github/workflows/ci.yml -j npm-package",
+  "gh signoff npm-package",
+]
+
+[tasks."signoff:package"]
+description = "Run the CI package job through act with the worktree git mount and create signoff/package."
+env = { MISE_LOCKED = "1" }
+run = '''
+git_common="$(git rev-parse --path-format=absolute --git-common-dir)"
+act workflow_dispatch -W .github/workflows/ci.yml -j package \
+  --container-options "--mount type=bind,source=${git_common},target=${git_common},readonly"
+gh signoff package
+'''
+
+[tasks."signoff:cargo-deny"]
+description = "Run the CI cargo-deny job through act and create signoff/cargo-deny."
+env = { MISE_LOCKED = "1" }
+run = [
+  "act workflow_dispatch -W .github/workflows/ci.yml -j cargo-deny",
+  "gh signoff cargo-deny",
+]
+
+[tasks."signoff:semver"]
+description = "Run the CI semver job through act and create signoff/semver."
+env = { MISE_LOCKED = "1" }
+run = [
+  "act workflow_dispatch -W .github/workflows/ci.yml -j semver",
+  "gh signoff semver",
+]
+
+[tasks."signoff:build-linux-x64"]
+description = "Run the CI build-linux-x64 job through act and create signoff/build-linux-x64."
+env = { MISE_LOCKED = "1" }
+run = [
+  "act workflow_dispatch -W .github/workflows/ci.yml -j build-linux-x64",
+  "gh signoff build-linux-x64",
+]
+
+[tasks."signoff:docs"]
+description = "Run the Docs job through act and create signoff/docs."
+env = { MISE_LOCKED = "1" }
+run = [
+  "act workflow_dispatch -W .github/workflows/docs.yml -j docs",
+  "gh signoff docs",
+]
+
+[tasks."signoff:all"]
+description = "Run every required local PR signoff task in sequence."
+env = { MISE_LOCKED = "1" }
+run = [
+  "mise run signoff:test",
+  "mise run signoff:npm-package",
+  "mise run signoff:package",
+  "mise run signoff:cargo-deny",
+  "mise run signoff:semver",
+  "mise run signoff:build-linux-x64",
+  "mise run signoff:docs",
+]

@@ -31,7 +31,7 @@ jobs:
         with:
           install: false
       - name: Install locked tools
-        run: mise install rust@1.96.0 lychee@0.24.2
+        run: mise install rust lychee
       - name: docs and version checks
         shell: bash
         run: |
