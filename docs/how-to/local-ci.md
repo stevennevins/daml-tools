@@ -13,9 +13,14 @@ do not duplicate CI logic. Use `MISE_LOCKED=1` locally, matching the GitHub
 workflows, so drift from `mise.toml` and `mise.lock` fails loudly.
 
 The CI and Docs workflows intentionally do not run on GitHub-hosted
-`pull_request` events. They keep `push` triggers for `main` and
-`workflow_dispatch` triggers so act can execute the same YAML locally for PR
-signoff without spending hosted runner minutes on every PR update.
+`pull_request` or `push` events. They keep `workflow_dispatch` triggers so act
+can execute the same YAML locally for PR signoff without spending hosted runner
+minutes on every PR update or every merge to `main`. They also expose
+`workflow_call` so the nightly release workflow can run the same jobs on
+GitHub-hosted runners before release-plz publishes crates or updates release
+PRs. Local `workflow_dispatch` uses the Linux x64 signoff smoke by default; the
+nightly release gate passes `run-release-builds: true` so hosted runners also
+exercise the full release build matrix.
 
 Install tools from the committed lockfile before running signoff tasks:
 

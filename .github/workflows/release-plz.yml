@@ -1,19 +1,30 @@
 name: Release-plz
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - ".smithers/**"
-      - "AGENTS.md"
-      - "LICENSE"
+  schedule:
+    - cron: "17 8 * * *"
   workflow_dispatch:
 
 jobs:
+  release-gate-ci:
+    name: Release gate / CI
+    if: ${{ github.repository_owner == 'stevennevins' }}
+    uses: ./.github/workflows/ci.yml
+    with:
+      run-release-builds: true
+    permissions:
+      contents: read
+
+  release-gate-docs:
+    name: Release gate / Docs
+    if: ${{ github.repository_owner == 'stevennevins' }}
+    uses: ./.github/workflows/docs.yml
+    permissions:
+      contents: read
+
   release-plz-release:
     name: Release-plz release
+    needs: [release-gate-ci, release-gate-docs]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     if: ${{ github.repository_owner == 'stevennevins' }}

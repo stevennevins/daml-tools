@@ -15,9 +15,10 @@ mise and act. Create those statuses through the `MISE_LOCKED=1 mise run
 signoff:*` tasks so the same GitHub Actions YAML remains the validation source
 of truth.
 
-Keep the tag-triggered release flow on GitHub-hosted runners:
+Keep the nightly and tag-triggered release flow on GitHub-hosted runners:
 
-- Release-plz stays GitHub-hosted because it writes release PRs, tags, GitHub
+- Release-plz runs nightly (and by manual dispatch), after the hosted CI and
+  Docs reusable workflows pass, because it writes release PRs, tags, GitHub
   releases, and crates.io publishes from `main`.
 - npm trusted publishing stays GitHub-hosted because npm depends on the GitHub
   Actions OIDC `id-token` flow for that trust decision.
@@ -26,8 +27,9 @@ Keep the tag-triggered release flow on GitHub-hosted runners:
 
 Do not run `release-plz.yml`, `npm-publish.yml`, or `release-artifacts.yml`
 through act as a substitute for the hosted release workflows. Local signoff can
-gate the release PR; it does not publish packages, mutate release tags, or prove
-the macOS and Windows artifacts.
+gate the release PR; the nightly release workflow re-runs CI and Docs on hosted
+runners before release-plz, then the tag-triggered workflows publish packages
+and prove the macOS and Windows artifacts.
 
 ## Check release authentication
 
@@ -91,10 +93,10 @@ GitHub source repository is private.
 
 ## Review the release PR
 
-Release-plz opens a `chore: release` PR after semver-relevant changes land on
-`main`. Normal `docs:`, `ci:`, and `chore:` commits do not prepare releases;
-`feat:`, `fix:`, `perf:`, `refactor:`, `security:`, and breaking `!` commits
-do.
+Release-plz opens a `chore: release` PR on the nightly schedule, or when
+manually dispatched, after semver-relevant changes land on `main`. Normal
+`docs:`, `ci:`, and `chore:` commits do not prepare releases; `feat:`, `fix:`,
+`perf:`, `refactor:`, `security:`, and breaking `!` commits do.
 
 For `daml-lint` release PRs, the Release-plz workflow syncs only the committed
 lint-plugin npm metadata:
@@ -135,7 +137,9 @@ a release candidate.
 
 Merge the release PR into `main`.
 
-This triggers the release flow:
+The next scheduled or manually dispatched `Release-plz` workflow runs hosted CI
+and Docs first. If those release gates pass, the workflow starts the release
+flow:
 
 1. `Release-plz` publishes changed Rust crates to crates.io.
 2. Release-plz creates GitHub tags and releases.

@@ -1,15 +1,20 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - ".smithers/**"
-      - "AGENTS.md"
-      - "LICENSE"
+  workflow_call:
+    inputs:
+      run-release-builds:
+        description: Run hosted cross-platform build matrix instead of the local Linux x64 signoff smoke.
+        required: false
+        type: boolean
+        default: true
   workflow_dispatch:
+    inputs:
+      run-release-builds:
+        description: Run hosted cross-platform build matrix instead of the local Linux x64 signoff smoke.
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -151,7 +156,7 @@ jobs:
   # by release-artifacts.yml when a CLI tag is published.
   build-linux-x64:
     name: build-linux-x64
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    if: ${{ !inputs.run-release-builds }}
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
@@ -185,7 +190,7 @@ jobs:
 
   build:
     name: build (${{ matrix.target }})
-    if: ${{ github.event_name == 'push' }}
+    if: ${{ inputs.run-release-builds }}
     strategy:
       fail-fast: false
       matrix:
