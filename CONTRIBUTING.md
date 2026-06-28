@@ -79,8 +79,9 @@ The formatter `npm test` command runs `node test/diff.js`, the same 924-file
 differential test used by the pre-push hook.
 
 Maintainers applying required PR signoffs should use the locked mise and act
-workflow in [`docs/how-to/local-ci.md`](docs/how-to/local-ci.md). Activate mise,
-set `MISE_LOCKED=1`, and use the `mise run signoff:*` tasks from that guide;
+workflow in [`docs/how-to/local-ci.md`](docs/how-to/local-ci.md). Install and
+activate mise, set `MISE_LOCKED=1`, and use the `mise run signoff:*` tasks from
+that guide;
 CI workflow jobs use the `signoff:ci:*` task namespace while preserving the
 existing `signoff/...` commit-status contexts. Those tasks run the matching
 GitHub Actions YAML job through act and then create the corresponding

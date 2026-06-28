@@ -22,7 +22,18 @@ PRs. Local `workflow_dispatch` uses the Linux x64 signoff smoke by default; the
 nightly release gate passes `run-release-builds: true` so hosted runners also
 exercise the full release build matrix.
 
-## Activate mise and install locked tools
+## Install and activate mise, then install locked tools
+
+Install the `mise` CLI before activating it. Use your platform package manager
+when preferred, or install with the upstream installer:
+
+```sh
+curl https://mise.run | sh
+```
+
+The installer places `mise` at `~/.local/bin/mise`. If your package manager
+already puts `mise` on `PATH`, you can use `mise` instead of
+`~/.local/bin/mise` in the activation commands below.
 
 Activate mise before running local CI so pinned tools such as `cargo`, `node`,
 `act`, and `gh` are placed on `PATH` automatically when you enter the repo. Set
@@ -32,18 +43,18 @@ fail loudly if `mise.toml` and `mise.lock` drift.
 For zsh:
 
 ```sh
-eval "$(mise activate zsh)"
+eval "$(~/.local/bin/mise activate zsh)"
 export MISE_LOCKED=1
 mise install
 ```
 
-For bash, fish, or PowerShell, replace `zsh` with the matching shell, set
+For bash, fish, or PowerShell, use the matching shell activation command, set
 `MISE_LOCKED=1`, and install the locked tools:
 
 - bash:
 
   ```sh
-  eval "$(mise activate bash)"
+  eval "$(~/.local/bin/mise activate bash)"
   export MISE_LOCKED=1
   mise install
   ```
@@ -51,7 +62,7 @@ For bash, fish, or PowerShell, replace `zsh` with the matching shell, set
 - fish:
 
   ```fish
-  mise activate fish | source
+  ~/.local/bin/mise activate fish | source
   set -gx MISE_LOCKED 1
   mise install
   ```
@@ -65,10 +76,10 @@ For bash, fish, or PowerShell, replace `zsh` with the matching shell, set
   ```
 
 To make activation permanent, add the matching command to your shell startup
-file after `mise` is installed and available on `PATH`:
+file after `mise` is installed:
 
 ```sh
-echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
+echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
 ```
 
 After activation, verify that commands resolve through mise:
