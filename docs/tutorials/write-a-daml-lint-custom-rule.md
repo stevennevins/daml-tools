@@ -3,7 +3,8 @@
 This tutorial starts from an empty directory and builds one custom rule that
 reports templates without an `ensure` clause.
 
-You need Node.js 18 or newer.
+You need Node.js 18 or newer. Install `@daml-tools/lint-plugin` for typed rule
+authoring — see the [custom rule contract](../reference/daml-lint-custom-rule-contract.md).
 
 ## Create the project
 
@@ -128,4 +129,6 @@ npx daml-lint fixtures/with-ensure.daml --fail-on info
 
 You now have a typed rule package that can be loaded through `./daml.yaml`.
 The bundled JavaScript file also still works with direct `--rules` loading when
-you want to test one script without a package manifest.
+you want to test one script without a package manifest. See
+[Scan Daml source](../how-to/scan-daml.md) for `--rules`, plugin packages, and
+CI SARIF output.

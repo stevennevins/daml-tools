@@ -45,7 +45,38 @@ The package exports the rule-facing IR types, `DamlLintRuleSeverity`,
 `report`, and global `__daml_lint_rule`.
 
 The crate-local examples import equivalent types from
-`crates/daml-lint/examples/daml-lint.d.ts`.
+[`crates/daml-lint/examples/daml-lint.d.ts`](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-lint/examples/daml-lint.d.ts).
+
+## `@daml-tools/lint-plugin` package contract
+
+Install the npm package as a dev dependency alongside TypeScript and esbuild:
+
+```sh
+npm install --save-dev @daml-tools/daml-lint @daml-tools/lint-plugin typescript esbuild
+```
+
+The npm package ships [`dist/index.d.ts`](https://github.com/stevennevins/daml-tools/tree/main/crates/daml-lint/lint-plugin/dist),
+[`templates/`](https://github.com/stevennevins/daml-tools/tree/main/crates/daml-lint/lint-plugin/templates),
+and `README.md`. Only `dist/index.d.ts` is the runtime/type entry point: it
+exports rule-facing IR types, `DamlLintRuleModule`, `DamlLintRuleSeverity`,
+`DamlLintReportTarget`, and globals `CONFIG`, `report`, and
+`__daml_lint_rule`. The templates are copy-paste scaffolding, not bundled
+runtime helpers — bundle rule logic to one JavaScript file before scanning.
+
+Starter templates are available under `@daml-tools/lint-plugin/templates/*` and
+via the package `exports` map for `minimal-rule` and `project/*` files.
+
+## Rule IDs
+
+Built-in rules use unqualified ids such as `missing-ensure-decimal`. Plugin rules
+use `plugin/rule` ids where `plugin` is the package name without the
+`daml-lint-plugin-` prefix. The manifest rule key in `package.json` must match
+the bundled script's `const NAME`; users enable the rule as
+`template/template-requires-ensure` when the package is
+`daml-lint-plugin-template`.
+
+Custom `--rules` file names must not collide with built-in detector names or
+each other. Installed plugin rules are always namespaced.
 
 ## Authoring object
 
@@ -72,6 +103,19 @@ report(field, "Field is unbounded", "field : Text");
 The first argument is a node with `span`, an expression node with `span`, or a
 1-based line number. Explicit evidence replaces the source line shown in
 reports.
+
+### Span and reporting caveats
+
+IR nodes expose byte-oriented `span` values from the parser. The runtime maps
+those spans to line/column for Markdown and SARIF output. When you pass a line
+number instead of a node, reports anchor to that line only. When evidence text
+is omitted, the reporter shows the source line covered by the target span.
+Expression and type nodes may span multiple lines; prefer the narrowest node
+that still explains the finding.
+
+Visitor hooks receive lowered IR nodes, not raw parser AST values. Fields removed
+in older IR versions (`body_raw`, stringly-typed controller lists, and similar)
+are not available — consult `DamlModule.ir_version` when upgrading rules.
 
 ## Project config
 
@@ -146,8 +190,9 @@ Each rule script is evaluated once. The same visitors are reused across scanned
 modules, so visitors should not accumulate module-specific state in top-level
 mutable variables.
 
-A runaway rule is interrupted. Rule load or runtime errors are reported and
-cause the CLI to exit `2`.
+A runaway rule is interrupted after a bounded execution budget. Rule load or
+runtime errors are reported and cause the CLI to exit `2`. Rules cannot spawn
+workers, import Node built-ins, or access the filesystem at runtime.
 
 ## Packaging
 
@@ -176,5 +221,6 @@ The manifest rule key is the unqualified rule name. The bundled script must
 define the same `const NAME`; users enable it as
 `template/template-requires-ensure`.
 
-The `@daml-tools/lint-plugin` package publishes only the type contract and
-starter templates. It does not publish runtime helpers.
+The `@daml-tools/lint-plugin` package publishes the type contract entry point
+(`dist/index.d.ts`), starter templates, and package README. It does not publish
+bundled runtime helpers — authors compile rule logic themselves.

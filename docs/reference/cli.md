@@ -5,7 +5,7 @@ This page describes the command-line interfaces shipped by this workspace.
 ## `daml-fmt`
 
 `daml-fmt` formats Daml source files. The published binary is defined in
-[`crates/daml-fmt/src/bin/daml-fmt.rs`](../../crates/daml-fmt/src/bin/daml-fmt.rs).
+[`crates/daml-fmt/src/bin/daml-fmt.rs`](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-fmt/src/bin/daml-fmt.rs).
 
 ```sh
 daml-fmt [options] [file...]
@@ -69,7 +69,7 @@ file path, so ignore patterns do not apply.
 
 `daml-lint` scans Daml files with built-in and optional custom detectors. The
 binary is defined in
-[`crates/daml-lint/src/main.rs`](../../crates/daml-lint/src/main.rs).
+[`crates/daml-lint/src/main.rs`](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-lint/src/main.rs).
 
 ```sh
 daml-lint [options] <paths>...
@@ -160,7 +160,7 @@ to the JavaScript rule as global `CONFIG`.
 ### Detectors
 
 Built-in detectors are registered by
-[`detectors::create_builtin_detectors`](../../crates/daml-lint/src/detectors/mod.rs).
+[`detectors::create_builtin_detectors`](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-lint/src/detectors/mod.rs).
 
 | Detector | Severity | Description |
 |----------|----------|-------------|

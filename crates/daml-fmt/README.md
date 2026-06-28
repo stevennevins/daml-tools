@@ -42,17 +42,19 @@ imports; use `--preserve-import-order` or set `daml-tools.fmt.import-order` to
 
 ## Documentation
 
-The workspace documentation is organized under
-[`docs`](https://github.com/stevennevins/daml-tools/blob/main/docs/README.md):
+The workspace documentation is published at
+[https://stevennevins.github.io/daml-tools/](https://stevennevins.github.io/daml-tools/):
 
-- [Format Daml source](https://github.com/stevennevins/daml-tools/blob/main/docs/how-to/format-daml.md) for CLI usage patterns
-- [Verify a formatter change](https://github.com/stevennevins/daml-tools/blob/main/docs/how-to/verify-formatter-change.md) for
+- [Format Daml source](https://stevennevins.github.io/daml-tools/how-to/format-daml.html) for CLI usage patterns
+- [Verify a formatter change](https://stevennevins.github.io/daml-tools/how-to/verify-formatter-change.html) for
   corpus, baseline, and audit commands
-- [CLI reference](https://github.com/stevennevins/daml-tools/blob/main/docs/reference/cli.md) for options and exit codes
-- [Crate reference](https://github.com/stevennevins/daml-tools/blob/main/docs/reference/crates.md) for features, binaries, and
+- [CLI reference](https://stevennevins.github.io/daml-tools/reference/cli.html) for options and exit codes
+- [Crate reference](https://stevennevins.github.io/daml-tools/reference/crates.html) for features, binaries, and
   public API
-- [Formatter verification model](https://github.com/stevennevins/daml-tools/blob/main/docs/explanation/formatter-verification.md)
+- [Formatter verification model](https://stevennevins.github.io/daml-tools/explanation/formatter-verification.html)
   for the token/desugar/idempotence safety story
+
+Rust API documentation: [docs.rs/daml-fmt](https://docs.rs/daml-fmt)
 
 ## Build & install
 
@@ -162,7 +164,7 @@ and `AsRef<[FormatDiagnostic]>`.
 `FormatOptions` uses private fields: construct options with `Default`/`new()` and
 `with_*` helpers so new switches can ship with defaults without breaking callers.
 
-See [crate reference](https://github.com/stevennevins/daml-tools/blob/main/docs/reference/crates.md) for the full public API.
+See [crate reference](https://stevennevins.github.io/daml-tools/reference/crates.html) for the full public API.
 
 ## Workspace-Only Tests
 

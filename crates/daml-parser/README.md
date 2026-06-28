@@ -20,14 +20,16 @@ lexer  →  layout  →  parse
 
 ## Documentation
 
-The workspace documentation is organized under
-[`docs`](https://github.com/stevennevins/daml-tools/blob/main/docs/README.md):
+The workspace documentation is published at
+[https://stevennevins.github.io/daml-tools/](https://stevennevins.github.io/daml-tools/):
 
-- [Crate reference](https://github.com/stevennevins/daml-tools/blob/main/docs/reference/crates.md) for workspace package facts
-- [Workspace architecture](https://github.com/stevennevins/daml-tools/blob/main/docs/explanation/workspace-architecture.md) for
+- [Crate reference](https://stevennevins.github.io/daml-tools/reference/crates.html) for workspace package facts
+- [Workspace architecture](https://stevennevins.github.io/daml-tools/explanation/workspace-architecture.html) for
   how `daml-parser`, `daml-lint`, and `daml-fmt` relate
-- [CLI reference](https://github.com/stevennevins/daml-tools/blob/main/docs/reference/cli.md) for the tools built on top of
+- [CLI reference](https://stevennevins.github.io/daml-tools/reference/cli.html) for the tools built on top of
   this parser
+
+Rust API documentation: [docs.rs/daml-parser](https://docs.rs/daml-parser)
 
 ## Lossless by design
 

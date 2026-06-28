@@ -1,5 +1,8 @@
 # Workspace architecture
 
+Published documentation:
+[https://stevennevins.github.io/daml-tools/](https://stevennevins.github.io/daml-tools/)
+
 `daml-tools` is organized around one zero-dependency parser, one shared
 source-facing syntax surface, and two independent tools built on top of them.
 

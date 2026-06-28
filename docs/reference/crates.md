@@ -1,29 +1,31 @@
-# Crate reference
+# Crate and package reference
 
-The workspace contains four independently versioned crates. Workspace
-membership is declared in [`Cargo.toml`](../../Cargo.toml).
+The workspace contains four independently versioned Rust crates and npm packages
+for CLI distribution and custom lint rules. Workspace membership is declared in
+[`Cargo.toml`](https://github.com/stevennevins/daml-tools/blob/main/Cargo.toml).
 
 ## Workspace metadata
 
 | Field | Value |
 |-------|-------|
 | Edition | `2021` |
-| Rust version | `1.87.0` |
+| Rust version | `1.96.0` |
 | License | `AGPL-3.0-only` |
 | Repository | `https://github.com/stevennevins/daml-tools` |
 | Homepage | `https://github.com/stevennevins/daml-tools` |
+| Documentation site | `https://stevennevins.github.io/daml-tools/` |
 
 All workspace members inherit `edition`, `rust-version`, `license`, `repository`,
 `homepage`, and `authors` from `[workspace.package]` in the root
-[`Cargo.toml`](../../Cargo.toml). Each crate sets its own `documentation` URL
-on docs.rs and keeps crate-specific `description`, `keywords`, `categories`, and
-`exclude` lists.
+[`Cargo.toml`](https://github.com/stevennevins/daml-tools/blob/main/Cargo.toml).
+Each crate sets its own `documentation` URL on docs.rs and keeps crate-specific
+`description`, `keywords`, `categories`, and `exclude` lists.
 
 ### MSRV evidence
 
-The workspace MSRV is `1.87.0`, enforced by the `msrv` job in
-[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml). It is not raised
-speculatively:
+The workspace MSRV is `1.96.0`, enforced by the `msrv` job in
+[`.github/workflows/ci.yml`](https://github.com/stevennevins/daml-tools/blob/main/.github/workflows/ci.yml).
+It is not raised speculatively:
 
 | Constraint | Source | Declared MSRV |
 |------------|--------|---------------|
@@ -47,27 +49,39 @@ workspace MSRV so `cargo install` and CI stay aligned.
 
 | Crate | Version | Kind | Package description |
 |-------|---------|------|---------------------|
-| [`daml-parser`](../../crates/daml-parser) | `0.10.1` | library | Lossless lexer, layout resolver, and parser for the Daml smart-contract language. |
-| [`daml-syntax`](../../crates/daml-syntax) | `0.9.1` | library | Shared parsed-source surface for Daml tools. |
-| [`daml-lint`](../../crates/daml-lint) | `0.9.4` | library and CLI | Static analysis scanner for Daml smart contracts. |
-| [`daml-fmt`](../../crates/daml-fmt) | `0.7.4` | library and CLI | Canonical code formatter for the Daml smart-contract language, built on shared syntax. |
+| [`daml-parser`](https://github.com/stevennevins/daml-tools/tree/main/crates/daml-parser) | `0.10.1` | library | Lossless lexer, layout resolver, and parser for the Daml smart-contract language. |
+| [`daml-syntax`](https://github.com/stevennevins/daml-tools/tree/main/crates/daml-syntax) | `0.9.1` | library | Shared parsed-source surface for Daml tools. |
+| [`daml-lint`](https://github.com/stevennevins/daml-tools/tree/main/crates/daml-lint) | `0.9.4` | library and CLI | Static analysis scanner for Daml smart contracts. |
+| [`daml-fmt`](https://github.com/stevennevins/daml-tools/tree/main/crates/daml-fmt) | `0.7.4` | library and CLI | Canonical code formatter for the Daml smart-contract language, built on shared syntax. |
 
 ### Per-crate docs.rs URLs
 
 | Crate | Documentation |
 |-------|---------------|
-| `daml-parser` | `https://docs.rs/daml-parser` |
-| `daml-syntax` | `https://docs.rs/daml-syntax` |
-| `daml-lint` | `https://docs.rs/daml-lint` |
-| `daml-fmt` | `https://docs.rs/daml-fmt` |
+| `daml-parser` | [docs.rs/daml-parser](https://docs.rs/daml-parser) |
+| `daml-syntax` | [docs.rs/daml-syntax](https://docs.rs/daml-syntax) |
+| `daml-lint` | [docs.rs/daml-lint](https://docs.rs/daml-lint) |
+| `daml-fmt` | [docs.rs/daml-fmt](https://docs.rs/daml-fmt) |
+
+## npm packages
+
+| Package | Version | Role |
+|---------|---------|------|
+| [`@daml-tools/daml-lint`](https://www.npmjs.com/package/@daml-tools/daml-lint) | `0.9.4` | Wrapper that installs the platform `daml-lint` binary for Node projects. |
+| [`@daml-tools/daml-fmt`](https://www.npmjs.com/package/@daml-tools/daml-fmt) | `0.7.4` | Wrapper that installs the platform `daml-fmt` binary for Node projects. |
+| [`@daml-tools/lint-plugin`](https://www.npmjs.com/package/@daml-tools/lint-plugin) | `0.9.4` | TypeScript contract and starter templates for custom lint rule plugins. |
+
+Platform-specific CLI packages (`@daml-tools/daml-lint-linux-x64`, `@daml-tools/daml-fmt-darwin-arm64`, and similar) are generated at publish time from cargo-npm metadata in each crate manifest. They are not edited by hand in the repository.
 
 ## `daml-parser`
 
-Manifest: [`crates/daml-parser/Cargo.toml`](../../crates/daml-parser/Cargo.toml)
+Manifest: [`crates/daml-parser/Cargo.toml`](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-parser/Cargo.toml)
 
-Library root: [`crates/daml-parser/src/lib.rs`](../../crates/daml-parser/src/lib.rs)
+Library root: [`crates/daml-parser/src/lib.rs`](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-parser/src/lib.rs)
 
-README: [`crates/daml-parser/README.md`](../../crates/daml-parser/README.md)
+README: [`crates/daml-parser/README.md`](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-parser/README.md)
+
+API docs: [docs.rs/daml-parser](https://docs.rs/daml-parser)
 
 `daml-parser` has no external dependencies. It is the low-level foundation used
 by `daml-syntax`.
@@ -104,11 +118,13 @@ preserves package-qualified import string literals from source; lint
 
 ## `daml-syntax`
 
-Manifest: [`crates/daml-syntax/Cargo.toml`](../../crates/daml-syntax/Cargo.toml)
+Manifest: [`crates/daml-syntax/Cargo.toml`](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-syntax/Cargo.toml)
 
-Library root: [`crates/daml-syntax/src/lib.rs`](../../crates/daml-syntax/src/lib.rs)
+Library root: [`crates/daml-syntax/src/lib.rs`](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-syntax/src/lib.rs)
 
-README: [`crates/daml-syntax/README.md`](../../crates/daml-syntax/README.md)
+README: [`crates/daml-syntax/README.md`](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-syntax/README.md)
+
+API docs: [docs.rs/daml-syntax](https://docs.rs/daml-syntax)
 
 `daml-syntax` depends on `daml-parser` and `text-size`. It does not depend on
 `daml-lint`, `daml-fmt`, `serde`, `serde_json`, `clap`, or `rquickjs`.
@@ -131,11 +147,13 @@ README: [`crates/daml-syntax/README.md`](../../crates/daml-syntax/README.md)
 
 ## `daml-lint`
 
-Manifest: [`crates/daml-lint/Cargo.toml`](../../crates/daml-lint/Cargo.toml)
+Manifest: [`crates/daml-lint/Cargo.toml`](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-lint/Cargo.toml)
 
-Library root: [`crates/daml-lint/src/lib.rs`](../../crates/daml-lint/src/lib.rs)
+Library root: [`crates/daml-lint/src/lib.rs`](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-lint/src/lib.rs)
 
-README: [`crates/daml-lint/README.md`](../../crates/daml-lint/README.md)
+README: [`crates/daml-lint/README.md`](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-lint/README.md)
+
+API docs: [docs.rs/daml-lint](https://docs.rs/daml-lint)
 
 `daml-lint` depends on `daml-parser`, `daml-syntax`, `serde`, and
 `serde_json`. `clap` and `rquickjs` are optional dependencies controlled by
@@ -184,13 +202,26 @@ stable.
 | `head-of-list-query` | Medium |
 | `unbounded-fields` | Medium |
 
+## `@daml-tools/lint-plugin`
+
+Package manifest: [`crates/daml-lint/lint-plugin/package.json`](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-lint/lint-plugin/package.json)
+
+README: [`crates/daml-lint/lint-plugin/README.md`](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-lint/lint-plugin/README.md)
+
+The npm package publishes TypeScript types for the rule-facing IR,
+`DamlLintRuleModule`, global `report`, and global `CONFIG`. It does not ship
+runtime helpers. See [Custom rule contract](./daml-lint-custom-rule-contract.md)
+for the JavaScript runtime contract.
+
 ## `daml-fmt`
 
-Manifest: [`crates/daml-fmt/Cargo.toml`](../../crates/daml-fmt/Cargo.toml)
+Manifest: [`crates/daml-fmt/Cargo.toml`](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-fmt/Cargo.toml)
 
-Library root: [`crates/daml-fmt/src/lib.rs`](../../crates/daml-fmt/src/lib.rs)
+Library root: [`crates/daml-fmt/src/lib.rs`](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-fmt/src/lib.rs)
 
-README: [`crates/daml-fmt/README.md`](../../crates/daml-fmt/README.md)
+README: [`crates/daml-fmt/README.md`](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-fmt/README.md)
+
+API docs: [docs.rs/daml-fmt](https://docs.rs/daml-fmt)
 
 `daml-fmt` depends on `daml-parser`, `daml-syntax`, `serde`, and `serde_yaml`.
 It does not depend on `daml-lint`.

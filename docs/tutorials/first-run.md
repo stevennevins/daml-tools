@@ -10,11 +10,11 @@ unchanged.
 
 You need:
 
-- Rust 1.87 or newer
+- Rust 1.96 or newer
 - a checkout of this repository
 - a shell from the repository root
 
-For project setup details, see the root [README](../../README.md).
+For project setup details, see the root [README](https://github.com/stevennevins/daml-tools/blob/main/README.md).
 
 ## Build the tools
 

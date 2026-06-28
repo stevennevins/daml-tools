@@ -28,13 +28,13 @@ cargo run -p daml-lint -- --help
 ```
 
 For a guided first pass through the tools, start with
-[`docs/tutorials/first-run.md`](docs/tutorials/first-run.md). For contributor
-setup and local verification, see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+[First run](https://stevennevins.github.io/daml-tools/tutorials/first-run.html).
+For contributor setup and local verification, see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 Local PR signoff uses the pinned mise toolchain with act and gh-signoff. Install
 mise first, activate it in the repo, set `MISE_LOCKED=1`, install the locked
 tools, and run the signoff tasks documented in
-[`docs/how-to/local-ci.md`](docs/how-to/local-ci.md).
+[`docs/how-to/local-ci.md`](https://stevennevins.github.io/daml-tools/how-to/local-ci.html).
 
 ## The shape
 
@@ -59,9 +59,12 @@ ignores trivia and reads meaning. One tree, two readers.
 
 ## Documentation
 
-The repo documentation is organized by user need under [`docs/`](docs/):
-tutorials for first success, how-to guides for specific work, reference for
-technical facts, and explanations for the design behind the tools.
+The published documentation site is at
+[https://stevennevins.github.io/daml-tools/](https://stevennevins.github.io/daml-tools/).
+It is organized by user need: tutorials for first success, how-to guides for
+specific work, reference for technical facts, and explanations for the design
+behind the tools. Rust API documentation remains on
+[docs.rs](https://docs.rs/releases/search?query=daml-).
 
 ## Install the CLIs
 

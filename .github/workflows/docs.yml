@@ -3,6 +3,9 @@ name: Docs
 on:
   workflow_call:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 concurrency:
   group: docs-${{ github.workflow }}-${{ github.ref }}
@@ -10,6 +13,9 @@ concurrency:
 
 env:
   MISE_LOCKED: "1"
+
+permissions:
+  contents: read
 
 jobs:
   docs:
@@ -22,7 +28,7 @@ jobs:
         with:
           install: false
       - name: Install docs tools from mise lockfile
-        run: mise install rust lychee
+        run: mise install rust node npm lychee
       - name: Check docs version metadata
         shell: bash
         run: |
@@ -63,10 +69,10 @@ jobs:
           fmt_version="$(crate_version daml-fmt)"
 
           crates_doc="docs/reference/crates.md"
-          assert_contains "${crates_doc}" "| [\`daml-parser\`](../../crates/daml-parser) | \`${parser_version}\` |" "crate versions"
-          assert_contains "${crates_doc}" "| [\`daml-syntax\`](../../crates/daml-syntax) | \`${syntax_version}\` |" "crate versions"
-          assert_contains "${crates_doc}" "| [\`daml-lint\`](../../crates/daml-lint) | \`${lint_version}\` |" "crate versions"
-          assert_contains "${crates_doc}" "| [\`daml-fmt\`](../../crates/daml-fmt) | \`${fmt_version}\` |" "crate versions"
+          assert_contains "${crates_doc}" "| [\`daml-parser\`](https://github.com/stevennevins/daml-tools/tree/main/crates/daml-parser) | \`${parser_version}\` |" "crate versions"
+          assert_contains "${crates_doc}" "| [\`daml-syntax\`](https://github.com/stevennevins/daml-tools/tree/main/crates/daml-syntax) | \`${syntax_version}\` |" "crate versions"
+          assert_contains "${crates_doc}" "| [\`daml-lint\`](https://github.com/stevennevins/daml-tools/tree/main/crates/daml-lint) | \`${lint_version}\` |" "crate versions"
+          assert_contains "${crates_doc}" "| [\`daml-fmt\`](https://github.com/stevennevins/daml-tools/tree/main/crates/daml-fmt) | \`${fmt_version}\` |" "crate versions"
 
           assert_contains "crates/daml-parser/README.md" "daml-parser = \"${parser_version}\"" "parser README dependency snippet"
           assert_contains "crates/daml-lint/README.md" "daml-lint = \"${lint_version}\"" "lint README dependency snippet"
@@ -79,11 +85,17 @@ jobs:
             fail "daml-fmt package.json: expected ${fmt_version}, got ${actual_fmt_package_version}"
 
           echo "docs/version checks passed"
+      - name: Build VitePress site
+        run: |
+          npm ci --prefix docs
+          npm run build --prefix docs
       - name: Check offline markdown links
         run: >-
           lychee
           --offline
           --no-progress
+          --exclude-path
+          docs/node_modules
           './README.md'
           './CONTRIBUTING.md'
           './docs/**/*.md'
@@ -91,3 +103,24 @@ jobs:
           './crates/daml-syntax/README.md'
           './crates/daml-lint/README.md'
           './crates/daml-fmt/README.md'
+      - name: Upload GitHub Pages artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/.vitepress/dist
+
+  deploy:
+    name: Deploy docs to GitHub Pages
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: docs
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

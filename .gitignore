@@ -7,6 +7,9 @@
 
 # npm (daml-fmt differential harness uses node, no deps installed)
 node_modules/
+/docs/node_modules/
+/docs/.vitepress/dist/
+/docs/.vitepress/cache/
 
 # Smithers runtime state (workflow sources live under .smithers/ and are tracked)
 /smithers.db

@@ -173,7 +173,14 @@ daml-fmt --write --check src/Foo.daml
 
 That command exits with code `2`.
 
+## Use the library API
+
+When embedding the formatter in Rust code, prefer the public functions documented on
+[docs.rs/daml-fmt](https://docs.rs/daml-fmt): `format_source`, `try_format_source`,
+`FormatOptions`, and `source_diagnostics`.
+
 ## Related
 
-- [`daml-fmt` crate README](../../crates/daml-fmt/README.md)
+- [`daml-fmt` crate README](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-fmt/README.md)
+- [`daml-fmt` API on docs.rs](https://docs.rs/daml-fmt)
 - [CLI reference](../reference/cli.md)
