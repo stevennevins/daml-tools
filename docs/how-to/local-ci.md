@@ -22,58 +22,69 @@ PRs. Local `workflow_dispatch` uses the Linux x64 signoff smoke by default; the
 nightly release gate passes `run-release-builds: true` so hosted runners also
 exercise the full release build matrix.
 
-Install tools from the committed lockfile before running signoff tasks:
+## Install and activate mise, then install locked tools
+
+Install the `mise` CLI before activating it. Use your platform package manager
+when preferred, or install with the upstream installer:
 
 ```sh
-MISE_LOCKED=1 mise install
+curl https://mise.run | sh
 ```
 
-## Activate mise for interactive shells
+The installer places `mise` at `~/.local/bin/mise`. If your package manager
+already puts `mise` on `PATH`, you can use `mise` instead of
+`~/.local/bin/mise` in the activation commands below.
 
-Use `mise run signoff:*` for the documented PR signoff commands. For ad hoc
-commands that need a pinned tool, use `mise x -- ...` so the toolchain is
-explicit and shell-independent. For day-to-day interactive work, you can also
-activate mise in your shell so pinned tools such as `cargo`, `node`, `act`, and
-`gh` are placed on `PATH` automatically when you enter the repo.
+Activate mise before running local CI so pinned tools such as `cargo`, `node`,
+`act`, and `gh` are placed on `PATH` automatically when you enter the repo. Set
+`MISE_LOCKED=1` once for the shell session so both installs and ad hoc commands
+fail loudly if `mise.toml` and `mise.lock` drift.
 
-Activate mise for the current shell session:
+For zsh:
 
 ```sh
-eval "$(mise activate zsh)"
+eval "$(~/.local/bin/mise activate zsh)"
+export MISE_LOCKED=1
+mise install
 ```
 
-For bash, fish, or PowerShell, replace `zsh` with the matching shell:
+For bash, fish, or PowerShell, use the matching shell activation command, set
+`MISE_LOCKED=1`, and install the locked tools:
 
 - bash:
 
   ```sh
-  eval "$(mise activate bash)"
+  eval "$(~/.local/bin/mise activate bash)"
+  export MISE_LOCKED=1
+  mise install
   ```
 
 - fish:
 
   ```fish
-  mise activate fish | source
+  ~/.local/bin/mise activate fish | source
+  set -gx MISE_LOCKED 1
+  mise install
   ```
 
 - PowerShell:
 
   ```powershell
   (& mise activate pwsh) | Out-String | Invoke-Expression
+  $env:MISE_LOCKED = "1"
+  mise install
   ```
 
 To make activation permanent, add the matching command to your shell startup
-file after `mise` is installed and available on `PATH`:
+file after `mise` is installed:
 
 ```sh
-echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
+echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
 ```
 
-After activation, install the locked tools once per checkout and verify that
-commands resolve through mise:
+After activation, verify that commands resolve through mise:
 
 ```sh
-MISE_LOCKED=1 mise install
 mise which cargo
 mise which act
 ```
@@ -84,7 +95,7 @@ before running `mise trust`.
 List workflows act can run:
 
 ```sh
-MISE_LOCKED=1 mise x -- act -l
+act -l
 ```
 
 ## Sign off on PR gates locally
@@ -92,7 +103,7 @@ MISE_LOCKED=1 mise x -- act -l
 Install the gh-signoff extension once for the GitHub CLI managed by mise:
 
 ```sh
-MISE_LOCKED=1 mise x -- gh extension install basecamp/gh-signoff
+gh extension install basecamp/gh-signoff
 ```
 
 Before signing off, make sure the checkout is clean and the current commit is
@@ -107,29 +118,29 @@ cross-platform set.
 
 | Required PR context | Run this task | Underlying act job |
 |---------------------|---------------|--------------------|
-| `signoff/test` | `MISE_LOCKED=1 mise run signoff:test` | `.github/workflows/ci.yml` job `test` |
-| `signoff/npm-package` | `MISE_LOCKED=1 mise run signoff:npm-package` | `.github/workflows/ci.yml` job `npm-package` |
-| `signoff/package` | `MISE_LOCKED=1 mise run signoff:package` | `.github/workflows/ci.yml` job `package` |
-| `signoff/cargo-deny` | `MISE_LOCKED=1 mise run signoff:cargo-deny` | `.github/workflows/ci.yml` job `cargo-deny` |
-| `signoff/semver` | `MISE_LOCKED=1 mise run signoff:semver` | `.github/workflows/ci.yml` job `semver` |
-| `signoff/build-linux-x64` | `MISE_LOCKED=1 mise run signoff:build-linux-x64` | `.github/workflows/ci.yml` job `build-linux-x64` |
-| `signoff/docs` | `MISE_LOCKED=1 mise run signoff:docs` | `.github/workflows/docs.yml` job `docs` |
+| `signoff/test` | `mise run signoff:ci:test` | `.github/workflows/ci.yml` job `test` |
+| `signoff/npm-package` | `mise run signoff:ci:npm-package` | `.github/workflows/ci.yml` job `npm-package` |
+| `signoff/package` | `mise run signoff:ci:package` | `.github/workflows/ci.yml` job `package` |
+| `signoff/cargo-deny` | `mise run signoff:ci:cargo-deny` | `.github/workflows/ci.yml` job `cargo-deny` |
+| `signoff/semver` | `mise run signoff:ci:semver` | `.github/workflows/ci.yml` job `semver` |
+| `signoff/build-linux-x64` | `mise run signoff:ci:build-linux-x64` | `.github/workflows/ci.yml` job `build-linux-x64` |
+| `signoff/docs` | `mise run signoff:docs` | `.github/workflows/docs.yml` job `docs` |
 
 To run every required signoff task in sequence:
 
 ```sh
-MISE_LOCKED=1 mise run signoff:all
+mise run signoff:all
 ```
 
 The package verification job runs `git diff` to reject dirty packages. When act
-runs from a git worktree, the `signoff:package` task mounts the git common
+runs from a git worktree, the `signoff:ci:package` task mounts the git common
 directory into the container so that the worktree `.git` file resolves
 correctly.
 
 The signoff tasks pass partial names to `gh signoff` without the `signoff/`
 prefix; the extension adds that prefix when it creates the commit status.
 
-The `signoff:package` task uses Docker `--mount` rather than `--volume` for the
+The `signoff:ci:package` task uses Docker `--mount` rather than `--volume` for the
 git common directory so a missing host path fails loudly instead of creating an
 empty directory.
 
@@ -254,7 +265,7 @@ When you intentionally want newer runner images:
 
 3. Update the matching `-P ubuntu-…=catthehacker/ubuntu@sha256:…` lines in `.actrc`.
 
-4. Re-run `MISE_LOCKED=1 mise x -- act -l` and at least one non-publishing job, such as `MISE_LOCKED=1 mise x -- act workflow_dispatch -W .github/workflows/docs.yml -j docs`, to confirm act still parses and executes workflows with the new pins. Use raw `act` here because this is a runner-image smoke, not a PR signoff that should create a `signoff/...` status.
+4. Re-run `act -l` and at least one non-publishing job, such as `act workflow_dispatch -W .github/workflows/docs.yml -j docs`, to confirm act still parses and executes workflows with the new pins. Use raw `act` here because this is a runner-image smoke, not a PR signoff that should create a `signoff/...` status.
 
 Commit digest updates separately from unrelated CI changes so image drift is easy to review.
 

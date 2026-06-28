@@ -13,6 +13,7 @@ env:
 
 jobs:
   docs:
+    name: Docs signoff / version and link checks
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -20,9 +21,9 @@ jobs:
       - uses: jdx/mise-action@v4.2.0
         with:
           install: false
-      - name: Install locked tools
+      - name: Install docs tools from mise lockfile
         run: mise install rust lychee
-      - name: docs and version checks
+      - name: Check docs version metadata
         shell: bash
         run: |
           set -euo pipefail
@@ -78,7 +79,7 @@ jobs:
             fail "daml-fmt package.json: expected ${fmt_version}, got ${actual_fmt_package_version}"
 
           echo "docs/version checks passed"
-      - name: markdown link check
+      - name: Check offline markdown links
         run: >-
           lychee
           --offline
