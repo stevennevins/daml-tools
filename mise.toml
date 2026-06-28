@@ -13,24 +13,24 @@ lychee = "0.24.2"
 act = "0.2.89"
 gh = "2.95.0"
 
-[tasks."signoff:test"]
-description = "Run the CI test job through act and create signoff/test."
+[tasks."signoff:ci:test"]
+description = "Local PR signoff for CI/test: run the test job through act and create signoff/test."
 env = { MISE_LOCKED = "1" }
 run = [
   "act workflow_dispatch -W .github/workflows/ci.yml -j test",
   "gh signoff test",
 ]
 
-[tasks."signoff:npm-package"]
-description = "Run the CI npm-package job through act and create signoff/npm-package."
+[tasks."signoff:ci:npm-package"]
+description = "Local PR signoff for CI/npm-package: run the npm package smoke job through act and create signoff/npm-package."
 env = { MISE_LOCKED = "1" }
 run = [
   "act workflow_dispatch -W .github/workflows/ci.yml -j npm-package",
   "gh signoff npm-package",
 ]
 
-[tasks."signoff:package"]
-description = "Run the CI package job through act with the worktree git mount and create signoff/package."
+[tasks."signoff:ci:package"]
+description = "Local PR signoff for CI/package: run crate package verification through act with the worktree git mount and create signoff/package."
 env = { MISE_LOCKED = "1" }
 run = '''
 git_common="$(git rev-parse --path-format=absolute --git-common-dir)"
@@ -39,24 +39,24 @@ act workflow_dispatch -W .github/workflows/ci.yml -j package \
 gh signoff package
 '''
 
-[tasks."signoff:cargo-deny"]
-description = "Run the CI cargo-deny job through act and create signoff/cargo-deny."
+[tasks."signoff:ci:cargo-deny"]
+description = "Local PR signoff for CI/cargo-deny: run cargo-deny policy checks through act and create signoff/cargo-deny."
 env = { MISE_LOCKED = "1" }
 run = [
   "act workflow_dispatch -W .github/workflows/ci.yml -j cargo-deny",
   "gh signoff cargo-deny",
 ]
 
-[tasks."signoff:semver"]
-description = "Run the CI semver job through act and create signoff/semver."
+[tasks."signoff:ci:semver"]
+description = "Local PR signoff for CI/semver: run public API semver checks through act and create signoff/semver."
 env = { MISE_LOCKED = "1" }
 run = [
   "act workflow_dispatch -W .github/workflows/ci.yml -j semver",
   "gh signoff semver",
 ]
 
-[tasks."signoff:build-linux-x64"]
-description = "Run the CI build-linux-x64 job through act and create signoff/build-linux-x64."
+[tasks."signoff:ci:build-linux-x64"]
+description = "Local PR signoff for CI/build-linux-x64: run the Linux x64 CLI build smoke through act and create signoff/build-linux-x64."
 env = { MISE_LOCKED = "1" }
 run = [
   "act workflow_dispatch -W .github/workflows/ci.yml -j build-linux-x64",
@@ -64,7 +64,7 @@ run = [
 ]
 
 [tasks."signoff:docs"]
-description = "Run the Docs job through act and create signoff/docs."
+description = "Local PR signoff for Docs: run version and link checks through act and create signoff/docs."
 env = { MISE_LOCKED = "1" }
 run = [
   "act workflow_dispatch -W .github/workflows/docs.yml -j docs",
@@ -75,11 +75,11 @@ run = [
 description = "Run every required local PR signoff task in sequence."
 env = { MISE_LOCKED = "1" }
 run = [
-  "mise run signoff:test",
-  "mise run signoff:npm-package",
-  "mise run signoff:package",
-  "mise run signoff:cargo-deny",
-  "mise run signoff:semver",
-  "mise run signoff:build-linux-x64",
+  "mise run signoff:ci:test",
+  "mise run signoff:ci:npm-package",
+  "mise run signoff:ci:package",
+  "mise run signoff:ci:cargo-deny",
+  "mise run signoff:ci:semver",
+  "mise run signoff:ci:build-linux-x64",
   "mise run signoff:docs",
 ]

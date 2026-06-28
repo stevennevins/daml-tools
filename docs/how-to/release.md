@@ -10,10 +10,10 @@ not publish npm packages or GitHub binary assets.
 
 Use [local CI](local-ci.md) and `gh-signoff` only as the PR merge gate before a
 release PR lands. Required `signoff/...` commit statuses are maintainer
-assertions over the GitHub Actions jobs that can be run honestly with locked
-mise and act. Create those statuses through the `MISE_LOCKED=1 mise run
-signoff:*` tasks so the same GitHub Actions YAML remains the validation source
-of truth.
+assertions over the GitHub Actions jobs that can be run honestly with activated,
+locked mise and act. Set `MISE_LOCKED=1` and create those statuses through the
+`mise run signoff:*` tasks so the same GitHub Actions YAML remains the
+validation source of truth.
 
 Keep the nightly and tag-triggered release flow on GitHub-hosted runners:
 

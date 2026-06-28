@@ -27,6 +27,7 @@ env:
 jobs:
   # fmt + clippy + the whole test suite + the formatter's 924-file differential.
   test:
+    name: CI signoff / workspace tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -34,7 +35,7 @@ jobs:
       - uses: jdx/mise-action@v4.2.0
         with:
           install: false
-      - name: Install locked tools
+      - name: Install CI test tools from mise lockfile
         run: mise install rust node npm
       - uses: Swatinem/rust-cache@v2
       - name: rustfmt
@@ -66,7 +67,7 @@ jobs:
   # package from [package.metadata.npm] and prove the binary runs. The full
   # cross-platform publish is exercised at release time by npm-publish.yml.
   npm-package:
-    name: npm CLI packaging
+    name: CI signoff / npm CLI package smoke
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -74,7 +75,7 @@ jobs:
       - uses: jdx/mise-action@v4.2.0
         with:
           install: false
-      - name: Install locked tools
+      - name: Install npm packaging tools from mise lockfile
         run: |
           mise install rust node npm cargo:cargo-npm
       - uses: Swatinem/rust-cache@v2
@@ -103,6 +104,7 @@ jobs:
   # requirements; downstream tool crates verify once parser/syntax releases exist
   # on crates.io (see scripts/check-package.sh).
   package:
+    name: CI signoff / crate package verification
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -110,7 +112,7 @@ jobs:
       - uses: jdx/mise-action@v4.2.0
         with:
           install: false
-      - name: Install locked tools
+      - name: Install crate packaging tools from mise lockfile
         run: mise install rust
       - uses: Swatinem/rust-cache@v2
       - name: package verification
@@ -118,6 +120,7 @@ jobs:
 
   # License + advisory policy (see deny.toml).
   cargo-deny:
+    name: CI signoff / cargo-deny policy
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -125,7 +128,7 @@ jobs:
       - uses: jdx/mise-action@v4.2.0
         with:
           install: false
-      - name: Install locked tools
+      - name: Install cargo-deny tools from mise lockfile
         run: |
           mise install rust cargo:cargo-deny
       - name: cargo deny
@@ -135,6 +138,7 @@ jobs:
   # target. A failed cargo-semver-checks run must fail the PR rather than
   # producing an unstable-but-mergeable status.
   semver:
+    name: CI signoff / public API semver (${{ matrix.package }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -146,7 +150,7 @@ jobs:
       - uses: jdx/mise-action@v4.2.0
         with:
           install: false
-      - name: Install locked tools
+      - name: Install semver-check tools from mise lockfile
         run: |
           mise install rust cargo:cargo-semver-checks
       - name: cargo semver checks
@@ -155,7 +159,7 @@ jobs:
   # Native Linux x64 smoke build for local signoff. Release assets are produced
   # by release-artifacts.yml when a CLI tag is published.
   build-linux-x64:
-    name: build-linux-x64
+    name: CI signoff / Linux x64 CLI build smoke
     if: ${{ !inputs.run-release-builds }}
     runs-on: ubuntu-22.04
     timeout-minutes: 20
@@ -164,7 +168,7 @@ jobs:
       - uses: jdx/mise-action@v4.2.0
         with:
           install: false
-      - name: Install locked tools
+      - name: Install Linux x64 build tools from mise lockfile
         shell: bash
         run: |
           set -euo pipefail
@@ -189,7 +193,7 @@ jobs:
         run: cargo build --release --locked --target x86_64-unknown-linux-gnu --bin daml-lint --bin daml-fmt
 
   build:
-    name: build (${{ matrix.target }})
+    name: Release gate / build (${{ matrix.target }})
     if: ${{ inputs.run-release-builds }}
     strategy:
       fail-fast: false
@@ -206,7 +210,7 @@ jobs:
       - uses: jdx/mise-action@v4.2.0
         with:
           install: false
-      - name: Install locked tools
+      - name: Install release build tools from mise lockfile
         run: |
           mise install rust
           rustup target add ${{ matrix.target }}
