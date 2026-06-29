@@ -5,8 +5,8 @@
 rust = { version = "1.96.0", components = "rustfmt,clippy" }
 node = "22.23.1"
 npm = "10.9.8"
-"cargo:cargo-deny" = "0.19.9"
-"cargo:cargo-semver-checks" = "0.48.0"
+"github:EmbarkStudios/cargo-deny" = "0.19.9"
+"github:obi1kenobi/cargo-semver-checks" = "0.48.0"
 "cargo:cargo-npm" = "0.1.2"
 actionlint = "1.7.12"
 lychee = "0.24.2"

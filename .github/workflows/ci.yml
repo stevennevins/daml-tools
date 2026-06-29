@@ -130,7 +130,7 @@ jobs:
           install: false
       - name: Install cargo-deny tools from mise lockfile
         run: |
-          mise install rust cargo:cargo-deny
+          mise install rust github:EmbarkStudios/cargo-deny
       - name: cargo deny
         run: cargo deny check
 
@@ -152,7 +152,7 @@ jobs:
           install: false
       - name: Install semver-check tools from mise lockfile
         run: |
-          mise install rust cargo:cargo-semver-checks
+          mise install rust github:obi1kenobi/cargo-semver-checks
       - name: cargo semver checks
         run: cargo semver-checks --package ${{ matrix.package }}
 
