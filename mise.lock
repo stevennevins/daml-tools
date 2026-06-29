@@ -44,17 +44,9 @@ checksum = "sha256:6e7241b51e6817ea6a047693d8e6fed13b31819c9a0dd6c5a726e1592d22f
 url = "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_windows_amd64.zip"
 provenance = "github-attestations"
 
-[[tools."cargo:cargo-deny"]]
-version = "0.19.9"
-backend = "cargo:cargo-deny"
-
 [[tools."cargo:cargo-npm"]]
 version = "0.1.2"
 backend = "cargo:cargo-npm"
-
-[[tools."cargo:cargo-semver-checks"]]
-version = "0.48.0"
-backend = "cargo:cargo-semver-checks"
 
 [[tools.gh]]
 version = "2.95.0"
@@ -79,6 +71,54 @@ provenance = "github-attestations"
 checksum = "sha256:19a7154161ada9cfaa9e57edb752ecc679b75c391a62e4f7b586eea1df30b5bb"
 url = "https://github.com/cli/cli/releases/download/v2.95.0/gh_2.95.0_windows_amd64.zip"
 provenance = "github-attestations"
+
+[[tools."github:EmbarkStudios/cargo-deny"]]
+version = "0.19.9"
+backend = "github:EmbarkStudios/cargo-deny"
+
+[tools."github:EmbarkStudios/cargo-deny"."platforms.linux-arm64"]
+checksum = "sha256:32580dcc2bc13fbeeb7c50edc38ef99c3b9ce9569a1d07a96e11b3b941f3e72e"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.9/cargo-deny-0.19.9-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/448252613"
+
+[tools."github:EmbarkStudios/cargo-deny"."platforms.linux-x64"]
+checksum = "sha256:f1f8eedc2a3ac297c540873f93785d4104b102c0079506b2a6b3221b7ec956af"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.9/cargo-deny-0.19.9-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/448252773"
+
+[tools."github:EmbarkStudios/cargo-deny"."platforms.macos-arm64"]
+checksum = "sha256:be6fd555e910ac360e25cbef4f16ead47d87d2545fa07aa27223ef0f9af1a02c"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.9/cargo-deny-0.19.9-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/448252343"
+
+[tools."github:EmbarkStudios/cargo-deny"."platforms.windows-x64"]
+checksum = "sha256:a0f2b3da55444f1a354fcbd20ce4b94981ab8193c1b674362d4761905f31ffd0"
+url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.9/cargo-deny-0.19.9-x86_64-pc-windows-msvc.tar.gz"
+url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/448254342"
+
+[[tools."github:obi1kenobi/cargo-semver-checks"]]
+version = "0.48.0"
+backend = "github:obi1kenobi/cargo-semver-checks"
+
+[tools."github:obi1kenobi/cargo-semver-checks"."platforms.linux-arm64"]
+checksum = "sha256:1bc0d4d70af9c3ae086af958e67da2a12eaa4978896596f5499792755b62ea60"
+url = "https://github.com/obi1kenobi/cargo-semver-checks/releases/download/v0.48.0/cargo-semver-checks-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/obi1kenobi/cargo-semver-checks/releases/assets/434499593"
+
+[tools."github:obi1kenobi/cargo-semver-checks"."platforms.linux-x64"]
+checksum = "sha256:fc0144b6cfd8820bdb4180228212c26e6ee6b58363a20849c3386a5d22e90c3d"
+url = "https://github.com/obi1kenobi/cargo-semver-checks/releases/download/v0.48.0/cargo-semver-checks-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/obi1kenobi/cargo-semver-checks/releases/assets/434498579"
+
+[tools."github:obi1kenobi/cargo-semver-checks"."platforms.macos-arm64"]
+checksum = "sha256:4ec2693d8d26126bde3d61dd99d4fb8b19a7e3908dea0283d5d4b58450a7dc80"
+url = "https://github.com/obi1kenobi/cargo-semver-checks/releases/download/v0.48.0/cargo-semver-checks-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/obi1kenobi/cargo-semver-checks/releases/assets/434498444"
+
+[tools."github:obi1kenobi/cargo-semver-checks"."platforms.windows-x64"]
+checksum = "sha256:a83ac4ea3fd15a4af96d88426a9c123066cc546a684064be46160bd54cde9059"
+url = "https://github.com/obi1kenobi/cargo-semver-checks/releases/download/v0.48.0/cargo-semver-checks-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/obi1kenobi/cargo-semver-checks/releases/assets/434501062"
 
 [[tools.lychee]]
 version = "0.24.2"
