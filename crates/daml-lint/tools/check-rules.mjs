@@ -57,6 +57,7 @@ run("npm run build:rules");
 run("npm run build:examples");
 run("npm run check:examples-clean");
 run("npm run check:lint-plugin-package");
+run("npm run check:lint-plugin-scaffold");
 
 const after = snapshot(checkedPaths);
 const changed = changedFiles(before, after);

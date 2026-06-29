@@ -1,53 +1,48 @@
 # Write a daml-lint custom rule
 
-This tutorial starts from an empty directory and builds one custom rule that
-reports templates without an `ensure` clause.
+This tutorial shows how to create a multi-rule plugin package with
+`create-daml-lint-plugin`, then extend it with additional rules.
 
 You need Node.js 18 or newer. Install `@daml-tools/lint-plugin` for typed rule
 authoring — see the [custom rule contract](../reference/daml-lint-custom-rule-contract.md).
 
-## Create the project
+## Scaffold a plugin package
 
 ```sh
-mkdir daml-lint-plugin-template-requires-ensure
-cd daml-lint-plugin-template-requires-ensure
-npm init -y
-npm pkg set type=module
-npm pkg set damlLint.rules.template-requires-ensure=dist/template-requires-ensure.js
-npm install --save-dev @daml-tools/daml-lint @daml-tools/lint-plugin typescript esbuild
-mkdir -p src fixtures dist
+npx -y -p @daml-tools/lint-plugin create-daml-lint-plugin ledger-style
+cd daml-lint-plugin-ledger-style
+npm install
+npm run check
+npm run build
+npm run test:rules
 ```
 
-Create `tsconfig.json`:
+The scaffold creates a package with two example rules under `src/rules/`:
 
-```json
-{
-  "compilerOptions": {
-    "target": "ES2020",
-    "module": "ES2020",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "noEmit": true,
-    "lib": ["ES2020"]
-  },
-  "include": ["src/**/*.ts"]
-}
-```
+- `template-requires-ensure` uses `on_template`
+- `unqualified-da-import` uses `on_import`
 
-## Add the rule
+Both rules are bundled to `dist/rules/`, registered in `package.json`
+`damlLint.rules`, and enabled from `./daml.yaml` under the `ledger-style`
+plugin namespace.
 
-Create `src/template-requires-ensure.ts`:
+`npm run test:rules` verifies that both rules report findings on
+`fixtures/violations.daml` and that neither reports on `fixtures/clean.daml`.
+
+## Add another rule
+
+Create `src/rules/my-rule.ts`:
 
 ```typescript
 import type { DamlLintRuleModule, Template } from "@daml-tools/lint-plugin";
 
-const NAME = "template-requires-ensure";
+const NAME = "my-rule";
 const SEVERITY = "medium";
-const DESCRIPTION = "Every template must declare an ensure clause";
+const DESCRIPTION = "Example additional rule";
 
 function on_template(template: Template): void {
-  if (template.ensure_clause === null) {
-    report(template, `Template '${template.name}' has no ensure clause`);
+  if (template.name.endsWith("Draft")) {
+    report(template, `Template '${template.name}' looks like a draft`);
   }
 }
 
@@ -55,80 +50,41 @@ const rule: DamlLintRuleModule = { NAME, SEVERITY, DESCRIPTION, on_template };
 globalThis.__daml_lint_rule = rule;
 ```
 
-The top-level constants and `function on_template` are the runtime contract.
-The `rule` object is the TypeScript-checked authoring shape.
+Register the bundled output in `package.json`:
 
-## Add fixtures
-
-Create `fixtures/missing-ensure.daml`:
-
-```daml
-module MissingEnsure where
-
-template Iou
-  with
-    issuer : Party
-    owner : Party
-  where
-    signatory issuer
-    observer owner
+```json
+{
+  "damlLint": {
+    "rules": {
+      "template-requires-ensure": "dist/rules/template-requires-ensure.js",
+      "unqualified-da-import": "dist/rules/unqualified-da-import.js",
+      "my-rule": "dist/rules/my-rule.js"
+    }
+  }
+}
 ```
 
-Create `fixtures/with-ensure.daml`:
-
-```daml
-module WithEnsure where
-
-template Iou
-  with
-    issuer : Party
-    owner : Party
-  where
-    signatory issuer
-    observer owner
-    ensure True
-```
-
-## Add a local lint config
-
-Create `daml.yaml`:
+Enable it from `daml.yaml`:
 
 ```yaml
 daml-tools:
   lint:
     plugin-paths: [.]
-    plugins: [template-requires-ensure]
+    plugins: [ledger-style]
     rules:
-      template-requires-ensure/template-requires-ensure: warning
+      ledger-style/my-rule: warning
 ```
 
-`plugin-paths: [.]` lets the package resolve itself before it is published.
-After publishing and installing it in another project, consumers only need the
-`plugins` and `rules` entries under `daml-tools.lint`.
+Rebuild and extend `scripts/smoke-test.mjs` if you want CI-style coverage for
+the new rule.
 
-## Type-check and bundle
+## Debug one bundled rule directly
+
+For one-off debugging without `./daml.yaml`, pass a bundled rule file directly:
 
 ```sh
-npx tsc --noEmit
-npx esbuild src/template-requires-ensure.ts --bundle --format=esm --target=es2020 --outfile=dist/template-requires-ensure.js
+npx daml-lint fixtures/violations.daml --rules dist/rules/template-requires-ensure.js --fail-on info
 ```
 
-## Run the rule
-
-The missing fixture should report one finding:
-
-```sh
-npx daml-lint fixtures/missing-ensure.daml --fail-on info
-```
-
-The ensured fixture should not report this custom finding:
-
-```sh
-npx daml-lint fixtures/with-ensure.daml --fail-on info
-```
-
-You now have a typed rule package that can be loaded through `./daml.yaml`.
-The bundled JavaScript file also still works with direct `--rules` loading when
-you want to test one script without a package manifest. See
-[Scan Daml source](../how-to/scan-daml.md) for `--rules`, plugin packages, and
+See [Scan Daml source](../how-to/scan-daml.md) for plugin packages, `--rules`, and
 CI SARIF output.
