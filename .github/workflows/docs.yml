@@ -99,6 +99,7 @@ jobs:
           './README.md'
           './CONTRIBUTING.md'
           './docs/**/*.md'
+          './developer-docs/**/*.md'
           './crates/daml-parser/README.md'
           './crates/daml-syntax/README.md'
           './crates/daml-lint/README.md'

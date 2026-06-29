@@ -18,12 +18,6 @@ From crates.io:
 cargo install daml-fmt
 ```
 
-From a local checkout:
-
-```sh
-cargo install --path crates/daml-fmt
-```
-
 ## Print formatted output
 
 Print one file to stdout without changing it:

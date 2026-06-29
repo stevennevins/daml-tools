@@ -6,7 +6,7 @@ description: Run the daml-tools release and prerelease process end to end. Use w
 # Daml Tools Release
 
 Use this workflow from a clean checkout of `stevennevins/daml-tools`. The
-canonical contributor guide is `docs/how-to/release.md`; this skill is the
+canonical contributor guide is `developer-docs/how-to/release.md`; this skill is the
 agent runbook for executing releases without missing registry, dist-tag, and
 follow-up PR checks.
 
