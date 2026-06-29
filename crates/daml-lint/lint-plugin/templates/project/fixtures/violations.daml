@@ -1,4 +1,6 @@
-module WithEnsure where
+module Violations where
+
+import DA.Map
 
 template Iou
   with
@@ -7,4 +9,3 @@ template Iou
   where
     signatory issuer
     observer owner
-    ensure True

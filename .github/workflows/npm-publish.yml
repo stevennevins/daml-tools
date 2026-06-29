@@ -418,22 +418,12 @@ jobs:
           mkdir -p "${pack_dir}" "${project_dir}"
           npm pack ./lint-plugin --json --pack-destination "${pack_dir}" > "${work}/pack.json"
           tarball="$(node -e 'const fs = require("node:fs"); const [pack] = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); console.log(pack.filename);' "${work}/pack.json")"
-          cp -R lint-plugin/templates/project/. "${project_dir}/"
+          npx --yes --package="${pack_dir}/${tarball}" create-daml-lint-plugin ledger-style "${project_dir}"
           cd "${project_dir}"
           npm install --save-dev "${pack_dir}/${tarball}" "@daml-tools/daml-lint@${PACKAGE_VERSION}" typescript@6.0.3 esbuild@0.28.1
           npm run check
           npm run build
-          set +e
-          npm run lint:missing > "${work}/missing.out" 2>&1
-          missing_status=$?
-          set -e
-          if [[ "${missing_status}" -ne 1 ]]; then
-            cat "${work}/missing.out"
-            echo "::error::lint:missing should report the starter template finding and exit 1."
-            exit 1
-          fi
-          grep -F "template-requires-ensure/template-requires-ensure" "${work}/missing.out"
-          npm run lint:clean
+          npm run test:rules
       - name: Publish lint-plugin package
         if: ${{ steps.release.outputs.tool == 'daml-lint' && steps.lint_plugin_npm.outputs.exists != 'true' }}
         working-directory: crates/daml-lint/lint-plugin

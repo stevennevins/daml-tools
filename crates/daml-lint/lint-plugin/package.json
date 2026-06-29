@@ -10,6 +10,9 @@
   },
   "type": "module",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "create-daml-lint-plugin": "./bin/create-daml-lint-plugin.mjs"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts"
@@ -19,6 +22,7 @@
     "./templates/project/tsconfig": "./templates/project/tsconfig.json"
   },
   "files": [
+    "bin",
     "dist/index.d.ts",
     "templates",
     "README.md"

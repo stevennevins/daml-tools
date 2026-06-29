@@ -1,4 +1,6 @@
-module MissingEnsure where
+module Clean where
+
+import qualified DA.Map as Map
 
 template Iou
   with
@@ -7,3 +9,4 @@ template Iou
   where
     signatory issuer
     observer owner
+    ensure True

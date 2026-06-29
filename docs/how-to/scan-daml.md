@@ -111,48 +111,63 @@ Lint severities are `critical`, `high`, `medium`, `low`, `info`, plus
 ESLint-style aliases `error` (high) and `warning` (medium). Use `off` to disable
 a rule.
 
-## Run custom rule scripts
+## Run installed plugin rules
 
-Pass JavaScript rule files with repeatable `--rules` options:
+Create a local plugin package:
 
 ```sh
-daml-lint ./daml/ --rules my-rule.js --rules another-rule.js
+npx -y -p @daml-tools/lint-plugin create-daml-lint-plugin ledger-style
+cd daml-lint-plugin-ledger-style
+npm install
+npm run build
 ```
 
-For a TypeScript rule, type-check and bundle it before scanning:
+Enable its rules from `./daml.yaml`:
+
+```yaml
+daml-tools:
+  lint:
+    plugin-paths: [.]
+    plugins: [ledger-style]
+    rules:
+      ledger-style/template-requires-ensure: warning
+      ledger-style/unqualified-da-import: low
+```
+
+```sh
+daml-lint ./daml/ --fail-on medium
+```
+
+After publishing, consumers install the package and enable rules by
+`plugin/rule` ID without `plugin-paths`.
+
+Use `[severity, options]` when a rule accepts configuration. The options value
+is available to the rule as global `CONFIG`.
+
+## Run custom rule scripts directly
+
+For one-off debugging, pass bundled JavaScript rule files with repeatable
+`--rules` options:
+
+```sh
+daml-lint ./daml/ --rules dist/rules/template-requires-ensure.js --fail-on medium
+```
+
+For a TypeScript rule outside a plugin package, type-check and bundle it before
+scanning:
 
 ```sh
 npm pkg set type=module
 npm install --save-dev @daml-tools/daml-lint @daml-tools/lint-plugin typescript esbuild
 npx tsc --noEmit
-npx esbuild src/template-requires-ensure.ts --bundle --format=esm --target=es2020 --outfile=dist/template-requires-ensure.js
-npx daml-lint ./daml/ --rules dist/template-requires-ensure.js --fail-on medium
+npx esbuild src/rules/template-requires-ensure.ts --bundle --format=esm --target=es2020 --outfile=dist/rules/template-requires-ensure.js
+npx daml-lint ./daml/ --rules dist/rules/template-requires-ensure.js --fail-on medium
 ```
 
 The bundled JavaScript must expose top-level `const NAME`, `const SEVERITY`,
 an optional `const DESCRIPTION`, and at least one top-level visitor `function`.
 Assigning `globalThis.__daml_lint_rule` gives TypeScript a rule object to
 validate, but it does not replace the current runtime discovery contract.
-
-## Run installed plugin rules
-
-Install a plugin package in the project and enable its rules from
-`./daml.yaml`:
-
-```sh
-npm install --save-dev daml-lint-plugin-template
-cat > daml.yaml <<'YAML'
-daml-tools:
-  lint:
-    plugins: [template]
-    rules:
-      template/template-requires-ensure: warning
-YAML
-daml-lint ./daml/ --fail-on medium
-```
-
-Use `[severity, options]` when a rule accepts configuration. The options value
-is available to the rule as global `CONFIG`.
 
 ## Use in CI
 

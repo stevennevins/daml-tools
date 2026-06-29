@@ -1,6 +1,7 @@
 daml-tools:
   lint:
     plugin-paths: [.]
-    plugins: [template-requires-ensure]
+    plugins: [__PLUGIN_NAME__]
     rules:
-      template-requires-ensure/template-requires-ensure: medium
+      __PLUGIN_NAME__/template-requires-ensure: medium
+      __PLUGIN_NAME__/unqualified-da-import: low
