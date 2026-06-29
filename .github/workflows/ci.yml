@@ -63,9 +63,9 @@ jobs:
         working-directory: crates/daml-fmt
         run: node test/diff.js
 
-  # cargo-npm CLI packaging stays valid: generate the wrapper + host platform
-  # package from [package.metadata.npm] and prove the binary runs. The full
-  # cross-platform publish is exercised at release time by npm-publish.yml.
+  # cargo-npm CLI packaging stays valid: generate the wrapper + one host
+  # platform package from [package.metadata.npm] and prove the binary runs. The
+  # full cross-platform publish is exercised at release time by npm-publish.yml.
   npm-package:
     name: CI signoff / npm CLI package smoke
     runs-on: ubuntu-latest
@@ -92,7 +92,7 @@ jobs:
           cargo build --release --locked --target "${target}" --bin daml-lint --bin daml-fmt
           for tool in daml-lint daml-fmt; do
             out="target/npm-ci/${tool}"
-            cargo npm generate -p "${tool}" --infer-targets --out-dir "${out}" --clean
+            cargo npm generate -p "${tool}" --target "${target}" --out-dir "${out}" --clean
             node -e "const p=require('./'+process.argv[1]); if(!p.bin||!p.optionalDependencies||!Object.keys(p.optionalDependencies).length)throw new Error('wrapper missing bin/optionalDependencies')" "${out}/@daml-tools/${tool}/package.json"
             bin="${out}/@daml-tools/${tool}-${npm_platform}/${tool}"
             test -x "${bin}"

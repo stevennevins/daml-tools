@@ -127,7 +127,6 @@ cross-platform set.
 | `signoff/package` | `mise run signoff:ci:package` | `.github/workflows/ci.yml` job `package` |
 | `signoff/cargo-deny` | `mise run signoff:ci:cargo-deny` | `.github/workflows/ci.yml` job `cargo-deny` |
 | `signoff/semver` | `mise run signoff:ci:semver` | `.github/workflows/ci.yml` job `semver` |
-| `signoff/build-linux-x64` | `mise run signoff:ci:build-linux-x64` | `.github/workflows/ci.yml` job `build-linux-x64` |
 | `signoff/docs` | `mise run signoff:docs` | `.github/workflows/docs.yml` job `docs` |
 
 To run every required signoff context with the optimized all-or-nothing path:
@@ -136,7 +135,7 @@ To run every required signoff context with the optimized all-or-nothing path:
 mise run signoff:all
 ```
 
-This runs the seven act signoff jobs as separate mise tasks in parallel, each
+This runs the six required act signoff jobs as separate mise tasks in parallel, each
 with its own `.act/signoff-all/<context>/` runtime paths and server ports. The
 final status task runs only after every act task passes, so a failed act job does
 not create any `signoff/...` commit statuses.
@@ -158,6 +157,11 @@ honestly provide. macOS and Windows platform builds stay on GitHub-hosted
 runners until real local hosts exist. npm trusted publishing also stays
 GitHub-hosted because its OIDC `id-token` flow depends on GitHub Actions.
 
+The `build-linux-x64` CI job remains available for optional local smoke checks
+with `mise run signoff:ci:build-linux-x64`, but it is not a required PR context.
+The required `signoff/npm-package` context already performs a host-platform npm
+package smoke; release workflows cover the full hosted platform matrix.
+
 ## Preserve branch protection when requiring signoff
 
 The PR merge gate should require these commit-status contexts on `main`:
@@ -167,7 +171,6 @@ The PR merge gate should require these commit-status contexts on `main`:
 - `signoff/package`
 - `signoff/cargo-deny`
 - `signoff/semver`
-- `signoff/build-linux-x64`
 - `signoff/docs`
 
 Do **not** run `gh signoff install` or `gh signoff uninstall` on the real repo.
@@ -211,7 +214,6 @@ gh api \
   -f "contexts[]=signoff/package" \
   -f "contexts[]=signoff/cargo-deny" \
   -f "contexts[]=signoff/semver" \
-  -f "contexts[]=signoff/build-linux-x64" \
   -f "contexts[]=signoff/docs"
 ```
 
@@ -249,10 +251,11 @@ maintainers.
 macOS and Windows matrix jobs are not mapped in `.actrc`. Those platform builds stay on
 GitHub-hosted runners until real macOS and Windows hosts exist for local signoff.
 
-`signoff/build-linux-x64` compiles the Linux x64 smoke binary. On Linux
-`x86_64` hosts it builds natively. On ARM hosts, run the job with the normal
-host-architecture act container; the workflow installs the Linux x64 Rust target
-and linker instead of relying on Docker/QEMU amd64 emulation for the whole job.
+The optional `signoff/build-linux-x64` task compiles the Linux x64 smoke binary.
+On Linux `x86_64` hosts it builds natively. On ARM hosts, run the job with the
+normal host-architecture act container; the workflow installs the Linux x64 Rust
+target and linker instead of relying on Docker/QEMU amd64 emulation for the
+whole job.
 
 ## Refresh runner image digests
 

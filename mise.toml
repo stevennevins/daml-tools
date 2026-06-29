@@ -123,7 +123,6 @@ run = [
   "gh signoff package",
   "gh signoff cargo-deny",
   "gh signoff semver",
-  "gh signoff build-linux-x64",
   "gh signoff docs",
 ]
 
@@ -131,6 +130,6 @@ run = [
 description = "Run every required local PR signoff act task in parallel, then create signoff statuses."
 env = { MISE_LOCKED = "1" }
 run = [
-  "mise run signoff:act:ci:test ::: signoff:act:ci:npm-package ::: signoff:act:ci:package ::: signoff:act:ci:cargo-deny ::: signoff:act:ci:semver ::: signoff:act:ci:build-linux-x64 ::: signoff:act:docs",
+  "mise run signoff:act:ci:test ::: signoff:act:ci:npm-package ::: signoff:act:ci:package ::: signoff:act:ci:cargo-deny ::: signoff:act:ci:semver ::: signoff:act:docs",
   "mise run signoff:status:all",
 ]
