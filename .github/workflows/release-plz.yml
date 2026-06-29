@@ -21,6 +21,8 @@ jobs:
     uses: ./.github/workflows/docs.yml
     permissions:
       contents: read
+      pages: write
+      id-token: write
 
   release-plz-release:
     name: Release-plz release
