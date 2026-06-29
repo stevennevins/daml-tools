@@ -66,6 +66,17 @@ runtime helpers — bundle rule logic to one JavaScript file before scanning.
 Starter templates are available under `@daml-tools/lint-plugin/templates/*` and
 via the package `exports` map for `minimal-rule` and `project/*` files.
 
+Scaffold a multi-rule plugin package with:
+
+```sh
+npx -y -p @daml-tools/lint-plugin create-daml-lint-plugin ledger-style
+```
+
+The command copies the `templates/project` starter, substitutes the plugin and
+package names, and creates `src/rules/`, `dist/rules/`, `package.json`
+`damlLint.rules`, and a local `daml.yaml` that enables every bundled rule under
+one plugin namespace.
+
 ## Rule IDs
 
 Built-in rules use unqualified ids such as `missing-ensure-decimal`. Plugin rules

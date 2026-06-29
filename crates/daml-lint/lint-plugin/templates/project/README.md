@@ -1,31 +1,25 @@
-# daml-lint plugin starter
+# __PACKAGE_NAME__
 
-This project shows the minimal TypeScript flow for a `daml-lint` custom rule
-plugin loaded through `./daml.yaml`.
+This starter is a multi-rule `daml-lint` plugin package. One package exposes
+multiple bundled rules through `package.json` `damlLint.rules`, and `./daml.yaml`
+enables them under the `__PLUGIN_NAME__` plugin namespace.
 
 ```sh
 npm install
 npm run check
 npm run build
-npm run lint:missing
-npm run lint:clean
+npm run test:rules
 ```
 
-The first scan reports one `template-requires-ensure` finding. The second scan
-has no finding from the custom rule.
+`npm run test:rules` expects both example rules to report findings on
+`fixtures/violations.daml` and no custom-rule findings on `fixtures/clean.daml`.
 
-The package manifest exposes bundled rule files under `damlLint.rules`.
-`daml.yaml` uses `plugin-paths: [.]` so the project can resolve itself before
-it is published. After publishing, consumers install the package and enable
-rules by `plugin/rule` ID.
+Add more rules by creating `src/rules/<rule-name>.ts`, bundling to
+`dist/rules/<rule-name>.js`, and registering the rule in `package.json` and
+`daml.yaml`.
 
-The runtime still discovers top-level metadata constants and visitor
-`function` declarations. The `globalThis.__daml_lint_rule` assignment gives
-TypeScript a single rule object to validate, but it is not the only runtime
-discovery mechanism.
-
-For a one-off script test, the bundled JavaScript can still be passed directly:
+For one-off debugging, a bundled rule file can still be passed directly:
 
 ```sh
-daml-lint fixtures/missing-ensure.daml --rules dist/template-requires-ensure.js --fail-on info
+daml-lint fixtures/violations.daml --rules dist/rules/template-requires-ensure.js --fail-on info
 ```

@@ -1,17 +1,17 @@
 {
-  "name": "daml-lint-plugin-template-requires-ensure",
+  "name": "__PACKAGE_NAME__",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "check": "tsc --noEmit",
-    "build": "esbuild src/template-requires-ensure.ts --bundle --format=esm --target=es2020 --outfile=dist/template-requires-ensure.js",
-    "lint:missing": "daml-lint fixtures/missing-ensure.daml --fail-on info",
-    "lint:clean": "daml-lint fixtures/with-ensure.daml --fail-on info"
+    "build": "esbuild src/rules/*.ts --bundle --format=esm --target=es2020 --outdir=dist/rules",
+    "test:rules": "node scripts/smoke-test.mjs"
   },
   "damlLint": {
     "rules": {
-      "template-requires-ensure": "dist/template-requires-ensure.js"
+      "template-requires-ensure": "dist/rules/template-requires-ensure.js",
+      "unqualified-da-import": "dist/rules/unqualified-da-import.js"
     }
   },
   "devDependencies": {
