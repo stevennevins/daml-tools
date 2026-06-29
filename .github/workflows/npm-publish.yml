@@ -113,7 +113,7 @@ jobs:
             echo "::error::npm CLI publishing requires a daml-lint-v* or daml-fmt-v* tag, got ${RELEASE_TAG}"
             exit 1
           fi
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref_name }}
       - uses: dtolnay/rust-toolchain@stable
@@ -178,7 +178,7 @@ jobs:
             echo "::error::npm CLI publishing requires a daml-lint-v* or daml-fmt-v* tag, got ${RELEASE_TAG}"
             exit 1
           fi
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref_name }}
       - uses: dtolnay/rust-toolchain@stable
@@ -221,7 +221,7 @@ jobs:
           fi
       - name: Cache cargo-npm
         if: ${{ steps.npm.outputs.exists != 'true' }}
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cargo/bin/cargo-npm
           key: cargo-npm-${{ env.CARGO_NPM_VERSION }}-${{ runner.os }}
@@ -233,7 +233,7 @@ jobs:
           fi
       - name: Download CLI binaries
         if: ${{ steps.npm.outputs.exists != 'true' }}
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: cli-*
           path: artifacts
