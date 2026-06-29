@@ -46,8 +46,6 @@ The workspace documentation is published at
 [https://stevennevins.github.io/daml-tools/](https://stevennevins.github.io/daml-tools/):
 
 - [Format Daml source](https://stevennevins.github.io/daml-tools/how-to/format-daml.html) for CLI usage patterns
-- [Verify a formatter change](https://stevennevins.github.io/daml-tools/how-to/verify-formatter-change.html) for
-  corpus, baseline, and audit commands
 - [CLI reference](https://stevennevins.github.io/daml-tools/reference/cli.html) for options and exit codes
 - [Crate reference](https://stevennevins.github.io/daml-tools/reference/crates.html) for features, binaries, and
   public API

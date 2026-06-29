@@ -3,7 +3,7 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   title: 'daml-tools',
   description:
-    'Documentation for the daml-tools workspace: Daml parser, linter, formatter, and custom-rule plugins.',
+    'Consumer documentation for daml-tools packages: Daml parser, linter, formatter, and custom-rule plugins.',
   base: '/daml-tools/',
   markdown: {
     languages: ['bash', 'json', 'rust', 'sh', 'text', 'toml', 'typescript', 'yaml'],
@@ -42,12 +42,6 @@ export default defineConfig({
         items: [
           { text: 'Format Daml source', link: '/how-to/format-daml' },
           { text: 'Scan Daml source', link: '/how-to/scan-daml' },
-          { text: 'Run CI locally', link: '/how-to/local-ci' },
-          { text: 'Release the workspace', link: '/how-to/release' },
-          {
-            text: 'Verify a formatter change',
-            link: '/how-to/verify-formatter-change',
-          },
         ],
       },
       {

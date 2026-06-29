@@ -76,5 +76,5 @@ layout and reviewer responsibilities.
 
 ## Related
 
-- [Formatter verification model](../explanation/formatter-verification.md)
+- [Formatter verification model](../../docs/explanation/formatter-verification.md)
 - [`daml-fmt` crate README](https://github.com/stevennevins/daml-tools/blob/main/crates/daml-fmt/README.md)

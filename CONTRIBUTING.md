@@ -2,8 +2,8 @@
 
 Use this guide to prepare a checkout and run the local gates before CI.
 
-For tool usage, start with the root [README](README.md) or the documentation
-map in [`docs/`](docs/).
+For tool usage, start with the root [README](README.md) or the published documentation
+site at [https://stevennevins.github.io/daml-tools/](https://stevennevins.github.io/daml-tools/).
 
 ## Prerequisites
 
@@ -79,7 +79,7 @@ The formatter `npm test` command runs `node test/diff.js`, the same 924-file
 differential test used by the pre-push hook.
 
 Maintainers applying required PR signoffs should use the locked mise and act
-workflow in [`docs/how-to/local-ci.md`](docs/how-to/local-ci.md). Install and
+workflow in [`developer-docs/how-to/local-ci.md`](developer-docs/how-to/local-ci.md). Install and
 activate mise, set `MISE_LOCKED=1`, and use the `mise run signoff:*` tasks from
 that guide;
 CI workflow jobs use the `signoff:ci:*` task namespace while preserving the
@@ -136,7 +136,7 @@ npm test
 ```
 
 For formatter-specific verification flows, see
-[`docs/how-to/verify-formatter-change.md`](docs/how-to/verify-formatter-change.md).
+[`developer-docs/how-to/verify-formatter-change.md`](developer-docs/how-to/verify-formatter-change.md).
 
 ## Prepare versioning and releases
 

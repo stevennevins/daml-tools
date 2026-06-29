@@ -1,44 +1,38 @@
 # First run
 
-In this lesson, you will build the workspace, format a small Daml file, and
-scan it with `daml-lint`.
+In this lesson, you will install the published CLI packages, format a small
+Daml file, and scan it with `daml-lint`.
 
-You will work in a temporary directory so the repository checkout stays
-unchanged.
+You will work in a temporary directory so no existing project files change.
 
 ## Prerequisites
 
-You need:
+You need Node.js 18 or newer and a shell. This tutorial uses the npm packages
+because they install the CLIs without requiring a Rust toolchain or repository
+checkout.
 
-- Rust 1.96 or newer
-- a checkout of this repository
-- a shell from the repository root
+## Create a temporary project
 
-For project setup details, see the root [README](https://github.com/stevennevins/daml-tools/blob/main/README.md).
-
-## Build the tools
-
-From the repository root, build every crate in the workspace:
-
-```sh
-cargo build --workspace
-```
-
-This builds the shared `daml-parser` crate and the two CLI tools, `daml-fmt`
-and `daml-lint`.
-
-## Create a small Daml file
-
-Create a temporary lesson directory:
+Create a lesson directory and initialize npm metadata:
 
 ```sh
 mkdir -p /tmp/daml-tools-first-run
+cd /tmp/daml-tools-first-run
+npm init -y
 ```
+
+Install the formatter and linter as dev dependencies:
+
+```sh
+npm install --save-dev @daml-tools/daml-fmt @daml-tools/daml-lint
+```
+
+## Create a small Daml file
 
 Create a Daml file:
 
 ```sh
-cat > /tmp/daml-tools-first-run/Iou.daml <<'EOF'
+cat > Iou.daml <<'EOF_DAML'
 module Tutorial.FirstRun where
 
 template Iou
@@ -49,7 +43,7 @@ template Iou
   where
     signatory issuer
     observer owner
-EOF
+EOF_DAML
 ```
 
 The sample is intentionally small and has one lint finding: a `Decimal` field
@@ -60,7 +54,7 @@ without an `ensure` clause.
 Run `daml-fmt` without changing the file:
 
 ```sh
-cargo run -p daml-fmt --bin daml-fmt -- /tmp/daml-tools-first-run/Iou.daml
+npx daml-fmt Iou.daml
 ```
 
 The formatted source is printed to stdout. The file on disk is unchanged.
@@ -70,13 +64,13 @@ The formatted source is printed to stdout. The file on disk is unchanged.
 Rewrite the file:
 
 ```sh
-cargo run -p daml-fmt --bin daml-fmt -- -w /tmp/daml-tools-first-run/Iou.daml
+npx daml-fmt --write Iou.daml
 ```
 
 Check that the file is now formatted:
 
 ```sh
-cargo run -p daml-fmt --bin daml-fmt -- --check /tmp/daml-tools-first-run/Iou.daml
+npx daml-fmt --check Iou.daml
 ```
 
 A formatted file exits with code `0`.
@@ -87,7 +81,7 @@ Run `daml-lint` and keep the command successful by failing only on critical
 findings:
 
 ```sh
-cargo run -p daml-lint -- /tmp/daml-tools-first-run/Iou.daml --fail-on critical
+npx daml-lint Iou.daml --fail-on critical
 ```
 
 The report is printed in Markdown. The sample template has a `Decimal` field
@@ -97,7 +91,7 @@ fails only on critical findings, the command exits successfully.
 Now run the same scan as a stricter gate:
 
 ```sh
-cargo run -p daml-lint -- /tmp/daml-tools-first-run/Iou.daml --fail-on high
+npx daml-lint Iou.daml --fail-on high
 ```
 
 This command is expected to exit with code `1`, because the sample has a
@@ -105,8 +99,8 @@ high-severity finding.
 
 ## Finish
 
-You have built the workspace, formatted a Daml file, checked formatting, and
-scanned the file with a lint threshold.
+You have installed the published CLI packages, formatted a Daml file, checked
+formatting, and scanned the file with a lint threshold.
 
 For task-focused usage, see:
 

@@ -18,12 +18,6 @@ From crates.io:
 cargo install daml-lint
 ```
 
-From a local checkout:
-
-```sh
-cargo install --path crates/daml-lint
-```
-
 ## Scan one file
 
 ```sh
