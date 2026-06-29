@@ -71,15 +71,66 @@ run = [
   "gh signoff docs",
 ]
 
+[tasks."signoff:act:ci:test"]
+description = "Run the CI/test act job for local PR signoff without creating a status."
+env = { MISE_LOCKED = "1" }
+run = "act workflow_dispatch -W .github/workflows/ci.yml -j test --action-cache-path .act/signoff-all/test/action-cache --cache-server-path .act/signoff-all/test/cache-server --cache-server-port 34569 --artifact-server-path .act/signoff-all/test/artifacts --artifact-server-port 34567"
+
+[tasks."signoff:act:ci:npm-package"]
+description = "Run the CI/npm-package act job for local PR signoff without creating a status."
+env = { MISE_LOCKED = "1" }
+run = "act workflow_dispatch -W .github/workflows/ci.yml -j npm-package --action-cache-path .act/signoff-all/npm-package/action-cache --cache-server-path .act/signoff-all/npm-package/cache-server --cache-server-port 34570 --artifact-server-path .act/signoff-all/npm-package/artifacts --artifact-server-port 34568"
+
+[tasks."signoff:act:ci:package"]
+description = "Run the CI/package act job for local PR signoff without creating a status."
+env = { MISE_LOCKED = "1" }
+run = '''
+git_common="$(git rev-parse --path-format=absolute --git-common-dir)"
+act workflow_dispatch -W .github/workflows/ci.yml -j package \
+  --action-cache-path .act/signoff-all/package/action-cache \
+  --cache-server-path .act/signoff-all/package/cache-server \
+  --cache-server-port 34571 \
+  --artifact-server-path .act/signoff-all/package/artifacts \
+  --artifact-server-port 34572 \
+  --container-options "--mount type=bind,source=${git_common},target=${git_common},readonly"
+'''
+
+[tasks."signoff:act:ci:cargo-deny"]
+description = "Run the CI/cargo-deny act job for local PR signoff without creating a status."
+env = { MISE_LOCKED = "1" }
+run = "act workflow_dispatch -W .github/workflows/ci.yml -j cargo-deny --action-cache-path .act/signoff-all/cargo-deny/action-cache --cache-server-path .act/signoff-all/cargo-deny/cache-server --cache-server-port 34573 --artifact-server-path .act/signoff-all/cargo-deny/artifacts --artifact-server-port 34574"
+
+[tasks."signoff:act:ci:semver"]
+description = "Run the CI/semver act matrix job for local PR signoff without creating a status."
+env = { MISE_LOCKED = "1" }
+run = "act workflow_dispatch -W .github/workflows/ci.yml -j semver --action-cache-path .act/signoff-all/semver/action-cache --cache-server-path .act/signoff-all/semver/cache-server --cache-server-port 34575 --artifact-server-path .act/signoff-all/semver/artifacts --artifact-server-port 34576"
+
+[tasks."signoff:act:ci:build-linux-x64"]
+description = "Run the CI/build-linux-x64 act job for local PR signoff without creating a status."
+env = { MISE_LOCKED = "1" }
+run = "act workflow_dispatch -W .github/workflows/ci.yml -j build-linux-x64 --action-cache-path .act/signoff-all/build-linux-x64/action-cache --cache-server-path .act/signoff-all/build-linux-x64/cache-server --cache-server-port 34577 --artifact-server-path .act/signoff-all/build-linux-x64/artifacts --artifact-server-port 34578"
+
+[tasks."signoff:act:docs"]
+description = "Run the Docs act job for local PR signoff without creating a status."
+env = { MISE_LOCKED = "1" }
+run = "act workflow_dispatch -W .github/workflows/docs.yml -j docs --action-cache-path .act/signoff-all/docs/action-cache --cache-server-path .act/signoff-all/docs/cache-server --cache-server-port 34579 --artifact-server-path .act/signoff-all/docs/artifacts --artifact-server-port 34580"
+
+[tasks."signoff:status:all"]
+description = "Create all local PR signoff statuses after every act signoff task has passed."
+run = [
+  "gh signoff test",
+  "gh signoff npm-package",
+  "gh signoff package",
+  "gh signoff cargo-deny",
+  "gh signoff semver",
+  "gh signoff build-linux-x64",
+  "gh signoff docs",
+]
+
 [tasks."signoff:all"]
-description = "Run every required local PR signoff task in sequence."
+description = "Run every required local PR signoff act task in parallel, then create signoff statuses."
 env = { MISE_LOCKED = "1" }
 run = [
-  "mise run signoff:ci:test",
-  "mise run signoff:ci:npm-package",
-  "mise run signoff:ci:package",
-  "mise run signoff:ci:cargo-deny",
-  "mise run signoff:ci:semver",
-  "mise run signoff:ci:build-linux-x64",
-  "mise run signoff:docs",
+  "mise run signoff:act:ci:test ::: signoff:act:ci:npm-package ::: signoff:act:ci:package ::: signoff:act:ci:cargo-deny ::: signoff:act:ci:semver ::: signoff:act:ci:build-linux-x64 ::: signoff:act:docs",
+  "mise run signoff:status:all",
 ]

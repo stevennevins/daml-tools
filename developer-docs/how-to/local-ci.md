@@ -130,11 +130,16 @@ cross-platform set.
 | `signoff/build-linux-x64` | `mise run signoff:ci:build-linux-x64` | `.github/workflows/ci.yml` job `build-linux-x64` |
 | `signoff/docs` | `mise run signoff:docs` | `.github/workflows/docs.yml` job `docs` |
 
-To run every required signoff task in sequence:
+To run every required signoff context with the optimized all-or-nothing path:
 
 ```sh
 mise run signoff:all
 ```
+
+This runs the seven act signoff jobs as separate mise tasks in parallel, each
+with its own `.act/signoff-all/<context>/` runtime paths and server ports. The
+final status task runs only after every act task passes, so a failed act job does
+not create any `signoff/...` commit statuses.
 
 The package verification job runs `git diff` to reject dirty packages. When act
 runs from a git worktree, the `signoff:ci:package` task mounts the git common
