@@ -17,7 +17,7 @@ gh = "2.95.0"
 description = "Local PR signoff for CI/test: run the test job through act and create signoff/test."
 env = { MISE_LOCKED = "1" }
 run = [
-  "act workflow_dispatch -W .github/workflows/ci.yml -j test",
+  "scripts/act-signoff.sh .github/workflows/ci.yml test",
   "gh signoff test",
 ]
 
@@ -25,7 +25,7 @@ run = [
 description = "Local PR signoff for CI/npm-package: run the npm package smoke job through act and create signoff/npm-package."
 env = { MISE_LOCKED = "1" }
 run = [
-  "act workflow_dispatch -W .github/workflows/ci.yml -j npm-package",
+  "scripts/act-signoff.sh .github/workflows/ci.yml npm-package",
   "gh signoff npm-package",
 ]
 
@@ -34,7 +34,7 @@ description = "Local PR signoff for CI/package: run crate package verification t
 env = { MISE_LOCKED = "1" }
 run = '''
 git_common="$(git rev-parse --path-format=absolute --git-common-dir)"
-act workflow_dispatch -W .github/workflows/ci.yml -j package \
+scripts/act-signoff.sh .github/workflows/ci.yml package \
   --container-options "--mount type=bind,source=${git_common},target=${git_common},readonly"
 gh signoff package
 '''
@@ -43,7 +43,7 @@ gh signoff package
 description = "Local PR signoff for CI/cargo-deny: run cargo-deny policy checks through act and create signoff/cargo-deny."
 env = { MISE_LOCKED = "1" }
 run = [
-  "act workflow_dispatch -W .github/workflows/ci.yml -j cargo-deny",
+  "scripts/act-signoff.sh .github/workflows/ci.yml cargo-deny",
   "gh signoff cargo-deny",
 ]
 
@@ -51,7 +51,7 @@ run = [
 description = "Local PR signoff for CI/semver: run public API semver checks through act and create signoff/semver."
 env = { MISE_LOCKED = "1" }
 run = [
-  "act workflow_dispatch -W .github/workflows/ci.yml -j semver",
+  "scripts/act-signoff.sh .github/workflows/ci.yml semver",
   "gh signoff semver",
 ]
 
@@ -59,7 +59,7 @@ run = [
 description = "Local PR signoff for CI/build-linux-x64: run the Linux x64 CLI build smoke through act and create signoff/build-linux-x64."
 env = { MISE_LOCKED = "1" }
 run = [
-  "act workflow_dispatch -W .github/workflows/ci.yml -j build-linux-x64",
+  "scripts/act-signoff.sh .github/workflows/ci.yml build-linux-x64",
   "gh signoff build-linux-x64",
 ]
 
@@ -67,53 +67,48 @@ run = [
 description = "Local PR signoff for Docs: run version and link checks through act and create signoff/docs."
 env = { MISE_LOCKED = "1" }
 run = [
-  "act workflow_dispatch -W .github/workflows/docs.yml -j docs",
+  "scripts/act-signoff.sh .github/workflows/docs.yml docs",
   "gh signoff docs",
 ]
 
 [tasks."signoff:act:ci:test"]
 description = "Run the CI/test act job for local PR signoff without creating a status."
 env = { MISE_LOCKED = "1" }
-run = "act workflow_dispatch -W .github/workflows/ci.yml -j test --action-cache-path .act/signoff-all/test/action-cache --cache-server-path .act/signoff-all/test/cache-server --cache-server-port 34569 --artifact-server-path .act/signoff-all/test/artifacts --artifact-server-port 34567"
+run = "scripts/act-signoff.sh .github/workflows/ci.yml test"
 
 [tasks."signoff:act:ci:npm-package"]
 description = "Run the CI/npm-package act job for local PR signoff without creating a status."
 env = { MISE_LOCKED = "1" }
-run = "act workflow_dispatch -W .github/workflows/ci.yml -j npm-package --action-cache-path .act/signoff-all/npm-package/action-cache --cache-server-path .act/signoff-all/npm-package/cache-server --cache-server-port 34570 --artifact-server-path .act/signoff-all/npm-package/artifacts --artifact-server-port 34568"
+run = "scripts/act-signoff.sh .github/workflows/ci.yml npm-package"
 
 [tasks."signoff:act:ci:package"]
 description = "Run the CI/package act job for local PR signoff without creating a status."
 env = { MISE_LOCKED = "1" }
 run = '''
 git_common="$(git rev-parse --path-format=absolute --git-common-dir)"
-act workflow_dispatch -W .github/workflows/ci.yml -j package \
-  --action-cache-path .act/signoff-all/package/action-cache \
-  --cache-server-path .act/signoff-all/package/cache-server \
-  --cache-server-port 34571 \
-  --artifact-server-path .act/signoff-all/package/artifacts \
-  --artifact-server-port 34572 \
+scripts/act-signoff.sh .github/workflows/ci.yml package \
   --container-options "--mount type=bind,source=${git_common},target=${git_common},readonly"
 '''
 
 [tasks."signoff:act:ci:cargo-deny"]
 description = "Run the CI/cargo-deny act job for local PR signoff without creating a status."
 env = { MISE_LOCKED = "1" }
-run = "act workflow_dispatch -W .github/workflows/ci.yml -j cargo-deny --action-cache-path .act/signoff-all/cargo-deny/action-cache --cache-server-path .act/signoff-all/cargo-deny/cache-server --cache-server-port 34573 --artifact-server-path .act/signoff-all/cargo-deny/artifacts --artifact-server-port 34574"
+run = "scripts/act-signoff.sh .github/workflows/ci.yml cargo-deny"
 
 [tasks."signoff:act:ci:semver"]
 description = "Run the CI/semver act matrix job for local PR signoff without creating a status."
 env = { MISE_LOCKED = "1" }
-run = "act workflow_dispatch -W .github/workflows/ci.yml -j semver --action-cache-path .act/signoff-all/semver/action-cache --cache-server-path .act/signoff-all/semver/cache-server --cache-server-port 34575 --artifact-server-path .act/signoff-all/semver/artifacts --artifact-server-port 34576"
+run = "scripts/act-signoff.sh .github/workflows/ci.yml semver"
 
 [tasks."signoff:act:ci:build-linux-x64"]
 description = "Run the CI/build-linux-x64 act job for local PR signoff without creating a status."
 env = { MISE_LOCKED = "1" }
-run = "act workflow_dispatch -W .github/workflows/ci.yml -j build-linux-x64 --action-cache-path .act/signoff-all/build-linux-x64/action-cache --cache-server-path .act/signoff-all/build-linux-x64/cache-server --cache-server-port 34577 --artifact-server-path .act/signoff-all/build-linux-x64/artifacts --artifact-server-port 34578"
+run = "scripts/act-signoff.sh .github/workflows/ci.yml build-linux-x64"
 
 [tasks."signoff:act:docs"]
 description = "Run the Docs act job for local PR signoff without creating a status."
 env = { MISE_LOCKED = "1" }
-run = "act workflow_dispatch -W .github/workflows/docs.yml -j docs --action-cache-path .act/signoff-all/docs/action-cache --cache-server-path .act/signoff-all/docs/cache-server --cache-server-port 34579 --artifact-server-path .act/signoff-all/docs/artifacts --artifact-server-port 34580"
+run = "scripts/act-signoff.sh .github/workflows/docs.yml docs"
 
 [tasks."signoff:status:all"]
 description = "Create all local PR signoff statuses after every act signoff task has passed."
