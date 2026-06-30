@@ -135,10 +135,11 @@ To run every required signoff context with the optimized all-or-nothing path:
 mise run signoff:all
 ```
 
-This runs the six required act signoff jobs as separate mise tasks in parallel, each
-with its own `.act/signoff-all/<context>/` runtime paths and server ports. The
-final status task runs only after every act task passes, so a failed act job does
-not create any `signoff/...` commit statuses.
+This runs the six required act signoff jobs as separate mise tasks in parallel.
+Each task uses `scripts/act-signoff.sh` to allocate per-run `.act/signoff-runs/`
+runtime paths and fresh local server ports. The final status task runs only
+after every act task passes, so a failed act job does not create any
+`signoff/...` commit statuses.
 
 The package verification job runs `git diff` to reject dirty packages. When act
 runs from a git worktree, the `signoff:ci:package` task mounts the git common
@@ -147,6 +148,7 @@ correctly.
 
 The signoff tasks pass partial names to `gh signoff` without the `signoff/`
 prefix; the extension adds that prefix when it creates the commit status.
+
 
 The `signoff:ci:package` task uses Docker `--mount` rather than `--volume` for the
 git common directory so a missing host path fails loudly instead of creating an
@@ -182,7 +184,7 @@ protection settings through the GitHub UI or the branch-protection API instead.
 
 1. Open GitHub repository settings.
 2. Go to **Branches** and edit the existing rule that protects `main`.
-3. Under **Require status checks to pass before merging**, add the seven
+3. Under **Require status checks to pass before merging**, add the six
    `signoff/...` contexts listed above.
 4. Leave existing review, admin, linear-history, signed-commit, restriction,
    conversation-resolution, and other protection settings unchanged.
