@@ -1,3 +1,7 @@
+---
+description: How the TypeScript authoring contract and QuickJS runtime contract fit together for daml-lint custom rules.
+---
+
 # daml-lint rule authoring model
 
 `daml-lint` custom rules have two related contracts: a TypeScript authoring
