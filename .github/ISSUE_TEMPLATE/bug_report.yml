@@ -1,0 +1,120 @@
+name: Bug report
+description: Report a reproducible problem in daml-tools
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Pull request creation is restricted, so please include enough detail for a maintainer to reproduce the problem from a clean checkout.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong? Include the affected tool or crate if you know it.
+      placeholder: daml-fmt panics when formatting a module that contains ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      description: Pick the closest match.
+      options:
+        - daml-fmt
+        - daml-lint
+        - daml-parser
+        - daml-syntax
+        - CLI packaging or release artifacts
+        - Documentation
+        - CI or developer tooling
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: input
+    attributes:
+      label: Minimal input or fixture
+      description: Paste the smallest Daml file, command input, config, or fixture needed to reproduce the issue. Use a fenced code block when possible.
+      render: daml
+      placeholder: |
+        module Repro where
+
+        ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: List exact commands and setup steps from a clean checkout or released binary.
+      placeholder: |
+        1. Install ...
+        2. Run `daml-fmt path/to/Repro.daml`
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Paste the full error, panic, diff, or unexpected output. Include stack traces if available.
+      render: text
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: daml-tools version or commit
+      description: Provide the released version, git commit SHA, or branch name used.
+      placeholder: daml-fmt 0.x.y, daml-lint 0.x.y, or f025b72
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS, architecture, install method, Rust version, Node.js version, and Daml SDK/Canton version if relevant.
+      placeholder: |
+        - OS: macOS 15.5 arm64
+        - Install method: cargo install / release archive / source checkout
+        - rustc: `rustc --version`
+        - node: `node --version`
+        - Daml SDK/Canton: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: regression
+    attributes:
+      label: Regression information
+      description: If known, note the last version or commit where this worked and when it started failing.
+      placeholder: Worked in 0.x.y; started failing in 0.x.z.
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Workaround
+      description: Share any workaround you found, or write "none".
+      placeholder: none
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add links, screenshots, logs, related issues, or any other details that may help reproduce or diagnose the issue.

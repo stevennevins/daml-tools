@@ -1,0 +1,110 @@
+name: Feature request
+description: Propose an enhancement for daml-tools
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. Pull request creation is restricted, so please include enough context for a maintainer to evaluate and implement the request.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What should be added or changed?
+      placeholder: Add a daml-lint rule that detects ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      description: Pick the closest match.
+      options:
+        - daml-fmt
+        - daml-lint
+        - daml-parser
+        - daml-syntax
+        - CLI packaging or release artifacts
+        - Documentation
+        - CI or developer tooling
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What user problem does this solve? Include the current limitation or pain point.
+      placeholder: Today, when working with ..., users have to ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: desired-behavior
+    attributes:
+      label: Desired behavior
+      description: Describe the behavior, CLI/API shape, output, diagnostic, formatting, or documentation change you want.
+      placeholder: |
+        Running `daml-lint ...` should report ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: Examples
+      description: Provide sample Daml input, expected output, diagnostics, command lines, or before/after formatting.
+      render: daml
+      placeholder: |
+        -- Before
+        ...
+
+        -- After
+        ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What alternatives, workarounds, or existing tools have you considered?
+      placeholder: I currently work around this by ...
+
+  - type: dropdown
+    id: breaking-change
+    attributes:
+      label: Would this be a breaking change?
+      description: Choose your best estimate.
+      options:
+        - "No"
+        - "Yes"
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility and migration notes
+      description: If this changes existing behavior, describe who would be affected and how they could migrate.
+      placeholder: Existing users of ... would need to ...
+
+  - type: textarea
+    id: validation
+    attributes:
+      label: How could this be validated?
+      description: Suggest tests, corpus cases, fixtures, or acceptance criteria that would prove the feature works.
+      placeholder: |
+        - Add a fixture where ...
+        - Run `cargo test -p ...`
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add links to specifications, examples from other tools, related issues, screenshots, or other useful background.
