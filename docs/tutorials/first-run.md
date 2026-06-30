@@ -1,3 +1,7 @@
+---
+description: Install the published daml-fmt and daml-lint CLIs, format a sample Daml file, and run a first lint scan.
+---
+
 # First run
 
 In this lesson, you will install the published CLI packages, format a small
