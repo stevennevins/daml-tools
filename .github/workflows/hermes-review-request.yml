@@ -4,10 +4,7 @@ on:
   issue_comment:
     types: [created]
 
-permissions:
-  contents: read
-  pull-requests: read
-  issues: read
+permissions: {}
 
 jobs:
   notify-hermes:
@@ -29,26 +26,58 @@ jobs:
         run: |
           set -euo pipefail
 
-          python3 - <<'PY'
-          import json, os, sys
-          payload = json.load(open(os.environ['EVENT_PATH'], encoding='utf-8'))
-          repo = payload.get('repository', {}).get('full_name')
-          actor = payload.get('comment', {}).get('user', {}).get('login')
-          body = payload.get('comment', {}).get('body') or ''
+          payload_file="$(mktemp)"
+          sig_file="$(mktemp)"
+          trap 'rm -f "$payload_file" "$sig_file"' EXIT
+
+          python3 - "$payload_file" <<'PY'
+          import json
+          import os
+          import sys
+
+          source = json.load(open(os.environ['EVENT_PATH'], encoding='utf-8'))
+          repo = source.get('repository', {}).get('full_name')
+          actor = source.get('comment', {}).get('user', {}).get('login')
+          body = source.get('comment', {}).get('body') or ''
           if repo != os.environ['EXPECTED_REPOSITORY']:
               sys.exit(f"blocked: repo {repo!r} is not allowlisted")
           if actor != os.environ['EXPECTED_ACTOR']:
               sys.exit(f"blocked: actor {actor!r} is not allowlisted")
           if os.environ['BOT_MENTION'] not in body:
               sys.exit('blocked: bot mention missing')
+
+          payload = {
+              'action': source.get('action'),
+              'repository': {
+                  'full_name': repo,
+                  'html_url': source.get('repository', {}).get('html_url'),
+              },
+              'issue': {
+                  'number': source.get('issue', {}).get('number'),
+                  'html_url': source.get('issue', {}).get('html_url'),
+                  'pull_request': source.get('issue', {}).get('pull_request'),
+              },
+              'comment': {
+                  'id': source.get('comment', {}).get('id'),
+                  'html_url': source.get('comment', {}).get('html_url'),
+                  'body': body,
+                  'user': {'login': actor},
+              },
+              'sender': {
+                  'login': source.get('sender', {}).get('login'),
+              },
+          }
+          with open(sys.argv[1], 'w', encoding='utf-8') as out:
+              json.dump(payload, out, separators=(',', ':'), sort_keys=True)
+              out.write('\n')
           PY
 
-          body="$(cat "$EVENT_PATH")"
-          sig="sha256=$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" -hex | awk '{print $2}')"
+          openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" -hex "$payload_file" \
+            | awk '{print "sha256=" $2}' > "$sig_file"
 
-          curl -fsS -X POST "$WEBHOOK_URL" \
+          curl --fail --silent --show-error -X POST "$WEBHOOK_URL" \
             -H "Content-Type: application/json" \
             -H "X-GitHub-Event: issue_comment" \
-            -H "X-Hub-Signature-256: $sig" \
+            -H "X-Hub-Signature-256: $(cat "$sig_file")" \
             -H "X-GitHub-Delivery: hermes-review-${{ github.run_id }}-${{ github.run_attempt }}" \
-            --data-binary @"$EVENT_PATH"
+            --data-binary @"$payload_file"
