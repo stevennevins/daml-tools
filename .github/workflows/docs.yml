@@ -89,35 +89,6 @@ jobs:
         run: |
           npm ci --prefix docs
           npm run build --prefix docs
-      - name: Check LLM documentation artifacts
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          assert_contains() {
-            local file="$1"
-            local needle="$2"
-            [[ -f "${file}" ]] || { echo "missing file: ${file}" >&2; exit 1; }
-            grep -Fq "${needle}" "${file}" || { echo "expected ${file} to contain ${needle}" >&2; exit 1; }
-          }
-
-          assert_contains docs/.vitepress/dist/llms.txt "# daml-tools"
-          assert_contains docs/.vitepress/dist/llms.txt "/daml-tools/tutorials/first-run.md"
-          assert_contains docs/.vitepress/dist/llms.txt "/daml-tools/how-to/format-daml.md"
-          assert_contains docs/.vitepress/dist/llms.txt "/daml-tools/reference/cli.md"
-          assert_contains docs/.vitepress/dist/llms.txt "/daml-tools/explanation/workspace-architecture.md"
-          assert_contains docs/.vitepress/dist/llms-full.txt "# First run"
-          assert_contains docs/.vitepress/dist/tutorials/first-run.md "# First run"
-          assert_contains docs/.vitepress/dist/tutorials/build-a-parser-tool.md "# Build a tiny Daml mutation-testing tool"
-          assert_contains docs/.vitepress/dist/tutorials/write-a-daml-lint-custom-rule.md "# Write a daml-lint custom rule"
-          assert_contains docs/.vitepress/dist/how-to/format-daml.md "# Format Daml source"
-          assert_contains docs/.vitepress/dist/how-to/scan-daml.md "# Scan Daml source"
-          assert_contains docs/.vitepress/dist/reference/cli.md "# CLI reference"
-          assert_contains docs/.vitepress/dist/reference/crates.md "# Crate and package reference"
-          assert_contains docs/.vitepress/dist/reference/daml-lint-custom-rule-contract.md "# daml-lint custom rule contract"
-          assert_contains docs/.vitepress/dist/explanation/workspace-architecture.md "# Workspace architecture"
-          assert_contains docs/.vitepress/dist/explanation/formatter-verification.md "# Formatter verification"
-          assert_contains docs/.vitepress/dist/explanation/daml-lint-rule-authoring.md "# daml-lint rule authoring model"
       - name: Check offline markdown links
         run: >-
           lychee

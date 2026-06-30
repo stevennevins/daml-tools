@@ -1,7 +1,3 @@
----
-description: Format, check, rewrite, configure, and embed Daml source formatting with daml-fmt.
----
-
 # Format Daml source
 
 Use `daml-fmt` to print formatted Daml source, rewrite files, check formatting,

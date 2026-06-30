@@ -1,7 +1,3 @@
----
-description: Command-line options, outputs, exit codes, and configuration details for daml-fmt and daml-lint.
----
-
 # CLI reference
 
 This page describes the command-line interfaces shipped by this workspace.
