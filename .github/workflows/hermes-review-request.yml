@@ -1,0 +1,54 @@
+name: Hermes review request
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  notify-hermes:
+    if: >
+      github.repository == 'stevennevins/daml-tools' &&
+      github.event.comment.user.login == 'stevennevins' &&
+      contains(github.event.comment.body, '@snevins-agent-2')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send signed webhook to Hermes
+        env:
+          WEBHOOK_URL: ${{ secrets.HERMES_REVIEW_WEBHOOK_URL }}
+          WEBHOOK_SECRET: ${{ secrets.HERMES_REVIEW_WEBHOOK_SECRET }}
+          EVENT_PATH: ${{ github.event_path }}
+          EXPECTED_REPOSITORY: stevennevins/daml-tools
+          EXPECTED_ACTOR: stevennevins
+          BOT_MENTION: '@snevins-agent-2'
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import json, os, sys
+          payload = json.load(open(os.environ['EVENT_PATH'], encoding='utf-8'))
+          repo = payload.get('repository', {}).get('full_name')
+          actor = payload.get('comment', {}).get('user', {}).get('login')
+          body = payload.get('comment', {}).get('body') or ''
+          if repo != os.environ['EXPECTED_REPOSITORY']:
+              sys.exit(f"blocked: repo {repo!r} is not allowlisted")
+          if actor != os.environ['EXPECTED_ACTOR']:
+              sys.exit(f"blocked: actor {actor!r} is not allowlisted")
+          if os.environ['BOT_MENTION'] not in body:
+              sys.exit('blocked: bot mention missing')
+          PY
+
+          body="$(cat "$EVENT_PATH")"
+          sig="sha256=$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" -hex | awk '{print $2}')"
+
+          curl -fsS -X POST "$WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-GitHub-Event: issue_comment" \
+            -H "X-Hub-Signature-256: $sig" \
+            -H "X-GitHub-Delivery: hermes-review-${{ github.run_id }}-${{ github.run_attempt }}" \
+            --data-binary @"$EVENT_PATH"
