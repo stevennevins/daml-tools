@@ -16,6 +16,15 @@ future runs safer or more effective. Surface those opportunities to the user in
 plain language, and suggest concrete AGENTS.md, workflow, component, or prompt
 changes instead of silently working around recurring friction.
 
+
+## Smithers CLI Preflight
+
+Before the first Smithers run in this repository, verify the CLI entrypoint and
+local workflow dependencies. If `smithers` is not on `PATH`, invoke it as
+`bunx smithers-orchestrator`. If workflow loading fails on missing Smithers
+agent modules, run `bun install` in `.smithers/` once, then retry the Smithers
+command.
+
 ## Smithers Worktree Preference
 
 Codex sessions for this repository already run inside fresh git worktrees. Do

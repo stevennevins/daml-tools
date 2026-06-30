@@ -184,7 +184,7 @@ protection settings through the GitHub UI or the branch-protection API instead.
 
 1. Open GitHub repository settings.
 2. Go to **Branches** and edit the existing rule that protects `main`.
-3. Under **Require status checks to pass before merging**, add the seven
+3. Under **Require status checks to pass before merging**, add the six
    `signoff/...` contexts listed above.
 4. Leave existing review, admin, linear-history, signed-commit, restriction,
    conversation-resolution, and other protection settings unchanged.

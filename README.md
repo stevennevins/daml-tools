@@ -29,11 +29,11 @@ cargo run -p daml-lint -- --help
 
 For a guided first pass through the tools, start with
 [First run](https://stevennevins.github.io/daml-tools/tutorials/first-run.html).
-For contributor setup and local verification, see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+For contributor setup and local verification, follow the
+[Bootstrap checklist (fresh checkout)](CONTRIBUTING.md#bootstrap-checklist-fresh-checkout)
+in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-Local PR signoff uses the pinned mise toolchain with act and gh-signoff. Install
-mise first, activate it in the repo, set `MISE_LOCKED=1`, install the locked
-tools, and run the signoff tasks documented in
+Maintainer PR signoff (Tier 5) is documented in
 [`developer-docs/how-to/local-ci.md`](developer-docs/how-to/local-ci.md).
 
 ## The shape
