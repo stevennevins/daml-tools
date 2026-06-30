@@ -5,6 +5,12 @@ Use this guide to prepare a checkout and run the local gates before CI.
 For tool usage, start with the root [README](README.md) or the published documentation
 site at [https://stevennevins.github.io/daml-tools/](https://stevennevins.github.io/daml-tools/).
 
+## Pull request access
+
+Pull request creation is restricted to repository collaborators. At present,
+only `stevennevins` and `snevins-agent-2` have collaborator access that can
+open pull requests against this repository.
+
 ## Prerequisites
 
 **[mise](https://mise.jdx.dev/) is the canonical toolchain** for version alignment
