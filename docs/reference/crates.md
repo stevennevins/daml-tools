@@ -1,7 +1,3 @@
----
-description: Published Rust crates and npm packages in daml-tools, with their intended consumer use cases.
----
-
 # Crate and package reference
 
 The workspace contains four independently versioned Rust crates and npm packages

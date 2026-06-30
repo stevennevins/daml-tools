@@ -1,7 +1,3 @@
----
-description: Build a tiny Rust mutation-testing demo on top of daml-parser and its source spans.
----
-
 # Build a tiny Daml mutation-testing tool with daml-parser
 
 This tutorial builds a minimal Rust binary that uses [`daml-parser`](https://docs.rs/daml-parser)

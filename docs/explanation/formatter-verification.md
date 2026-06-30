@@ -1,7 +1,3 @@
----
-description: How daml-fmt uses token checks, compiler desugar equivalence, corpus baselines, and human audit to protect source semantics.
----
-
 # Formatter verification
 
 `daml-fmt` changes source text, so its central safety question is not whether

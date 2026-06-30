@@ -1,7 +1,3 @@
----
-description: Why daml-tools separates parser, syntax, linter, and formatter crates around shared source invariants.
----
-
 # Workspace architecture
 
 Published documentation:
