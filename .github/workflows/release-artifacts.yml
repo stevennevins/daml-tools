@@ -45,7 +45,7 @@ jobs:
             echo "::error::release artifacts require a daml-lint-v* or daml-fmt-v* tag, got ${RELEASE_TAG}"
             exit 1
           fi
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
       - uses: dtolnay/rust-toolchain@stable
@@ -118,11 +118,11 @@ jobs:
             echo "::error::release artifacts require a daml-lint-v* or daml-fmt-v* tag, got ${TAG}"
             exit 1
           fi
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
       - name: Download workflow artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: cli-*
           path: dist
