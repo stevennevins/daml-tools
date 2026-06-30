@@ -1,10 +1,14 @@
 import { defineConfig } from 'vitepress'
+import llmstxt from 'vitepress-plugin-llms'
 
 export default defineConfig({
   title: 'daml-tools',
   description:
     'Consumer documentation for daml-tools packages: Daml parser, linter, formatter, and custom-rule plugins.',
   base: '/daml-tools/',
+  vite: {
+    plugins: [llmstxt()],
+  },
   markdown: {
     languages: ['bash', 'json', 'rust', 'sh', 'text', 'toml', 'typescript', 'yaml'],
     languageAlias: {

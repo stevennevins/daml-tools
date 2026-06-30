@@ -1,3 +1,7 @@
+---
+description: Scan Daml files with daml-lint, configure rules and plugins, and use reports in CI.
+---
+
 # Scan Daml source
 
 Use `daml-lint` to scan Daml files and directories, choose an output format,
