@@ -32,5 +32,8 @@ npm ci --prefix docs
 npm run dev --prefix docs
 ```
 
+`npm audit --prefix docs` may report known transitive advisories while the site
+build still passes; see the Tier 4 notes in [`CONTRIBUTING.md`](../CONTRIBUTING.md).
+
 Rust API documentation remains on [docs.rs](https://docs.rs/releases/search?query=daml-).
 Crate READMEs stay the crates.io, docs.rs, and GitHub package entry points.
