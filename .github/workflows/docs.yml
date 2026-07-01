@@ -28,7 +28,7 @@ jobs:
         with:
           install: false
       - name: Install docs tools from mise lockfile
-        run: mise install rust node npm lychee
+        run: mise install rust node github:lycheeverse/lychee
       - name: Check docs version metadata
         shell: bash
         run: |

@@ -77,7 +77,7 @@ jobs:
           install: false
       - name: Install npm packaging tools from mise lockfile
         run: |
-          mise install rust node npm cargo:cargo-npm
+          mise install rust node cargo:cargo-npm
       - uses: Swatinem/rust-cache@v2
       - name: Generate and validate npm packages
         shell: bash
