@@ -10,11 +10,25 @@ writing files.
 
 ## CI Signoff
 
-When asked to sign off on CI, verify the PR-attached check rollup first. If no
-checks are attached to the PR, say so explicitly and use the repository signoff
-tasks instead of implying PR CI passed. Prefer `mise run signoff:all` for the
-local signoff path, and cite the exact commit SHA and any GitHub Actions run or
-created signoff statuses in the final report.
+When asked to sign off on CI, first prove the checkout is attached to an open PR
+and that local `HEAD` equals the PR head SHA. Signoff statuses only satisfy CI
+when created for the latest pushed PR head. If there is no open PR, or if local
+`HEAD` is stale or diverged from the PR head, stop before running expensive
+signoff tasks and tell the user exactly what must be updated.
+
+The local signoff flow requires the GitHub CLI extension:
+
+```bash
+gh extension install basecamp/gh-signoff
+```
+
+Use `mise run signoff:all` for the default signoff path. It preflights the PR
+state, runs required `act` jobs sequentially, and creates `gh signoff` statuses
+after local jobs pass. Use local-only or parallel signoff tasks only when the
+user explicitly asks, and report that they do not by themselves prove PR CI
+passed. Verify the PR-attached check rollup first; if no checks are attached to
+the PR, say so explicitly instead of implying PR CI passed. Cite the exact commit
+SHA and any GitHub Actions run or created signoff statuses in the final report.
 
 ## Smithers Improvement Feedback
 
