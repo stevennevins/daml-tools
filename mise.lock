@@ -96,6 +96,30 @@ checksum = "sha256:a0f2b3da55444f1a354fcbd20ce4b94981ab8193c1b674362d4761905f31f
 url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.19.9/cargo-deny-0.19.9-x86_64-pc-windows-msvc.tar.gz"
 url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/448254342"
 
+[[tools."github:lycheeverse/lychee"]]
+version = "lychee-v0.24.2"
+backend = "github:lycheeverse/lychee"
+
+[tools."github:lycheeverse/lychee"."platforms.linux-arm64"]
+checksum = "sha256:91a7bd65685da41b90ccb9bc867a3d649a7818042dae04ff405e55a25bddee4c"
+url = "https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/lycheeverse/lychee/releases/assets/409959442"
+
+[tools."github:lycheeverse/lychee"."platforms.linux-x64"]
+checksum = "sha256:1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5cd43951c9a"
+url = "https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/lycheeverse/lychee/releases/assets/409959156"
+
+[tools."github:lycheeverse/lychee"."platforms.macos-arm64"]
+checksum = "sha256:c9d3740ea2d891854d37116c9fba840f37b6e7c89d330e7db84ac333631c4977"
+url = "https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/lycheeverse/lychee/releases/assets/409957951"
+
+[tools."github:lycheeverse/lychee"."platforms.windows-x64"]
+checksum = "sha256:32975d1493ee1a975d6bb41e4fb56fe419cb442ded628bb772ba2e614acfacad"
+url = "https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/lycheeverse/lychee/releases/assets/409959491"
+
 [[tools."github:obi1kenobi/cargo-semver-checks"]]
 version = "0.48.0"
 backend = "github:obi1kenobi/cargo-semver-checks"
@@ -120,26 +144,6 @@ checksum = "sha256:a83ac4ea3fd15a4af96d88426a9c123066cc546a684064be46160bd54cde9
 url = "https://github.com/obi1kenobi/cargo-semver-checks/releases/download/v0.48.0/cargo-semver-checks-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/obi1kenobi/cargo-semver-checks/releases/assets/434501062"
 
-[[tools.lychee]]
-version = "0.24.2"
-backend = "aqua:lycheeverse/lychee"
-
-[tools.lychee."platforms.linux-arm64"]
-checksum = "sha256:5d0b0e3aeab240f41920c633a6eaf97599be6eedda034b36e858ede7dba5e535"
-url = "https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-aarch64-unknown-linux-musl.tar.gz"
-
-[tools.lychee."platforms.linux-x64"]
-checksum = "sha256:73657a111819a30c47c08352896796f23d64e4eb2b3ed39b6d32149241566fc5"
-url = "https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-unknown-linux-musl.tar.gz"
-
-[tools.lychee."platforms.macos-arm64"]
-checksum = "sha256:c9d3740ea2d891854d37116c9fba840f37b6e7c89d330e7db84ac333631c4977"
-url = "https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-aarch64-apple-darwin.tar.gz"
-
-[tools.lychee."platforms.windows-x64"]
-checksum = "sha256:32975d1493ee1a975d6bb41e4fb56fe419cb442ded628bb772ba2e614acfacad"
-url = "https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-pc-windows-msvc.zip"
-
 [[tools.node]]
 version = "22.23.1"
 backend = "core:node"
@@ -159,19 +163,6 @@ url = "https://nodejs.org/dist/v22.23.1/node-v22.23.1-darwin-arm64.tar.gz"
 [tools.node."platforms.windows-x64"]
 checksum = "sha256:7df0bc9375723f4a86b3aa1b7cc73342423d9677a8df4538aca31a049e309c29"
 url = "https://nodejs.org/dist/v22.23.1/node-v22.23.1-win-x64.zip"
-
-[[tools.npm]]
-version = "10.9.8"
-backend = "aqua:npm/cli"
-
-[tools.npm."platforms.linux-arm64"]
-url = "https://registry.npmjs.org/npm/-/npm-10.9.8.tgz"
-
-[tools.npm."platforms.linux-x64"]
-url = "https://registry.npmjs.org/npm/-/npm-10.9.8.tgz"
-
-[tools.npm."platforms.macos-arm64"]
-url = "https://registry.npmjs.org/npm/-/npm-10.9.8.tgz"
 
 [[tools.rust]]
 version = "1.96.0"
