@@ -1,3 +1,7 @@
+---
+description: Scaffold a daml-lint plugin package, add a custom TypeScript rule, and run it with daml-lint.
+---
+
 # Write a daml-lint custom rule
 
 This tutorial shows how to create a multi-rule plugin package with

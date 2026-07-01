@@ -1,3 +1,7 @@
+---
+description: Stable metadata, visitor, configuration, reporting, and packaging contract for daml-lint custom rules.
+---
+
 # daml-lint custom rule contract
 
 This page describes the custom rule interface loaded by `daml-lint --rules`
