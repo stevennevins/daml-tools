@@ -39,6 +39,11 @@ jobs:
         ) || (
           github.event_name == 'pull_request_review' &&
           github.event.review.user.login == 'stevennevins' &&
+          !(
+            github.event.review.state == 'approved' &&
+            github.event.review.body == '' &&
+            github.event.pull_request.user.login == 'snevins-agent-2'
+          ) &&
           (
             contains(github.event.review.body, '@snevins-agent-2') ||
             github.event.pull_request.user.login == 'snevins-agent-2'
@@ -85,6 +90,10 @@ jobs:
           expected_reviewer = os.environ['EXPECTED_REVIEWER']
           bot_mention = os.environ['BOT_MENTION']
           event_name = os.environ['GITHUB_EVENT_NAME']
+
+          def skip(reason):
+              print(f"::notice::skipped: {reason}")
+              sys.exit(0)
 
           if repo != expected_repo:
               sys.exit(f"blocked: repo {repo!r} is not allowlisted")
@@ -144,8 +153,8 @@ jobs:
               if bot_mention not in body:
                   pr_author, fetched_pr = fetch_issue_pr_author(issue)
                   if pr_author != expected_reviewer:
-                      sys.exit(
-                          f"blocked: bot mention missing and PR author {pr_author!r} "
+                      skip(
+                          f"bot mention missing and PR author {pr_author!r} "
                           f"is not {expected_reviewer!r}"
                       )
               trigger_reason = (
@@ -224,9 +233,9 @@ jobs:
               if actor != expected_actor:
                   sys.exit(f"blocked: reviewer {actor!r} is not allowlisted")
               if not allowed:
-                  sys.exit('blocked: review is neither mentioned nor on an agent-authored PR')
+                  skip('review is neither mentioned nor on an agent-authored PR')
               if trigger_reason == 'agent_authored_pr_feedback' and state == 'approved' and not body.strip():
-                  sys.exit('blocked: empty approval on agent-authored PR has no feedback to address')
+                  skip('empty approval on agent-authored PR has no feedback to address')
 
               payload = {
                   'event_name': event_name,
@@ -260,7 +269,7 @@ jobs:
               if actor != expected_actor:
                   sys.exit(f"blocked: commenter {actor!r} is not allowlisted")
               if not allowed:
-                  sys.exit('blocked: review comment is neither mentioned nor on an agent-authored PR')
+                  skip('review comment is neither mentioned nor on an agent-authored PR')
 
               payload = {
                   'event_name': event_name,
@@ -294,6 +303,11 @@ jobs:
           with open(sys.argv[2], 'w', encoding='utf-8') as out:
               out.write(github_event_header)
           PY
+
+          if [ ! -s "$payload_file" ]; then
+            echo "No Hermes payload produced; event was intentionally skipped."
+            exit 0
+          fi
 
           openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" -hex "$payload_file" \
             | awk '{print "sha256=" $2}' > "$sig_file"
