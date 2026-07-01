@@ -76,7 +76,7 @@ while [ "${attempt}" -le "${max_attempts}" ]; do
   #   2. rustup/mise downloading toolchains and tools inside each container
   #      (TLS handshake EOF/timeout, request-send errors, download failures).
   # A backed-off retry lets contention subside, so it is safe to retry these.
-  if grep -Eqi 'address already in use|assign requested address|unable to clone|connection reset|connection refused|tls handshake (eof|timeout)|i/o timeout|error sending request for url|could not download file|net/http: (request canceled|timeout)' "${log_file}"; then
+  if grep -Eqi 'address already in use|assign requested address|unable to clone|connection reset|connection refused|tls handshake (eof|timeout)|i/o timeout|error sending request for url|could not download file|net/http: (request canceled|timeout)|no such host|dial tcp|temporary failure in name resolution' "${log_file}"; then
     cleanup_failed_containers
     if [ "${attempt}" -lt "${max_attempts}" ]; then
       backoff=$(( attempt * 5 + RANDOM % 10 ))
