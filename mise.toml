@@ -25,7 +25,7 @@ act = "0.2.89"
 gh = "2.95.0"
 
 [tasks."signoff:preflight"]
-description = "Verify gh-signoff, open PR, and that HEAD equals the latest PR head."
+description = "Verify gh-signoff, open PR, latest PR head, and current base branch."
 run = '''
 set -eu
 
@@ -64,7 +64,7 @@ MSG
 fi
 
 local_head="$(git rev-parse HEAD)"
-if ! pr_json="$(gh pr view --json number,url,headRefName,headRefOid 2>/dev/null)"; then
+if ! pr_json="$(gh pr view --json number,url,headRefName,headRefOid,baseRefName,baseRefOid 2>/dev/null)"; then
   cat >&2 <<MSG
 Signoff refused: current branch has no open PR.
 
@@ -81,6 +81,8 @@ fi
 pr_url="$(printf '%s' "${pr_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["url"])')"
 pr_head="$(printf '%s' "${pr_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["headRefOid"])')"
 pr_branch="$(printf '%s' "${pr_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["headRefName"])')"
+base_branch="$(printf '%s' "${pr_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["baseRefName"])')"
+base_head="$(git rev-parse "origin/${base_branch}")"
 
 if [ "${local_head}" != "${pr_head}" ]; then
   cat >&2 <<MSG
@@ -98,7 +100,25 @@ MSG
   exit 1
 fi
 
-echo "Signoff preflight passed: ${pr_url} at ${local_head}"
+if ! git merge-base --is-ancestor "${base_head}" "${local_head}"; then
+  cat >&2 <<MSG
+Signoff refused: PR branch is not up to date with the base branch.
+
+Branch:      ${branch}
+PR branch:   ${pr_branch}
+Base branch: ${base_branch}
+Local HEAD:  ${local_head}
+Base head:   ${base_head}
+PR:          ${pr_url}
+
+Signoff would be wasted because rebasing or merging ${base_branch} will replace
+the signed commit. Rebase onto or merge origin/${base_branch}, push the updated
+PR head, then rerun signoff.
+MSG
+  exit 1
+fi
+
+echo "Signoff preflight passed: ${pr_url} at ${local_head}; origin/${base_branch} is included"
 '''
 
 [tasks."signoff:ci:test"]
@@ -257,7 +277,7 @@ echo "  gh pr checks ${pr_url}"
 '''
 
 [tasks."signoff:all"]
-description = "Preflight the PR/head state, run required act signoff jobs sequentially, then create statuses."
+description = "Preflight the PR/head/base state, run required act signoff jobs sequentially, then create statuses."
 env = { MISE_LOCKED = "1" }
 run = [
   "mise run signoff:preflight",

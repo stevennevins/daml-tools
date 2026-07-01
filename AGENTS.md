@@ -10,11 +10,14 @@ writing files.
 
 ## CI Signoff
 
-When asked to sign off on CI, first prove the checkout is attached to an open PR
-and that local `HEAD` equals the PR head SHA. Signoff statuses only satisfy CI
-when created for the latest pushed PR head. If there is no open PR, or if local
-`HEAD` is stale or diverged from the PR head, stop before running expensive
-signoff tasks and tell the user exactly what must be updated.
+When asked to sign off on CI, first prove the checkout is attached to an open PR,
+that local `HEAD` equals the PR head SHA, and that the PR head contains the
+current base branch head (`origin/main` for normal PRs). Signoff statuses only
+satisfy CI when created for the latest pushed PR head that is already up to date
+with the base branch. If there is no open PR, if local `HEAD` is stale or
+diverged from the PR head, or if the PR branch is behind the base branch, stop
+before running expensive signoff tasks and tell the user exactly what must be
+updated.
 
 The local signoff flow requires the GitHub CLI extension:
 
