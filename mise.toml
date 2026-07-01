@@ -211,9 +211,14 @@ env = { MISE_LOCKED = "1" }
 run = "scripts/act-signoff.sh .github/workflows/ci.yml cargo-deny"
 
 [tasks."signoff:act:ci:semver"]
-description = "Run the CI/semver act matrix job for local PR signoff without creating a status."
+description = "Run the CI/semver act matrix job sequentially for local PR signoff without creating a status."
 env = { MISE_LOCKED = "1" }
-run = "scripts/act-signoff.sh .github/workflows/ci.yml semver"
+run = [
+  "scripts/act-signoff.sh .github/workflows/ci.yml semver --matrix package:daml-parser",
+  "scripts/act-signoff.sh .github/workflows/ci.yml semver --matrix package:daml-syntax",
+  "scripts/act-signoff.sh .github/workflows/ci.yml semver --matrix package:daml-lint",
+  "scripts/act-signoff.sh .github/workflows/ci.yml semver --matrix package:daml-fmt",
+]
 
 [tasks."signoff:act:ci:build-linux-x64"]
 description = "Run the CI/build-linux-x64 act job for local PR signoff without creating a status."
