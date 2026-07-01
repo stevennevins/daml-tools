@@ -24,26 +24,126 @@ actionlint = "1.7.12"
 act = "0.2.89"
 gh = "2.95.0"
 
+[tasks."signoff:preflight"]
+description = "Verify gh-signoff, open PR, latest PR head, and current base branch."
+run = '''
+set -eu
+
+git fetch origin --prune
+
+if ! command -v gh >/dev/null 2>&1; then
+  echo "Signoff refused: GitHub CLI is not installed or not on PATH." >&2
+  exit 1
+fi
+
+gh auth status >/dev/null
+
+if ! gh extension list | grep -Eq '^gh signoff[[:space:]]+basecamp/gh-signoff[[:space:]]'; then
+  cat >&2 <<'MSG'
+Signoff refused: missing GitHub CLI extension basecamp/gh-signoff.
+
+Install it with:
+  gh extension install basecamp/gh-signoff
+
+Then rerun:
+  mise run signoff:all
+MSG
+  exit 1
+fi
+
+branch="$(git branch --show-current)"
+if [ -z "${branch}" ]; then
+  cat >&2 <<'MSG'
+Signoff refused: this checkout is detached and has no current branch.
+
+Signoff statuses only satisfy CI when created for the latest pushed head of an
+open PR branch. Switch to the PR branch, verify it is up to date, then rerun:
+  mise run signoff:all
+MSG
+  exit 1
+fi
+
+local_head="$(git rev-parse HEAD)"
+if ! pr_json="$(gh pr view --json number,url,headRefName,headRefOid,baseRefName,baseRefOid 2>/dev/null)"; then
+  cat >&2 <<MSG
+Signoff refused: current branch has no open PR.
+
+Branch: ${branch}
+Local HEAD: ${local_head}
+
+Local act jobs may pass, but they will not satisfy PR-required signoff statuses.
+Open a PR for this branch, or run an explicit local-only command such as:
+  mise run signoff:local
+MSG
+  exit 1
+fi
+
+pr_url="$(printf '%s' "${pr_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["url"])')"
+pr_head="$(printf '%s' "${pr_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["headRefOid"])')"
+pr_branch="$(printf '%s' "${pr_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["headRefName"])')"
+base_branch="$(printf '%s' "${pr_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["baseRefName"])')"
+base_head="$(git rev-parse "origin/${base_branch}")"
+
+if [ "${local_head}" != "${pr_head}" ]; then
+  cat >&2 <<MSG
+Signoff refused: local HEAD is not the current PR head.
+
+Branch:      ${branch}
+PR branch:   ${pr_branch}
+Local HEAD:  ${local_head}
+PR head:     ${pr_head}
+PR:          ${pr_url}
+
+Only signoff statuses created for the latest pushed PR head can satisfy CI.
+Fetch/rebase or push the intended commit, then rerun signoff.
+MSG
+  exit 1
+fi
+
+if ! git merge-base --is-ancestor "${base_head}" "${local_head}"; then
+  cat >&2 <<MSG
+Signoff refused: PR branch is not up to date with the base branch.
+
+Branch:      ${branch}
+PR branch:   ${pr_branch}
+Base branch: ${base_branch}
+Local HEAD:  ${local_head}
+Base head:   ${base_head}
+PR:          ${pr_url}
+
+Signoff would be wasted because rebasing or merging ${base_branch} will replace
+the signed commit. Rebase onto or merge origin/${base_branch}, push the updated
+PR head, then rerun signoff.
+MSG
+  exit 1
+fi
+
+echo "Signoff preflight passed: ${pr_url} at ${local_head}; origin/${base_branch} is included"
+'''
+
 [tasks."signoff:ci:test"]
-description = "Local PR signoff for CI/test: run the test job through act and create signoff/test."
+description = "Local PR signoff for CI/test: preflight PR state, run the test job through act, and create signoff/test."
 env = { MISE_LOCKED = "1" }
 run = [
+  "mise run signoff:preflight",
   "scripts/act-signoff.sh .github/workflows/ci.yml test",
   "gh signoff test",
 ]
 
 [tasks."signoff:ci:npm-package"]
-description = "Local PR signoff for CI/npm-package: run the npm package smoke job through act and create signoff/npm-package."
+description = "Local PR signoff for CI/npm-package: preflight PR state, run the npm package smoke job through act, and create signoff/npm-package."
 env = { MISE_LOCKED = "1" }
 run = [
+  "mise run signoff:preflight",
   "scripts/act-signoff.sh .github/workflows/ci.yml npm-package",
   "gh signoff npm-package",
 ]
 
 [tasks."signoff:ci:package"]
-description = "Local PR signoff for CI/package: run crate package verification through act with the worktree git mount and create signoff/package."
+description = "Local PR signoff for CI/package: preflight PR state, run crate package verification through act, and create signoff/package."
 env = { MISE_LOCKED = "1" }
 run = '''
+mise run signoff:preflight
 git_common="$(git rev-parse --path-format=absolute --git-common-dir)"
 scripts/act-signoff.sh .github/workflows/ci.yml package \
   --container-options "--mount type=bind,source=${git_common},target=${git_common},readonly"
@@ -51,33 +151,37 @@ gh signoff package
 '''
 
 [tasks."signoff:ci:cargo-deny"]
-description = "Local PR signoff for CI/cargo-deny: run cargo-deny policy checks through act and create signoff/cargo-deny."
+description = "Local PR signoff for CI/cargo-deny: preflight PR state, run cargo-deny policy checks through act, and create signoff/cargo-deny."
 env = { MISE_LOCKED = "1" }
 run = [
+  "mise run signoff:preflight",
   "scripts/act-signoff.sh .github/workflows/ci.yml cargo-deny",
   "gh signoff cargo-deny",
 ]
 
 [tasks."signoff:ci:semver"]
-description = "Local PR signoff for CI/semver: run public API semver checks through act and create signoff/semver."
+description = "Local PR signoff for CI/semver: preflight PR state, run public API semver checks through act, and create signoff/semver."
 env = { MISE_LOCKED = "1" }
 run = [
+  "mise run signoff:preflight",
   "scripts/act-signoff.sh .github/workflows/ci.yml semver",
   "gh signoff semver",
 ]
 
 [tasks."signoff:ci:build-linux-x64"]
-description = "Local PR signoff for CI/build-linux-x64: run the Linux x64 CLI build smoke through act and create signoff/build-linux-x64."
+description = "Local PR signoff for CI/build-linux-x64: preflight PR state, run the Linux x64 CLI build smoke through act, and create signoff/build-linux-x64."
 env = { MISE_LOCKED = "1" }
 run = [
+  "mise run signoff:preflight",
   "scripts/act-signoff.sh .github/workflows/ci.yml build-linux-x64",
   "gh signoff build-linux-x64",
 ]
 
 [tasks."signoff:docs"]
-description = "Local PR signoff for Docs: run version and link checks through act and create signoff/docs."
+description = "Local PR signoff for Docs: preflight PR state, run version and link checks through act, and create signoff/docs."
 env = { MISE_LOCKED = "1" }
 run = [
+  "mise run signoff:preflight",
   "scripts/act-signoff.sh .github/workflows/docs.yml docs",
   "gh signoff docs",
 ]
@@ -107,9 +211,14 @@ env = { MISE_LOCKED = "1" }
 run = "scripts/act-signoff.sh .github/workflows/ci.yml cargo-deny"
 
 [tasks."signoff:act:ci:semver"]
-description = "Run the CI/semver act matrix job for local PR signoff without creating a status."
+description = "Run the CI/semver act matrix job sequentially for local PR signoff without creating a status."
 env = { MISE_LOCKED = "1" }
-run = "scripts/act-signoff.sh .github/workflows/ci.yml semver"
+run = [
+  "scripts/act-signoff.sh .github/workflows/ci.yml semver --matrix package:daml-parser",
+  "scripts/act-signoff.sh .github/workflows/ci.yml semver --matrix package:daml-syntax",
+  "scripts/act-signoff.sh .github/workflows/ci.yml semver --matrix package:daml-lint",
+  "scripts/act-signoff.sh .github/workflows/ci.yml semver --matrix package:daml-fmt",
+]
 
 [tasks."signoff:act:ci:build-linux-x64"]
 description = "Run the CI/build-linux-x64 act job for local PR signoff without creating a status."
@@ -121,9 +230,30 @@ description = "Run the Docs act job for local PR signoff without creating a stat
 env = { MISE_LOCKED = "1" }
 run = "scripts/act-signoff.sh .github/workflows/docs.yml docs"
 
-[tasks."signoff:status:all"]
-description = "Create all local PR signoff statuses after every act signoff task has passed."
+[tasks."signoff:act:all"]
+description = "Run every required local PR signoff act task sequentially without creating statuses."
+env = { MISE_LOCKED = "1" }
 run = [
+  "mise run signoff:act:ci:test",
+  "mise run signoff:act:ci:npm-package",
+  "mise run signoff:act:ci:package",
+  "mise run signoff:act:ci:cargo-deny",
+  "mise run signoff:act:ci:semver",
+  "mise run signoff:act:docs",
+]
+
+[tasks."signoff:local"]
+description = "Run required act signoff jobs sequentially without creating PR statuses."
+env = { MISE_LOCKED = "1" }
+run = [
+  "mise run signoff:act:all",
+  "echo 'Local-only signoff passed. No PR signoff statuses were created; this does not mean PR CI passed.'",
+]
+
+[tasks."signoff:status:all"]
+description = "Preflight the PR head, then create all required local PR signoff statuses."
+run = [
+  "mise run signoff:preflight",
   "gh signoff test",
   "gh signoff npm-package",
   "gh signoff package",
@@ -132,10 +262,41 @@ run = [
   "gh signoff docs",
 ]
 
+[tasks."signoff:report"]
+description = "Report the PR, branch, commit, and created signoff status summary."
+run = '''
+set -eu
+branch="$(git branch --show-current)"
+sha="$(git rev-parse HEAD)"
+pr_url="$(gh pr view --json url --jq .url)"
+
+echo "Signoff completed for PR: ${pr_url}"
+echo "Branch: ${branch}"
+echo "Commit: ${sha}"
+echo
+echo "Created local signoff statuses:"
+gh signoff status
+echo
+echo "Verify the PR-attached check rollup before reporting CI passed:"
+echo "  gh pr checks ${pr_url}"
+'''
+
 [tasks."signoff:all"]
-description = "Run every required local PR signoff act task in parallel, then create signoff statuses."
+description = "Preflight the PR/head/base state, run required act signoff jobs sequentially, then create statuses."
 env = { MISE_LOCKED = "1" }
 run = [
+  "mise run signoff:preflight",
+  "mise run signoff:act:all",
+  "mise run signoff:status:all",
+  "mise run signoff:report",
+]
+
+[tasks."signoff:all:parallel"]
+description = "Opt-in parallel act signoff; faster but more network-flaky."
+env = { MISE_LOCKED = "1" }
+run = [
+  "mise run signoff:preflight",
   "mise run signoff:act:ci:test ::: signoff:act:ci:npm-package ::: signoff:act:ci:package ::: signoff:act:ci:cargo-deny ::: signoff:act:ci:semver ::: signoff:act:docs",
   "mise run signoff:status:all",
+  "mise run signoff:report",
 ]
