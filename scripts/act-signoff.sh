@@ -16,6 +16,13 @@ run_id="$(date +%Y%m%d%H%M%S)-$$-${RANDOM}"
 run_root=".act/signoff-runs/${slug}/${run_id}"
 mkdir -p "${run_root}"
 
+# Stagger parallel starts. `signoff:all` fans these scripts out concurrently,
+# and act clones every workflow action (jdx/mise-action, actions/checkout, ...)
+# from GitHub per job. Cloning all of them at the same instant exhausts macOS
+# ephemeral ports ("can't assign requested address"). A short random jitter
+# spreads the initial clone burst.
+python3 -c 'import random, time; time.sleep(random.uniform(0, 5))'
+
 free_port() {
   python3 - <<'PY'
 import socket
@@ -61,10 +68,20 @@ while [ "${attempt}" -le "${max_attempts}" ]; do
     exit 0
   fi
 
-  if grep -Eq 'bind: address already in use|listen tcp .* address already in use' "${log_file}"; then
+  # Retry transient infrastructure failures. Fanning ~9 jobs out in parallel
+  # (signoff:all) saturates the network two ways, both unrelated to the
+  # workflow under test:
+  #   1. act cloning actions from GitHub on the host (ephemeral-port
+  #      exhaustion, dropped connections).
+  #   2. rustup/mise downloading toolchains and tools inside each container
+  #      (TLS handshake EOF/timeout, request-send errors, download failures).
+  # A backed-off retry lets contention subside, so it is safe to retry these.
+  if grep -Eqi 'address already in use|assign requested address|unable to clone|connection reset|connection refused|tls handshake (eof|timeout)|i/o timeout|error sending request for url|could not download file|net/http: (request canceled|timeout)|no such host|dial tcp|temporary failure in name resolution' "${log_file}"; then
     cleanup_failed_containers
     if [ "${attempt}" -lt "${max_attempts}" ]; then
-      echo "act port collision detected; retrying with fresh ports" >&2
+      backoff=$(( attempt * 5 + RANDOM % 10 ))
+      echo "act transient infra failure detected; retrying in ${backoff}s with fresh ports (attempt $((attempt + 1))/${max_attempts})" >&2
+      sleep "${backoff}"
       attempt=$((attempt + 1))
       continue
     fi

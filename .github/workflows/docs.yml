@@ -26,9 +26,12 @@ jobs:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v4.2.0
         with:
+          # Pin the mise binary so CI matches the mise version that wrote
+          # mise.lock (avoids MISE_LOCKED resolution skew across mise releases).
+          version: 2026.6.14
           install: false
       - name: Install docs tools from mise lockfile
-        run: mise install rust node npm lychee
+        run: mise install rust node github:lycheeverse/lychee
       - name: Check docs version metadata
         shell: bash
         run: |

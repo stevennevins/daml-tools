@@ -1,15 +1,26 @@
 # Pinned toolchain for local signoff, act, and GitHub CI.
 # Use MISE_LOCKED=1 in signoff workflows only; do not set locked=true here.
 
+# npm is intentionally not pinned here: node 22.23.1 already bundles npm 10.9.8,
+# and the aqua:npm/cli backend is broken on current mise. Use node's bundled npm.
+[settings]
+# cargo-npm is the only cargo: tool. Its published manifest uses workspace
+# inheritance that cargo-binstall cannot parse, so force a source build
+# (matches `cargo install cargo-npm --locked` used in CI).
+cargo.binstall = false
+
 [tools]
 rust = { version = "1.96.0", components = "rustfmt,clippy" }
 node = "22.23.1"
-npm = "10.9.8"
 "github:EmbarkStudios/cargo-deny" = "0.19.9"
 "github:obi1kenobi/cargo-semver-checks" = "0.48.0"
 "cargo:cargo-npm" = "0.1.2"
 actionlint = "1.7.12"
-lychee = "0.24.2"
+# Pin the exact lychee CLI release tag (not the lychee-lib tag); the github
+# backend then selects the *-apple-darwin (macOS) / *-unknown-linux-gnu (Linux)
+# tarball. The aqua backend resolved to a nonexistent .dmg asset name for this
+# version on macOS.
+"github:lycheeverse/lychee" = "lychee-v0.24.2"
 act = "0.2.89"
 gh = "2.95.0"
 
