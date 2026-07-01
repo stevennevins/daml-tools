@@ -13,6 +13,10 @@ on:
     types: [created]
   pull_request_target:
     types: [review_requested]
+  pull_request_review:
+    types: [submitted]
+  pull_request_review_comment:
+    types: [created]
 
 permissions: {}
 
@@ -23,12 +27,29 @@ jobs:
         (
           github.event_name == 'issue_comment' &&
           github.event.comment.user.login == 'stevennevins' &&
-          contains(github.event.comment.body, '@snevins-agent-2')
+          (
+            contains(github.event.comment.body, '@snevins-agent-2') ||
+            github.event.issue.pull_request
+          )
         ) || (
           github.event_name == 'pull_request_target' &&
           github.event.action == 'review_requested' &&
           github.event.requested_reviewer.login == 'snevins-agent-2' &&
           github.event.sender.login == 'stevennevins'
+        ) || (
+          github.event_name == 'pull_request_review' &&
+          github.event.review.user.login == 'stevennevins' &&
+          (
+            contains(github.event.review.body, '@snevins-agent-2') ||
+            github.event.pull_request.user.login == 'snevins-agent-2'
+          )
+        ) || (
+          github.event_name == 'pull_request_review_comment' &&
+          github.event.comment.user.login == 'stevennevins' &&
+          (
+            contains(github.event.comment.body, '@snevins-agent-2') ||
+            github.event.pull_request.user.login == 'snevins-agent-2'
+          )
         )
       )
     runs-on: ubuntu-latest
@@ -55,35 +76,91 @@ jobs:
           import json
           import os
           import sys
+          import urllib.request
 
           source = json.load(open(os.environ['GITHUB_EVENT_PATH'], encoding='utf-8'))
           repo = source.get('repository', {}).get('full_name')
           expected_repo = os.environ['EXPECTED_REPOSITORY']
           expected_actor = os.environ['EXPECTED_ACTOR']
           expected_reviewer = os.environ['EXPECTED_REVIEWER']
+          bot_mention = os.environ['BOT_MENTION']
           event_name = os.environ['GITHUB_EVENT_NAME']
 
           if repo != expected_repo:
               sys.exit(f"blocked: repo {repo!r} is not allowlisted")
 
+          def minimal_repository():
+              return {
+                  'full_name': repo,
+                  'html_url': source.get('repository', {}).get('html_url'),
+              }
+
+          def minimal_pull_request(pr):
+              return {
+                  'number': pr.get('number'),
+                  'html_url': pr.get('html_url'),
+                  'title': pr.get('title'),
+                  'body': pr.get('body'),
+                  'user': {
+                      'login': (pr.get('user') or {}).get('login'),
+                  },
+                  'head': pr.get('head'),
+                  'base': pr.get('base'),
+              }
+
+          def fetch_issue_pr_author(issue):
+              pr_url = (issue.get('pull_request') or {}).get('url')
+              if not pr_url:
+                  return None
+              req = urllib.request.Request(
+                  pr_url,
+                  headers={
+                      'Accept': 'application/vnd.github+json',
+                      'User-Agent': 'snevins-agent-2-hermes-relay',
+                  },
+              )
+              with urllib.request.urlopen(req, timeout=10) as response:
+                  pr = json.load(response)
+              return ((pr.get('user') or {}).get('login'), pr)
+
+          def is_agent_authored_or_mentioned(body, pr):
+              body = body or ''
+              if bot_mention in body:
+                  return True, 'bot_mention'
+              pr_author = ((pr or {}).get('user') or {}).get('login')
+              if pr_author == expected_reviewer:
+                  return True, 'agent_authored_pr_feedback'
+              return False, 'not_mentioned_or_agent_authored'
+
           if event_name == 'issue_comment':
               actor = source.get('comment', {}).get('user', {}).get('login')
               body = source.get('comment', {}).get('body') or ''
+              issue = source.get('issue') or {}
               if actor != expected_actor:
                   sys.exit(f"blocked: actor {actor!r} is not allowlisted")
-              if os.environ['BOT_MENTION'] not in body:
-                  sys.exit('blocked: bot mention missing')
+
+              pr_author = None
+              fetched_pr = None
+              if bot_mention not in body:
+                  pr_author, fetched_pr = fetch_issue_pr_author(issue)
+                  if pr_author != expected_reviewer:
+                      sys.exit(
+                          f"blocked: bot mention missing and PR author {pr_author!r} "
+                          f"is not {expected_reviewer!r}"
+                      )
+              trigger_reason = (
+                  'bot_mention' if bot_mention in body else 'agent_authored_pr_feedback'
+              )
 
               payload = {
+                  'event_name': event_name,
                   'action': source.get('action'),
-                  'repository': {
-                      'full_name': repo,
-                      'html_url': source.get('repository', {}).get('html_url'),
-                  },
+                  'trigger_reason': trigger_reason,
+                  'repository': minimal_repository(),
                   'issue': {
-                      'number': source.get('issue', {}).get('number'),
-                      'html_url': source.get('issue', {}).get('html_url'),
-                      'pull_request': source.get('issue', {}).get('pull_request'),
+                      'number': issue.get('number'),
+                      'html_url': issue.get('html_url'),
+                      'pull_request': issue.get('pull_request'),
                   },
                   'comment': {
                       'id': source.get('comment', {}).get('id'),
@@ -95,6 +172,8 @@ jobs:
                       'login': source.get('sender', {}).get('login'),
                   },
               }
+              if fetched_pr is not None:
+                  payload['pull_request'] = minimal_pull_request(fetched_pr)
               github_event_header = 'issue_comment'
 
           elif event_name == 'pull_request_target':
@@ -118,18 +197,9 @@ jobs:
               payload = {
                   'event_name': event_name,
                   'action': action,
-                  'repository': {
-                      'full_name': repo,
-                      'html_url': source.get('repository', {}).get('html_url'),
-                  },
-                  'pull_request': {
-                      'number': pr.get('number'),
-                      'html_url': pr.get('html_url'),
-                      'title': pr.get('title'),
-                      'body': pr.get('body'),
-                      'head': pr.get('head'),
-                      'base': pr.get('base'),
-                  },
+                  'trigger_reason': 'review_requested',
+                  'repository': minimal_repository(),
+                  'pull_request': minimal_pull_request(pr),
                   'requested_reviewer': requested_reviewer or None,
                   'requested_team': requested_team,
                   'sender': {
@@ -139,6 +209,81 @@ jobs:
               if issue is not None:
                   payload['issue'] = issue
               github_event_header = 'pull_request'
+
+          elif event_name == 'pull_request_review':
+              action = source.get('action')
+              review = source.get('review') or {}
+              actor = (review.get('user') or {}).get('login')
+              body = review.get('body') or ''
+              state = review.get('state')
+              pr = source.get('pull_request') or {}
+              allowed, trigger_reason = is_agent_authored_or_mentioned(body, pr)
+
+              if action != 'submitted':
+                  sys.exit(f"blocked: action {action!r} is not submitted")
+              if actor != expected_actor:
+                  sys.exit(f"blocked: reviewer {actor!r} is not allowlisted")
+              if not allowed:
+                  sys.exit('blocked: review is neither mentioned nor on an agent-authored PR')
+              if trigger_reason == 'agent_authored_pr_feedback' and state == 'approved' and not body.strip():
+                  sys.exit('blocked: empty approval on agent-authored PR has no feedback to address')
+
+              payload = {
+                  'event_name': event_name,
+                  'action': action,
+                  'trigger_reason': trigger_reason,
+                  'repository': minimal_repository(),
+                  'pull_request': minimal_pull_request(pr),
+                  'review': {
+                      'id': review.get('id'),
+                      'html_url': review.get('html_url'),
+                      'body': body,
+                      'state': state,
+                      'user': {'login': actor},
+                  },
+                  'sender': {
+                      'login': source.get('sender', {}).get('login'),
+                  },
+              }
+              github_event_header = 'pull_request_review'
+
+          elif event_name == 'pull_request_review_comment':
+              action = source.get('action')
+              comment = source.get('comment') or {}
+              actor = (comment.get('user') or {}).get('login')
+              body = comment.get('body') or ''
+              pr = source.get('pull_request') or {}
+              allowed, trigger_reason = is_agent_authored_or_mentioned(body, pr)
+
+              if action != 'created':
+                  sys.exit(f"blocked: action {action!r} is not created")
+              if actor != expected_actor:
+                  sys.exit(f"blocked: commenter {actor!r} is not allowlisted")
+              if not allowed:
+                  sys.exit('blocked: review comment is neither mentioned nor on an agent-authored PR')
+
+              payload = {
+                  'event_name': event_name,
+                  'action': action,
+                  'trigger_reason': trigger_reason,
+                  'repository': minimal_repository(),
+                  'pull_request': minimal_pull_request(pr),
+                  'comment': {
+                      'id': comment.get('id'),
+                      'html_url': comment.get('html_url'),
+                      'body': body,
+                      'path': comment.get('path'),
+                      'line': comment.get('line'),
+                      'side': comment.get('side'),
+                      'start_line': comment.get('start_line'),
+                      'start_side': comment.get('start_side'),
+                      'user': {'login': actor},
+                  },
+                  'sender': {
+                      'login': source.get('sender', {}).get('login'),
+                  },
+              }
+              github_event_header = 'pull_request_review_comment'
 
           else:
               sys.exit(f"blocked: unsupported event {event_name!r}")
