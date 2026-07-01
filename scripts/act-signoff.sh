@@ -16,6 +16,13 @@ run_id="$(date +%Y%m%d%H%M%S)-$$-${RANDOM}"
 run_root=".act/signoff-runs/${slug}/${run_id}"
 mkdir -p "${run_root}"
 
+# Stagger parallel starts. `signoff:all` fans these scripts out concurrently,
+# and act clones every workflow action (jdx/mise-action, actions/checkout, ...)
+# from GitHub per job. Cloning all of them at the same instant exhausts macOS
+# ephemeral ports ("can't assign requested address"). A short random jitter
+# spreads the initial clone burst.
+python3 -c 'import random, time; time.sleep(random.uniform(0, 5))'
+
 free_port() {
   python3 - <<'PY'
 import socket
@@ -61,10 +68,17 @@ while [ "${attempt}" -le "${max_attempts}" ]; do
     exit 0
   fi
 
-  if grep -Eq 'bind: address already in use|listen tcp .* address already in use' "${log_file}"; then
+  # Retry transient infrastructure failures: local port collisions and the
+  # network errors act hits when many parallel jobs clone actions from GitHub
+  # at once (ephemeral-port exhaustion, dropped connections, TLS timeouts).
+  # These are unrelated to the workflow under test, so a backed-off retry
+  # (which also lets contention subside) is safe.
+  if grep -Eq 'bind: address already in use|listen tcp .* address already in use|assign requested address|Unable to clone|read: connection reset|TLS handshake timeout|i/o timeout' "${log_file}"; then
     cleanup_failed_containers
     if [ "${attempt}" -lt "${max_attempts}" ]; then
-      echo "act port collision detected; retrying with fresh ports" >&2
+      backoff=$(( attempt * 5 + RANDOM % 10 ))
+      echo "act transient infra failure detected; retrying in ${backoff}s with fresh ports (attempt $((attempt + 1))/${max_attempts})" >&2
+      sleep "${backoff}"
       attempt=$((attempt + 1))
       continue
     fi
