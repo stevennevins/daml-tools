@@ -8,6 +8,14 @@ behind or detached on an old commit, update it to `origin/main`; if local change
 or an intentional branch make that unsafe, stop and surface the mismatch before
 writing files.
 
+## CI Signoff
+
+When asked to sign off on CI, verify the PR-attached check rollup first. If no
+checks are attached to the PR, say so explicitly and use the repository signoff
+tasks instead of implying PR CI passed. Prefer `mise run signoff:all` for the
+local signoff path, and cite the exact commit SHA and any GitHub Actions run or
+created signoff statuses in the final report.
+
 ## Smithers Improvement Feedback
 
 When using Smithers in this repository, actively notice workflow, component,
