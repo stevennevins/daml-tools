@@ -63,9 +63,11 @@ The published documentation site is at
 [https://stevennevins.github.io/daml-tools/](https://stevennevins.github.io/daml-tools/).
 It is organized by consumer need: tutorials for first success, how-to guides for
 package usage, reference for technical facts, and explanations for the design
-behind the tools. Repository setup, local CI, and release runbooks live in
-[`developer-docs/`](developer-docs/). Rust API documentation remains on
-[docs.rs](https://docs.rs/releases/search?query=daml-).
+behind the tools. The published site also exposes [`llms.txt`](https://stevennevins.github.io/daml-tools/llms.txt)
+and [`llms-full.txt`](https://stevennevins.github.io/daml-tools/llms-full.txt)
+for AI assistants and tools that prefer Markdown-first documentation. Repository
+setup, local CI, and release runbooks live in [`developer-docs/`](developer-docs/).
+Rust API documentation remains on [docs.rs](https://docs.rs/releases/search?query=daml-).
 
 ## Install the CLIs
 
