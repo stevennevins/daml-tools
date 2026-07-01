@@ -68,12 +68,15 @@ while [ "${attempt}" -le "${max_attempts}" ]; do
     exit 0
   fi
 
-  # Retry transient infrastructure failures: local port collisions and the
-  # network errors act hits when many parallel jobs clone actions from GitHub
-  # at once (ephemeral-port exhaustion, dropped connections, TLS timeouts).
-  # These are unrelated to the workflow under test, so a backed-off retry
-  # (which also lets contention subside) is safe.
-  if grep -Eq 'bind: address already in use|listen tcp .* address already in use|assign requested address|Unable to clone|read: connection reset|TLS handshake timeout|i/o timeout' "${log_file}"; then
+  # Retry transient infrastructure failures. Fanning ~9 jobs out in parallel
+  # (signoff:all) saturates the network two ways, both unrelated to the
+  # workflow under test:
+  #   1. act cloning actions from GitHub on the host (ephemeral-port
+  #      exhaustion, dropped connections).
+  #   2. rustup/mise downloading toolchains and tools inside each container
+  #      (TLS handshake EOF/timeout, request-send errors, download failures).
+  # A backed-off retry lets contention subside, so it is safe to retry these.
+  if grep -Eqi 'address already in use|assign requested address|unable to clone|connection reset|connection refused|tls handshake (eof|timeout)|i/o timeout|error sending request for url|could not download file|net/http: (request canceled|timeout)' "${log_file}"; then
     cleanup_failed_containers
     if [ "${attempt}" -lt "${max_attempts}" ]; then
       backoff=$(( attempt * 5 + RANDOM % 10 ))
