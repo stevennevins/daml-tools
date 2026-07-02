@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.5](https://github.com/stevennevins/daml-tools/compare/daml-lint-v0.9.4...daml-lint-v0.9.5) - 2026-07-02
+
+### Added
+
+- *(lint-plugin)* add multi-rule scaffold command
+
+### Other
+
+- add VitePress docs site
+- fix local signoff validation ([#125](https://github.com/stevennevins/daml-tools/pull/125))
+
 ## [0.9.4](https://github.com/stevennevins/daml-tools/compare/daml-lint-v0.9.3...daml-lint-v0.9.4) - 2026-06-27
 
 ### Fixed
