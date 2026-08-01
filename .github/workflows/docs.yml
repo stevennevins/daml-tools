@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4.2.0
+      - uses: jdx/mise-action@v4.2.3
         with:
           # Pin the mise binary so CI matches the mise version that wrote
           # mise.lock (avoids MISE_LOCKED resolution skew across mise releases).
